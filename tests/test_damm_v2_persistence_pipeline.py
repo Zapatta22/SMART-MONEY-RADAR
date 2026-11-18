@@ -10,6 +10,7 @@ from smart_money_radar.data_sources.damm_v2_decoder import (
     EVT_SWAP2_DISCRIMINATOR,
     METEORA_DAMM_V2_PROGRAM_ID,
     SWAP_DISCRIMINATOR,
+    SWAP2_DISCRIMINATOR,
 )
 
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -76,6 +77,49 @@ def _raw(meta=None):
             "postTokenBalances": [],
         },
     }
+
+
+def _damm_two_swap2_one_invalid_accounts_raw():
+    event_body = (
+        bytes(32) + bytes((0, 0, 0))
+        + _u64(100) + _u64(90) + bytes((0,))
+        + _u64(100) + _u64(0) + _u64(0) + _u64(90) + bytes(16)
+        + _u64(0) + _u64(0) + _u64(0) + _u64(0)
+        + _u64(0) + _u64(0) + _u64(0)
+        + _u64(1) + _u64(2) + _u64(3)
+    )
+    event_data = EVENT_CPI_TAG + EVT_SWAP2_DISCRIMINATOR + event_body
+    keys = [
+        "authority", "1" * 32, "user-in", "user-out", "vault-a", "vault-b",
+        "mint-a", "mint-b", "payer",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+        "referral", "event-authority", METEORA_DAMM_V2_PROGRAM_ID,
+    ]
+    def compiled(data, accounts, height):
+        return {
+            "programId": METEORA_DAMM_V2_PROGRAM_ID,
+            "accounts": accounts,
+            "data": _b58encode(data),
+            "stackHeight": height,
+        }
+    raw = _raw()
+    raw["transaction"]["message"] = {
+        "accountKeys": keys,
+        "instructions": [{
+            "programId": "aggregator", "accounts": [], "data": _b58encode(b"route")
+        }],
+    }
+    raw["meta"]["innerInstructions"] = [{
+        "index": 0,
+        "instructions": [
+            compiled(SWAP2_DISCRIMINATOR + _u64(100) + _u64(90) + bytes((0,)), list(range(14)), 2),
+            compiled(event_data, [0], 3),
+            compiled(SWAP2_DISCRIMINATOR + _u64(200) + _u64(180) + bytes((0,)), [0], 2),
+            compiled(event_data, [0], 3),
+        ],
+    }]
+    return raw
 
 
 class DammV2PersistencePipelineTests(unittest.TestCase):
@@ -315,6 +359,33 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
         )
         self.assertEqual(len(attempts), 4)
         self.assertTrue(all(item["status"] == "MATCHED" for item in attempts))
+
+
+    def test_two_real_swap2_associations_block_entire_batch_when_second_account_decode_fails(self):
+        raw = _damm_two_swap2_one_invalid_accounts_raw()
+        result = process_damm_v2_observation(
+            self.store, raw, wallet_address="wallet", signature="signature"
+        )
+
+        self.assertEqual(result.status, "pending_reconciliation")
+        self.assertEqual(result.decoded_swaps, 2)
+        self.assertEqual(result.reconciled_swaps, 0)
+        self.assertEqual(result.unresolved_swaps, 2)
+        self.assertFalse(result.ready_for_next_venue)
+        self.assertFalse(
+            self.store.has_processed_signature("wallet", "signature")
+        )
+        self.assertIsNone(self.store.get_checkpoint("wallet"))
+        self.assertEqual(
+            self.store.get_pending_signatures("wallet"), ["signature"]
+        )
+        attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual([item["status"] for item in attempts], ["INCOMPLETE", "INCOMPLETE"])
+        self.assertTrue(all("14 contas" in item["reason"] for item in attempts))
+        self.assertEqual(self.store.list_swap_bundles("wallet", "signature"), [])
 
 
 if __name__ == "__main__":

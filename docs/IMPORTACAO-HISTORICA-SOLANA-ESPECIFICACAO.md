@@ -409,3 +409,21 @@ CI dos commits funcionais:
 - run `44256150190`: success; testes unitários e compileall aprovados.
 
 A validação local no Termux e a auditoria dos cinco RAW ainda são necessárias. Próxima etapa: decodificar deltas pre/post de token accounts com associação explícita por accountIndex e exigir consistência entre transferências brutas, deltas do usuário e vaults. Manter Token-2022 com taxa em estado incompleto até reconciliar bruto, líquido e withheld fee. Nenhuma persistência SQLite, checkpoint, RPC ou execução on-chain faz parte desta etapa.
+
+
+## 26. Decoder de deltas de token accounts (18/11/2026)
+
+Foi adicionado `decode_solana_token_account_balance_deltas()`, com resultado redigido em deltas e issues.
+
+Regras:
+- Resolver `accountIndex` usando accountKeys estáticas e loaded addresses quando aplicável.
+- Parear snapshots pre/post pelo mesmo índice; calcular `post - pre` em unidades raw inteiras.
+- Exigir mint e decimals iguais nos dois lados e decimals no intervalo u8.
+- Rejeitar índices duplicados, índices sem conta correspondente, owner divergente e amount inválido.
+- Nunca converter snapshot ausente em saldo zero.
+- Não produzir deltas se a transação falhou ou se `meta.err` está ausente (status de execução desconhecido).
+- `complete=false` se qualquer issue for encontrada; issues contêm somente índice e código, sem identificadores privados.
+
+O decoder não atribui deltas a swaps. Deltas pre/post são agregados à transação: quando um vault ou token account participa de mais de uma operação, não se pode dividir o delta por heurística. Uma futura camada de reconciliação deverá provar exclusividade/atribuição das quatro contas por swap e contabilizar quaisquer transferências adicionais. Token-2022 transfer-fee e withheld fees continuam sem suporte econômico.
+
+CI `SMR tests`, run `44256509698`: success; testes unitários e compileall aprovados. A validação local no Termux e a inspeção dos cinco RAW reais ainda estão pendentes. Nenhum banco, importação, RPC, checkpoint ou operação on-chain foi executado.

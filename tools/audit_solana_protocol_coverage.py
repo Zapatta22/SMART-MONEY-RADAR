@@ -14,6 +14,8 @@ from smart_money_radar.domain.program_registry import PROGRAMS_BY_ID
 
 
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+ANCHOR_EVENT_CPI_TAG = bytes.fromhex("e445a52e51cb9a1d")
+DAMM_V2_EVT_SWAP2_DISCRIMINATOR = bytes.fromhex("bd4233a826507599")
 
 # Escopo real dos decoders presentes nesta branch; não significa suporte integral.
 DECODER_SCOPE = {
@@ -93,6 +95,7 @@ def _inspect_payload(payload: dict[str, Any]) -> dict[str, Any]:
     counts: dict[str, int] = {}
     supported: dict[str, int] = {}
     profiles: dict[tuple[Any, ...], int] = {}
+    event_cpi_profiles: dict[tuple[Any, ...], int] = {}
     unknown_count = 0
     unresolved_count = 0
     total = 0
@@ -125,6 +128,19 @@ def _inspect_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 account_count, stack_height,
             )
             profiles[profile] = profiles.get(profile, 0) + 1
+            if source == "inner" and decoded is not None and decoded.startswith(ANCHOR_EVENT_CPI_TAG) and len(decoded) >= 16:
+                event_discriminator = decoded[8:16]
+                event_name = (
+                    "EvtSwap2"
+                    if spec.name == "Meteora DAMM v2"
+                    and event_discriminator == DAMM_V2_EVT_SWAP2_DISCRIMINATOR
+                    else "UNKNOWN"
+                )
+                event_profile = (
+                    spec.name, event_discriminator.hex(), len(decoded),
+                    account_count, stack_height, event_name,
+                )
+                event_cpi_profiles[event_profile] = event_cpi_profiles.get(event_profile, 0) + 1
 
     for instruction in outer:
         add(instruction, "top_level")
@@ -138,6 +154,18 @@ def _inspect_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "instruction_count": total,
         "registered_program_counts": dict(sorted(counts.items())),
         "decoder_scope_counts": dict(sorted(supported.items())),
+        "event_cpi_profiles": [
+            {
+                "program": key[0],
+                "event_discriminator_hex": key[1],
+                "data_length": key[2],
+                "account_count": key[3],
+                "stack_height": key[4],
+                "event_name": key[5],
+                "count": count,
+            }
+            for key, count in sorted(event_cpi_profiles.items(), key=lambda item: tuple(str(v) for v in item[0]))
+        ],
         "venue_instruction_profiles": [
             {
                 "program": key[0],

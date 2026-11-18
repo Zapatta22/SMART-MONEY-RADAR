@@ -57,6 +57,9 @@ def _is_descendant_transfer(
         or transfer.stack_height is None
         or association.cpi_path is None
         or transfer.stack_height <= association.stack_height
+        or transfer.inner_instruction_index is None
+        or association.event_inner_instruction_index is None
+        or transfer.inner_instruction_index >= association.event_inner_instruction_index
         or len(transfer.cpi_path) <= len(association.cpi_path)
     ):
         return False

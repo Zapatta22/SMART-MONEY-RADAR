@@ -2096,3 +2096,5 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits de testes: `fc40f28931eec6d247f5203ff5391c5f602c1d77`, `8a4bac2cdb57fcdeff390bd750feb7b8363ce479`, `f6b9f818a3d14941eded6b779444711fd2daabf1`.
 - Documentação atualizada. Esta alteração é revisão estática enviada à branch; nenhum teste runtime/compileall foi executado por esta ação. A CI continua sujeita à indisponibilidade pré-etapas já registrada.
 - PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.
+
+- CI no HEAD subsequente: run #691 (`44317299989`), job `134846680569`, terminou `failure`, mas steps retornou `[]` e logs retornaram `BlobNotFound`. Portanto, também não há evidência de checkout/testes/compileall; não repetir retry sem diagnóstico do runner.

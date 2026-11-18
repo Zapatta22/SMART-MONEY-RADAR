@@ -135,10 +135,11 @@ class SwapPersistenceTests(unittest.TestCase):
             self.observation, self.classification, self.evidence
         )
         with self.store._connection_scope() as connection:
-            connection.execute(
-                "DELETE FROM swap_evidence WHERE operation_id = ?",
-                (self.observation.operation_id,),
-            )
+            with connection:
+                connection.execute(
+                    "DELETE FROM swap_evidence WHERE operation_id = ?",
+                    (self.observation.operation_id,),
+                )
         with self.assertRaisesRegex(RuntimeError, "Bundle existente incompleto"):
             self.store.save_swap_bundle(
                 self.observation, self.classification, self.evidence

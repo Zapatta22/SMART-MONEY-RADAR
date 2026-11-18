@@ -62,13 +62,13 @@ class TokenTransferDecoderTests(unittest.TestCase):
     def test_rejects_loaded_address_count_mismatch(self):
         tx = _tx([], meta={
             "err": None,
-            "addressTableLookups": [{
-                "accountKey": "lookup-table",
-                "writableIndexes": [0],
-                "readonlyIndexes": [],
-            }],
             "loadedAddresses": {"writable": [], "readonly": []},
         })
+        tx["transaction"]["message"]["addressTableLookups"] = [{
+            "accountKey": "lookup-table",
+            "writableIndexes": [0],
+            "readonlyIndexes": [],
+        }]
         with self.assertRaisesRegex(ValueError, "não corresponde à quantidade"):
             decode_solana_token_transfers(tx)
 

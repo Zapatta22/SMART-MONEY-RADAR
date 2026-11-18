@@ -1634,3 +1634,30 @@ PR #16 permanece Draft, aberto e não integrado; `main` intacta.
 - CI do PR #17 ainda não apareceu na consulta inicial; não declarar testes aprovados até workflow terminar. Clone local PR17 ainda não foi criado nem sincronizado.
 - PR #16 permanece Draft e não integrado; PR #17 permanece Draft e não integrado; `main` intacta. Nenhum RAW foi alterado/enviado. Nenhuma importação, SQLite, RPC/Helius, checkpoint ou operação on-chain.
 - Próxima ação: acompanhar CI do PR #17; corrigir falhas e então sincronizar branch PR17 no Termux para executar os 17 testes focais e a suíte completa. Após validação, avançar para decodificação explícita de TransferFeeConfig/TransferFeeAmount e depois reconciliador econômico fail-closed.
+
+
+## 83. Validação local e CI do PR #17 — aritmética de taxas DAMM v2 / Token-2022 (18/11/2026)
+
+### Validação local no Termux
+- Clone separado criado em `$HOME/SMART-MONEY-RADAR-PR17`, sem tocar na cópia original nem nos clones PR15/PR16.
+- Branch confirmada: `feat/damm-v2-economic-fee-math`; HEAD local `99ce0ce`; árvore de trabalho limpa e sincronizada com origin.
+- Testes focais de `test_damm_v2_fee_math.py`: **18/18 aprovados** (a suíte efetiva contém 18 métodos de teste, embora a seção 82 tenha descrito originalmente 17 casos).
+- Suíte completa: **327 testes aprovados** (`Ran 327 tests`, `OK`).
+- `python -m compileall -q src tests` executado sem erro.
+- ResourceWarnings de HTTPError/SQLite apareceram em alguns testes, sem falha; permanecem como observação técnica, não como falha da suíte.
+
+### CI
+- Commit validado: `99ce0ce3b3d76b97e86fd52d2855c34a01011b33`.
+- Workflow `SMR tests`, run `44260221128` (#484): **success**.
+- O status combinado não retornou status contexts adicionais; a aprovação é sustentada pelo workflow concluído com sucesso.
+
+### Interpretação e limites
+- Aritmética isolada está validada localmente e no CI; isso não equivale a reconciliação econômica DAMM v2 completa.
+- Ainda faltam decoder dos bytes de TransferFeeConfig/TransferFeeAmount com seleção histórica de epoch, curva executada de PartialFill, atribuição exclusiva de referral e demais transferências, conciliação bruta/líquida com EvtSwap2 e deltas por operação.
+- Os cinco RAW locais continuam sem reconciliação econômica confirmada; resultados anteriores de cobertura permanecem fail-closed.
+- Não foi executada importação, criação/migração SQLite, RPC/Helius, checkpoint, trade ou operação on-chain. Nenhum RAW ou mapa de carteira foi enviado ao GitHub.
+
+PR #17 continua Draft, aberto e não integrado; PR #16 continua Draft e não integrado; `main` permanece intacta.
+
+### Próxima etapa técnica
+Implementar, isoladamente e com testes sintéticos, o decoder de estado Token-2022 (`TransferFeeConfig` e `TransferFeeAmount`), incluindo seleção da taxa aplicável ao epoch histórico e validação de bytes/offsets. Não iniciar reconciliador nem persistência até essa camada ser revisada.

@@ -2248,3 +2248,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Testes negativos adicionados para limite booleano em paginação e histórico, cursor vazio e assinatura vazia.
 - Commits: cliente `5e3717e17ded1ed1b15e2c9e440c072fec900f4d`; testes `c3eb02a34a11c60a9564d4387aa87e638e884845`.
 - Revisão estática; unittest/compileall ainda não executados. Sem RPC real.
+
+
+## 132. Validação de tipos e timeout finito em HeliusSettings — PR #25 (18/11/2026)
+
+- Configuração aceitava timeout booleano (`True`) e valores não finitos como NaN/Infinity porque comparações `<= 0` não os rejeitam corretamente; também assumia que API key e cluster eram strings.
+- `HeliusSettings` agora exige API key string não vazia, cluster string em `mainnet/devnet` e timeout numérico finito positivo, rejeitando booleanos.
+- Testes adicionados para timeout booleano, NaN, Infinity, zero, negativo e API key de tipo inválido.
+- Commits: settings `db819ced08e3dbf9f4851405b83129d0615f6b40`; testes `41ca7f2af36174e829b2c4237d83774bc569cd26`.
+- Revisão estática; unittest/compileall pendentes. Nenhuma autorização de rede ou chamada externa foi ativada.

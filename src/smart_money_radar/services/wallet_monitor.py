@@ -159,6 +159,11 @@ class WalletMonitor:
                         message, request_to_wallet, subscription_to_wallet
                     )
                     continue
+                if (
+                    message.get("jsonrpc") != "2.0"
+                    or message.get("method") != "logsNotification"
+                ):
+                    continue
 
                 notification = message.get("params")
                 if not isinstance(notification, dict):

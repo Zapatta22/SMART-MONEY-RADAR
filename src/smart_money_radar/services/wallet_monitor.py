@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import math
 import time
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -45,17 +46,46 @@ class WalletMonitor:
         sleep: Callable[[float], Any] = asyncio.sleep,
         logger: Logger | None = None,
     ) -> None:
-        if initial_backoff_seconds <= 0 or maximum_backoff_seconds < initial_backoff_seconds:
-            raise ValueError("Parâmetros de backoff inválidos.")
+        numeric_parameters = (
+            initial_backoff_seconds,
+            maximum_backoff_seconds,
+            stable_session_seconds,
+            transaction_retry_initial_seconds,
+        )
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            for value in numeric_parameters
+        ):
+            raise ValueError("Parâmetros temporais devem ser números finitos.")
+        if (
+            initial_backoff_seconds <= 0
+            or maximum_backoff_seconds < initial_backoff_seconds
+            or stable_session_seconds < 0
+            or transaction_retry_initial_seconds < 0
+        ):
+            raise ValueError("Parâmetros de backoff/retry inválidos.")
+        if (
+            isinstance(transaction_retry_attempts, bool)
+            or not isinstance(transaction_retry_attempts, int)
+            or transaction_retry_attempts < 1
+        ):
+            raise ValueError("transaction_retry_attempts deve ser inteiro positivo.")
+        if (
+            isinstance(backfill_page_limit, bool)
+            or not isinstance(backfill_page_limit, int)
+            or not 1 <= backfill_page_limit <= 1000
+            or isinstance(backfill_max_pages, bool)
+            or not isinstance(backfill_max_pages, int)
+            or backfill_max_pages < 1
+        ):
+            raise ValueError("Parâmetros de recuperação histórica inválidos.")
         self.settings = settings
         self.data_source = data_source
         self.event_store = event_store
         self.initial_backoff_seconds = initial_backoff_seconds
         self.maximum_backoff_seconds = maximum_backoff_seconds
-        if transaction_retry_attempts < 1 or transaction_retry_initial_seconds < 0:
-            raise ValueError("Parâmetros de repetição de transação inválidos.")
-        if not 1 <= backfill_page_limit <= 1000 or backfill_max_pages < 1:
-            raise ValueError("Parâmetros de recuperação histórica inválidos.")
         self.stable_session_seconds = stable_session_seconds
         self.transaction_retry_attempts = transaction_retry_attempts
         self.transaction_retry_initial_seconds = transaction_retry_initial_seconds

@@ -2646,3 +2646,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O job `test` (ID `134963775404`) terminou como `failure`, mas a API retornou `logs_url: null` e `steps: null`; portanto, não há evidência de que os testes tenham iniciado. Isso é consistente com a falha de provisionamento de runner observada anteriormente, mas a causa raiz ainda não está confirmada.
 - O teste isolado de sobreposição WebSocket/backfill está aprovado localmente no Termux conforme seção 174. A suíte completa continua sem validação.
 - Não repetir disparos de CI sem corrigir ou esclarecer a indisponibilidade do runner. Não pedir ao usuário nova execução isolada. Próxima ação deve consolidar uma validação local única, ou resolver primeiro o provisionamento do CI; não alterar `main` nem mesclar PR #25.
+
+
+## 176. Validação consolidada em uma única execução — 18/11/2026
+
+- Para eliminar a sequência de comandos isolados no Termux, foi criado `tools/validate_pr25.sh` no branch `feat/damm-v2-transaction-pipeline`.
+- Commit: `54caae0dc6ff07f510f6fdce9361051e6bb30b00`.
+- O script verifica que o clone está no branch correto, sincroniza por `git pull --ff-only`, executa uma única vez a suíte completa `python -m unittest discover -s tests -v` com `PYTHONPATH=src` e, se a suíte passar, executa `python -m compileall -q src tests`.
+- A execução local ainda precisa ocorrer no Termux do usuário; não afirmar validação concluída antes da mensagem final de sucesso do script.
+- CI remoto permanece indisponível antes do provisionamento do runner (run 992, seção 175). Não disparar retries em loop.
+- Próxima ação operacional: uma única execução de `bash tools/validate_pr25.sh` no diretório local do projeto. O script interrompe no primeiro erro e preserva o resultado real.

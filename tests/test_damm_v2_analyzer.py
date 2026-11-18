@@ -15,7 +15,7 @@ ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 
 def b58encode(data):
-    zeros = len(data) - len(data.lstrip(b"\\x00"))
+    zeros = len(data) - len(data.lstrip(b"\x00"))
     number = int.from_bytes(data, "big")
     encoded = ""
     while number:

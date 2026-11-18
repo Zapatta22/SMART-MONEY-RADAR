@@ -1859,3 +1859,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - A validação de CI continua pendente por indisponibilidade do runner GitHub Actions; a revisão estática foi feita, mas não substitui a suíte automatizada.
 - Limites: não cria `SwapObservation`, BUY/SELL ou sinal; não consulta mint/epoch, RPC/Helius, RAW fixtures, SQLite ou checkpoints; não executa operações on-chain. `RECONCILED` valida apenas o lote com os inventários completos fornecidos e não é, sozinho, autorização para trading.
 - PR #23 permanece aberto, Draft e não integrado. PRs #17, #18, #21 e #22 permanecem Draft. PR #20 fechado sem merge. `main` intacta.
+
+
+## 95. Runner GitHub Actions indisponível no PR #23 — 18/11/2026
+
+- Nova execução CI #579 (`44296622580`) no head de código `1d65ae34b1a074544c9013bf85f8ff85129a0765` terminou failure antes de iniciar runner.
+- Consulta direta do job `134775210155`: `runner_id=0`, `runner_name=""`, `steps=[]`; logs não foram gerados (BlobNotFound). A execução não chegou ao unittest nem ao compileall.
+- Isso confirma problema de provisionamento/indisponibilidade do runner GitHub Actions; não há evidência de falha dos testes e também não há aprovação automatizada.
+- Naquele head, PR #23 vs PR #22 estava 17 commits à frente, 0 atrás, quatro arquivos próprios e mergeable=true. O commit desta seção altera somente o Registro Mestre.
+- Próxima ação técnica segura: restaurar runner funcional e executar a suíte/compileall sobre o head atualizado antes de avançar para integração com SwapObservation. PRs permanecem Draft; `main` intacta.

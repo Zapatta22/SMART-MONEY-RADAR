@@ -13,6 +13,9 @@ from datetime import datetime, timezone
 from smart_money_radar.data_sources.damm_v2_transaction_pipeline import (
     process_damm_v2_transaction,
 )
+from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
+    _is_descendant_transfer,
+)
 
 DEFAULT_RPC = "https://api.mainnet-beta.solana.com"
 
@@ -214,6 +217,45 @@ def main() -> int:
                 expected.token_account == item.token_account
                 for expected in output.reconciliation.expected_account_deltas
             )
+        ],
+        "transfer_candidate_details": [
+            {
+                "instruction_index": context.association.instruction_index,
+                "cpi_path": context.association.cpi_path,
+                "input_candidates": [
+                    {
+                        "transfer_index": index,
+                        "inner_instruction_index": transfer.inner_instruction_index,
+                        "cpi_path": transfer.cpi_path,
+                        "source": transfer.source_account,
+                        "destination": transfer.destination_account,
+                        "mint": transfer.mint,
+                        "amount_raw": transfer.amount_raw,
+                    }
+                    for index, transfer in enumerate(output.transfers)
+                    if transfer.execution_status == "EXECUTED"
+                    and _is_descendant_transfer(transfer, context.association)
+                    and transfer.source_account == context.accounts.input_token_account
+                    and transfer.destination_account == context.accounts.input_vault
+                ],
+                "output_candidates": [
+                    {
+                        "transfer_index": index,
+                        "inner_instruction_index": transfer.inner_instruction_index,
+                        "cpi_path": transfer.cpi_path,
+                        "source": transfer.source_account,
+                        "destination": transfer.destination_account,
+                        "mint": transfer.mint,
+                        "amount_raw": transfer.amount_raw,
+                    }
+                    for index, transfer in enumerate(output.transfers)
+                    if transfer.execution_status == "EXECUTED"
+                    and _is_descendant_transfer(transfer, context.association)
+                    and transfer.source_account == context.accounts.output_vault
+                    and transfer.destination_account == context.accounts.output_token_account
+                ],
+            }
+            for context in output.contexts
         ],
         "decoded_transfers": [
             {

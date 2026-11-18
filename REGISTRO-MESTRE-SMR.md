@@ -2293,3 +2293,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Adicionados testes para rejeitar payload conflitante sem alterar RAW/checkpoint e para permitir preencher payload inicialmente ausente.
 - Commits: fonte `360168809ba6ac79c8e0a7c55c96a6767a010b11`; testes `6aaf9be8bc6a34959d856d236f392002c16a3b5b`.
 - Revisão estática e re-leitura GitHub concluídas; runtime unittest/compileall ainda pendente. Nenhum banco persistente ou estado on-chain foi tocado.
+
+## 137. Monotonicidade do checkpoint por slot — PR #25 (18/11/2026)
+
+- Auditoria de WalletMonitor/EventStore encontrou que notificações/replays fora de ordem podiam regredir `wallet_checkpoints.signature`: o UPSERT anterior substituía o cursor sem comparar a posição da transação.
+- `wallet_checkpoints` agora recebe coluna nullable `slot`, com migração incremental para bancos existentes. `_mark_processed_in_connection()` e `save_checkpoint()` consultam o slot da observação e só substituem checkpoint quando o novo slot é estritamente maior; se ambos os slots forem desconhecidos, mantém o comportamento legado. Um slot desconhecido não substitui checkpoint com slot conhecido; transações antigas continuam registradas em `processed_signatures` sem regredir o cursor.
+- Testes adicionados para processamento fora de ordem (slot 450 depois do 500) e para impedir substituição de checkpoint conhecido por assinatura sem slot.
+- Commits: fonte `b65255e29ff8adf8cf77c3229759c91adc38a1ef`; testes `68f49b842ce0cc3b1558e7b0ba2b016286371a52`.
+- Revisão estática/releitura GitHub concluídas. Runtime unittest/compileall ainda não executados após as alterações. Banco persistente do usuário não foi aberto nem migrado nesta atividade.

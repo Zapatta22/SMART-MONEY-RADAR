@@ -330,6 +330,87 @@ class SwapPersistenceTests(unittest.TestCase):
             )
 
 
+    def test_reconciliation_diagnostics_aggregate_statuses_reasons_and_pending(self):
+        incomplete = SwapReconciliationRecord(
+            operation_id=self.observation.operation_id,
+            instruction_index=2,
+            inner_instruction_index=4,
+            cpi_path=(0, 1),
+            status="INCOMPLETE",
+            reason="Net token-account delta does not match gross transfer.",
+        )
+        matched = SwapReconciliationRecord(
+            operation_id=self.observation.operation_id,
+            instruction_index=2,
+            inner_instruction_index=4,
+            cpi_path=(0, 1),
+            status="MATCHED",
+            reason="All economic deltas reconciled.",
+        )
+        self.store.save_swap_reconciliation_attempt(
+            "wallet-a", "sig-a", [incomplete]
+        )
+        self.store.save_swap_reconciliation_attempt(
+            "wallet-a", "sig-a", [matched]
+        )
+
+        report = self.store.get_reconciliation_diagnostics(
+            wallet_address="wallet-a"
+        )
+        self.assertEqual(report["total_attempts"], 2)
+        self.assertEqual(report["distinct_operations"], 1)
+        self.assertEqual(report["distinct_signatures"], 1)
+        self.assertEqual(report["statuses"]["INCOMPLETE"], 1)
+        self.assertEqual(report["statuses"]["MATCHED"], 1)
+        self.assertEqual(report["statuses"]["AMBIGUOUS"], 0)
+        self.assertEqual(report["statuses"]["UNRESOLVED"], 0)
+        self.assertEqual(report["top_reasons"][0]["count"], 1)
+        self.assertEqual(report["pending_transactions_count"], 1)
+        self.assertEqual(report["pending_transactions"][0]["signature"], "sig-a")
+
+    def test_query_reconciliation_attempts_filters_and_orders_newest_first(self):
+        first = SwapReconciliationRecord(
+            operation_id=self.observation.operation_id,
+            instruction_index=2,
+            inner_instruction_index=4,
+            cpi_path=(0, 1),
+            status="INCOMPLETE",
+            reason="First attempt incomplete.",
+        )
+        second = SwapReconciliationRecord(
+            operation_id=self.observation.operation_id,
+            instruction_index=2,
+            inner_instruction_index=4,
+            cpi_path=(0, 1),
+            status="MATCHED",
+            reason="Second attempt matched.",
+        )
+        self.store.save_swap_reconciliation_attempt("wallet-a", "sig-a", [first])
+        self.store.save_swap_reconciliation_attempt("wallet-a", "sig-a", [second])
+
+        rows = self.store.query_swap_reconciliation_attempts(
+            wallet_address="wallet-a",
+            signature="sig-a",
+            operation_id=self.observation.operation_id,
+            status="INCOMPLETE",
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["reason"], "First attempt incomplete.")
+        self.assertEqual(rows[0]["cpi_path"], (0, 1))
+        newest = self.store.query_swap_reconciliation_attempts(limit=1)
+        self.assertEqual(newest[0]["status"], "MATCHED")
+
+    def test_diagnostics_reject_invalid_limits_and_time_ranges(self):
+        with self.assertRaises(ValueError):
+            self.store.get_reconciliation_diagnostics(top_reasons_limit=0)
+        with self.assertRaises(ValueError):
+            self.store.get_reconciliation_diagnostics(
+                since="2026-11-19", until="2026-11-18"
+            )
+        with self.assertRaises(ValueError):
+            self.store.query_swap_reconciliation_attempts(status="ACCEPTED")
+
+
 
 if __name__ == "__main__":
     unittest.main()

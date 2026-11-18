@@ -61,6 +61,32 @@ class DammV2TransactionPipelineTests(unittest.TestCase):
         self.assertEqual(result.status, "REJECTED")
         self.assertIn("meta.innerInstructions ausente/nulo", result.reason)
 
+    def test_missing_loaded_addresses_for_lookup_table_fails_closed(self):
+        raw = _raw_transaction()
+        raw["result"]["transaction"]["message"]["addressTableLookups"] = [{
+            "accountKey": "lookup-table",
+            "writableIndexes": [0],
+            "readonlyIndexes": [],
+        }]
+        result = self._process(raw)
+        self.assertEqual(result.status, "REJECTED")
+        self.assertIn("meta.loadedAddresses ausente", result.reason)
+
+    def test_loaded_address_count_must_match_lookup_indexes(self):
+        raw = _raw_transaction()
+        raw["result"]["transaction"]["message"]["addressTableLookups"] = [{
+            "accountKey": "lookup-table",
+            "writableIndexes": [0],
+            "readonlyIndexes": [],
+        }]
+        raw["result"]["meta"]["loadedAddresses"] = {
+            "writable": [],
+            "readonly": [],
+        }
+        result = self._process(raw)
+        self.assertEqual(result.status, "REJECTED")
+        self.assertIn("não corresponde à quantidade", result.reason)
+
     def test_failed_on_chain_transaction_fails_closed(self):
         raw = _raw_transaction()
         raw["result"]["meta"]["err"] = {"InstructionError": [0, "Custom"]}

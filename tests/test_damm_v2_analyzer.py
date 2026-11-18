@@ -9,6 +9,7 @@ from smart_money_radar.data_sources.damm_v2_decoder import (
     EVT_SWAP2_DISCRIMINATOR,
     METEORA_DAMM_V2_PROGRAM_ID,
     SWAP_DISCRIMINATOR,
+    SWAP2_DISCRIMINATOR,
 )
 
 
@@ -31,6 +32,10 @@ def u64(value):
 
 def swap_data():
     return SWAP_DISCRIMINATOR + u64(100) + u64(90)
+
+
+def swap2_data(amount_in=100, minimum_amount_out=90, mode=0):
+    return SWAP2_DISCRIMINATOR + u64(amount_in) + u64(minimum_amount_out) + bytes((mode,))
 
 
 def event_data():
@@ -205,6 +210,23 @@ class DammV2AnalyzerTests(unittest.TestCase):
         self.assertEqual(
             [item.event_inner_instruction_index for item in result], [1, 3]
         )
+
+    def test_keeps_two_sequential_swap2_calls_as_two_matched_operations(self):
+        raw = transaction(
+            [{"programId": "aggregator", "accounts": [], "data": b58encode(b"route")}],
+            {0: [
+                instruction(swap2_data(), 2), instruction(event_data(), 3),
+                instruction(swap2_data(amount_in=200, minimum_amount_out=180), 2),
+                instruction(event_data(), 3),
+            ]},
+        )
+        result = analyze_damm_v2_swap_events(raw)
+        self.assertEqual(len(result), 2)
+        self.assertEqual([item.status for item in result], ["MATCHED", "MATCHED"])
+        self.assertEqual([item.inner_instruction_index for item in result], [0, 2])
+        self.assertEqual([item.instruction.instruction_name for item in result], ["swap2", "swap2"])
+        self.assertEqual([item.instruction.amount_0 for item in result], [100, 200])
+        self.assertEqual([item.event_inner_instruction_index for item in result], [1, 3])
 
     def test_missing_stack_height_never_creates_association(self):
         raw = transaction(

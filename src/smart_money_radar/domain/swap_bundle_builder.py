@@ -159,8 +159,12 @@ def build_swap_domain_bundles(
             or item.output_decimals is None
             or item.input_transfer is None
             or item.output_transfer is None
+            or item.input_token_account_delta_raw is None
+            or item.output_token_account_delta_raw is None
+            or item.input_vault_delta_raw is None
+            or item.output_vault_delta_raw is None
         ):
-            raise ValueError("Reconciliação MATCHED sem quantidades, decimals ou transferências completas.")
+            raise ValueError("Reconciliação MATCHED sem quantidades, decimals, transferências ou deltas completos.")
 
         if item.input_amount_raw != item.input_transfer.amount_raw:
             raise ValueError("Quantidade de entrada diverge da transferência selecionada.")
@@ -232,6 +236,10 @@ def build_swap_domain_bundles(
                 f"output_transfer:{item.output_transfer.instruction_index}:{item.output_transfer.inner_instruction_index}",
                 f"input_token_account:{accounts.input_token_account}:transfer_amount_raw={item.input_transfer.amount_raw}",
                 f"output_token_account:{accounts.output_token_account}:transfer_amount_raw={item.output_transfer.amount_raw}",
+                f"input_token_account_delta_raw:{item.input_token_account_delta_raw}",
+                f"output_token_account_delta_raw:{item.output_token_account_delta_raw}",
+                f"input_vault_delta_raw:{item.input_vault_delta_raw}",
+                f"output_vault_delta_raw:{item.output_vault_delta_raw}",
                 f"pool_state:{accounts.pool_state}",
                 f"input_vault:{accounts.input_vault}",
                 f"output_vault:{accounts.output_vault}",

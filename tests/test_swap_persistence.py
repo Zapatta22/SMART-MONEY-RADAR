@@ -67,7 +67,7 @@ class SwapPersistenceTests(unittest.TestCase):
         ))
         self.assertEqual(self.store.get_swap_bundle(self.observation.operation_id)["evidence"], self.evidence)
 
-    def test_existing_bundle_is_updated_without_creating_duplicate(self):
+    def test_existing_bundle_rejects_divergent_replay_without_explicit_replace(self):
         self.assertTrue(self.store.save_swap_bundle(
             self.observation, self.classification, self.evidence
         ))
@@ -85,12 +85,30 @@ class SwapPersistenceTests(unittest.TestCase):
             cpi_path=(0, 1),
             evidence=("outer instruction 2", "verified inner CPI path"),
         )
+        with self.assertRaisesRegex(ValueError, "Bundle divergente"):
+            self.store.save_swap_bundle(
+                self.observation, revised_classification, revised_evidence
+            )
+        bundle = self.store.get_swap_bundle(self.observation.operation_id)
+        self.assertEqual(bundle["classification"], self.classification)
+        self.assertEqual(bundle["evidence"], self.evidence)
+
+    def test_existing_bundle_can_be_replaced_only_explicitly(self):
+        self.assertTrue(self.store.save_swap_bundle(
+            self.observation, self.classification, self.evidence
+        ))
+        revised = SwapClassification(
+            operation_id=self.observation.operation_id,
+            side="BUY",
+            confidence=Decimal("0.90"),
+            reason="Explicitly authorized parser reprocessing.",
+        )
         self.assertFalse(self.store.save_swap_bundle(
-            self.observation, revised_classification, revised_evidence
+            self.observation, revised, self.evidence, replace_existing=True
         ))
         bundle = self.store.get_swap_bundle(self.observation.operation_id)
-        self.assertEqual(bundle["classification"], revised_classification)
-        self.assertEqual(bundle["evidence"], revised_evidence)
+        self.assertEqual(bundle["classification"], revised)
+        self.assertEqual(bundle["evidence"], self.evidence)
 
     def test_rejects_contracts_with_different_operation_ids(self):
         wrong = SwapClassification(

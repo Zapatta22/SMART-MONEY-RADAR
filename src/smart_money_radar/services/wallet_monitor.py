@@ -391,6 +391,9 @@ class WalletMonitor:
             if stop_event.is_set():
                 return
             signature = item["signature"]
+            expected_previous_signature = self.event_store.get_checkpoint(wallet_address)
+            if expected_previous_signature is None:
+                raise RuntimeError("Checkpoint desapareceu durante o backfill; recuperação interrompida.")
             if item.get("err") is not None:
                 # Falha on-chain é um resultado conhecido, não uma lacuna de dados.
                 self.event_store.save_observation(
@@ -405,7 +408,10 @@ class WalletMonitor:
                 failed_slot = item.get("slot")
                 if isinstance(failed_slot, int) and not isinstance(failed_slot, bool):
                     self.event_store.advance_checkpoint_in_order(
-                        wallet_address, signature, failed_slot
+                        wallet_address,
+                        signature,
+                        failed_slot,
+                        expected_previous_signature=expected_previous_signature,
                     )
                 continue
             if not await self._collect_transaction(wallet_address, signature, stop_event):
@@ -415,7 +421,10 @@ class WalletMonitor:
             transaction_slot = item.get("slot")
             if isinstance(transaction_slot, int) and not isinstance(transaction_slot, bool):
                 self.event_store.advance_checkpoint_in_order(
-                    wallet_address, signature, transaction_slot
+                    wallet_address,
+                    signature,
+                    transaction_slot,
+                    expected_previous_signature=expected_previous_signature,
                 )
 
     async def _receive_or_stop(self, websocket: Any, stop_event: asyncio.Event) -> Any:

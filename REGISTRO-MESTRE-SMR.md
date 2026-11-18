@@ -2192,3 +2192,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Adicionado teste de regressão com dois swaps MATCHED e builder que devolve bundle A duas vezes, omitindo B; o pipeline permanece pendente.
 - Commits: pipeline `eb45db263ca39176f12b479e0960516ad003760b`; teste `de732ebe754eeeb07eea38776986e17eb53d1f22`.
 - Revisão estática; runtime/compileall pendentes. Nenhuma gravação persistente real ou chamada RPC foi realizada.
+
+
+## 126. Identidade única por operação nos lotes DAMM v2 — PR #25 (18/11/2026)
+
+- Auditoria estendida ao caminho DAMM v2 encontrou que o reconciliador econômico e o adaptador de domínio validavam cardinalidade, mas não rejeitavam explicitamente duas entradas com a mesma identidade de instrução/CPI se os objetos de transferência fossem distintos.
+- `reconcile_damm_v2_economic_batch()` agora rejeita identidade duplicada `(instruction_index, inner_instruction_index, cpi_path)` no mesmo lote como AMBIGUOUS.
+- `build_damm_v2_swap_domain_bundles()` repete a proteção independentemente, para que o adaptador não dependa exclusivamente do reconciliador chamador.
+- Testes adicionados: reconciliação econômica com transferências distintas mas mesma identidade; adaptador com contextos duplicados.
+- Commits: reconciliação `89de7d3645aa3d86b5a5f7e258bd922b865ed14f`, mensagem alinhada a teste legado `43332c99917737fdcdaaba2f21648c7780fc912e`, teste econômico `97acda5a8cf2e9355533ae4127b322b98d0d3f91`, adaptador `c1ea1f8b64a1bd4cbbf56c45cee218172c8a5277`, teste adaptador `19828b904d453f4b4b85ea6c569970eab27f6d87`.
+- Revisão estática; runtime/compileall ainda pendentes. PR #25 Draft; main e dados persistentes preservados.

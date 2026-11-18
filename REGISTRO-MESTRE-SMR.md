@@ -2751,3 +2751,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Limitação real: a reconciliação chama o decoder por operação e exige que cada input de wSOL tenha um único funding top-level cujo valor seja exatamente igual ao amount bruto daquele input. Um funding agregado ou uma conta wSOL reutilizada por várias operações não está modelado como relação de lote; o comportamento conservador atual é rejeitar divergências/ambiguidade, não repartir funding.
 - Próximo passo correto: criar teste de regressão específico para duas operações DAMM v2 que reutilizam a mesma conta wSOL e provar que nenhum funding é contado duas vezes nem repartido por suposição. Depois desenhar a associação por transação e somente então alterar produção. Não afirmar que a integração está ausente.
 - CI #1039 (run `44377757156`) SUCCESS. Commit de registro anterior `9968d3fac01bfcd3499946d02057262859b08c99` foi validado por essa execução.
+
+
+## 186. Teste de funding wSOL compartilhado entre swaps — 18/11/2026
+
+- Adicionado em `tests/test_damm_v2_economic_reconciliation.py` o teste `test_rejects_shared_wsol_account_with_multiple_funding_transfers_as_ambiguous`.
+- Cenário: duas operações DAMM v2 sequenciais usam a mesma conta wSOL; cada uma tem transferência de funding SOL e SyncNative antes dos swaps. A reconciliação deve rejeitar o caso como INCOMPLETE/ambíguo, sem produzir WrappedSolFundingEvidence e sem repartir funding automaticamente.
+- Commit do teste: `dd75e64b9bf1092af3f4e2bc76bf9cb80f177cfe`. A validação CI deste commit ainda precisa concluir.
+- Interpretação: teste caracteriza o comportamento seguro atual e impede uma falsa reconciliação. Não implementa ainda associação multi-swap; a produção continua fail-closed. Próximo passo após CI: desenhar e implementar resolução em lote que associe funding top-level a cada swap/CPI de forma inequívoca, com testes positivos e negativos.
+- Nenhuma ordem, BUY/SELL, checkpoint ou merge habilitado.

@@ -470,7 +470,7 @@ def reconcile_damm_v2_economic_batch(
         if mismatches:
             return DammV2EconomicReconciliation(
                 "INCOMPLETE", len(contexts), tuple(expected_rows),
-                "; ".join(mismatches), tuple(wrapped_sol_fundings),
+                "; ".join(mismatches), tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
             )
         return DammV2EconomicReconciliation(
             "RECONCILED", len(contexts), tuple(expected_rows),
@@ -481,10 +481,10 @@ def reconcile_damm_v2_economic_batch(
     except RuntimeError as exc:
         return DammV2EconomicReconciliation(
             "AMBIGUOUS", len(contexts), (), str(exc),
-            tuple(wrapped_sol_fundings),
+            tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
         )
     except (TypeError, ValueError) as exc:
         return DammV2EconomicReconciliation(
             "INCOMPLETE", len(contexts), (), str(exc),
-            tuple(wrapped_sol_fundings),
+            tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
         )

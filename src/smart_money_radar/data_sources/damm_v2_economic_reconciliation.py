@@ -179,6 +179,7 @@ def reconcile_damm_v2_economic_batch(
     wrapped_sol_fundings: list[WrappedSolFundingEvidence] = []
     claimed_transfers: set[SolanaTokenTransfer] = set()
     claimed_operations: set[tuple[int, int | None, tuple[int, ...]]] = set()
+    native_inputs: dict[str, list[tuple[SolanaTokenTransfer, int]]] = {}
     try:
         for context, item in zip(contexts, evidence):
             if not isinstance(context, DammV2SwapTransferContext):
@@ -303,23 +304,11 @@ def reconcile_damm_v2_economic_batch(
                 input_transfer.decimals, -input_transfer.amount_raw,
             )
             if input_transfer.mint == NATIVE_MINT:
-                if raw_transaction is not None and monitored_wallet:
-                    funding = decode_wrapped_sol_funding(
-                        raw_transaction,
-                        token_account=input_transfer.source_account,
-                        source_wallet=monitored_wallet,
-                        amount_raw=input_transfer.amount_raw,
-                        before_instruction_index=association.instruction_index,
-                    )
-                    if funding is not None:
-                        if input_transfer.program_id != SPL_TOKEN_PROGRAM_ID:
-                            raise ValueError("wSOL deve usar o SPL Token Program clássico")
-                        _add_expected(
-                            expected, input_transfer.source_account,
-                            input_transfer.mint, input_transfer.decimals,
-                            funding.amount_raw,
-                        )
-                        wrapped_sol_fundings.append(funding)
+                if input_transfer.program_id != SPL_TOKEN_PROGRAM_ID:
+                    raise ValueError("wSOL deve usar o SPL Token Program clássico")
+                native_inputs.setdefault(input_transfer.source_account, []).append(
+                    (input_transfer, association.instruction_index)
+                )
             _add_expected(
                 expected, input_transfer.destination_account, input_transfer.mint,
                 input_transfer.decimals, input_net,
@@ -381,6 +370,31 @@ def reconcile_damm_v2_economic_batch(
                     expected, referral.destination_account, referral.mint,
                     referral.decimals, referral_net,
                 )
+
+        # Funding top-level pode ser agregado antes de vários swaps que
+        # reutilizam a mesma conta wSOL. Resolver uma vez por conta evita
+        # contar o mesmo funding integral em cada operação.
+        if raw_transaction is not None and monitored_wallet:
+            for token_account, inputs in native_inputs.items():
+                total_input = sum(transfer.amount_raw for transfer, _ in inputs)
+                first_swap_index = min(index for _, index in inputs)
+                decimals = {transfer.decimals for transfer, _ in inputs}
+                mints = {transfer.mint for transfer, _ in inputs}
+                if len(decimals) != 1 or mints != {NATIVE_MINT}:
+                    raise ValueError("inputs wSOL compartilham conta com decimals/mint divergentes")
+                funding = decode_wrapped_sol_funding(
+                    raw_transaction,
+                    token_account=token_account,
+                    source_wallet=monitored_wallet,
+                    amount_raw=total_input,
+                    before_instruction_index=first_swap_index,
+                )
+                if funding is not None:
+                    _add_expected(
+                        expected, token_account, NATIVE_MINT,
+                        next(iter(decimals)), funding.amount_raw,
+                    )
+                    wrapped_sol_fundings.append(funding)
 
         expected_accounts = set(expected)
         claimed_ids = {id(transfer) for transfer in claimed_transfers}

@@ -258,6 +258,17 @@ def build_damm_v2_swap_domain_bundles(
                 and event.has_referral
             )
         )
+        cross_venue_evidence = tuple(
+            (
+                f"cross-venue CPI transfer outer={transfer.outer_instruction_index} "
+                f"inner={transfer.inner_instruction_index}; "
+                f"path={' > '.join(transfer.cpi_program_path)}; "
+                f"{transfer.source_account}->{transfer.destination_account}; "
+                f"mint={transfer.mint}; gross={transfer.amount_raw}; "
+                f"net={transfer.net_amount_raw}; fee={transfer.fee_amount_raw}"
+            )
+            for transfer in reconciliation.cross_venue_transfers
+        )
         evidence = SwapEvidence(
             operation_id=operation_id,
             program_id=METEORA_DAMM_V2_PROGRAM_ID,
@@ -270,7 +281,7 @@ def build_damm_v2_swap_domain_bundles(
                 "lote completo reconciliado contra deltas pre/post e lifecycle wSOL quando aplicável",
                 "propriedade das token accounts confirmada por snapshots ou ATA lifecycle para a carteira monitorada",
                 "input_amount representa débito bruto; output_amount representa crédito líquido",
-            ) + fee_absence_evidence,
+            ) + fee_absence_evidence + cross_venue_evidence,
         )
         bundles.append(DammV2SwapDomainBundle(observation, classification, evidence))
 

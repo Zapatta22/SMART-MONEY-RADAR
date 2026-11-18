@@ -2268,3 +2268,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Helper trata overflow de inteiros gigantes como valor inválido. Teste cobre backoff booleano, máximo infinito, sessão NaN, retry booleano e limites booleanos.
 - Commits: construtor `b65d6be329519f42ab13d15da1db07714f74ae66`, helper overflow `810dd2ff550c0b90f3aace95e1151ab0de768f0e`, testes `853d640238268ac85c4b4ff01f2a023d5e5ce14b`.
 - Revisão estática; unittest/compileall pendentes. Nenhum serviço remoto ativado.
+
+
+## 134. Correção sintática no teste do adaptador DAMM v2 — PR #25 (18/11/2026)
+
+- Revisão estática dos testes encontrou uma instrução `import` em `tests/test_damm_v2_swap_domain_adapter.py` contendo sequências literais `\\n` em vez de quebras de linha reais. O arquivo não era Python sintaticamente válido e poderia impedir a descoberta/execução da suíte.
+- Corrigida somente a instrução de importação; conteúdo restante preservado. Verificação posterior do conteúdo GitHub confirmou ausência de sequências literais `\\n` e import multilinha formatado corretamente.
+- Commit corretivo: `a5715de67228cee087905ca1a941fbb98943fe1c`.
+- Esta é uma correção revisada estaticamente, não uma validação runtime. `unittest` e `compileall` continuam pendentes no ambiente Termux/runner funcional.

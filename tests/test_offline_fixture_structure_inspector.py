@@ -102,6 +102,41 @@ class OfflineFixtureStructureInspectorTests(unittest.TestCase):
         self.assertNotIn(str(secret_path), rendered)
         self.assertNotIn("WalletSignatureMustNotLeak", rendered)
 
+    def test_detects_explicit_wallet_field_without_exposing_value(self):
+        signature = "5" * 64
+        wallet = "SensitiveWalletMustNeverPrint"
+        payload = {
+            "result": {
+                "slot": 7,
+                "transaction": {
+                    "signatures": [signature],
+                    "message": {"accountKeys": [], "instructions": []},
+                },
+                "meta": {"err": None},
+            }
+        }
+        raw = json.dumps(payload).encode()
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "fixture.raw.json").write_bytes(raw)
+            manifest_path = directory / "fixture.manifest.json"
+            manifest_path.write_text(json.dumps({
+                "signature": signature,
+                "slot": 7,
+                "commitment": "finalized",
+                "encoding": "json",
+                "raw_file": "fixture.raw.json",
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "anonymized": False,
+                "wallet_address": wallet,
+            }))
+            report = inspect_manifest(manifest_path, 1)
+
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertTrue(report["manifest_declares_wallet_address"])
+        self.assertNotIn(wallet, rendered)
+        self.assertNotIn(signature, rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

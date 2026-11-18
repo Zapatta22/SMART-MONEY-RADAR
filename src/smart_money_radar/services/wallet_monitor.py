@@ -25,6 +25,15 @@ from smart_money_radar.storage.event_store import SQLiteEventStore
 Logger = logging.Logger
 
 
+def _is_finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 class WalletMonitor:
     """Assina logs de carteiras públicas, enriquece assinaturas e persiste eventos."""
 
@@ -52,12 +61,7 @@ class WalletMonitor:
             stable_session_seconds,
             transaction_retry_initial_seconds,
         )
-        if any(
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-            for value in numeric_parameters
-        ):
+        if any(not _is_finite_number(value) for value in numeric_parameters):
             raise ValueError("Parâmetros temporais devem ser números finitos.")
         if (
             initial_backoff_seconds <= 0

@@ -3153,3 +3153,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #1227 (run `44419493138`) foi iniciado no HEAD `edf191f5a625ff0741577fcea1d7f13e7c91053e`; resultado ainda não confirmado no momento desta atualização.
 - **Pendência real:** executar a auditoria com a assinatura da seção 216, slot `471107341`, após obter mint, referral token account e bruto da transferência nos dados do validador, e dispor de endpoint Helius com acesso beta. Nenhum caso real foi reconciliado ainda; o bloqueio fail-closed continua.
 - PR #25 continua OPEN/DRAFT e sem merge; `main` intacta.
+
+
+## 220. Diagnóstico de conta referral compartilhada e auditoria agregada — 18/11/2026
+
+- A leitura dos logs Mainnet workflow #59 (`44417476130`) confirmou que a transação `2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9`, slot `471107341`, tem dois swaps, e o segundo tem `has_referral=true`, `referral_fee=71,448,140` raw. O pipeline retorna `REJECTED`, `INCOMPLETE`, sem bundles, por taxa Token-2022 de referral não explícita.
+- O diagnóstico Mainnet mostra que output e referral da segunda operação são transferências separadas, ambas do mint `GgGQzgwUBcPZddt4UFULRLeJK2WFhSyFY1VavYK4MCCc`, ambas com destino `DKfXG1ojeZzCgLuMiYJq7LD1RDVgeu7NHPLmsjgTjiRF`: output bruto `84,396,359,546` e referral bruto `71,448,140`. Esse é um caso de conta de destino compartilhada (self-referral).
+- Consequência importante: o delta histórico de `TransferFeeAmount.withheld_amount` nessa conta é agregado por conta/transação; não pode ser comparado somente com a taxa calculada sobre o valor referral. O auditor foi corrigido para aceitar múltiplos `--gross-amount-raw`, calcular a taxa de cada perna e comparar a soma com o delta withheld. Para este caso, o workflow passa ambos os valores.
+- Criado `tools/inspect_solana_transaction_position.py` para imprimir o transactionIndex zero-based. O workflow Mainnet foi atualizado para localizar esse índice no bloco finalized e para executar opcionalmente o auditor histórico quando o secret `SMR_HELIUS_HISTORICAL_RPC_URL` estiver configurado.
+- Workflow Mainnet #64 (run `44419766877`) foi iniciado para validar a nova etapa de posição e, se houver secret configurado, a consulta histórica. O índice real ainda aguarda saída do job.
+- CI de PR #25 #1229 (run `44419527316`) SUCCESS no HEAD `a79fb6941f5b06d101d64984d0cbb92ec0b7d6bb`: 521 testes em 3,907s e `compileall` concluído. O CI #1233 (run `44419758247`) está validando a alteração de agregação de taxas no commit `d8a7159ce9dbf4d62eda2c246e4a9b810c63f301`; resultado ainda não confirmado.
+- Nenhuma consulta histórica Helius foi comprovada até aqui. Sem secret de acesso beta, a etapa histórica será ignorada; o caso permanece bloqueado e não pode ser liberado.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` intacta.

@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 
 from smart_money_radar.data_sources.damm_v2_accounts import DammV2SwapAccounts
 from smart_money_radar.data_sources.damm_v2_analyzer import DammV2SwapEventAssociation
@@ -17,6 +18,7 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     TOKEN_2022_PROGRAM_ID,
     SolanaTokenTransfer,
 )
+from smart_money_radar.data_sources.solana_wrapped_sol_funding import NATIVE_MINT
 
 
 def _accounts():
@@ -161,6 +163,68 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             ])
         )
         self.assertEqual(result.status, "RECONCILED")
+
+
+    def test_reconciles_wrapped_sol_input_funded_and_synced_before_swap(self):
+        accounts = replace(
+            self.context.accounts,
+            input_mint=NATIVE_MINT,
+            input_token_program=SPL_TOKEN_PROGRAM_ID,
+        )
+        event = self.context.association.event
+        event = replace(
+            event,
+            included_transfer_fee_amount_in=100,
+            swap_result=replace(event.swap_result, included_fee_input_amount=100),
+        )
+        association = replace(self.context.association, instruction_index=2, event=event)
+        context = replace(self.context, association=association, accounts=accounts)
+        input_transfer = SolanaTokenTransfer(
+            program_id=SPL_TOKEN_PROGRAM_ID, program_name="SPL Token",
+            instruction_type="TRANSFER_CHECKED", instruction_index=2,
+            inner_instruction_index=2, stack_height=4, cpi_path=(0, 0),
+            source_account="user-a", destination_account="vault-a",
+            authority="authority", mint=NATIVE_MINT, amount_raw=100,
+            decimals=9, execution_status="EXECUTED", source_format="compiled",
+        )
+        evidence = _evidence(context, input_transfer, self.output)
+        raw = {
+            "result": {
+                "transaction": {
+                    "message": {
+                        "accountKeys": [
+                            "wallet", "user-a",
+                            "11111111111111111111111111111111",
+                            SPL_TOKEN_PROGRAM_ID, "damm",
+                        ],
+                        "instructions": [
+                            {"programIdIndex": 2, "accounts": [0, 1], "data": "3Bxs4dhy4yn7qUy5"},
+                            {"programIdIndex": 3, "accounts": [1], "data": "J"},
+                            {"programIdIndex": 4, "accounts": [0, 1], "data": "swap"},
+                        ],
+                    }
+                },
+                "meta": {
+                    "preBalances": [10_000_000, 2_000_000, 1, 1, 1],
+                    "postBalances": [9_999_900, 2_000_000, 1, 1, 1],
+                },
+            }
+        }
+        result = reconcile_damm_v2_economic_batch(
+            [context], [evidence],
+            _deltas([
+                ("user-a", NATIVE_MINT, 0, 9),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ]),
+            [input_transfer, self.output],
+            raw_transaction=raw, monitored_wallet="wallet",
+        )
+        self.assertEqual(result.status, "RECONCILED")
+        self.assertEqual(len(result.wrapped_sol_fundings), 1)
+        row = next(x for x in result.expected_account_deltas if x.token_account == "user-a")
+        self.assertEqual(row.expected_delta_raw, 0)
 
     def test_rejects_fee_amount_outside_transfer_amount(self):
         invalid_input = _transfer(

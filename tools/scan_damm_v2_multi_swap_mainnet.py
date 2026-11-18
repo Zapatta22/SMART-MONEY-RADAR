@@ -120,6 +120,16 @@ def scan(endpoints: tuple[str, ...], limit: int) -> dict:
                 "matched_swap2_count": len(swaps),
                 "pipeline_status": result.status,
                 "pipeline_reason": result.reason,
+                "swap_account_directions": [
+                    {
+                        "input_token_account": context.accounts.input_token_account,
+                        "input_mint": context.accounts.input_mint,
+                        "output_token_account": context.accounts.output_token_account,
+                        "output_mint": context.accounts.output_mint,
+                        "trade_direction": context.association.event.trade_direction,
+                    }
+                    for context in result.contexts
+                ],
                 "shared_wsol_input_accounts": shared_wsol_inputs,
                 "funded_shared_wsol_input_accounts": len(funded_shared_wsol_inputs),
             }

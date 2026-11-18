@@ -2123,3 +2123,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.
 
 - CI do HEAD `50c64ead640aa2ae1be4eefb60dad32587114423`: run #717 (`44318265798`), job `134850068290`, falhou antes de iniciar steps (`steps=null`, `logs_url=null`). Não comprova falha nem aprovação dos testes; sem retry automático.
+
+
+## 117. Correção de fixtures e assinatura primária no coordenador CPMM — PR #25 (18/11/2026)
+
+- Auditoria dos call sites de `simulated_transaction()` em `tests/test_wallet_monitor.py` encontrou fixtures que usavam a assinatura padrão em cenários com outra assinatura solicitada. Corrigidos os retornos dos data sources para propagar o argumento `signature`; corrigido também o RAW arquivado para replay de primeira execução (`pending-first-run`).
+- Revisão da coordenação DAMM→CPMM identificou que a validação de assinatura primária estava no pipeline DAMM, mas o CPMM ainda aceitava `transaction.signatures` ausente e assinatura solicitada em posição secundária. Isso deixava um caminho independente/failed-on-chain mais permissivo.
+- O pipeline CPMM agora exige lista de assinaturas presente, não vazia, somente strings não vazias, sem duplicatas, e `signatures[0] == signature`, antes de normalizar ou persistir.
+- Adicionados testes negativos CPMM para assinaturas ausentes, secundárias e duplicadas; fixture base do teste agora contém a assinatura primária correspondente.
+- Idempotência verificada estaticamente no `SQLiteEventStore.save_swap_bundle()`: os três contratos são gravados em uma única transação SQLite, com `ON CONFLICT(operation_id) DO UPDATE`; replay após falha parcial de múltiplos bundles atualiza os já persistidos sem duplicar operações. Cada bundle é atômico; o lote completo não é uma única transação.
+- Commits desta rodada: fixtures WalletMonitor `2b53a5d5a129f38465e3d453b9c254b82694264b` e `31bde375367f54ea9348ec1d5b7b99b621b1b02f`; validação CPMM `689e8eb311b01018ad5cd3ea5154e38f1324d38f`; testes CPMM `14a0eeabfff92802f7befc93185bc579ce99ad91`.
+- Revisão estática apenas: não houve execução runtime/compileall nesta rodada; CI sem steps/logs continua sem valor probatório. PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.

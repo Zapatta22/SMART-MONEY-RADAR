@@ -90,6 +90,18 @@ class DammV2TransferAnalyzerTests(unittest.TestCase):
         )[0]
         self.assertEqual(result.status, "TRANSFER_MISSING")
 
+    def test_rejects_transfer_occurring_after_evt_swap2(self):
+        after_event = _transfer(
+            "user-a", "vault-a", SPL_TOKEN_PROGRAM_ID, "mint-a", 6
+        )
+        after_event = SolanaTokenTransfer(
+            **{**after_event.__dict__, "inner_instruction_index": 6}
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [self.context], [after_event, self.output]
+        )[0]
+        self.assertEqual(result.status, "TRANSFER_MISSING")
+
     def test_rejects_transfer_simple_without_mint_and_decimals(self):
         simple = _transfer(
             "user-a", "vault-a", SPL_TOKEN_PROGRAM_ID, "mint-a", 6

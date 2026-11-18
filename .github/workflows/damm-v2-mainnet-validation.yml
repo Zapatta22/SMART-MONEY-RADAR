@@ -34,6 +34,7 @@ jobs:
       SMR_SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
       SMR_DAMM_V2_SCAN_RPC_URL: https://solana-rpc.publicnode.com
       SMR_DAMM_V2_SIGNATURE: ${{ inputs.signature || '1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT' }}
+      SMR_HELIUS_HISTORICAL_RPC_URL: ${{ secrets.SMR_HELIUS_HISTORICAL_RPC_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,6 +76,18 @@ jobs:
         env:
           SMR_POSITION_SIGNATURE: 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9
         run: PYTHONPATH=src:tools python tools/inspect_solana_transaction_position.py --signature "$SMR_POSITION_SIGNATURE" --slot 471107341
+      - name: Audit historical Token-2022 fee for blocked referral transaction
+        if: ${{ env.SMR_HELIUS_HISTORICAL_RPC_URL != '' }}
+        env:
+          SMR_DAMM_V2_SIGNATURE: 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9
+        run: |
+          PYTHONPATH=src:tools python tools/audit_token2022_referral_fee_historically.py \
+            --signature "$SMR_DAMM_V2_SIGNATURE" \
+            --slot 471107341 \
+            --mint GgGQzgwUBcPZddt4UFULRLeJK2WFhSyFY1VavYK4MCCc \
+            --referral-account DKfXG1ojeZzCgLuMiYJq7LD1RDVgeu7NHPLmsjgTjiRF \
+            --gross-amount-raw 84396359546 \
+            --gross-amount-raw 71448140
       - name: Validate Mainnet legacy swap with zero padding
         env:
           SMR_DAMM_V2_SIGNATURE: 5ujkLBVBSF8EcQxKAnv3ie4hc5adBUBr8GYCRdfwYcdAank2dbcoA9ustGoUKUwrDDixrkrEVTBSwHFRfET8QtQT

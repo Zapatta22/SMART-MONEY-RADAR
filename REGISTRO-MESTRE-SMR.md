@@ -1108,3 +1108,22 @@ Correções aplicadas na branch:
 - Corrigido o teste para serializar com `ensure_ascii=False`, preservando a verificação de que caminho sensível não é exibido.
 - Commit corretivo: `5e02581090366a46fca6c5fe49cccaaed2099ee7`.
 - Aguardando CI para o novo head. Nenhuma alteração funcional adicional, nenhum dado local enviado, nenhuma execução de DB/RPC/on-chain.
+
+
+## 60. CI aprovado e precisão da detecção de associação de carteira — 2026-11-18
+
+### CI do inspetor
+- Run `44248632411` (`SMR tests`, run number 360), head `bc07ca08de21999fc116b064ad87b17c7a773c74`: concluído com sucesso.
+- Instalação, 248 testes unitários e compileall aprovados.
+- A falha anterior do run `44248529109` foi exclusivamente a asserção Unicode, corrigida no commit `5e02581090366a46fca6c5fe49cccaaed2099ee7`.
+
+### Ajuste adicional após revisão
+- Revisão identificou que o campo `manifest_declares_wallet_address` estava fixado em `False`, independentemente do manifesto.
+- Corrigido para verificar a presença explícita de `wallet_address` ou `monitored_wallet_address`, sem expor os respectivos valores.
+- Teste adicional verifica detecção e ausência de vazamento.
+- Commits: `25af1268f6bd7bb99bf135199ed08b25121b58eb` e `54acb2cf8ca13eda45055d7c6757d26c310b43a0`.
+- CI para o novo head ainda não foi confirmado; o run aprovado anterior não valida essa alteração adicional.
+- PR #16 permanece Draft, aberto e não merged; `main` intacta.
+
+### Próxima ação
+Aguardar CI do head atualizado. Se aprovado, executar o inspetor local nos cinco pares RAW do Termux, apenas leitura e sem enviar dados ao GitHub. A presença do campo é apenas uma declaração no manifesto, não prova a legitimidade da associação carteira↔transação.

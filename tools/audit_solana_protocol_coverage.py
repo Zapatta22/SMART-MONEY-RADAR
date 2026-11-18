@@ -13,9 +13,10 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import TOKEN_P
 from smart_money_radar.domain.program_registry import PROGRAMS_BY_ID
 
 
-# Escopo real dos decoders presentes nesta branch. Não equivale a suporte integral
-# de todas as instruções de cada programa.
-BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"\n\nDECODER_SCOPE = {
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+# Escopo real dos decoders presentes nesta branch; não significa suporte integral.
+DECODER_SCOPE = {
     RAYDIUM_CPMM_PROGRAM_ID: "Raydium CPMM: swap_base_input/output estrutural",
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA": "SPL Token: Transfer/TransferChecked",
     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb": "Token-2022: Transfer/TransferChecked",
@@ -91,11 +92,12 @@ def _inspect_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     counts: dict[str, int] = {}
     supported: dict[str, int] = {}
+    profiles: dict[tuple[Any, ...], int] = {}
     unknown_count = 0
     unresolved_count = 0
     total = 0
 
-    def add(instruction: Any) -> None:
+    def add(instruction: Any, source: str) -> None:
         nonlocal unknown_count, unresolved_count, total
         total += 1
         program_id = _program_id(instruction, keys)
@@ -109,19 +111,45 @@ def _inspect_payload(payload: dict[str, Any]) -> dict[str, Any]:
         counts[spec.name] = counts.get(spec.name, 0) + 1
         if program_id in DECODER_SCOPE:
             supported[spec.name] = supported.get(spec.name, 0) + 1
+        if spec.venue or spec.kind == "aggregator":
+            decoded = _decode_base58(instruction.get("data"))
+            prefix = decoded[:8].hex() if decoded else "unavailable"
+            accounts = instruction.get("accounts")
+            account_count = len(accounts) if isinstance(accounts, list) else None
+            stack_height = instruction.get("stackHeight")
+            if isinstance(stack_height, bool) or not isinstance(stack_height, int) or stack_height < 1:
+                stack_height = None
+            profile = (
+                spec.name, source, prefix,
+                len(decoded) if decoded is not None else None,
+                account_count, stack_height,
+            )
+            profiles[profile] = profiles.get(profile, 0) + 1
 
     for instruction in outer:
-        add(instruction)
+        add(instruction, "top_level")
     for group in inner_groups:
         if not isinstance(group, dict) or not isinstance(group.get("instructions"), list):
             raise ValueError("inner instruction group inválido")
         for instruction in group["instructions"]:
-            add(instruction)
+            add(instruction, "inner")
 
     return {
         "instruction_count": total,
         "registered_program_counts": dict(sorted(counts.items())),
         "decoder_scope_counts": dict(sorted(supported.items())),
+        "venue_instruction_profiles": [
+            {
+                "program": key[0],
+                "location": key[1],
+                "data_prefix_hex": key[2],
+                "data_length": key[3],
+                "account_count": key[4],
+                "stack_height": key[5],
+                "count": count,
+            }
+            for key, count in sorted(profiles.items(), key=lambda item: tuple(str(v) for v in item[0]))
+        ],
         "unregistered_program_instruction_count": unknown_count,
         "unresolved_program_instruction_count": unresolved_count,
     }

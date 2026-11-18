@@ -49,6 +49,13 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
     def tearDown(self):
         self.store.close()
 
+    def _swap(self):
+        return SimpleNamespace(
+            instruction_index=0,
+            inner_instruction_index=None,
+            cpi_path=(0,),
+        )
+
     def _bundle(self):
         operation_id = build_swap_operation_id(
             "solana", self.signature, 0, (0,)
@@ -91,10 +98,13 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self, build, reconcile, deltas, transfers, decode, normalize
     ):
         normalize.return_value = self.normalized
-        decode.return_value = [object()]
+        decode.return_value = [self._swap()]
         transfers.return_value = [object()]
         deltas.return_value = [object()]
-        reconcile.return_value = [SimpleNamespace(status="MATCHED")]
+        reconcile.return_value = [SimpleNamespace(
+            swap=self._swap(), status="MATCHED",
+            reason="All transfer and balance evidence reconciled.",
+        )]
         build.return_value = [self._bundle()]
 
         result = process_raydium_cpmm_observation(
@@ -109,6 +119,15 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         bundle = self._bundle()
         self.assertIsNotNone(self.store.get_swap_bundle(bundle.observation.operation_id))
         normalize.assert_called_once()
+        attempts = self.store.get_swap_reconciliation_attempts(
+            self.wallet, self.signature
+        )
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]["status"], "MATCHED")
+        self.assertEqual(
+            attempts[0]["reason"],
+            "All transfer and balance evidence reconciled.",
+        )
 
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
@@ -123,7 +142,10 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         decode.return_value = [object()]
         transfers.return_value = [object()]
         deltas.return_value = [object()]
-        reconcile.return_value = [SimpleNamespace(status="INCOMPLETE")]
+        reconcile.return_value = [SimpleNamespace(
+            swap=self._swap(), status="INCOMPLETE",
+            reason="Missing token-account delta.",
+        )]
         build.return_value = []
 
         result = process_raydium_cpmm_observation(
@@ -136,6 +158,12 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self.assertFalse(result.checkpoint_advanced)
         self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
         self.assertIsNone(self.store.get_checkpoint(self.wallet))
+        attempts = self.store.get_swap_reconciliation_attempts(
+            self.wallet, self.signature
+        )
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]["status"], "INCOMPLETE")
+        self.assertEqual(attempts[0]["reason"], "Missing token-account delta.")
 
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
@@ -230,6 +258,12 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self.assertEqual(result.unresolved_swaps, 1)
         self.assertFalse(result.checkpoint_advanced)
         self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+        attempts = self.store.get_swap_reconciliation_attempts(
+            self.wallet, self.signature
+        )
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]["status"], "UNRESOLVED")
+        self.assertIn("não retornou resultado", attempts[0]["reason"])
 
 
 if __name__ == "__main__":

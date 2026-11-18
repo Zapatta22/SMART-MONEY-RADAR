@@ -169,5 +169,42 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self.assertEqual(metadata["parse_status"], "parse_error")
 
 
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
+    def test_reconstruction_failure_sets_parse_error_and_keeps_checkpoint(
+        self, decode, normalize
+    ):
+        normalize.return_value = self.normalized
+        decode.side_effect = ValueError("malformed CPMM instruction")
+
+        with self.assertRaisesRegex(ValueError, "malformed CPMM instruction"):
+            process_raydium_cpmm_observation(
+                self.store, self.payload, wallet_address=self.wallet,
+                signature=self.signature,
+            )
+
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+        metadata = self.store.get_observation_metadata(self.wallet, self.signature)
+        self.assertEqual(metadata["parse_status"], "parse_error")
+        self.assertIn("malformed CPMM instruction", metadata["parse_error"])
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    def test_rejects_signature_mismatch_before_persistence(self, normalize):
+        payload = {
+            **self.payload,
+            "transaction": {
+                "signatures": ["another-signature"],
+                "message": {"accountKeys": [], "instructions": []},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "não corresponde"):
+            process_raydium_cpmm_observation(
+                self.store, payload, wallet_address=self.wallet,
+                signature=self.signature,
+            )
+        normalize.assert_not_called()
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+
+
 if __name__ == "__main__":
     unittest.main()

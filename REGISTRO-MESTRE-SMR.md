@@ -2436,3 +2436,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Causa identificada no teste: o DELETE manual em conexão SQLite compartilhada `:memory:` não era confirmado antes da próxima chamada, que inicia `BEGIN IMMEDIATE`. Corrigido envolvendo o DELETE em `with connection:`, garantindo commit/fechamento da transação do teste.
 - Commit da correção: `c1c87ae61517eb6e1550bb257fe300c9a4ed0f62`.
 - A correção ainda não foi executada em runtime. Reexecutar `test_swap_persistence.py`; se passar, prosseguir com os três testes focais restantes e compileall.
+
+
+## 154. Validação runtime parcial e novo diagnóstico de CI — PR #25 (18/11/2026)
+
+- HEAD de referência desta atualização: `357361c6dac197fe277fc47ec2a8ae38bd591ca6`; PR #25 permanece aberto, Draft, sem merge, com base `feat/damm-v2-swap-domain-adapter`. A branch `main` permanece preservada.
+- Resultado runtime informado pelo usuário no Termux após fast-forward para esse HEAD: `test_swap_persistence.py` passou integralmente, **23 testes OK**. A execução anterior de `test_event_store.py` já havia passado com **26 testes OK**. Esses resultados são evidência runtime local para os dois módulos, não aprovação da suíte completa.
+- Ainda não há resultado runtime para `test_damm_v2_fixture_collector.py`, `test_raydium_cpmm_persistence_pipeline.py`, `test_wallet_monitor.py`, `compileall` ou suíte completa.
+- CI no HEAD: workflow `SMR tests`, run #916 (`44331026593`) terminou `failure`. A consulta do job `134895145577` retornou `steps=null` e `logs_url=null`; portanto não há evidência de checkout, instalação, unittest ou compileall. Não classificar como falha de código nem aprovação; não repetir rerun sem diagnóstico de execução.
+- Revisão GitHub confirmou que o workflow contém etapas explícitas de checkout, Python 3.12, instalação, unittest completo e compileall, mas o run #916 não expôs execução dessas etapas.
+- Próxima ação de validação: continuar a revisão estática pelo GitHub dos três módulos de teste restantes e das respectivas implementações; buscar um caminho de CI executável antes de declarar testes aprovados. A fixture RAW mainnet continua bloqueada até validação runtime focada e suíte completa. Não alterar `main` nem fazer merge do PR #25.

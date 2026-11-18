@@ -172,3 +172,14 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - **Validação:** 104 testes passaram antes desses reforços. A CI para o HEAD atualizado ainda precisa ser consultada; não declarar os novos testes aprovados até confirmação.
 - PR #3 continua draft e não deve ser mesclado antes da CI atualizada e revisão de compatibilidade/migração.
 - Próxima ação: confirmar CI no HEAD mais recente; depois revisar migração de tabelas caso alguma base de desenvolvimento já tenha criado a versão anterior sem FK. Em seguida, avançar para a transferência dos módulos Raydium locais.
+
+## 19. Atualização 2026-11-18 — CI final e PR limpo
+
+- O reforço de chave estrangeira inicialmente revelou um teste falhando: a tabela `swap_observations` ainda não tinha a FK composta para `observed_transactions`. A causa foi corrigida no esquema; não mascaramos nem removemos o teste.
+- Após a correção, CI aprovou **106 testes** e `python -m compileall -q src tests` no commit `8d014c4c742c49ef0b64722408fb2ea2efbe62e7`.
+- Para eliminar a divergência de base causada por uma atualização documental que avançou a `main`, foi criada a branch limpa `feat/swap-contract-persistence-clean` a partir do HEAD atual da `main` (`5060bc65ddf181a4736fdb662c44c3fec0dd7259`).
+- A branch limpa reaplicou o EventStore, testes e Registro Mestre. Comparação antes da atualização final: 3 commits à frente, 0 atrás; somente os arquivos do escopo de persistência/registo alterados.
+- PR #3 foi fechado sem merge por estar baseado no HEAD anterior. PR #4 aberto como draft, baseado na `main` atual: [PR #4 — atomic SQLite swap persistence](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/4).
+- CI também aprovou a branch limpa: **106 testes aprovados** e compileall aprovado no commit `1de587f904e7d5882758e8765bb80ee03bdd89f6`. Execução: [GitHub Actions](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44218148305).
+- PR #4 permanece draft e não mesclado. A implementação de persistência está validada, mas ainda não recebe operações reconstruídas pelo parser.
+- Próxima etapa técnica: revisão/porte dos módulos locais Raydium e integração do reconciliador com `save_swap_bundle()`. Não declarar suporte Raydium nem fixtures mainnet validadas antes disso.

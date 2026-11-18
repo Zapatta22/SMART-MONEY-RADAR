@@ -38,6 +38,7 @@ def _decimal_amount(amount_raw: int, decimals: int) -> Decimal:
 
 
 def _classify(
+    operation_id: str,
     input_mint: str,
     output_mint: str,
     reference_mints: set[str],
@@ -47,20 +48,20 @@ def _classify(
     output_is_reference = output_mint in reference_mints
     if input_is_reference and not output_is_reference:
         return SwapClassification(
-            operation_id="",
+            operation_id=operation_id,
             side="BUY",
             confidence=Decimal("1"),
             reason="Ativo de entrada pertence à lista configurada de referência; saída é o ativo adquirido.",
         )
     if output_is_reference and not input_is_reference:
         return SwapClassification(
-            operation_id="",
+            operation_id=operation_id,
             side="SELL",
             confidence=Decimal("1"),
             reason="Ativo de saída pertence à lista configurada de referência; entrada é o ativo vendido.",
         )
     return SwapClassification(
-        operation_id="",
+        operation_id=operation_id,
         side="UNKNOWN",
         confidence=Decimal("0"),
         reason="Não há exatamente um lado de referência configurado para determinar BUY ou SELL.",
@@ -126,15 +127,10 @@ def build_swap_domain_bundles(
             parser_version=parser_version,
         )
         classification = _classify(
+            operation_id,
             accounts.input_token_mint,
             accounts.output_token_mint,
             quote_mints,
-        )
-        classification = SwapClassification(
-            operation_id=operation_id,
-            side=classification.side,
-            confidence=classification.confidence,
-            reason=classification.reason,
         )
         evidence = SwapEvidence(
             operation_id=operation_id,
@@ -145,8 +141,8 @@ def build_swap_domain_bundles(
             evidence=(
                 f"input_transfer:{item.input_transfer.instruction_index}:{item.input_transfer.inner_instruction_index}",
                 f"output_transfer:{item.output_transfer.instruction_index}:{item.output_transfer.inner_instruction_index}",
-                f"input_token_account:{accounts.input_token_account}:delta_raw={item.input_transfer.amount_raw}",
-                f"output_token_account:{accounts.output_token_account}:delta_raw={item.output_transfer.amount_raw}",
+                f"input_token_account:{accounts.input_token_account}:transfer_amount_raw={item.input_transfer.amount_raw}",
+                f"output_token_account:{accounts.output_token_account}:transfer_amount_raw={item.output_transfer.amount_raw}",
                 f"pool_state:{accounts.pool_state}",
                 f"input_vault:{accounts.input_vault}",
                 f"output_vault:{accounts.output_vault}",

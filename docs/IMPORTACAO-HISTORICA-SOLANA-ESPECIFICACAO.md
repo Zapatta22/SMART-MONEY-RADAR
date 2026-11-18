@@ -194,3 +194,33 @@ Após CI, executar novamente localmente nos RAW originais. Compartilhar somente 
 ### 15. CI dos fingerprints
 
 O CI run 44251053718 (#393), para o commit funcional ab6a09522d4347f53e474082188cd926e90872a3, concluiu com sucesso: 259 testes unitários e compileall aprovados.
+
+
+## 15. Resultado dos fingerprints e validação documental inicial de DAMM v2 (18/11/2026)
+
+A execução local no clone PR16 atualizado até `65c03c8c423302a89c09ea6a4de29b78396c3c1d` auditou novamente os cinco manifestos: cinco auditados, zero inválidos e zero programas não resolvidos. O auditor confirmou ausência de rede, banco, gravação e alteração de checkpoints.
+
+### Perfis observados
+
+| Programa/localização | Prefixo | Comprimento | Contas | Stack height | Ocorrências |
+|---|---|---:|---:|---:|---:|
+| DAMM v2 / top-level | `f8c69e91e17587c8` | 24 | 14 | 1 e 2 | 2 |
+| DAMM v2 / inner | `e445a52e51cb9a1d` | 196 | 1 | 2 e 3 | 2 |
+
+O prefixo top-level é igual aos primeiros oito bytes de SHA-256 de `global:swap`, discriminador Anchor da instrução `swap`. A documentação Meteora lista `swap` como caminho legacy exact-in e `swap2` como caminho atual que aceita ExactIn, PartialFill e ExactOut. O discriminador Anchor de `global:swap2` é `414b3f4ceb5b5b88`, não observado nos perfis top-level recebidos.
+
+A documentação de eventos Meteora informa que a maioria dos eventos é emitida por event CPI e que `EvtSwap2` é emitido por `swap` e `swap2`. Contudo, o prefixo inner observado `e445a52e51cb9a1d` não corresponde ao discriminador Anchor calculado para `event:EvtSwap2` (`bd4233a826507599`). Portanto, a instrução inner permanece sem identificação; não a interpretar como EvtSwap2 nem como swap.
+
+O prefixo `e445...` também aparece sob programas Jupiter v6 e Meteora DLMM e com outros comprimentos. A coincidência não demonstra semântica comum, porque o programa, o contexto CPI e a estrutura completa são parte da identidade da instrução.
+
+### Requisitos para o decoder DAMM v2
+
+1. Fixar a versão/commit do IDL oficial correspondente ao programa mainnet no período das transações; registrar proveniência e hash do IDL.
+2. Confirmar layout de `swap` e `swap2`, discriminadores, argumentos, enum de modo e ordem/semântica das contas antes de implementar parser.
+3. Identificar o payload inner `e445...` a partir do IDL e da origem do CPI; até lá classificá-lo como `UNRESOLVED`.
+4. Separar instrução de execução, event CPI e transferências Token/SPL/Token-2022; nunca contar os três como swaps separados.
+5. Reconstruir input/output por operação e reconciliar deltas das token accounts/vaults, considerando transfer fees e taxas do protocolo.
+6. Criar fixtures sintéticas redigidas e testes positivos/negativos para instrução top-level, CPI, evento, swap2, modos, Token-2022, dados truncados, identidade CPI e múltiplos swaps.
+7. Só produzir `SwapObservation` após reconciliação econômica; manter dados insuficientes como `INCOMPLETE` e direção sem mint de referência como `UNKNOWN`.
+
+A evidência atual confirma chamada top-level compatível com `swap` legacy, mas não prova por si só a operação econômica completa nem direção BUY/SELL. Não há decoder DAMM v2 implementado nesta etapa. Nenhum RAW foi enviado ao GitHub; não houve acesso a SQLite, importação, RPC, Helius, checkpoint ou execução on-chain.

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from smart_money_radar.domain.models import build_swap_operation_id
+from smart_money_radar.data_sources.transaction_parser import PARSER_VERSION
 from smart_money_radar.domain.normalization import normalize_transaction
 from smart_money_radar.data_sources.damm_v2_transaction_pipeline import (
     process_damm_v2_transaction,
@@ -69,9 +70,22 @@ def process_damm_v2_observation(
     ):
         raise ValueError("A assinatura informada não corresponde ao payload RPC.")
 
-    normalized = normalize_transaction(
-        payload, wallet_address, signature, observed_at=timestamp
-    )
+    try:
+        normalized = normalize_transaction(
+            payload, wallet_address, signature, observed_at=timestamp
+        )
+    except Exception as exc:
+        store.save_observation(
+            wallet_address,
+            signature,
+            payload,
+            [],
+            parse_status="parse_error",
+            parser_version=PARSER_VERSION,
+            parse_error=type(exc).__name__,
+            advance_checkpoint=False,
+        )
+        raise
     store.save_observation(
         wallet_address,
         signature,

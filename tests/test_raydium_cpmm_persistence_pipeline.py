@@ -26,7 +26,7 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self.signature = "signature-pipeline"
         self.payload = {
             "meta": {"err": None},
-            "transaction": {"message": {"accountKeys": [], "instructions": []}},
+            "transaction": {"signatures": [self.signature], "message": {"accountKeys": [], "instructions": []}},
             "blockTime": 1794960000,
             "slot": 123,
         }
@@ -214,6 +214,56 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         metadata = self.store.get_observation_metadata(self.wallet, self.signature)
         self.assertEqual(metadata["parse_status"], "parse_error")
         self.assertEqual(metadata["parse_error"], "ValueError")
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    def test_rejects_missing_primary_signature_before_persistence(self, normalize):
+        payload = {
+            **self.payload,
+            "transaction": {
+                "message": {"accountKeys": [], "instructions": []},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "primeira assinatura"):
+            process_raydium_cpmm_observation(
+                self.store, payload, wallet_address=self.wallet,
+                signature=self.signature,
+            )
+        normalize.assert_not_called()
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    def test_rejects_secondary_signature_before_persistence(self, normalize):
+        payload = {
+            **self.payload,
+            "transaction": {
+                "signatures": ["primary-signature", self.signature],
+                "message": {"accountKeys": [], "instructions": []},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "primeira assinatura"):
+            process_raydium_cpmm_observation(
+                self.store, payload, wallet_address=self.wallet,
+                signature=self.signature,
+            )
+        normalize.assert_not_called()
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    def test_rejects_duplicate_signatures_before_persistence(self, normalize):
+        payload = {
+            **self.payload,
+            "transaction": {
+                "signatures": [self.signature, self.signature],
+                "message": {"accountKeys": [], "instructions": []},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "primeira assinatura"):
+            process_raydium_cpmm_observation(
+                self.store, payload, wallet_address=self.wallet,
+                signature=self.signature,
+            )
+        normalize.assert_not_called()
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
 
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
     def test_rejects_signature_mismatch_before_persistence(self, normalize):

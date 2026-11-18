@@ -24,7 +24,7 @@ Com epoch explicitamente fornecido: selecionar newer se epoch >= newer_transfer_
 
 ## Fail-closed e limites
 
-Rejeita tipo de conta incorreto, dados base truncados, TLV truncado, extensão alvo ausente/duplicada, tamanho inesperado e basis points acima de 10.000. Extensões desconhecidas válidas são ignoradas pelo comprimento TLV. Padding zero é aceito.
+Rejeita tipo de conta incorreto, dados base truncados, cabeçalho/payload TLV truncados, extensão alvo ausente/duplicada, tamanho inesperado e basis points acima de 10.000. Extensões desconhecidas válidas são ignoradas pelo comprimento TLV. O tipo `Uninitialized` (0) encerra a lista de extensões; uma cauda final de um byte é tolerada conforme o iterador oficial Token-2022 (pode ocorrer durante realocação). Padding zero é aceito.
 
 Authorities são mantidas opacas. O withheld_amount lido isoladamente não prova a taxa de uma transferência. Saldos pre/post representam spendable, não withheld. Transferência bruta, crédito líquido, delta spendable e withheld precisam ser reconciliados por operação sem movimentos concorrentes desconhecidos.
 

@@ -358,6 +358,29 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("não atribuídas", result.reason)
 
+    def test_rejects_duplicate_swap_identity_even_with_distinct_transfers(self):
+        second_input = _transfer(
+            "user-a", "vault-a", "mint-a", 100, fee=5, inner=3, path=(0, 1)
+        )
+        second_output = _transfer(
+            "vault-b", "user-b", "mint-b", 90, fee=0, inner=4, path=(0, 2)
+        )
+        second_evidence = _evidence(
+            self.context, second_input, second_output
+        )
+        result = _reconcile(
+            [self.context, self.context],
+            [self.evidence, second_evidence],
+            _deltas([
+                ("user-a", "mint-a", -200, 6),
+                ("vault-a", "mint-a", 190, 6),
+                ("vault-b", "mint-b", -180, 6),
+                ("user-b", "mint-b", 180, 6),
+            ]),
+        )
+        self.assertEqual(result.status, "AMBIGUOUS")
+        self.assertIn("identidade de swap", result.reason)
+
     def test_rejects_transfer_reuse(self):
         result = _reconcile(
             [self.context, self.context],

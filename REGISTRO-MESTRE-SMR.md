@@ -2618,3 +2618,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Isso valida em runtime o caminho específico de backfill/CAS anteriormente bloqueado. Ainda não valida a classe completa `WalletMonitor`.
 - Próxima ação: executar isoladamente `test_websocket_notification_overlapping_backfill_is_deduplicated`, pois foi o teste que impediu a bateria anterior de apresentar resumo final. Não repetir o teste de checkpoint já aprovado.
 - PR #25 permanece aberto, Draft, sem merge; branch `feat/damm-v2-transaction-pipeline` baseada em `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 173. Correção do fixture de sobreposição WebSocket/backfill — 18/11/2026
+
+- O teste isolado `test_websocket_notification_overlapping_backfill_is_deduplicated` foi executado no Termux com limite de 20 segundos, mas não apresentou resultado final; a execução entrou em reconexões progressivas (1, 2, 4, 8 e 16 segundos). Portanto, o teste não foi considerado aprovado.
+- A inspeção do teste identificou a causa: o fixture de `get_signatures_for_address_async` não informava os slots das assinaturas e a transação simulada também não continha `slot`. O backfill exige slot inteiro válido para executar `advance_checkpoint_in_order`; sem esse dado, a recuperação falhava antes de consumir a notificação WebSocket, provocando reconexões sucessivas.
+- Correção aplicada somente ao fixture em `tests/test_wallet_monitor.py`: assinatura nova com slot 901, checkpoint anterior com slot 900 e transação simulada com `slot = 901`. Nenhuma regra de produção foi alterada.
+- Commit: `13b0c64b5ec03350f04dc2147fc9b91ecb398996` — `Fix overlap backfill test slot fixture`.
+- Estado: correção registrada no branch `feat/damm-v2-transaction-pipeline`; aguarda execução isolada no Termux. Não declarar o teste aprovado até receber saída final `OK`.

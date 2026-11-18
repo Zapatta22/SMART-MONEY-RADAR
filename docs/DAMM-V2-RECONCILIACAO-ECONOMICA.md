@@ -204,3 +204,16 @@ Definições: G_in = included_transfer_fee_amount_in; N_in = included_fee_input_
 - Para taxas cobradas no output, o accounting de reserva inclui componentes AMM além da transferência principal. A igualdade de deltas do vault com a transferência principal isolada não é um invariante válido.
 
 Essas relações foram derivadas do código fixado, mas ainda precisam ser implementadas como testes sintéticos com arredondamento, ambos os sentidos, três modos e todas as combinações de FeeMode. Nenhum reconciliador foi implementado; nenhum RAW foi alterado ou enviado.
+
+### 12.8 Confirmação da semântica withheld no Token-2022
+
+A documentação oficial Solana confirma que TransferChecked também aplica automaticamente a TransferFeeConfig e retém a taxa na extensão TransferFeeAmount da conta de destino. TransferCheckedWithFee é outra variante que permite validar uma taxa informada pelo chamador; ela não é obrigatória para reconhecer uma transferência DAMM v2 porque a implementação fixada usa TransferChecked.
+
+Consequências para o SMR:
+- O delta spendable do destinatário é o valor líquido; o withheld_amount é um campo separado da extensão da token account.
+- A diferença entre débito bruto e crédito spendable deve coincidir com a taxa calculada pela configuração de mint ativa no epoch da transação, e com a variação de withheld_amount atribuível àquela transferência.
+- Se houver mais de uma transferência para a mesma conta na transação, o withheld_amount final agregado não pode ser atribuído a uma transferência isolada sem estado anterior e sequência de instruções confiável.
+- O RPC getTransaction padrão não fornece snapshots arbitrários do estado bruto de mint/token accounts antes e depois da transação. Se os dados históricos necessários não estiverem disponíveis por uma fonte de estado indexada/confiável, o caso permanece INCOMPLETE; não reconstruir withheld por aproximação.
+- Não inferir o epoch/configuração histórica a partir da configuração atual do mint.
+
+Fonte oficial: https://solana.com/docs/tokens/extensions/transfer-fees

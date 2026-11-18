@@ -190,5 +190,128 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
         )
 
 
+    def test_partial_multi_bundle_write_retries_idempotently_after_second_bundle_failure(self):
+        from datetime import datetime, timezone
+        from decimal import Decimal
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from smart_money_radar.domain.models import (
+            SwapClassification, SwapEvidence, SwapObservation,
+            build_swap_operation_id,
+        )
+
+        observed_at = datetime(2026, 11, 18, tzinfo=timezone.utc)
+        bundles = []
+        associations = []
+        for instruction_index, cpi_path in ((2, (0,)), (3, (1,))):
+            operation_id = build_swap_operation_id(
+                "solana", "signature", instruction_index, cpi_path
+            )
+            observation = SwapObservation(
+                operation_id=operation_id,
+                chain="solana",
+                wallet_address="wallet",
+                signature="signature",
+                input_mint="input-mint",
+                output_mint="output-mint",
+                input_amount=Decimal("1.25"),
+                output_amount=Decimal("2.50"),
+                observed_at=observed_at,
+                parser_version="pipeline-retry-test",
+            )
+            classification = SwapClassification(
+                operation_id=operation_id,
+                side="UNKNOWN",
+                confidence=Decimal("0"),
+                reason="Direction is intentionally unclassified.",
+            )
+            evidence = SwapEvidence(
+                operation_id=operation_id,
+                program_id="damm-v2-program",
+                venue="Meteora DAMM v2",
+                instruction_index=instruction_index,
+                cpi_path=cpi_path,
+                evidence=("synthetic reconciled pipeline contract",),
+            )
+            bundles.append(SimpleNamespace(
+                observation=observation,
+                classification=classification,
+                evidence=evidence,
+            ))
+            associations.append(SimpleNamespace(
+                instruction=object(),
+                instruction_index=instruction_index,
+                cpi_path=cpi_path,
+                inner_instruction_index=0,
+                status="MATCHED",
+            ))
+
+        reconciled = SimpleNamespace(
+            status="RECONCILED",
+            reason="Both operations reconciled.",
+            associations=associations,
+            bundles=bundles,
+        )
+        original_save = self.store.save_swap_bundle
+        calls = 0
+
+        def fail_on_second_bundle_once(observation, classification, evidence):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("forced second bundle write failure")
+            return original_save(observation, classification, evidence)
+
+        with patch(
+            "smart_money_radar.domain.damm_v2_persistence_pipeline.process_damm_v2_transaction",
+            return_value=reconciled,
+        ), patch.object(
+            self.store,
+            "save_swap_bundle",
+            side_effect=fail_on_second_bundle_once,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "second bundle write failure"):
+                process_damm_v2_observation(
+                    self.store, _raw(), wallet_address="wallet",
+                    signature="signature", observed_at=observed_at,
+                )
+
+        first_id, second_id = [
+            bundle.observation.operation_id for bundle in bundles
+        ]
+        self.assertIsNotNone(self.store.get_swap_bundle(first_id))
+        self.assertIsNone(self.store.get_swap_bundle(second_id))
+        self.assertFalse(
+            self.store.has_processed_signature("wallet", "signature")
+        )
+        self.assertIsNone(self.store.get_checkpoint("wallet"))
+        self.assertEqual(
+            self.store.get_pending_signatures("wallet"), ["signature"]
+        )
+
+        retry = process_damm_v2_observation(
+            self.store, _raw(), wallet_address="wallet",
+            signature="signature", observed_at=observed_at,
+        )
+
+        self.assertEqual(retry.status, "reconciled")
+        self.assertTrue(retry.ready_for_next_venue)
+        self.assertEqual(retry.decoded_swaps, 2)
+        self.assertEqual(retry.reconciled_swaps, 2)
+        self.assertEqual(retry.saved_bundles, 1)
+        self.assertIsNotNone(self.store.get_swap_bundle(first_id))
+        self.assertIsNotNone(self.store.get_swap_bundle(second_id))
+        self.assertFalse(
+            self.store.has_processed_signature("wallet", "signature")
+        )
+        self.assertIsNone(self.store.get_checkpoint("wallet"))
+        attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(attempts), 4)
+        self.assertTrue(all(item["status"] == "MATCHED" for item in attempts))
+
+
 if __name__ == "__main__":
     unittest.main()

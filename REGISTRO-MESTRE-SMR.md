@@ -2760,3 +2760,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commit do teste: `dd75e64b9bf1092af3f4e2bc76bf9cb80f177cfe`. A validação CI deste commit ainda precisa concluir.
 - Interpretação: teste caracteriza o comportamento seguro atual e impede uma falsa reconciliação. Não implementa ainda associação multi-swap; a produção continua fail-closed. Próximo passo após CI: desenhar e implementar resolução em lote que associe funding top-level a cada swap/CPI de forma inequívoca, com testes positivos e negativos.
 - Nenhuma ordem, BUY/SELL, checkpoint ou merge habilitado.
+
+
+## 187. Funding wSOL agregado por conta em lote multi-swap — 18/11/2026
+
+- Implementação em `solana_wrapped_sol_funding.py`: decoder agora aceita uma ou mais transferências top-level SystemProgram da mesma source_wallet para a mesma token_account, soma os valores, exige que todas ocorram antes de um único SyncNative e que esse SyncNative ocorra antes do primeiro swap. Rejeita transferências envolvendo a conta com origem/destino divergente, ausência/duplicidade de SyncNative, divergência de soma e delta de lamports não zero. Evidência preserva `system_transfer_indices` e índice do SyncNative.
+- Implementação em `damm_v2_economic_reconciliation.py`: agrupa inputs NATIVE_MINT por token account, soma os valores brutos e chama o decoder uma única vez por conta, antes do primeiro swap que usa essa conta. O crédito de funding agregado é aplicado uma única vez ao delta esperado, evitando duplicação por operação.
+- Teste de integração sintético atualizado: duas operações sequenciais usando a mesma conta wSOL, dois SystemProgram transfers de 100, um SyncNative antes dos swaps, total funding 200; espera RECONCILED e uma evidência com índices (0, 1). Teste unitário adicional cobre transferências múltiplas + um SyncNative. Teste de funding duplicado com soma divergente continua rejeitado.
+- Commits de produção/testes: `95c16acd2ccf43213c43f6aead192690109c8b09`, `9a555c17d708402adf705da0c7fbece9731f58dd`, `ffc82421dec327dbcec634effc11fbb261bd2f1d`, `6dbb8c51ee95388e4ac2b82efe12d51870f05d25`.
+- Estado: CI para os novos commits ainda não foi confirmada. A cobertura é sintética; não substitui fixture mainnet real de transação multi-swap wSOL. A regra deliberadamente suporta apenas um SyncNative único após todos os funding transfers e antes do primeiro swap; padrões diferentes permanecem rejeitados.
+- Nenhuma ordem, BUY/SELL, checkpoint ou merge habilitado.

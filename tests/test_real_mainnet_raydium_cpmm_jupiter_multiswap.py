@@ -131,6 +131,20 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         self.assertEqual(bundles[0].observation.output_amount, Decimal("1.390888"))
         self.assertEqual(bundles[0].classification.side, "UNKNOWN")
 
+        # With an explicitly configured reference mint, the same observed
+        # direction is classified relative to that quote asset.
+        sell_bundles = build_swap_domain_bundles(
+            reconciliations,
+            chain="solana",
+            signature=self.manifest["signature"],
+            monitored_wallet=wallet,
+            observed_at=datetime.fromtimestamp(result["blockTime"], tz=timezone.utc),
+            parser_version="smr-real-mainnet-jupiter-multiswap-v1",
+            reference_mints={swaps[0].accounts.output_token_mint},
+        )
+        self.assertEqual(len(sell_bundles), 1)
+        self.assertEqual(sell_bundles[0].classification.side, "SELL")
+
 
 if __name__ == "__main__":
     unittest.main()

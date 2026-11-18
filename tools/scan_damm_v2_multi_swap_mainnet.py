@@ -87,6 +87,7 @@ def scan(
     inspected = 0
     candidates = []
     failures = Counter()
+    failure_samples = []
     for item in signatures:
         signature = item.get("signature") if isinstance(item, dict) else None
         if not isinstance(signature, str) or not signature:
@@ -104,7 +105,14 @@ def scan(
             except Exception as exc:
                 fetch_errors.append(f"{type(exc).__name__}: {str(exc)[:100]}")
         if raw is None:
-            failures["; ".join(fetch_errors) or "transação indisponível"] += 1
+            reason = "; ".join(fetch_errors) or "transação indisponível"
+            failures[reason] += 1
+            if len(failure_samples) < 10:
+                failure_samples.append({
+                    "signature": signature,
+                    "slot": item.get("slot") if isinstance(item, dict) else None,
+                    "error": reason,
+                })
             continue
 
         inspected += 1
@@ -199,6 +207,7 @@ def scan(
                         "status": "FOUND_SHARED_WSOL_MULTI_SWAP",
                         "inspected": inspected,
                         "failures": dict(failures),
+                        "failure_samples": failure_samples,
                         "signature_rpc": "primary" if signature_rpc == endpoints[0] else "fallback",
                         "candidate": candidate,
                     }
@@ -211,7 +220,14 @@ def scan(
                         "candidate": candidate,
                     }
         except Exception as exc:
-            failures[f"análise {type(exc).__name__}: {str(exc)[:100]}"] += 1
+            reason = f"análise {type(exc).__name__}: {str(exc)[:100]}"
+            failures[reason] += 1
+            if len(failure_samples) < 10:
+                failure_samples.append({
+                    "signature": signature,
+                    "slot": raw.get("slot"),
+                    "error": reason,
+                })
 
     return {
         "status": (
@@ -221,6 +237,7 @@ def scan(
         ),
         "inspected": inspected,
         "failures": dict(failures),
+        "failure_samples": failure_samples,
         "signature_rpc": "primary" if signature_rpc == endpoints[0] else "fallback",
         "multi_swap_candidates": candidates,
     }

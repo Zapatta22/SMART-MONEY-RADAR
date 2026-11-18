@@ -255,6 +255,7 @@ class WalletMonitor:
 
     async def _backfill_wallet(self, wallet_address: str, stop_event: asyncio.Event) -> None:
         """Recupera assinaturas posteriores ao último checkpoint, em ordem cronológica."""
+        initial_checkpoint = self.event_store.get_checkpoint(wallet_address)
         pending_limit = self.backfill_page_limit * self.backfill_max_pages
         pending = self.event_store.get_pending_signatures(
             wallet_address, limit=pending_limit + 1
@@ -273,9 +274,12 @@ class WalletMonitor:
                     "Recuperação de observação pendente interrompida; checkpoint preservado."
                 )
 
+        if initial_checkpoint is None:
+            # Na primeira execução, recupera somente observações já arquivadas;
+            # não inicia varredura histórica ampla sem autorização.
+            return
         checkpoint = self.event_store.get_checkpoint(wallet_address)
         if checkpoint is None:
-            # Na primeira execução não varrer o histórico inteiro sem autorização.
             return
         collected: list[dict[str, Any]] = []
         before: str | None = None

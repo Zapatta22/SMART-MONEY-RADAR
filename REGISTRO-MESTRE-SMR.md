@@ -1194,3 +1194,14 @@ CI da alteração adicional aprovado. O PR #16 permanece Draft. Próxima ação 
 - Acompanhar CI; corrigir falhas se existirem.
 - Após CI aprovado, orientar execução local no clone PR16 apontando para os RAW originais, sem fornecer/compartilhar mapeamento de carteira.
 - Analisar o relatório redigido. Associação e cobertura de protocolo permanecem decisões humanas; nenhuma persistência está autorizada.
+
+
+## 63. CI aprovado do planejador offline — 2026-11-18
+
+- Head validado: `0c493b51fc98f5453f5b3763b0aeee48631464a6`.
+- Workflow `SMR tests`, run `44249986290` (run 372): concluído com sucesso.
+- Job `test`: instalação concluída; **255 testes passaram** (`Ran 255 tests ... OK`); `python -m compileall -q src tests` concluído com sucesso.
+- A suíte inclui os seis testes novos do planejador: carteira ausente, associação explícita, hash divergente, falha on-chain, manifesto symlink e mapa inválido.
+- PR #16 continua Draft, aberto, não merged, mergeable; `main` intacta.
+- Próxima ação: executar o planejador no clone PR16 contra os RAW originais, sem mapa de carteiras inicialmente. Isso deve retornar `WALLET_UNASSIGNED` para os cinco casos e confirmar o relatório local sem expor identificadores.
+- Não criar/abrir SQLite, não enviar RAW nem mapa ao GitHub, não importar, não migrar, não avançar checkpoint, não iniciar RPC/Helius ou execução on-chain.

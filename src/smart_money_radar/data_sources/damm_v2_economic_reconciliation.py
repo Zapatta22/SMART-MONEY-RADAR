@@ -474,7 +474,7 @@ def reconcile_damm_v2_economic_batch(
             )
         return DammV2EconomicReconciliation(
             "RECONCILED", len(contexts), tuple(expected_rows),
-            "transferências input/output/referral, funding wSOL quando aplicável, "
+            "transferências input/output/referral, funding ou lifecycle wSOL quando aplicável, "
             "e deltas agregados por token account conferem com EvtSwap2",
             tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
         )

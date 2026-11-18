@@ -162,6 +162,26 @@ class HeliusRpcTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             source.get_signatures_for_address("public-wallet", limit=1001)
 
+    def test_signatures_request_rejects_boolean_limit(self) -> None:
+        source = HeliusDataSource(self.settings, opener=lambda *_args, **_kwargs: None)
+        with self.assertRaisesRegex(ValueError, "inteiro"):
+            source.get_signatures_for_address("public-wallet", limit=True)
+
+    def test_signatures_request_rejects_invalid_pagination_cursor(self) -> None:
+        source = HeliusDataSource(self.settings, opener=lambda *_args, **_kwargs: None)
+        with self.assertRaisesRegex(ValueError, "before"):
+            source.get_signatures_for_address("public-wallet", before=" ")
+
+    def test_transaction_request_rejects_empty_signature(self) -> None:
+        source = HeliusDataSource(self.settings, opener=lambda *_args, **_kwargs: None)
+        with self.assertRaisesRegex(ValueError, "assinatura Solana"):
+            source.get_transaction(" ")
+
+    def test_activity_request_rejects_boolean_limit(self) -> None:
+        source = HeliusDataSource(self.settings, opener=lambda *_args, **_kwargs: None)
+        with self.assertRaisesRegex(ValueError, "inteiro"):
+            source.get_activity("public-wallet", limit=True)
+
 
 if __name__ == "__main__":
     unittest.main()

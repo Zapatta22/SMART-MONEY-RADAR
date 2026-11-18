@@ -8,6 +8,10 @@ on:
       - "tools/inspect_token_2022_transfer_fee_config.py"
       - "tools/scan_damm_v2_multi_swap_mainnet.py"
       - "tools/inspect_damm_v2_instruction_shapes.py"
+      - "tools/inspect_solana_transaction_position.py"
+      - "tools/audit_token2022_referral_fee_historically.py"
+      - "src/smart_money_radar/data_sources/helius_historical_account.py"
+      - "src/smart_money_radar/data_sources/solana_transaction_position.py"
       - ".github/workflows/damm-v2-mainnet-validation.yml"
       - "src/smart_money_radar/data_sources/damm_v2_*.py"
       - "src/smart_money_radar/data_sources/solana_token_*.py"
@@ -67,6 +71,10 @@ jobs:
         env:
           SMR_DAMM_V2_INSPECT_SIGNATURE: 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9
         run: PYTHONPATH=src:tools python tools/inspect_damm_v2_instruction_shapes.py --signature "$SMR_DAMM_V2_INSPECT_SIGNATURE"
+      - name: Resolve exact transaction index for blocked Token-2022 referral case
+        env:
+          SMR_POSITION_SIGNATURE: 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9
+        run: PYTHONPATH=src:tools python tools/inspect_solana_transaction_position.py --signature "$SMR_POSITION_SIGNATURE" --slot 471107341
       - name: Validate Mainnet legacy swap with zero padding
         env:
           SMR_DAMM_V2_SIGNATURE: 5ujkLBVBSF8EcQxKAnv3ie4hc5adBUBr8GYCRdfwYcdAank2dbcoA9ustGoUKUwrDDixrkrEVTBSwHFRfET8QtQT

@@ -709,8 +709,9 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - O relatório devolve a contagem total de pendências e até 100 detalhes para evitar resposta sem limite.
 - Testes adicionados para agregação de status/motivos/pendências, filtros e ordenação de consultas, além de validação de parâmetros.
 - Commits iniciais: implementação `5e0ad5ebf11ae594083a49f5a55aab381f025b40`; testes `21be683b949443c40dadeeb0a3a658e990a866e8`. A documentação foi atualizada em commit separado nesta branch.
-- **Validação pendente:** ainda não há resultado de CI observado para o head do PR #15; não declarar os novos testes aprovados até a conclusão do workflow.
-- PR #15 permanece Draft; PR #14 permanece Draft; PR #13 e PR #4 permanecem abertos; nenhum merge foi executado e a `main` permanece intacta.
+- CI de código/testes no commit `21be683b949443c40dadeeb0a3a658e990a866e8`: run `44238405072` success, **227 testes OK** e `python -m compileall -q src tests` aprovado. Commits posteriores nesta branch alteraram somente documentação/registro; o código e os testes executados são os mesmos do commit validado.
+- Para permitir CI em PRs empilhados com base `integration/**`, o workflow `.github/workflows/smr-tests.yml` foi ampliado na branch do PR #14; PR #14 CI run `44238553367` passou com **224 testes OK** e compileall aprovado. Essa mudança não altera o código do pipeline.
+- PR #15 permanece Draft e aberto; PR #14 permanece Draft e aberto; PR #13 e PR #4 permanecem abertos; nenhum merge foi executado e a `main` permanece intacta.
 - Nenhuma transação on-chain, assinatura, compra ou venda foi executada.
 
 ### Próxima ação

@@ -106,6 +106,14 @@ def build_damm_v2_swap_domain_bundles(
             or not isinstance(association.cpi_path, tuple)
             or any(isinstance(part, bool) or not isinstance(part, int) or part < 0
                    for part in association.cpi_path)
+            or (
+                association.inner_instruction_index is not None
+                and (
+                    isinstance(association.inner_instruction_index, bool)
+                    or not isinstance(association.inner_instruction_index, int)
+                    or association.inner_instruction_index < 0
+                )
+            )
             or isinstance(association.stack_height, bool)
             or not isinstance(association.stack_height, int)
             or association.stack_height < 1
@@ -116,6 +124,8 @@ def build_damm_v2_swap_domain_bundles(
             or not isinstance(association.event_stack_height, int)
             or association.event_stack_height != association.stack_height + 1
             or not isinstance(association.event_cpi_path, tuple)
+            or any(isinstance(part, bool) or not isinstance(part, int) or part < 0
+                   for part in association.event_cpi_path)
             or len(association.event_cpi_path) != len(association.cpi_path) + 1
             or association.event_cpi_path[:-1] != association.cpi_path
             or (
@@ -129,6 +139,7 @@ def build_damm_v2_swap_domain_bundles(
             raise ValueError("transferências não estão ATTRIBUTED")
         if (
             item.instruction_index != association.instruction_index
+            or item.inner_instruction_index != association.inner_instruction_index
             or item.cpi_path != association.cpi_path
             or item.input_transfer is None
             or item.output_transfer is None

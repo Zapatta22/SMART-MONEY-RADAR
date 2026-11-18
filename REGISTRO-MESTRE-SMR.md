@@ -2366,3 +2366,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Para o mesmo `operation_id`, dois bundles divergentes disputados simultaneamente devem produzir uma gravação nova e uma rejeição, preservando o bundle vencedor. Isso exercita o bloqueio obtido por `BEGIN IMMEDIATE`, não apenas o comportamento sequencial.
 - Commits de teste: `98cddab2d5c3cff86c0872a949761e353dbf9030` (bundles) e `9fa31a0f6ace1ad329b16b3c9f74537d9ac2d782` (RAW); documentação `f2f2ded8b8edaa6eb2fda47a46a5f5436ace3726`.
 - Revisão estática; os testes concorrentes ainda precisam ser executados no Termux/runner funcional. Nenhum RAW ou banco persistente foi alterado.
+
+
+## 146. CI sem execução de etapas após hardening de concorrência — PR #25 (18/11/2026)
+
+- HEAD avaliado: `fcf207938d38b3099d562929802afdfbbbd1bfff`.
+- Workflow `SMR tests`, run #884 (`44328496652`), terminou `failure`; job `134886166955` terminou `failure`, mas `steps=[]` e `logs_url=null`. A consulta direta de steps também retornou lista vazia.
+- Não há evidência de checkout, instalação, unittest, compileall ou execução de qualquer comando do projeto. Portanto, o resultado não prova falha de código nem aprovação dos novos testes concorrentes.
+- Não foi disparado retry automático, pois o runner não forneceu etapas/logs para diagnóstico.
+- Próxima validação executável: atualizar clone Termux da branch `feat/damm-v2-transaction-pipeline`, rodar testes focais de EventStore, bundles, coletor e WalletMonitor; em seguida executar `compileall` e suíte completa. A fixture RAW mainnet permanece pendente e não deve ser coletada até os testes locais passarem.

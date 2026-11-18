@@ -71,19 +71,20 @@ class HistoricalReferralFeeAuditTests(unittest.TestCase):
                 "tools.audit_token2022_referral_fee_historically.decode_transfer_fee_amount",
                 side_effect=[
                     SimpleNamespace(withheld_amount=50),
-                    SimpleNamespace(withheld_amount=70),
+                    SimpleNamespace(withheld_amount=80),
                 ],
             ),
         ):
             result = audit(
                 "https://rpc.example", "https://helius.example",
-                "signature", 471107341, "mint", "referral-account", [1000],
+                "signature", 471107341, "mint", "referral-account", [1000, 500],
             )
         self.assertEqual(result["status"], "HISTORICAL_FEE_MATCH")
         self.assertEqual(result["transaction_index"], 6)
         self.assertEqual(result["selected_rate"]["basis_points"], 200)
-        self.assertEqual(result["expected_fee_raw"], 20)
-        self.assertEqual(result["withheld_delta_raw"], 20)
+        self.assertEqual(result["expected_fee_per_transfer_raw"], [20, 10])
+        self.assertEqual(result["expected_fee_raw"], 30)
+        self.assertEqual(result["withheld_delta_raw"], 30)
         self.assertFalse(result["reconciliation_released"])
 
     def test_audit_rejects_changed_mint_config(self):

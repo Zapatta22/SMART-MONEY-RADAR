@@ -135,7 +135,7 @@ def process_damm_v2_observation(
             signature,
             len(swap_associations),
             0,
-            len(swap_associations),
+            max(1, len(swap_associations)),
             0,
             False,
         )

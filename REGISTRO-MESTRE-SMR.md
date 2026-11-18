@@ -2309,3 +2309,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Teste adicionado confirmando que o slot RPC de uma transação falhada fica gravado no checkpoint.
 - Commits: EventStore `548175d93e324c16ef25e7126c8550c592940703`; WalletMonitor `10f6cd9b35914e257783d55bda75f116f7a56e76`; teste `94cddbf1c506b0ece2665de4ebdf4733615519dc`.
 - Revisão estática/releitura GitHub concluídas; runtime unittest/compileall ainda pendentes.
+
+## 139. Migração dos slots de checkpoints legados — PR #25 (18/11/2026)
+
+- A coluna `wallet_checkpoints.slot` é adicionada incrementalmente; bancos já existentes podem ter `observed_transactions.slot` preenchido para a assinatura do checkpoint. Sem backfill da nova coluna, a primeira notificação antiga poderia substituir o cursor antes que o novo slot fosse conhecido.
+- Migração agora recupera o slot do registro `observed_transactions` correspondente ao checkpoint existente, sem modificar assinatura, RAW ou dados processados.
+- Teste de migração cria esquema legado com checkpoint e observação slot 1200 e confirma a recuperação do slot após inicialização.
+- Commits: fonte `d632a07d28af9613c6729ef4218bd9bbd19b8ed4`; teste `4ddcf30387afb10ed3a3f39b43c0f657459177f8`.
+- Runtime unittest/compileall ainda pendentes.

@@ -121,6 +121,20 @@ def main() -> int:
         "reconciliation_status": (
             output.reconciliation.status if output.reconciliation else None
         ),
+        "wrapped_sol_fundings": [
+            {
+                "token_account": item.token_account,
+                "source_wallet": item.source_wallet,
+                "amount_raw": item.amount_raw,
+                "system_transfer_index": item.system_transfer_index,
+                "sync_native_index": item.sync_native_index,
+                "lamports_delta_raw": item.lamports_delta_raw,
+            }
+            for item in (
+                output.reconciliation.wrapped_sol_fundings
+                if output.reconciliation else ()
+            )
+        ],
         "bundles": len(output.bundles),
         "classification_sides": [item.classification.side for item in output.bundles],
         "expected_account_deltas": [

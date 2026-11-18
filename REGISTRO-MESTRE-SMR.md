@@ -2183,3 +2183,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Adicionado teste de regressão com dois swaps decodificados e duas respostas MATCHED duplicadas para o primeiro; o segundo é registrado UNRESOLVED e o checkpoint não avança.
 - Commits: pipeline `faa53c65eba293e81707a6c3584e2f51ab5de684`; teste `1d79b5b701f757c72ff516e36f1b17309b794ac2`.
 - Revisão estática; execução runtime/compileall pendente. PR #25 Draft; main e estado persistente preservados.
+
+
+## 125. Bundles CPMM vinculados exatamente aos swaps MATCHED — PR #25 (18/11/2026)
+
+- Após exigir identidade um-para-um na reconciliação, a auditoria avançou até o construtor/persistência de bundles. A checagem anterior de cardinalidade também não garantia que os bundles correspondiam aos swaps MATCHED: um builder poderia devolver o mesmo bundle duas vezes, omitindo outro swap, e ainda manter o mesmo tamanho da lista.
+- O pipeline agora calcula o conjunto esperado de `operation_id` diretamente dos swaps MATCHED e compara com os bundles produzidos. Exige IDs únicos, conjunto exato, chain Solana, carteira monitorada, assinatura solicitada e consistência dos operation IDs entre observation/classification/evidence. Divergência mantém a transação pendente e bloqueia checkpoint.
+- Adicionado teste de regressão com dois swaps MATCHED e builder que devolve bundle A duas vezes, omitindo B; o pipeline permanece pendente.
+- Commits: pipeline `eb45db263ca39176f12b479e0960516ad003760b`; teste `de732ebe754eeeb07eea38776986e17eb53d1f22`.
+- Revisão estática; runtime/compileall pendentes. Nenhuma gravação persistente real ou chamada RPC foi realizada.

@@ -261,3 +261,27 @@ Nenhum RAW foi enviado ao GitHub; nenhuma importação, banco, RPC/Helius, check
 - Fonte oficial de eventos: https://github.com/MeteoraAg/docs/blob/main/developer-guides/damm-v2/program/events.mdx. Fonte de instruções: https://github.com/MeteoraAg/docs/blob/main/developer-guides/damm-v2/program/instructions.mdx.
 - Não gerar SwapObservation somente a partir do evento: associar o Event CPI à instrução swap e reconciliar transferências SPL/Token-2022 e deltas de token accounts/vaults, inclusive transfer fees.
 - Nenhum RAW foi enviado ao GitHub; não houve importação, SQLite, RPC/Helius, checkpoint ou operação on-chain.
+
+## 18. Confirmação local de EvtSwap2 nos RAW originais (18/11/2026)
+
+A execução local do usuário no clone PR16 atualizou a branch por fast-forward até `59fd946`, executou os quatro testes de `test_protocol_coverage_audit.py` (todos aprovados) e auditou os cinco manifestos RAW: cinco auditados, zero inválidos e zero programas não resolvidos.
+
+| Fixture (índice redigido) | Programa | Discriminador | Evento | Tamanho | Contas | Stack height | Ocorrências |
+|---:|---|---|---|---:|---:|---:|---:|
+| 1 | Meteora DAMM v2 | `bd4233a826507599` | EvtSwap2 | 196 | 1 | 2 | 1 |
+| 3 | Meteora DAMM v2 | `bd4233a826507599` | EvtSwap2 | 196 | 1 | 3 | 1 |
+
+Portanto, **dois Event CPI DAMM v2 EvtSwap2 foram confirmados nos dados RAW reais**. Na fixture 3, a instrução DAMM v2 de 24 bytes aparece no stack height 2 e o evento EvtSwap2 no stack height 3. A auditoria não determina sozinha o vínculo econômico nem autoriza contar o evento como outro swap.
+
+Os perfis Event CPI Jupiter v6 e Meteora DLMM continuam `UNKNOWN`. Os cinco RAW foram auditados sem rede, SQLite, escrita ou checkpoint; nenhum dado sensível foi compartilhado.
+
+### Próximo contrato de decoder DAMM v2
+
+1. Decodificar separadamente a instrução de swap e o evento CPI, validando programa, discriminador, tamanho e hierarquia.
+2. Associar evento e instrução pelo grupo de instruções internas, stack height e ordem CPI, preservando identidade única da operação.
+3. Interpretar `swap_mode` (0 ExactIn, 1 PartialFill, 2 ExactOut); em ExactOut, `amount_0` é output desejado e `amount_1` input máximo. Parâmetros e resultado do evento não substituem transferências realmente executadas.
+4. Reconciliar transferências SPL/Token-2022 e deltas de token accounts/vaults, incluindo taxas de transferência e taxas do protocolo.
+5. Produzir `SwapObservation` somente após reconciliação econômica; dados insuficientes permanecem `INCOMPLETE`, direção sem mint de referência explícito permanece `UNKNOWN`.
+6. Criar testes sintéticos para ExactIn, PartialFill, ExactOut, eventos desconhecidos, payload truncado, múltiplos swaps, hierarquia CPI inválida e Token-2022 fees.
+
+Não integrar este decoder ao pipeline CPMM existente sem um adaptador DAMM v2 separado e testes próprios. Nenhum banco, importação, RPC/Helius, checkpoint ou operação on-chain foi executado.

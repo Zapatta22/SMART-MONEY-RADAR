@@ -230,9 +230,10 @@ class WalletMonitor:
                     return False
                 if not damm_result.ready_for_next_venue:
                     self._logger.warning(
-                        "Transação permanece pendente no DAMM v2: %d/%d swap(s) reconciliados; checkpoint preservado.",
+                        "Transação permanece pendente no DAMM v2: %d/%d swap(s) reconciliados; %d pendência(s); checkpoint preservado.",
                         damm_result.reconciled_swaps,
                         damm_result.decoded_swaps,
+                        damm_result.unresolved_swaps,
                     )
                     return False
                 try:

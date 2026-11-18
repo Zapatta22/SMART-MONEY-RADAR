@@ -156,7 +156,7 @@ def reconcile_damm_v2_economic_batch(
         raise TypeError("all_transfers contém transferência inválida")
     if len({id(transfer) for transfer in all_transfers}) != len(all_transfers):
         return DammV2EconomicReconciliation(
-            "INCOMPLETE", len(contexts), (),
+            "AMBIGUOUS", len(contexts), (),
             "inventário de transferências contém referência duplicada",
         )
     if not balance_deltas.complete:
@@ -236,8 +236,16 @@ def reconcile_damm_v2_economic_batch(
             if len(set(transfers)) != len(transfers) or any(
                 transfer in claimed_transfers for transfer in transfers
             ):
-                raise ValueError("transferência reutilizada entre papéis/operações")
+                raise RuntimeError("transferência reutilizada entre papéis/operações")
             claimed_transfers.update(transfers)
+
+            if (
+                event.included_transfer_fee_amount_out
+                != event.swap_result.output_amount
+            ):
+                raise ValueError(
+                    "included_transfer_fee_amount_out diverge do output_amount do EvtSwap2"
+                )
 
             accounts = context.accounts
             input_transfer = item.input_transfer
@@ -353,7 +361,7 @@ def reconcile_damm_v2_economic_batch(
         actual: dict[str, object] = {}
         for delta in balance_deltas.deltas:
             if delta.token_account in actual:
-                raise ValueError("token account aparece em mais de um delta")
+                raise RuntimeError("token account aparece em mais de um delta")
             actual[delta.token_account] = delta
 
         expected_rows = []
@@ -384,6 +392,10 @@ def reconcile_damm_v2_economic_batch(
             "RECONCILED", len(contexts), tuple(expected_rows),
             "transferências input/output/referral e deltas agregados por token account "
             "conferem com EvtSwap2 para o lote completo de operações",
+        )
+    except RuntimeError as exc:
+        return DammV2EconomicReconciliation(
+            "AMBIGUOUS", len(contexts), (), str(exc)
         )
     except (TypeError, ValueError) as exc:
         return DammV2EconomicReconciliation(

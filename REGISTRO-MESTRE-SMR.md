@@ -2257,3 +2257,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Testes adicionados para timeout booleano, NaN, Infinity, inteiro excessivamente grande, zero, negativo e API key de tipo inválido. Overflow ao avaliar finitude de inteiros gigantes é convertido em `SettingsError`.
 - Commits: settings `db819ced08e3dbf9f4851405b83129d0615f6b40` e `d27d604c251881750c473f820833aa03044f5330`; testes `41ca7f2af36174e829b2c4237d83774bc569cd26` e `87fc209218ed46730e5920c81ec8a5ec3750ec29`.
 - Revisão estática; unittest/compileall pendentes. Nenhuma autorização de rede ou chamada externa foi ativada.
+
+
+## 133. Validação estrita de parâmetros do WalletMonitor — PR #25 (18/11/2026)
+
+- O construtor aceitava booleanos como números em retries/backfill e valores NaN/Infinity em parâmetros temporais; `stable_session_seconds` não tinha validação explícita. Esses valores podiam gerar comportamento imprevisível ou falhas tardias em `range`, `sleep` e backfill.
+- WalletMonitor agora exige parâmetros temporais numéricos finitos (sem booleanos), backoff inicial positivo, máximo não inferior ao inicial, sessão estável e retry inicial não negativos; tentativas e limites de paginação exigem inteiros não booleanos positivos, com page limit até 1000.
+- Helper trata overflow de inteiros gigantes como valor inválido. Teste cobre backoff booleano, máximo infinito, sessão NaN, retry booleano e limites booleanos.
+- Commits: construtor `b65d6be329519f42ab13d15da1db07714f74ae66`, helper overflow `810dd2ff550c0b90f3aace95e1151ab0de768f0e`, testes `853d640238268ac85c4b4ff01f2a023d5e5ce14b`.
+- Revisão estática; unittest/compileall pendentes. Nenhum serviço remoto ativado.

@@ -110,7 +110,7 @@ class RpcFixtureCollectorTests(unittest.TestCase):
     def test_rejects_non_base58_or_wrong_length_signature_before_network(self):
         opener = Mock()
         collector = RpcFixtureCollector("https://rpc.example", tempfile.mkdtemp(), opener=opener)
-        for invalid in ("../" + SIG, "0" * 64, "abc"):
+        for invalid in ("../" + SIG, "0" * 64, "abc", "2" * 89):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 collector.collect(invalid)
         opener.assert_not_called()

@@ -60,6 +60,7 @@ def process_raydium_cpmm_observation(
     signature: str,
     reference_mints: tuple[str, ...] | list[str] = (),
     observed_at: datetime | None = None,
+    advance_checkpoint: bool = True,
 ) -> RaydiumCpmmPipelineResult:
     """Arquiva, reconcilia e persiste uma transação Solana observada.
 
@@ -77,6 +78,8 @@ def process_raydium_cpmm_observation(
         raise ValueError("signature é obrigatória.")
     if not isinstance(reference_mints, (tuple, list)):
         raise TypeError("reference_mints deve ser uma lista ou tupla.")
+    if not isinstance(advance_checkpoint, bool):
+        raise TypeError("advance_checkpoint deve ser bool.")
     timestamp = observed_at or datetime.now(timezone.utc)
     payload = _rpc_payload(raw_transaction)
     transaction = payload.get("transaction")
@@ -119,7 +122,7 @@ def process_raydium_cpmm_observation(
 
     meta = payload.get("meta")
     if isinstance(meta, dict) and meta.get("err") is not None:
-        store.mark_processed(wallet_address, signature)
+        store.mark_processed(wallet_address, signature, advance_checkpoint=advance_checkpoint)
         return RaydiumCpmmPipelineResult(
             "failed_on_chain", signature, 0, 0, 0, 0, True
         )
@@ -127,7 +130,7 @@ def process_raydium_cpmm_observation(
     try:
         swaps = decode_raydium_cpmm_swaps(payload)
         if not swaps:
-            store.mark_processed(wallet_address, signature)
+            store.mark_processed(wallet_address, signature, advance_checkpoint=advance_checkpoint)
             return RaydiumCpmmPipelineResult(
                 "no_cpmm_swaps", signature, 0, 0, 0, 0, True
             )
@@ -278,7 +281,7 @@ def process_raydium_cpmm_observation(
                 False,
             )
 
-        store.mark_processed(wallet_address, signature)
+        store.mark_processed(wallet_address, signature, advance_checkpoint=advance_checkpoint)
         return RaydiumCpmmPipelineResult(
             "processed",
             signature,

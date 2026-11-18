@@ -114,6 +114,12 @@ class SQLiteEventStoreTests(unittest.TestCase):
                 normalized_observation=normalized,
                 advance_checkpoint=False,
             )
+        with store._connection_scope() as connection:
+            with connection:
+                connection.executemany(
+                    "INSERT INTO processed_signatures(wallet_address, signature) VALUES (?, ?)",
+                    [(wallet, "sig-first"), (wallet, "sig-second")],
+                )
         store.advance_checkpoint_in_order(
             wallet, "sig-first", 800, expected_previous_signature="sig-base"
         )

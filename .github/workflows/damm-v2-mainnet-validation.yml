@@ -42,4 +42,4 @@ jobs:
       - name: Validate known real Mainnet transaction
         run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
       - name: Scan recent Mainnet transactions for shared-wSOL multi-swap
-        run: PYTHONPATH=src:tools python tools/scan_damm_v2_multi_swap_mainnet.py --limit 30
+        run: PYTHONPATH=src:tools python tools/scan_damm_v2_multi_swap_mainnet.py --limit 100

@@ -97,7 +97,29 @@ def _account_keys(message: dict, meta: dict) -> list[str]:
             raise ValueError("accountKeys contém chave inválida")
         keys.append(key)
     if not parsed:
-        loaded = meta.get("loadedAddresses") or {}
+        lookups = message.get("addressTableLookups", [])
+        if not isinstance(lookups, list):
+            raise ValueError("message.addressTableLookups inválido")
+        loaded = meta.get("loadedAddresses")
+        expected = {"writable": 0, "readonly": 0}
+        if lookups:
+            if not isinstance(loaded, dict):
+                raise ValueError(
+                    "meta.loadedAddresses ausente para mensagem com addressTableLookups"
+                )
+            for lookup in lookups:
+                if not isinstance(lookup, dict):
+                    raise ValueError("addressTableLookup inválido")
+                for field in ("writable", "readonly"):
+                    indexes = lookup.get(field + "Indexes")
+                    if not isinstance(indexes, list) or any(
+                        isinstance(index, bool) or not isinstance(index, int) or index < 0
+                        for index in indexes
+                    ):
+                        raise ValueError(f"addressTableLookup.{field}Indexes inválido")
+                    expected[field] += len(indexes)
+        else:
+            loaded = loaded or {}
         if not isinstance(loaded, dict):
             raise ValueError("meta.loadedAddresses inválido")
         for field in ("writable", "readonly"):
@@ -106,6 +128,10 @@ def _account_keys(message: dict, meta: dict) -> list[str]:
                 not isinstance(value, str) or not value for value in values
             ):
                 raise ValueError(f"loadedAddresses.{field} inválido")
+            if lookups and len(values) != expected[field]:
+                raise ValueError(
+                    f"loadedAddresses.{field} não corresponde à quantidade de índices da lookup table"
+                )
             keys.extend(values)
     return keys
 
@@ -192,6 +218,9 @@ def process_damm_v2_transaction(
             or signature not in signatures
         ):
             raise ValueError("signature não corresponde às assinaturas do payload")
+        # Resolver accountKeys antes da análise evita concluir "sem swap"
+        # quando programIdIndex depende de endereços ALT ausentes/incompletos.
+        keys = _account_keys(message, meta)
         associations = tuple(analyze_damm_v2_swap_events(raw_transaction))
         if not associations:
             return DammV2TransactionPipelineResult(
@@ -212,7 +241,6 @@ def process_damm_v2_transaction(
         if any(item.event is None for item in associations):
             raise ValueError("associação MATCHED sem EvtSwap2")
 
-        keys = _account_keys(message, meta)
         contexts = []
         for association in associations:
             instruction = _instruction_for_association(

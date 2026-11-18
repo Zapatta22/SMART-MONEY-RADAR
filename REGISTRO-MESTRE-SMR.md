@@ -3132,3 +3132,24 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - **Ainda não houve consulta histórica real**: faltam identificar o mint exato da transferência de referral e o `transactionIndex` da assinatura `2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9`, além de endpoint Helius com acesso ao beta. O cliente implementado ainda não está integrado ao pipeline econômico.
 - Nenhuma reconciliação foi liberada; o caso da seção 216 permanece bloqueado, sem bundle e sem checkpoint. PR #25 segue OPEN/DRAFT e sem merge; `main` intacta.
 - Próxima ação: validar CI #1219; em seguida obter `transactionIndex` e mint da transferência na transação bloqueada, executar a leitura histórica antes/depois e integrar o estado histórico ao cálculo de taxa sem aceitar configuração atual como prova.
+
+
+## 218. Localização determinística do transactionIndex — 18/11/2026
+
+- Criado `src/smart_money_radar/data_sources/solana_transaction_position.py` para consultar `getBlock` finalized e localizar a assinatura primária dentro da lista ordenada de transações, retornando índice zero-based do bloco.
+- O helper valida endpoint HTTPS, slot, assinatura, envelope JSON-RPC, lista de transações, assinatura primária e ausência de duplicidade. Suporta transações versionadas até v1.
+- Criado `tests/test_solana_transaction_position.py`, cobrindo índice zero-based, configuração da requisição, assinatura ausente/duplicada, resposta malformada, erro RPC e entradas inválidas.
+- CI #1224 (run `44419445767`) SUCCESS no commit `82215266ab171de5956fbc6223407ca5c6ed2217`; CI #1225 e #1226 foram disparados em commits subsequentes e seus estados devem ser consultados separadamente.
+- A descoberta do índice resolve uma entrada necessária para consultar o estado histórico imediatamente antes/depois da transação; ainda não foi obtida posição real da assinatura-alvo via RPC neste ambiente.
+
+
+## 219. Auditor histórico de TransferFeeConfig e withheld referral — 18/11/2026
+
+- Criado `tools/audit_token2022_referral_fee_historically.py`, ferramenta somente leitura que combina `getBlock`/transactionIndex, `getEpochSchedule`, Helius `getHistoricalAccountInfo`, decoder offline `TransferFeeConfig`/`TransferFeeAmount` e aritmética inteira de taxa.
+- A ferramenta consulta mint e referral token account antes e depois da transação, seleciona older/newer fee pelo epoch do slot, calcula a taxa esperada sobre o bruto e compara com o delta histórico de `withheld_amount` da conta referral. Se a configuração do mint mudar dentro da transação, se owners forem diferentes de Token-2022, se withheld diminuir ou se a taxa não coincidir, não reporta match.
+- A saída `HISTORICAL_FEE_MATCH` é apenas evidência de auditoria: `reconciliation_released` permanece false. A ferramenta não persiste bundles nem avança checkpoint.
+- Criados `tests/test_audit_token2022_referral_fee_historically.py` com cenários de epoch, match de withheld delta e mudança de configuração durante a transação.
+- A ferramenta exige `SMR_HELIUS_HISTORICAL_RPC_URL` ou `--historical-rpc-url`, além do RPC Solana padrão. Não há API key/segredo gravado no repositório.
+- CI #1227 (run `44419493138`) foi iniciado no HEAD `edf191f5a625ff0741577fcea1d7f13e7c91053e`; resultado ainda não confirmado no momento desta atualização.
+- **Pendência real:** executar a auditoria com a assinatura da seção 216, slot `471107341`, após obter mint, referral token account e bruto da transferência nos dados do validador, e dispor de endpoint Helius com acesso beta. Nenhum caso real foi reconciliado ainda; o bloqueio fail-closed continua.
+- PR #25 continua OPEN/DRAFT e sem merge; `main` intacta.

@@ -94,5 +94,32 @@ class HistoricalImportPlannerTests(unittest.TestCase):
                 build_plan(root, mapping)
 
 
+    def test_dry_run_is_redacted_and_does_not_modify_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = make_pair(root)
+            mapping = root / "wallet-map.json"
+            mapping.write_text(json.dumps({SIG: WALLET}))
+            before = {
+                item.name: hashlib.sha256(item.read_bytes()).hexdigest()
+                for item in root.iterdir() if item.is_file()
+            }
+            report = build_plan(root, mapping)
+            after = {
+                item.name: hashlib.sha256(item.read_bytes()).hexdigest()
+                for item in root.iterdir() if item.is_file()
+            }
+        self.assertEqual(before, after)
+        self.assertEqual(report["reports"], [{"index": 1, "status": "READY_FOR_REVIEW"}])
+        rendered = json.dumps(report)
+        self.assertNotIn(SIG, rendered)
+        self.assertNotIn(WALLET, rendered)
+        self.assertNotIn(str(manifest_path), rendered)
+        self.assertFalse(report["writes_files"])
+        self.assertFalse(report["database_access"])
+        self.assertFalse(report["network_access"])
+        self.assertFalse(report["checkpoint_changes"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -447,9 +447,11 @@ class SQLiteEventStore:
 
     def save_swap_bundle(
         self, observation: SwapObservation, classification: SwapClassification,
-        evidence: SwapEvidence,
+        evidence: SwapEvidence, *, replace_existing: bool = False,
     ) -> bool:
         """Grava os três contratos atomicamente; retorna True se for novo."""
+        if not isinstance(replace_existing, bool):
+            raise TypeError("replace_existing deve ser bool.")
         operation_id = observation.operation_id
         if not (classification.operation_id == evidence.operation_id == operation_id):
             raise ValueError("Os três contratos devem compartilhar o mesmo operation_id.")
@@ -469,9 +471,58 @@ class SQLiteEventStore:
                 ).fetchone()
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes do swap.")
-                existed = connection.execute(
-                    "SELECT 1 FROM swap_observations WHERE operation_id = ?", (operation_id,)
-                ).fetchone() is not None
+                existing = connection.execute(
+                    """SELECT chain, wallet_address, signature, input_mint, output_mint,
+                              input_amount, output_amount, parser_version
+                       FROM swap_observations WHERE operation_id = ?""",
+                    (operation_id,),
+                ).fetchone()
+                existing_classification = connection.execute(
+                    """SELECT side, confidence, reason FROM swap_classifications
+                       WHERE operation_id = ?""",
+                    (operation_id,),
+                ).fetchone()
+                existing_evidence = connection.execute(
+                    """SELECT program_id, venue, instruction_index, cpi_path_json, evidence_json
+                       FROM swap_evidence WHERE operation_id = ?""",
+                    (operation_id,),
+                ).fetchone()
+                existed = existing is not None
+                if existed and not replace_existing:
+                    if existing_classification is None or existing_evidence is None:
+                        raise RuntimeError(
+                            "Bundle existente incompleto; replay não pode repará-lo silenciosamente."
+                        )
+                    same_observation = (
+                        existing[0], existing[1], existing[2], existing[3], existing[4],
+                        existing[5], existing[6], existing[7],
+                    ) == (
+                        observation.chain, observation.wallet_address, observation.signature,
+                        observation.input_mint, observation.output_mint,
+                        str(observation.input_amount), str(observation.output_amount),
+                        observation.parser_version,
+                    )
+                    same_classification = (
+                        existing_classification[0], existing_classification[1],
+                        existing_classification[2],
+                    ) == (
+                        classification.side, str(classification.confidence),
+                        classification.reason,
+                    )
+                    same_evidence = (
+                        existing_evidence[0], existing_evidence[1], existing_evidence[2],
+                        existing_evidence[3], existing_evidence[4],
+                    ) == (
+                        evidence.program_id, evidence.venue, evidence.instruction_index,
+                        json.dumps(list(evidence.cpi_path), separators=(",", ":")),
+                        json.dumps(list(evidence.evidence), separators=(",", ":")),
+                    )
+                    if not (same_observation and same_classification and same_evidence):
+                        raise ValueError(
+                            "Bundle divergente para operation_id já persistido; "
+                            "use replace_existing=True somente em reprocessamento autorizado."
+                        )
+                    return False
                 connection.execute(
                     """INSERT INTO swap_observations
                        (operation_id, chain, wallet_address, signature, input_mint, output_mint,

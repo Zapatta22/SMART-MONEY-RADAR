@@ -126,6 +126,11 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
                 self.assertEqual(bundle["observation"].input_amount, Decimal("4484.029903"))
                 self.assertEqual(bundle["observation"].output_amount, Decimal("1.65074030"))
                 self.assertEqual(bundle["classification"].side, "UNKNOWN")
+                audit = store.get_swap_reconciliation_attempts(wallet, signature)
+                self.assertEqual(len(audit), 1)
+                self.assertEqual(audit[0]["status"], "MATCHED")
+                self.assertIn("reconciliados", audit[0]["reason"])
+
                 self.assertIn("input_token_account_delta_raw:0", bundle["evidence"].evidence)
                 self.assertIn("output_token_account_delta_raw:74030", bundle["evidence"].evidence)
                 self.assertIn("input_vault_delta_raw:4484029903", bundle["evidence"].evidence)

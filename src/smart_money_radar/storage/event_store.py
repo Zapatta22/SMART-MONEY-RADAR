@@ -266,6 +266,7 @@ class SQLiteEventStore:
         parse_error: str | None = None,
         normalized_observation: NormalizedObservation | None = None,
         advance_checkpoint: bool = True,
+        slot: int | None = None,
     ) -> int:
         """Persiste payload e contratos normalizados; checkpoint é opcional.
 
@@ -279,6 +280,10 @@ class SQLiteEventStore:
             raise ValueError("Estado de parsing e versão do parser são obrigatórios.")
         if not isinstance(advance_checkpoint, bool):
             raise TypeError("advance_checkpoint deve ser bool")
+        if slot is not None and (
+            isinstance(slot, bool) or not isinstance(slot, int) or slot < 0
+        ):
+            raise ValueError("slot deve ser inteiro não negativo ou None")
         if any(event.wallet_address != wallet_address or event.signature != signature for event in events):
             raise ValueError("Todos os eventos devem pertencer à observação informada.")
         if normalized_observation is not None:
@@ -289,6 +294,8 @@ class SQLiteEventStore:
                 raise ValueError("Eventos legados divergem do resultado normalizado.")
             if transaction is not None and envelope.raw_transaction != transaction:
                 raise ValueError("Payload normalizado diverge do payload bruto informado.")
+            if slot is not None and envelope.slot is not None and slot != envelope.slot:
+                raise ValueError("slot informado diverge do envelope normalizado.")
             parse_status = envelope.parse_status
             parser_version = envelope.parser_version
         payload_json = (
@@ -341,7 +348,7 @@ class SQLiteEventStore:
                     (wallet_address, signature, payload_json, parse_status,
                      parser_version, parse_error,
                      normalized_observation.transaction.chain if normalized_observation else None,
-                     normalized_observation.transaction.slot if normalized_observation else None,
+                     normalized_observation.transaction.slot if normalized_observation else slot,
                      normalized_observation.transaction.occurred_at.isoformat()
                      if normalized_observation and normalized_observation.transaction.occurred_at else None),
                 )

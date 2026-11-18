@@ -1931,3 +1931,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits adicionais: guarda CPI/programa `84036f22db67b0e68d2289a6c47885f13f897383`; teste `24135bbde0a6b2d7d04913370d66760a6f15182a`.
 - Nenhum teste foi executado por esta atualização GitHub; a validação runtime continua pendente.
 - PR #24 continua Draft, aberto e não integrado; PR #23 continua sendo sua base. `main` permanece intacta.
+
+
+## 101. Teste de integração do adaptador com persistência SQLite existente — PR #24 (18/11/2026)
+
+- A inspeção do branch-base PR #23 confirmou que `src/smart_money_radar/storage/event_store.py` já contém as tabelas `swap_observations`, `swap_classifications`, `swap_evidence`, além de `save_swap_bundle()` e `get_swap_bundle()`. A documentação anterior que descrevia a persistência como disponível apenas em branch isolada estava desatualizada em relação ao conteúdo efetivo do branch-base.
+- Confirmado também o teste `tests/test_swap_persistence.py` cobrindo round-trip Decimal, idempotência, atualização, rollback, FK/cascade e pré-requisitos do registro pai. A existência do teste não é declaração de execução nesta etapa.
+- Adicionado ao PR #24 teste de integração em banco SQLite `:memory:`: o adaptador produz o bundle, cria uma observação pai isolada e persiste/recupera os três contratos via EventStore, comparando os objetos completos.
+- O teste usa exclusivamente banco efêmero em memória; não abre nem altera banco persistente, arquivos RAW ou checkpoints reais.
+- Commit do teste de integração: `dec4726592f386fea53b01a12c282ad8c340a55a`; atualização documental: `61c92db828c282ad8634565ecf888fff47e32bf4`.
+- Execução de testes ainda pendente. CI #598 no commit anterior terminou sem etapas (`steps=[]`) e logs BlobNotFound; não há evidência de execução nem aprovação CI. Não repetir retries automáticos.
+- PR #24 continua Draft, aberto e sem merge. `main` permanece intacta.

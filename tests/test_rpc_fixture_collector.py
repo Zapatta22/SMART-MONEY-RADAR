@@ -64,6 +64,15 @@ class RpcFixtureCollectorTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "não confere"):
             collector.collect(SIG)
 
+    def test_rejects_non_null_rpc_error_even_when_empty_object(self):
+        payload = {"jsonrpc": "2.0", "id": 1, "error": {}, "result": None}
+        collector = RpcFixtureCollector(
+            "https://rpc.example", tempfile.mkdtemp(),
+            opener=Mock(return_value=FakeResponse(json.dumps(payload).encode())),
+        )
+        with self.assertRaisesRegex(RuntimeError, "Erro RPC"):
+            collector.collect(SIG)
+
     def test_rejects_null_result(self):
         collector = RpcFixtureCollector(
             "https://rpc.example", tempfile.mkdtemp(),

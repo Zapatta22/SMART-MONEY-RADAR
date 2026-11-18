@@ -385,7 +385,12 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
         self.assertEqual(len(attempts), 2)
         self.assertEqual([item["status"] for item in attempts], ["INCOMPLETE", "INCOMPLETE"])
         self.assertTrue(all("14 contas" in item["reason"] for item in attempts))
-        self.assertEqual(self.store.list_swap_bundles("wallet", "signature"), [])
+        from smart_money_radar.domain.models import build_swap_operation_id
+        for instruction_index, cpi_path in ((0, (0,)), (0, (2,))):
+            operation_id = build_swap_operation_id(
+                "solana", "signature", instruction_index, cpi_path
+            )
+            self.assertIsNone(self.store.get_swap_bundle(operation_id))
 
 
 if __name__ == "__main__":

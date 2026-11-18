@@ -109,6 +109,7 @@ def scan(endpoints: tuple[str, ...], limit: int) -> dict:
                 "slot": raw.get("slot"),
                 "matched_swap2_count": len(swaps),
                 "pipeline_status": result.status,
+                "pipeline_reason": result.reason,
                 "shared_wsol_input_accounts": len(shared_funding_accounts),
             }
             candidates.append(candidate)

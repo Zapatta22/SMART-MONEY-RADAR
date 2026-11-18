@@ -189,3 +189,8 @@ A auditoria de cobertura também produz venue_instruction_profiles para programa
 Os bytes após o prefixo, os índices e endereços das contas, valores, assinaturas e caminhos não são exibidos. O prefixo é uma impressão digital estrutural, não prova semântica de BUY/SELL nem substitui a validação contra IDL/documentação oficial. A quantidade de contas não identifica por si só o papel de cada conta.
 
 Após CI, executar novamente localmente nos RAW originais. Compartilhar somente o relatório redigido; não copiar payload bruto ou mapa de aliases para o chat/GitHub.
+
+
+### 15. CI dos fingerprints
+
+O CI run 44251053718 (#393), para o commit funcional ab6a09522d4347f53e474082188cd926e90872a3, concluiu com sucesso: 259 testes unitários e compileall aprovados.

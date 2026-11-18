@@ -136,6 +136,21 @@ def analyze_damm_v2_transfer_evidence(
                     ):
                         selected["referral"].append(transfer_index)
 
+        # A referral account may intentionally be the same token account as
+        # the user's input/output account. Once a transfer is uniquely identified
+        # as referral by fee-vault -> referral-account, do not also count it as
+        # the swap's principal input/output transfer.
+        referral_indexes = set(selected["referral"])
+        if referral_indexes:
+            selected["input"] = [
+                index for index in selected["input"]
+                if index not in referral_indexes
+            ]
+            selected["output"] = [
+                index for index in selected["output"]
+                if index not in referral_indexes
+            ]
+
         candidates.append(selected)
         for role, indexes in selected.items():
             for transfer_index in indexes:

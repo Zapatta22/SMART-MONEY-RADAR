@@ -2145,3 +2145,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Adicionado teste negativo específico para `id: true`.
 - Commits: cliente `ff1b04eaf076c91a8d84c445add6cac5320fefd7`; teste `1e9d010906bcfa065669d80641807c6b897efda8`.
 - Revisão estática; runtime/compileall pendentes. Nenhuma chamada RPC real. PR #25 Draft, sem merge e sem alterações em main/estado persistente.
+
+
+## 121. Envelope JSON-RPC do WebSocket logsSubscribe — PR #25 (18/11/2026)
+
+- Auditoria do WalletMonitor encontrou a mesma classe de coerção booleana no WebSocket: em Python, `True` pode equivaler à chave inteira `1`. IDs de requisição, IDs de assinatura e IDs de subscription recebidos em notificações agora rejeitam booleanos; identificadores precisam ser inteiros válidos.
+- Respostas de inscrição também precisam declarar `jsonrpc == "2.0"`; notificações com subscription ID inválido são ignoradas, sem associação acidental à carteira de outra inscrição.
+- Adicionados testes para versão JSON-RPC ausente, request ID booleano e subscription ID booleano.
+- Commits: WalletMonitor `5a689b522a47a4eca6402880c45b186be35ba536`, `3961a3f9d7db3ee14e41e8c289b125ec523171c1`, `252e34e7c1b5dba7fbd7f10e2e580b9f86631a9e`; testes `28383b0f737c75b67f316f6e20cf7ee5d664a693`, `ed5939f849d4e079b486e371e2591fd6d455aba2`.
+- Auditoria estática adicional de `_backfill_wallet`, `save_observation` e normalização: falhas on-chain no backfill são registradas como resultado conhecido e avançam checkpoint pelo padrão `advance_checkpoint=True`; observações pendentes são processadas antes do backfill histórico; ausência do checkpoint no limite configurado interrompe recuperação em vez de criar lacuna silenciosa. Não foi feita alteração nesses fluxos nesta rodada.
+- Sem execução runtime/compileall e sem conexão WebSocket/RPC real. PR #25 continua Draft; main, banco persistente, checkpoints e estado on-chain preservados.

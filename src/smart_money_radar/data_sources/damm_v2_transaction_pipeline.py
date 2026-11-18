@@ -278,7 +278,7 @@ def process_damm_v2_transaction(
             reconciliation=reconciliation,
             bundles=bundles,
         )
-    except (TypeError, ValueError, KeyError, IndexError) as exc:
+    except Exception as exc:
         return DammV2TransactionPipelineResult(
             "REJECTED",
             f"{type(exc).__name__}: {exc}",

@@ -1953,3 +1953,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits: reforço de vínculo CPI `09916957bc37eb71c1b480bd3da59dcdef35821a`; fixture com programa canônico `70ae114da9cf143d78ae2288852788f8ada7e4cc`; teste negativo `20a77ac331d0414835ea4168eb8d9e2801443c70`; endurecimento final de índices/identidade `80e3735b458c66dc63223c09b8fdba179fe49c7c`.
 - CI #602 (run `44310450270`) no commit documental anterior terminou `failure`; job `134822897989` retornou `steps=[]`, sem logs disponíveis. Não há evidência de checkout/testes/compileall; não classificar como falha de testes nem aprovação. Nenhum retry realizado.
 - Nenhum teste local foi executado nesta atualização GitHub. PR #24 permanece Draft, aberto e sem merge; `main` intacta.
+
+
+## 103. Estado consolidado do adaptador de domínio e CI #612 — PR #24 (18/11/2026)
+
+- HEAD de código/documentação do PR #24 nesta atualização: `b375caad55b6fc3fd2525e342733e046e02f1961`.
+- O adaptador agora exige identidade CPI tipada, stackHeight de evento exatamente um nível abaixo do swap, caminho do Event CPI descendente imediato, índice de evento posterior ao swap, Program ID canônico e identidade/descendência das transferências.
+- Testes de integração cobrem o round-trip do bundle pelo EventStore em SQLite `:memory:`; teste negativo cobre Event CPI com caminho que não descende do swap.
+- CI #612 (run `44310869715`) no commit `b375caad...`: job `134824365125` terminou failure antes das etapas; consulta retornou `steps=[]` e logs ausentes. Nenhum unittest/compileall foi executado pelo runner. Não classificar como falha de código nem aprovação.
+- CI #593, #598, #602 e #612 indicam indisponibilidade pré-etapas recorrente; não repetir retries automáticos.
+- Validação runtime do PR #24 continua pendente. A suíte 374/374 e compileall aprovados anteriormente pertencem ao HEAD de código/teste do PR #23 (`d6142ba...`), não cobrem o adaptador novo.
+- PR #24 permanece aberto, Draft e sem merge, empilhado sobre PR #23. Nenhuma alteração na `main`, banco persistente, RAW, checkpoints, RPC/Helius ou estado on-chain.

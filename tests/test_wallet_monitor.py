@@ -68,6 +68,15 @@ class FakeDataSource:
 
 
 class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_websocket_subscription_response_requires_json_rpc_2(self) -> None:
+        monitor = WalletMonitor.__new__(WalletMonitor)
+        with self.assertRaisesRegex(RuntimeError, "versão JSON-RPC 2.0"):
+            monitor._handle_subscription_response(
+                {"id": 1, "result": 42},
+                {1: "public-wallet"},
+                {},
+            )
+
     async def test_websocket_subscription_response_rejects_boolean_request_id(self) -> None:
         monitor = WalletMonitor.__new__(WalletMonitor)
         subscriptions: dict[int, str] = {}

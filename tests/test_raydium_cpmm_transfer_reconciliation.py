@@ -159,6 +159,19 @@ class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("exatamente uma", result.reason)
 
+    def test_inner_swap_rejects_transfer_with_untrusted_cpi_path(self):
+        transfers = _pair(path=(2, 0), height=4)
+        transfers[0] = SolanaTokenTransfer(
+            **{**transfers[0].__dict__, "cpi_path_valid": False}
+        )
+        result = reconcile_raydium_cpmm_swaps(
+            [_swap(path=(2,), inner_index=3, stack_height=3)],
+            transfers,
+            _deltas(),
+            monitored_wallet=WALLET,
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+
     def test_inner_swap_without_stack_height_is_not_reconciled(self):
         result = reconcile_raydium_cpmm_swaps(
             [_swap(path=(2,), inner_index=3, stack_height=None)],

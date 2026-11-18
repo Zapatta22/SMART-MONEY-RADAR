@@ -34,7 +34,7 @@ class HeliusSettingsTests(unittest.TestCase):
         )
 
     def test_rejects_non_finite_or_boolean_timeout(self) -> None:
-        for timeout in (True, float("nan"), float("inf"), 0, -1):
+        for timeout in (True, float("nan"), float("inf"), 10**10000, 0, -1):
             with self.subTest(timeout=timeout):
                 with self.assertRaisesRegex(SettingsError, "timeout RPC"):
                     HeliusSettings(

@@ -7,7 +7,9 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
-from smart_money_radar.domain.models import (\n    ActivityEvent, SwapClassification, SwapEvidence, SwapObservation, TokenBalanceDelta,\n)
+from smart_money_radar.domain.models import (
+    ActivityEvent, SwapClassification, SwapEvidence, SwapObservation, TokenBalanceDelta,
+)
 from smart_money_radar.domain.normalization import NormalizedObservation
 
 

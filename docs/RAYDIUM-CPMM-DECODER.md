@@ -25,3 +25,12 @@ Os argumentos decodificados não representam necessariamente os valores efetivam
 Os testes unitários deste módulo cobrem os dois discriminators, valores little-endian, programa não correspondente, instrução desconhecida, dados inválidos/truncados, as 13 contas-base e a preservação de contas adicionais.
 
 Os testes unitários sintéticos validam o contrato estrutural. Não constituem fixture real de mainnet nem aprovação de decoder em produção.
+
+
+## Referências técnicas consultadas
+
+- Raydium official CPMM instructions: https://github.com/raydium-io/raydium-docs-v1/blob/main/products/cpmm/instructions.mdx
+- Raydium CPMM on-chain implementation (SwapBaseOutput): https://github.com/raydium-io/raydium-cp-swap/blob/master/programs/cp-swap/src/instructions/swap_base_output.rs
+- Raydium CPMM SDK demo (swapBaseOut): https://github.com/raydium-io/raydium-sdk-V2-demo/blob/master/src/cpmm/swapBaseOut.ts
+
+A documentação oficial consultada confirma que SwapBaseInput e SwapBaseOutput usam as mesmas 13 contas-base e que o sentido input/output é orientado pelo usuário. O código on-chain de SwapBaseOutput confirma que o valor solicitado de output é ajustado por transfer-fee antes do cálculo, reforçando que os argumentos da instrução, isoladamente, não substituem a observação das transferências realmente executadas.

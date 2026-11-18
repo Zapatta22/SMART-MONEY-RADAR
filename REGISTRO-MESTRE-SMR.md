@@ -2427,3 +2427,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Teste `test_backfill_mode_marks_processed_without_advancing_checkpoint` atualizado para exigir `checkpoint_advanced=False` e depois comprovar o CAS separado.
 - Commits: implementação e teste em `033f0d2de6558762b9dd42bbc37dd391598d57db`; documentação atualizada neste registro.
 - Revisão estática; execução runtime pendente.
+
+
+## 153. Correção do isolamento transacional em teste SQLite — 18/11/2026
+
+- Execução Termux após fast-forward para HEAD `9d248f053f8fe16356d0cdec6d5c3cdf90bc4ae3`: `test_event_store.py` passou (26 testes). `test_swap_persistence.py` teve 1 erro e 22 testes passaram.
+- Erro: `sqlite3.OperationalError: cannot start a transaction within a transaction` em `test_incomplete_existing_bundle_is_not_silently_repaired`.
+- Causa identificada no teste: o DELETE manual em conexão SQLite compartilhada `:memory:` não era confirmado antes da próxima chamada, que inicia `BEGIN IMMEDIATE`. Corrigido envolvendo o DELETE em `with connection:`, garantindo commit/fechamento da transação do teste.
+- Commit da correção: `c1c87ae61517eb6e1550bb257fe300c9a4ed0f62`.
+- A correção ainda não foi executada em runtime. Reexecutar `test_swap_persistence.py`; se passar, prosseguir com os três testes focais restantes e compileall.

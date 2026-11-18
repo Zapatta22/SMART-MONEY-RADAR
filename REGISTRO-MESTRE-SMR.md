@@ -1906,3 +1906,61 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Conclusão: suíte local completa e compileall aprovados no Termux. Validação CI remota permanece bloqueada por ausência de runner provisionado. Não fazer retry repetido sem mudança/diagnóstico do ambiente.
 - Próximas pendências: (1) atualizar o texto desatualizado da descrição do PR para refletir a validação local e o estado CI; (2) investigar provisionamento do runner sem mascarar a falha; (3) após CI ou plano alternativo de validação acordado, executar auditoria RAW controlada com evidência mainnet apropriada. Só depois avaliar integração econômica com `SwapObservation`.
 - Nenhuma alteração em `main`, RAW fixtures, SQLite persistente, checkpoints, RPC/Helius ou estado on-chain. PR #23 permanece Draft e não integrado.
+
+
+## 99. Primeiro adaptador DAMM v2 → contratos de domínio — PR #24 (18/11/2026)
+
+- Criada branch `feat/damm-v2-swap-domain-adapter` a partir do HEAD validado documentalmente do PR #23: `947c056e01bfc7b22037e19e3600a5248a29e281`. PR #24 aberto em Draft, base `feat/damm-v2-economic-reconciliation`; não integrado.
+- Implementado `src/smart_money_radar/data_sources/damm_v2_swap_domain_adapter.py`, que converte o lote DAMM v2 já reconciliado em três contratos independentes: `SwapObservation`, `SwapClassification` e `SwapEvidence`, ligados por `operation_id` determinístico.
+- Guarda principal: só aceita resultado `RECONCILED`, snapshots completos e cardinalidade idêntica entre contextos, evidências e operações.
+- A carteira monitorada só é aceita quando o campo `owner` dos deltas da token account de origem do input e da token account de destino do output coincide com o endereço monitorado.
+- Semântica econômica explícita: input é débito bruto `included_transfer_fee_amount_in`; output é crédito spendable líquido `excluded_transfer_fee_amount_out`. Conversão para `Decimal` usa decimals dos transfers.
+- `SwapClassification` permanece `UNKNOWN`, confiança zero. A direção A→B/B→A não basta para definir ativo-base/quote ou BUY/SELL.
+- Testes novos em `tests/test_damm_v2_swap_domain_adapter.py`: construção e vínculo dos três contratos, conversão Decimal bruto/líquido, rejeição de lote não reconciliado e rejeição de owner divergente.
+- Documentação criada em `docs/DAMM-V2-SWAP-DOMAIN-ADAPTER.md`.
+- Commits da branch até esta atualização: código/testes `7933eba86931b387ae60385b459cf531b396f435`; documentação `9f3b3d5e151f8b380094e68a7877dd38721a9286`. Esta seção será registrada no commit documental seguinte.
+- Validação pendente: executar os testes novos e suíte completa, compileall e CI. Nenhuma execução foi alegada nesta etapa; o CI ainda precisa ser consultado.
+- Limites: o adaptador não integra parser/normalizador, não persiste SQLite, não altera checkpoints, não consulta RPC/Helius, não modifica fixtures RAW e não cria sinais ou ordens. PR #24 permanece Draft; nenhuma alteração na `main`.
+
+
+## 100. Endurecimento de proveniência CPI no adaptador de domínio — PR #24 (18/11/2026)
+
+- Revisão estática do novo adaptador identificou necessidade de não depender exclusivamente do status `RECONCILED` recebido: o adaptador também revalida localmente que input/output transfer têm `cpi_path_valid is True`, pertencem à instrução externa associada, ocorrem antes do Event CPI, têm stackHeight descendente e caminho CPI descendente do swap.
+- Também revalida que os Token Programs das transferências correspondem aos programas de input/output resolvidos nas contas DAMM v2.
+- Adicionado teste negativo para rejeitar `cpi_path_valid=False`.
+- Commits adicionais: guarda CPI/programa `84036f22db67b0e68d2289a6c47885f13f897383`; teste `24135bbde0a6b2d7d04913370d66760a6f15182a`.
+- Nenhum teste foi executado por esta atualização GitHub; a validação runtime continua pendente.
+- PR #24 continua Draft, aberto e não integrado; PR #23 continua sendo sua base. `main` permanece intacta.
+
+
+## 101. Teste de integração do adaptador com persistência SQLite existente — PR #24 (18/11/2026)
+
+- A inspeção do branch-base PR #23 confirmou que `src/smart_money_radar/storage/event_store.py` já contém as tabelas `swap_observations`, `swap_classifications`, `swap_evidence`, além de `save_swap_bundle()` e `get_swap_bundle()`. A documentação anterior que descrevia a persistência como disponível apenas em branch isolada estava desatualizada em relação ao conteúdo efetivo do branch-base.
+- Confirmado também o teste `tests/test_swap_persistence.py` cobrindo round-trip Decimal, idempotência, atualização, rollback, FK/cascade e pré-requisitos do registro pai. A existência do teste não é declaração de execução nesta etapa.
+- Adicionado ao PR #24 teste de integração em banco SQLite `:memory:`: o adaptador produz o bundle, cria uma observação pai isolada e persiste/recupera os três contratos via EventStore, comparando os objetos completos.
+- O teste usa exclusivamente banco efêmero em memória; não abre nem altera banco persistente, arquivos RAW ou checkpoints reais.
+- Commit do teste de integração: `dec4726592f386fea53b01a12c282ad8c340a55a`; atualização documental: `61c92db828c282ad8634565ecf888fff47e32bf4`.
+- Execução de testes ainda pendente. CI #598 no commit anterior terminou sem etapas (`steps=[]`) e logs BlobNotFound; não há evidência de execução nem aprovação CI. Não repetir retries automáticos.
+- PR #24 continua Draft, aberto e sem merge. `main` permanece intacta.
+
+
+## 102. Endurecimento adicional da ligação swap↔EvtSwap2 e CI #602 — PR #24 (18/11/2026)
+
+- O adaptador passou a revalidar também a relação pai/filho do próprio evento: `event_stack_height == swap_stack_height + 1`, caminho do Event CPI exatamente um nível abaixo do caminho do swap, evento posterior à instrução swap e índices tipados/não negativos.
+- Exige que o programa das contas resolvidas seja o Program ID canônico Meteora DAMM v2.
+- Confere que o índice inner da evidência atribuída coincide com o índice da associação.
+- Testes existentes foram ajustados para usar o Program ID canônico; novo teste negativo cobre caminho CPI do evento que não descende do swap.
+- Commits: reforço de vínculo CPI `09916957bc37eb71c1b480bd3da59dcdef35821a`; fixture com programa canônico `70ae114da9cf143d78ae2288852788f8ada7e4cc`; teste negativo `20a77ac331d0414835ea4168eb8d9e2801443c70`; endurecimento final de índices/identidade `80e3735b458c66dc63223c09b8fdba179fe49c7c`.
+- CI #602 (run `44310450270`) no commit documental anterior terminou `failure`; job `134822897989` retornou `steps=[]`, sem logs disponíveis. Não há evidência de checkout/testes/compileall; não classificar como falha de testes nem aprovação. Nenhum retry realizado.
+- Nenhum teste local foi executado nesta atualização GitHub. PR #24 permanece Draft, aberto e sem merge; `main` intacta.
+
+
+## 103. Estado consolidado do adaptador de domínio e CI #612 — PR #24 (18/11/2026)
+
+- HEAD de código/documentação do PR #24 nesta atualização: `b375caad55b6fc3fd2525e342733e046e02f1961`.
+- O adaptador agora exige identidade CPI tipada, stackHeight de evento exatamente um nível abaixo do swap, caminho do Event CPI descendente imediato, índice de evento posterior ao swap, Program ID canônico e identidade/descendência das transferências.
+- Testes de integração cobrem o round-trip do bundle pelo EventStore em SQLite `:memory:`; teste negativo cobre Event CPI com caminho que não descende do swap.
+- CI #612 (run `44310869715`) no commit `b375caad...`: job `134824365125` terminou failure antes das etapas; consulta retornou `steps=[]` e logs ausentes. Nenhum unittest/compileall foi executado pelo runner. Não classificar como falha de código nem aprovação.
+- CI #593, #598, #602 e #612 indicam indisponibilidade pré-etapas recorrente; não repetir retries automáticos.
+- Validação runtime do PR #24 continua pendente. A suíte 374/374 e compileall aprovados anteriormente pertencem ao HEAD de código/teste do PR #23 (`d6142ba...`), não cobrem o adaptador novo.
+- PR #24 permanece aberto, Draft e sem merge, empilhado sobre PR #23. Nenhuma alteração na `main`, banco persistente, RAW, checkpoints, RPC/Helius ou estado on-chain.

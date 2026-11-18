@@ -1964,3 +1964,19 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #593, #598, #602 e #612 indicam indisponibilidade pré-etapas recorrente; não repetir retries automáticos.
 - Validação runtime do PR #24 continua pendente. A suíte 374/374 e compileall aprovados anteriormente pertencem ao HEAD de código/teste do PR #23 (`d6142ba...`), não cobrem o adaptador novo.
 - PR #24 permanece aberto, Draft e sem merge, empilhado sobre PR #23. Nenhuma alteração na `main`, banco persistente, RAW, checkpoints, RPC/Helius ou estado on-chain.
+
+
+## 104. Orquestrador transacional DAMM v2 — PR #25 (18/11/2026)
+
+- Criada branch `feat/damm-v2-transaction-pipeline` a partir do HEAD PR #24 `c67a574cc29b090842aebe08dd4018b282df9b85`.
+- Criado PR #25, Draft, base `feat/damm-v2-swap-domain-adapter`, HEAD inicial `0fe1b1c1b851ccd9c33938d8ae62c39e8133bc20`; três arquivos próprios.
+- Novo módulo `src/smart_money_radar/data_sources/damm_v2_transaction_pipeline.py` encadeia: validação do payload e execução; associação swap/Event CPI; resolução da instrução externa/inner e account keys/loaded addresses; resolução de contas; decodificação de transferências; atribuição CPI; snapshots de token accounts; reconciliação econômica em lote; adaptador para os três contratos de domínio.
+- O pipeline rejeita o lote inteiro se existir swap/evento não associado, ambiguidade, transferência não atribuída, snapshot incompleto, divergência econômica ou erro de estrutura. Estados públicos: `NO_DAMM_V2_SWAPS`, `REJECTED`, `RECONCILED`.
+- O pipeline não chama `transaction_parser.py` nem `normalize_transaction`, não persiste EventStore, não avança checkpoint, não chama RPC/Helius e não executa ações on-chain. A classificação de domínio continua `UNKNOWN`.
+- Criados testes sintéticos para transação sem swap DAMM v2, estado de execução ausente, transação falha, metadados ausentes e campos obrigatórios.
+- Documentação: `docs/DAMM-V2-TRANSACTION-PIPELINE.md`.
+- CI #615 (run `44311776265`) e #616 (run `44311887367`) terminaram failure antes de etapas. Jobs `134827468470` e `134827833045` retornaram `steps=[]`; logs BlobNotFound. Não há evidência de checkout, unittest ou compileall. Não classificar como falha de código nem aprovação; não repetir retries sem diagnóstico do runner.
+- Comparação PR #25 contra PR #24: 3 commits à frente, 0 atrás; três arquivos próprios (266 linhas pipeline, 82 testes, 39 docs).
+- Validação runtime do PR #25 permanece pendente. Nenhuma fixture RAW mainnet prova ainda o caminho completo de swap DAMM v2.
+- PR #25 permanece Draft, aberto e sem merge; PR #24 permanece Draft e é a base. `main` intacta; sem alteração em RAW persistente, SQLite persistente, checkpoints, RPC/Helius ou estado on-chain.
+- Próximo trabalho: obter validação executável do código e criar fixture RAW mainnet auditada; depois, avaliar integração controlada do pipeline com normalização/parser, sem promover BUY/SELL até haver regra de ativo-base/quote comprovada.

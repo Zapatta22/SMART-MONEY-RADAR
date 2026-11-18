@@ -479,5 +479,39 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(store.has_processed_signature("public-wallet", "failed-signature"))
 
 
+    async def test_first_run_replays_archived_pending_observation_without_history_scan(self) -> None:
+        stop_event = asyncio.Event()
+
+        class PendingSource:
+            def __init__(self):
+                self.calls = []
+
+            async def get_transaction_async(self, signature: str):
+                self.calls.append(signature)
+                return simulated_transaction()
+
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "history.sqlite3")
+            store.save_observation(
+                "public-wallet", "pending-first-run", simulated_transaction(), [],
+                parse_status="no_events", parser_version="1",
+                advance_checkpoint=False,
+            )
+            source = PendingSource()
+            monitor = WalletMonitor(
+                HeliusSettings(api_key="simulated-key"), source, store,  # type: ignore[arg-type]
+            )
+
+            await monitor._backfill_wallet("public-wallet", stop_event)
+
+            self.assertEqual(source.calls, ["pending-first-run"])
+            self.assertTrue(store.has_processed_signature("public-wallet", "pending-first-run"))
+            self.assertEqual(store.get_checkpoint("public-wallet"), "pending-first-run")
+            self.assertEqual(store.get_pending_signatures("public-wallet"), [])
+
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2202,3 +2202,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Testes adicionados: reconciliação econômica com transferências distintas mas mesma identidade; adaptador com contextos duplicados.
 - Commits: reconciliação `89de7d3645aa3d86b5a5f7e258bd922b865ed14f`, mensagem alinhada a teste legado `43332c99917737fdcdaaba2f21648c7780fc912e`, teste econômico `97acda5a8cf2e9355533ae4127b322b98d0d3f91`, adaptador `c1ea1f8b64a1bd4cbbf56c45cee218172c8a5277`, teste adaptador `19828b904d453f4b4b85ea6c569970eab27f6d87`.
 - Revisão estática; runtime/compileall ainda pendentes. PR #25 Draft; main e dados persistentes preservados.
+
+
+## 127. Pipeline transacional DAMM v2 valida identidade exata dos bundles — PR #25 (18/11/2026)
+
+- Após hardening do adaptador, a camada de orquestração DAMM v2 também passou a conferir os bundles que recebe: operation IDs precisam ser únicos e coincidir exatamente com as identidades dos contextos reconciliados; observation deve corresponder à carteira/assinatura monitoradas; classification/evidence devem compartilhar o operation_id da observation.
+- Isso impede que uma implementação defeituosa/substituída do builder retorne bundles duplicados ou de outra transação mantendo apenas a cardinalidade esperada.
+- Commit: pipeline transacional `10a5836c2957ffc23555d1d2715bc6b5454522b3`.
+- A proteção é revisada estaticamente; testes runtime ainda não executados. O adaptador e reconciliador têm testes específicos de identidade duplicada registrados na seção 126.

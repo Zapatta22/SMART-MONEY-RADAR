@@ -37,3 +37,23 @@ Estados possíveis: `NO_DAMM_V2_SWAPS`, `REJECTED` e `RECONCILED`. O resultado c
 - Não converte direção do pool em BUY/SELL; o adaptador mantém `UNKNOWN`.
 - A suíte sintética cobre fronteiras fail-closed, mas não substitui fixture RAW mainnet com swap DAMM v2 real e reconciliação completa.
 - A função retorna `RECONCILED` apenas quando as verificações existentes confirmam o lote. Isso não constitui sinal nem autorização para execução.
+
+## Persistência e coordenação do checkpoint
+
+O módulo `domain/damm_v2_persistence_pipeline.py` envolve o orquestrador
+transacional e persiste bundles reconciliados e tentativas de reconciliação
+no `SQLiteEventStore`. Ele **nunca** avança checkpoint.
+
+O `WalletMonitor` agora executa DAMM v2 antes do pipeline Raydium CPMM:
+- Se DAMM v2 encontrar swaps não reconciliados, a transação permanece pendente
+  e o CPMM não pode avançar o checkpoint.
+- Se DAMM v2 não encontrar swaps, ou concluir reconciliação completa, o fluxo
+  segue para CPMM.
+- O CPMM continua sendo o coordenador final do checkpoint nesta etapa; assim,
+  transações sem swaps CPMM ainda são marcadas como processadas somente depois
+  de DAMM v2 liberar a transação.
+- Bundles são idempotentes no EventStore. Uma repetição após falha de outro
+  venue não deve duplicar operações.
+
+Testes de persistência usam SQLite `:memory:`; o teste do monitor simula
+bloqueio DAMM e confirma que CPMM não é chamado e checkpoint não avança.

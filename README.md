@@ -6,7 +6,7 @@ Repositório oficial privado do SMART MONEY RADAR.
 
 O repositório está preparado para receber a base recuperada da Etapa 16. Para concluir a importação pelo GitHub, envie **somente este arquivo ZIP** para a raiz do repositório usando **Add file → Upload files**:
 
-- [SMR-CODIGO-BASE-ETAPA16-2026-11-16.zip](https://chatgpt.com/) — arquivo de código-base recuperado, com testes e Registro Mestre.
+- `SMR-CODIGO-BASE-ETAPA16-2026-11-16.zip` — arquivo de código-base recuperado, com testes e Registro Mestre.
 
 O workflow `.github/workflows/import-smr-archives.yml` extrairá o pacote, removerá caches, arquivos temporários e bancos locais, executará os testes e a compilação e só então fará o commit do código.
 

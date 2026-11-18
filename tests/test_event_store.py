@@ -89,6 +89,44 @@ class SQLiteEventStoreTests(unittest.TestCase):
         )
         store.close()
 
+    def test_save_observation_rejects_different_raw_payload_for_same_signature(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        original = {"meta": {"err": None}, "transaction": {"signatures": ["sig-a"]}}
+        conflicting = {"meta": {"err": None}, "transaction": {"signatures": ["sig-b"]}}
+        store.save_observation(
+            "wallet-a", "sig-a", original, [],
+            parse_status="no_events", parser_version="1",
+            advance_checkpoint=False,
+        )
+
+        with self.assertRaisesRegex(ValueError, "Payload RAW divergente"):
+            store.save_observation(
+                "wallet-a", "sig-a", conflicting, [],
+                parse_status="no_events", parser_version="1",
+                advance_checkpoint=False,
+            )
+
+        self.assertEqual(store.get_raw_transaction("wallet-a", "sig-a"), original)
+        self.assertFalse(store.has_processed_signature("wallet-a", "sig-a"))
+        self.assertIsNone(store.get_checkpoint("wallet-a"))
+        store.close()
+
+    def test_save_observation_allows_filling_missing_raw_payload(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        store.save_observation(
+            "wallet-a", "sig-a", None, [],
+            parse_status="failed_on_chain", parser_version="1",
+            advance_checkpoint=False,
+        )
+        payload = {"meta": {"err": None}, "transaction": {"signatures": ["sig-a"]}}
+        store.save_observation(
+            "wallet-a", "sig-a", payload, [],
+            parse_status="no_events", parser_version="1",
+            advance_checkpoint=False,
+        )
+        self.assertEqual(store.get_raw_transaction("wallet-a", "sig-a"), payload)
+        store.close()
+
     def test_save_observation_rejects_events_from_another_signature(self) -> None:
         store = SQLiteEventStore(":memory:")
         event = ActivityEvent(

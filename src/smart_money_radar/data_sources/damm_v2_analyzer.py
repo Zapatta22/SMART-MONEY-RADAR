@@ -264,7 +264,12 @@ def analyze_damm_v2_swap_events(
     matched_event_indexes: set[int] = set()
     for swap_index, swap_ref in enumerate(swaps):
         event_indexes = events_by_swap[swap_index]
-        if len(event_indexes) == 1:
+        possible_event_indexes = [
+            event_index
+            for event_index, candidates in candidates_by_event.items()
+            if swap_index in candidates
+        ]
+        if len(event_indexes) == 1 and len(possible_event_indexes) == 1:
             event_index = event_indexes[0]
             event_ref = events[event_index]
             if len(candidates_by_event[event_index]) == 1:
@@ -277,9 +282,7 @@ def analyze_damm_v2_swap_events(
                     event_ref.stack_height, event_ref.event,
                 ))
                 continue
-        if event_indexes or any(
-            swap_index in candidates for candidates in candidates_by_event.values()
-        ):
+        if possible_event_indexes:
             output.append(DammV2SwapEventAssociation(
                 "AMBIGUOUS", swap_ref.instruction_index,
                 swap_ref.inner_instruction_index, swap_ref.cpi_path,

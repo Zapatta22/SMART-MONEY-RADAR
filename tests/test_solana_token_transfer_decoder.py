@@ -239,16 +239,11 @@ class TokenTransferDecoderTests(unittest.TestCase):
         self.assertIsNone(result[0].decimals)
 
     def test_resolves_loaded_addresses_for_compiled_cpi(self):
-        result = decode_solana_token_transfers(_tx(
+        tx = _tx(
             [{"programId": "router", "accounts": [], "data": "1"}],
             keys=["static-0", "static-1", "static-2", "static-3"],
             meta={
                 "err": None,
-                "addressTableLookups": [{
-                    "accountKey": "lookup-table",
-                    "writableIndexes": [0, 1],
-                    "readonlyIndexes": [0],
-                }],
                 "loadedAddresses": {
                     "writable": ["loaded-source", "loaded-destination"],
                     "readonly": ["loaded-authority"],
@@ -263,7 +258,13 @@ class TokenTransferDecoderTests(unittest.TestCase):
                     }],
                 }],
             },
-        ))
+        )
+        tx["transaction"]["message"]["addressTableLookups"] = [{
+            "accountKey": "lookup-table",
+            "writableIndexes": [0, 1],
+            "readonlyIndexes": [0],
+        }]
+        result = decode_solana_token_transfers(tx)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].source_account, "loaded-source")
         self.assertEqual(result[0].destination_account, "loaded-destination")

@@ -182,7 +182,8 @@ def scan(endpoints: tuple[str, ...], limit: int) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, default=100)\n    parser.add_argument("--pages", type=int, default=3)
+    parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--pages", type=int, default=3)
     parser.add_argument("--rpc-url", default=os.environ.get(
         "SMR_DAMM_V2_SCAN_RPC_URL", os.environ.get("SMR_SOLANA_RPC_URL", DEFAULT_RPC)
     ))

@@ -282,6 +282,8 @@ def _decode_one(
         source_format = "compiled"
     if values is None:
         return None
+    if values[6] == "TRANSFER_CHECKED_WITH_FEE" and program_id != TOKEN_2022_PROGRAM_ID:
+        return None
 
     source, destination, authority, mint, amount, decimals, instruction_type, fee_amount = values
     return SolanaTokenTransfer(

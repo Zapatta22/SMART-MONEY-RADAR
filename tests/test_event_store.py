@@ -50,6 +50,22 @@ class SQLiteEventStoreTests(unittest.TestCase):
         self.assertEqual(store.get_checkpoint("wallet-a"), "signature-a")
         store.close()
 
+    def test_failed_on_chain_backfill_persists_rpc_slot_for_checkpoint(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        store.save_observation(
+            "wallet-failed", "failed-signature", None, [],
+            parse_status="failed_on_chain", parser_version="1",
+            slot=900,
+        )
+        self.assertEqual(store.get_checkpoint("wallet-failed"), "failed-signature")
+        with store._connection_scope() as connection:
+            row = connection.execute(
+                "SELECT slot FROM wallet_checkpoints WHERE wallet_address = ?",
+                ("wallet-failed",),
+            ).fetchone()
+        self.assertEqual(row[0], 900)
+        store.close()
+
     def test_checkpoint_does_not_regress_when_transactions_arrive_out_of_slot_order(self) -> None:
         store = SQLiteEventStore(":memory:")
         wallet = "wallet-slot-order"

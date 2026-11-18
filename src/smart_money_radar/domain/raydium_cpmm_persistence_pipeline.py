@@ -3,7 +3,7 @@
 Este adaptador não envia transações e não decide entradas financeiras. Ele apenas
 arquiva transações observadas, reconcilia swaps Raydium CPMM e persiste evidências.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -169,6 +169,12 @@ def process_raydium_cpmm_observation(
     except Exception as exc:
         # Preserve an explicit parse/reconstruction error and keep checkpoint
         # untouched. The raw payload remains available for replay.
+        failed_transaction = replace(
+            normalized.transaction, parse_status="parse_error"
+        )
+        failed_normalized = replace(
+            normalized, transaction=failed_transaction
+        )
         store.reprocess_observation(
             wallet_address,
             signature,
@@ -176,6 +182,6 @@ def process_raydium_cpmm_observation(
             parse_status="parse_error",
             parser_version=normalized.transaction.parser_version,
             parse_error=f"{type(exc).__name__}: {exc}",
-            normalized_observation=normalized,
+            normalized_observation=failed_normalized,
         )
         raise

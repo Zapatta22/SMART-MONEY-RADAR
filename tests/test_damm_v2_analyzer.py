@@ -99,6 +99,11 @@ class DammV2AnalyzerTests(unittest.TestCase):
         )
         message = raw["result"]["transaction"]["message"]
         message["accountKeys"] = ["payer"]
+        message["addressTableLookups"] = [{
+            "accountKey": "lookup-table",
+            "writableIndexes": [],
+            "readonlyIndexes": [0],
+        }]
         raw["result"]["meta"]["loadedAddresses"] = {
             "writable": [],
             "readonly": [METEORA_DAMM_V2_PROGRAM_ID],
@@ -108,6 +113,29 @@ class DammV2AnalyzerTests(unittest.TestCase):
             item["programIdIndex"] = 1
         result = analyze_damm_v2_swap_events(raw)
         self.assertEqual([item.status for item in result], ["MATCHED"])
+
+    def test_rejects_loaded_addresses_without_lookup_tables(self):
+        raw = transaction([], {})
+        raw["result"]["meta"]["loadedAddresses"] = {
+            "writable": ["unexpected"],
+            "readonly": [],
+        }
+        with self.assertRaisesRegex(ValueError, "sem addressTableLookups"):
+            analyze_damm_v2_swap_events(raw)
+
+    def test_rejects_loaded_address_count_mismatch(self):
+        raw = transaction([], {})
+        raw["result"]["transaction"]["message"]["addressTableLookups"] = [{
+            "accountKey": "lookup-table",
+            "writableIndexes": [0],
+            "readonlyIndexes": [],
+        }]
+        raw["result"]["meta"]["loadedAddresses"] = {
+            "writable": [],
+            "readonly": [],
+        }
+        with self.assertRaisesRegex(ValueError, "não corresponde à quantidade"):
+            analyze_damm_v2_swap_events(raw)
 
     def test_associates_event_cpi_with_outer_swap(self):
         raw = transaction(

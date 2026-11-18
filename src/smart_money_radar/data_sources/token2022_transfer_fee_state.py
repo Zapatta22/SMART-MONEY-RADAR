@@ -85,6 +85,8 @@ def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
         raise TypeError("mint_data deve ser bytes")
     if len(mint_data) < MINT_BASE_LENGTH:
         raise ValueError("dados base de mint truncados")
+    if any(mint_data[MINT_BASE_LENGTH:ACCOUNT_TYPE_OFFSET]):
+        raise ValueError("padding do mint deve conter somente bytes zero")
     payload = _read_extensions(mint_data, ACCOUNT_TYPE_MINT).get(EXTENSION_TRANSFER_FEE_CONFIG)
     if payload is None:
         raise ValueError("TransferFeeConfig ausente")

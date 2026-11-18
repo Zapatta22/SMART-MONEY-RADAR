@@ -139,7 +139,7 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self, build, reconcile, deltas, transfers, decode, normalize
     ):
         normalize.return_value = self.normalized
-        decode.return_value = [object()]
+        decode.return_value = [self._swap()]
         transfers.return_value = [object()]
         deltas.return_value = [object()]
         reconcile.return_value = [SimpleNamespace(
@@ -243,7 +243,7 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self, build, reconcile, deltas, transfers, decode, normalize
     ):
         normalize.return_value = self.normalized
-        decode.return_value = [object()]
+        decode.return_value = [self._swap()]
         transfers.return_value = [object()]
         deltas.return_value = [object()]
         reconcile.return_value = []

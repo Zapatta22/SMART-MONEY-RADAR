@@ -97,6 +97,26 @@ class SQLiteEventStoreTests(unittest.TestCase):
         self.assertTrue(store.has_processed_signature(wallet, "sig-new"))
         store.close()
 
+    def test_ordered_backfill_advances_checkpoint_across_same_slot_signatures(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        wallet = "wallet-same-slot"
+        for signature in ("sig-first", "sig-second"):
+            payload = {
+                "slot": 800, "meta": {"err": None},
+                "transaction": {"signatures": [signature], "message": {"instructions": []}},
+            }
+            normalized = normalize_transaction(payload, wallet, signature)
+            store.save_observation(
+                wallet, signature, payload, list(normalized.activity_events),
+                parse_status=normalized.transaction.parse_status,
+                parser_version=normalized.transaction.parser_version,
+                normalized_observation=normalized,
+            )
+        store.advance_checkpoint_in_order(wallet, "sig-first", 800)
+        store.advance_checkpoint_in_order(wallet, "sig-second", 800)
+        self.assertEqual(store.get_checkpoint(wallet), "sig-second")
+        store.close()
+
     def test_checkpoint_with_known_slot_is_not_replaced_by_unknown_slot(self) -> None:
         store = SQLiteEventStore(":memory:")
         wallet = "wallet-known-slot"

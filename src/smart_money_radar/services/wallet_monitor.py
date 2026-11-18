@@ -244,7 +244,12 @@ class WalletMonitor:
         subscription_to_wallet[subscription_id] = request_to_wallet[request_id]
 
     async def _collect_transaction(
-        self, wallet_address: str, signature: str, stop_event: asyncio.Event | None = None
+        self,
+        wallet_address: str,
+        signature: str,
+        stop_event: asyncio.Event | None = None,
+        *,
+        advance_checkpoint: bool = True,
     ) -> bool:
         """Busca, interpreta e persiste; só avança o cursor após sucesso."""
         if self.event_store.has_processed_signature(wallet_address, signature):
@@ -291,6 +296,7 @@ class WalletMonitor:
                         wallet_address=wallet_address,
                         signature=signature,
                         reference_mints=self.reference_mints,
+                        advance_checkpoint=advance_checkpoint,
                     )
                 except Exception as exc:
                     self._logger.warning(
@@ -403,7 +409,11 @@ class WalletMonitor:
                     [],
                     parse_status="failed_on_chain",
                     parser_version=PARSER_VERSION,
+                    advance_checkpoint=False,
                     slot=item.get("slot"),
+                )
+                self.event_store.mark_processed(
+                    wallet_address, signature, advance_checkpoint=False
                 )
                 failed_slot = item.get("slot")
                 if isinstance(failed_slot, int) and not isinstance(failed_slot, bool):
@@ -414,7 +424,12 @@ class WalletMonitor:
                         expected_previous_signature=expected_previous_signature,
                     )
                 continue
-            if not await self._collect_transaction(wallet_address, signature, stop_event):
+            if not await self._collect_transaction(
+                wallet_address,
+                signature,
+                stop_event,
+                advance_checkpoint=False,
+            ):
                 raise RuntimeError(
                     "Backfill pausado: uma transação ainda não pôde ser processada; cursor não avançado."
                 )

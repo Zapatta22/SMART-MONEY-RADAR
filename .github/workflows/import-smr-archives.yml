@@ -1,0 +1,128 @@
+name: Import recovered SMR archives
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "*.zip"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Extract and merge archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/smr-import
+          shopt -s nullglob
+          archives=( *.zip )
+          if [ ${#archives[@]} -eq 0 ]; then
+            echo "No ZIP archives found at repository root."
+            exit 1
+          fi
+          for archive in "${archives[@]}"; do
+            echo "Extracting $archive"
+            python - "$archive" "/tmp/smr-import" <<'PY'
+          import pathlib, sys, zipfile
+          archive = pathlib.Path(sys.argv[1])
+          destination = pathlib.Path(sys.argv[2])
+          with zipfile.ZipFile(archive) as z:
+              for member in z.infolist():
+                  p = pathlib.PurePosixPath(member.filename)
+                  if p.is_absolute() or ".." in p.parts:
+                      raise SystemExit(f"Unsafe archive path: {member.filename}")
+                  if not member.is_dir():
+                      target = destination.joinpath(*p.parts)
+                      target.parent.mkdir(parents=True, exist_ok=True)
+                      with z.open(member) as src, target.open("wb") as dst:
+                          dst.write(src.read())
+          PY
+          done
+
+      - name: Locate project root and sanitize
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          root = Path("/tmp/smr-import")
+          candidates = [p for p in root.rglob("pyproject.toml") if p.is_file()]
+          if not candidates:
+              candidates = [p for p in root.rglob("setup.cfg") if p.is_file()]
+          if not candidates:
+              candidates = [p for p in root.rglob("src/smart_money_radar") if p.is_dir()]
+          if not candidates:
+              raise SystemExit("Could not locate Python project root in supplied archives.")
+          marker = candidates[0]
+          project = marker.parent if marker.is_file() else marker.parent.parent
+          print(f"Detected project root: {project}")
+          destination = Path.cwd()
+          for item in project.iterdir():
+              target = destination / item.name
+              if item.is_dir():
+                  import shutil
+                  if target.exists(): shutil.rmtree(target)
+                  shutil.copytree(item, target)
+              else:
+                  import shutil
+                  shutil.copy2(item, target)
+          PY
+          find . -type d \( -name __pycache__ -o -name .pytest_cache -o -name .mypy_cache -o -name .ruff_cache \) -prune -exec rm -rf {} +
+          find . -type f \( -name "*.pyc" -o -name "*.sqlite" -o -name "*.sqlite3" -o -name "*.db" -o -name ".env" \) -delete
+          find . -type f -name "*.zip" -delete
+
+      - name: Verify no obvious secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE --exclude-dir=.git --exclude='*.md' '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|api[_-]?key[[:space:]]*=[[:space:]]*["\x27][A-Za-z0-9_-]{20,})' .; then
+            echo "Potential credential detected; refusing import."
+            exit 1
+          fi
+
+      - name: Install and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f pyproject.toml ]; then
+            python -m pip install --upgrade pip
+            python -m pip install -e ".[dev]" || python -m pip install -e .
+          fi
+          if [ -d tests ]; then
+            if python -c "import pytest" >/dev/null 2>&1; then
+              python -m pytest -q
+            else
+              PYTHONPATH=src python -m unittest discover -s tests -v
+            fi
+          else
+            echo "No tests directory found."
+            exit 1
+          fi
+          python -m compileall -q src tests
+
+      - name: Commit imported source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+          else
+            git commit -m "chore: import recovered SMR Etapa 16 source"
+            git push
+          fi

@@ -1,0 +1,1 @@
+"""Interfaces e adaptadores de fontes de dados."""

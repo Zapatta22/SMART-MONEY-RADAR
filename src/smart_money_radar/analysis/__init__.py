@@ -1,0 +1,1 @@
+"""Análises locais sobre eventos já fornecidos ao sistema."""

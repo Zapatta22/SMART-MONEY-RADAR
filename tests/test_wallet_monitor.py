@@ -68,6 +68,27 @@ class FakeDataSource:
 
 
 class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_websocket_subscription_response_rejects_boolean_request_id(self) -> None:
+        monitor = WalletMonitor.__new__(WalletMonitor)
+        subscriptions: dict[int, str] = {}
+        monitor._handle_subscription_response(
+            {"jsonrpc": "2.0", "id": True, "result": 42},
+            {1: "public-wallet"},
+            subscriptions,
+        )
+        self.assertEqual(subscriptions, {})
+
+    async def test_websocket_subscription_response_rejects_boolean_subscription_id(self) -> None:
+        monitor = WalletMonitor.__new__(WalletMonitor)
+        subscriptions: dict[int, str] = {}
+        with self.assertRaisesRegex(RuntimeError, "ID de assinatura inteiro"):
+            monitor._handle_subscription_response(
+                {"jsonrpc": "2.0", "id": 1, "result": True},
+                {1: "public-wallet"},
+                subscriptions,
+            )
+        self.assertEqual(subscriptions, {})
+
     async def test_subscription_enriches_and_stores_transaction_without_network(self) -> None:
         stop_event = asyncio.Event()
         messages = [

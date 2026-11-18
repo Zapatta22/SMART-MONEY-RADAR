@@ -109,7 +109,11 @@ def _net_received(
         if expected_net is not None and net != expected_net:
             raise ValueError(f"crédito líquido de {label} diverge do EvtSwap2")
         return net
-    if transfer.fee_amount_raw not in (None, 0):
+    if transfer.fee_amount_raw is not None and (
+        isinstance(transfer.fee_amount_raw, bool)
+        or not isinstance(transfer.fee_amount_raw, int)
+        or transfer.fee_amount_raw != 0
+    ):
         raise ValueError(f"fee inesperada em {label}")
     if transfer.program_id == SPL_TOKEN_PROGRAM_ID:
         if expected_net is not None and expected_net != transfer.amount_raw:

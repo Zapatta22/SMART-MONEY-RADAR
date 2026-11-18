@@ -26,6 +26,14 @@ def _b58encode(data):
     return "1" * zeros + (encoded or ("" if zeros else "1"))
 
 
+def _b58decode(value):
+    number = 0
+    for char in value:
+        number = number * 58 + ALPHABET.index(char)
+    decoded = number.to_bytes((number.bit_length() + 7) // 8, "big") if number else b""
+    return bytes(len(value) - len(value.lstrip("1"))) + decoded
+
+
 def _u64(value):
     return value.to_bytes(8, "little")
 
@@ -651,6 +659,37 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
         )
         self.assertEqual(len(attempts), 2)
         self.assertTrue(all(item["status"] == "INCOMPLETE" for item in attempts))
+
+
+    def test_multi_swap_event_pool_mismatch_blocks_entire_batch(self):
+        raw = _damm_two_swap2_reconciled_raw()
+        event_instruction = raw["meta"]["innerInstructions"][0]["instructions"][3]
+        event_data = bytearray(_b58decode(event_instruction["data"]))
+        event_data[8:40] = bytes([99]) * 32
+        event_instruction["data"] = _b58encode(bytes(event_data))
+
+        result = process_damm_v2_observation(
+            self.store, raw, wallet_address="wallet", signature="signature"
+        )
+
+        self.assertEqual(result.status, "pending_reconciliation")
+        self.assertEqual(result.decoded_swaps, 2)
+        self.assertEqual(result.reconciled_swaps, 0)
+        self.assertEqual(result.unresolved_swaps, 2)
+        self.assertEqual(result.saved_bundles, 0)
+        self.assertFalse(result.ready_for_next_venue)
+        attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(all(item["status"] == "INCOMPLETE" for item in attempts))
+        self.assertTrue(any("pool" in item["reason"].lower() for item in attempts))
+        self.assertTrue(all(
+            self.store.get_swap_bundle(item["operation_id"]) is None
+            for item in attempts
+        ))
+        self.assertFalse(self.store.has_processed_signature("wallet", "signature"))
+        self.assertIsNone(self.store.get_checkpoint("wallet"))
 
 
     def test_two_swap2_economic_mismatch_blocks_both_bundles_and_next_venue(self):

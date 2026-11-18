@@ -32,9 +32,10 @@ class HeliusDataSource:
         self._request_ids = count(1)
 
     def call(self, method: str, params: list[Any]) -> Any:
+        request_id = next(self._request_ids)
         payload = {
             "jsonrpc": "2.0",
-            "id": next(self._request_ids),
+            "id": request_id,
             "method": method,
             "params": params,
         }
@@ -60,6 +61,10 @@ class HeliusDataSource:
 
         if not isinstance(response_payload, dict):
             raise HeliusRpcError("Helius RPC retornou um formato inválido.")
+        if response_payload.get("jsonrpc") != "2.0" or response_payload.get("id") != request_id:
+            raise HeliusRpcError(
+                "Helius RPC retornou resposta com versão JSON-RPC ou ID incompatível."
+            )
         if "error" in response_payload:
             error = response_payload["error"]
             code = error.get("code") if isinstance(error, dict) else None

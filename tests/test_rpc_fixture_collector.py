@@ -125,7 +125,7 @@ class RpcFixtureCollectorTests(unittest.TestCase):
                 collector.collect(SIG)
 
     def test_rejects_invalid_transaction_version(self):
-        for version in (True, -1, {"unexpected": "object"}):
+        for version in (None, True, -1, {"unexpected": "object"}):
             payload = json.loads(rpc_bytes())
             payload["result"]["version"] = version
             collector = RpcFixtureCollector(

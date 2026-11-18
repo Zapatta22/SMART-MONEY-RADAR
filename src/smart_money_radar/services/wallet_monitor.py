@@ -184,6 +184,8 @@ class WalletMonitor:
         request_to_wallet: dict[int, str],
         subscription_to_wallet: dict[int, str],
     ) -> None:
+        if message.get("jsonrpc") != "2.0":
+            raise RuntimeError("Resposta logsSubscribe sem versão JSON-RPC 2.0.")
         request_id = message.get("id")
         if (
             isinstance(request_id, bool)

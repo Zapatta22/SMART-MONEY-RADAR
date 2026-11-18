@@ -114,3 +114,8 @@ A primeira execução do CI após registrar o entry point falhou durante `pip in
 ### Limite de consulta HTTP
 
 O endpoint `GET /api/v1/reconciliation/attempts` aceita `limit` entre 1 e 500 (padrão 100). Valores fora da faixa são rejeitados com HTTP 400 antes de consultar o EventStore. O limite superior reduz consultas excessivas e evita que o adaptador HTTP exponha o limite interno não limitado do EventStore.
+
+
+### Validação do launcher e limite HTTP
+
+CI run `44239943317` passou no head documental `8e509d8f6963e965b9d1f005f84c4d06c9f3d70a`, com instalação do pacote, 241 testes unitários aprovados e `python -m compileall -q src tests` aprovado. A execução inclui a correção de TOML do comando `smr-api`, seus testes de ciclo de vida e a validação do limite HTTP 1..500.

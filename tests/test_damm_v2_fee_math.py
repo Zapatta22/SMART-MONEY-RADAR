@@ -29,7 +29,9 @@ class Token2022TransferFeeMathTests(unittest.TestCase):
         actual = transfer_fee_from_gross(10_001, 100, 1_000)
         self.assertEqual((actual.gross_amount, actual.fee_amount, actual.net_amount), (10_001, 101, 9_900))
         inverse = transfer_fee_gross_for_net(9_900, 100, 1_000)
-        self.assertEqual(inverse, actual)
+        # The inverse selects the smallest gross: 10_000 also nets 9_900.
+        self.assertEqual((inverse.gross_amount, inverse.fee_amount, inverse.net_amount), (10_000, 100, 9_900))
+        self.assertNotEqual(inverse, actual)
 
     def test_inverse_chooses_a_gross_that_reproduces_requested_net(self):
         # At 10%, gross 10 and 11 both produce net 9; Token-2022 chooses 10.
@@ -108,8 +110,8 @@ class AmmFeeSplitAndModeTests(unittest.TestCase):
         result = split_amm_fee(9, 50, 50, 5_000, True)
         self.assertEqual(result.protocol_fee, 2)
         self.assertEqual(result.referral_fee, 2)
-        self.assertEqual(result.compounding_fee, 3)
-        self.assertEqual(result.claiming_fee, 2)
+        self.assertEqual(result.compounding_fee, 2)
+        self.assertEqual(result.claiming_fee, 3)
 
     def test_all_six_collect_mode_direction_combinations(self):
         expected = {

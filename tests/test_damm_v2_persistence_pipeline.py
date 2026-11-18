@@ -483,6 +483,71 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
             self.assertIsNone(self.store.get_swap_bundle(operation_id))
 
 
+    def test_full_two_swap_pipeline_retries_after_transient_second_bundle_write_failure(self):
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        raw = _damm_two_swap2_reconciled_raw()
+        observed_at = datetime(2026, 11, 18, tzinfo=timezone.utc)
+        original_save = self.store.save_swap_bundle
+        calls = 0
+
+        def fail_second_bundle_once(observation, classification, evidence):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("transient second bundle persistence failure")
+            return original_save(observation, classification, evidence)
+
+        with patch.object(
+            self.store, "save_swap_bundle", side_effect=fail_second_bundle_once
+        ):
+            with self.assertRaisesRegex(RuntimeError, "second bundle persistence failure"):
+                process_damm_v2_observation(
+                    self.store, raw, wallet_address="wallet",
+                    signature="signature", observed_at=observed_at,
+                )
+
+        first_attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(first_attempts), 2)
+        first_ids = [item["operation_id"] for item in first_attempts]
+        self.assertIsNotNone(self.store.get_swap_bundle(first_ids[0]))
+        self.assertIsNone(self.store.get_swap_bundle(first_ids[1]))
+        self.assertFalse(self.store.has_processed_signature("wallet", "signature"))
+        self.assertIsNone(self.store.get_checkpoint("wallet"))
+        self.assertEqual(
+            self.store.get_pending_signatures("wallet"), ["signature"]
+        )
+
+        retry = process_damm_v2_observation(
+            self.store, raw, wallet_address="wallet",
+            signature="signature", observed_at=observed_at,
+        )
+        self.assertEqual(retry.status, "reconciled")
+        self.assertEqual(retry.decoded_swaps, 2)
+        self.assertEqual(retry.reconciled_swaps, 2)
+        self.assertEqual(retry.saved_bundles, 1)
+        self.assertTrue(retry.ready_for_next_venue)
+        attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(attempts), 4)
+        self.assertEqual(
+            [item["operation_id"] for item in attempts[:2]], first_ids
+        )
+        self.assertEqual(
+            [item["operation_id"] for item in attempts[2:]], first_ids
+        )
+        self.assertTrue(all(
+            self.store.get_swap_bundle(operation_id) is not None
+            for operation_id in first_ids
+        ))
+        self.assertFalse(self.store.has_processed_signature("wallet", "signature"))
+        self.assertIsNone(self.store.get_checkpoint("wallet"))
+
+
     def test_wallet_monitor_calls_cpmm_only_after_both_damm_bundles_persist(self):
         import asyncio
         from types import SimpleNamespace

@@ -190,6 +190,8 @@ def main() -> int:
     args = parser.parse_args()
     if not 1 <= args.limit <= 100:
         parser.error("--limit deve estar entre 1 e 100")
+    if not 1 <= args.pages <= 10:
+        parser.error("--pages deve estar entre 1 e 10")
     if not args.rpc_url.startswith("https://") or not args.fallback_rpc_url.startswith("https://"):
         parser.error("RPCs devem usar HTTPS")
     endpoints = tuple(dict.fromkeys((args.rpc_url, args.fallback_rpc_url)))

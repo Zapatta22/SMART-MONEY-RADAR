@@ -285,7 +285,9 @@ def process_damm_v2_transaction(
             )
 
         reconciliation = reconcile_damm_v2_economic_batch(
-            contexts_tuple, evidence, balance_deltas, transfers
+            contexts_tuple, evidence, balance_deltas, transfers,
+            raw_transaction=raw_transaction,
+            monitored_wallet=monitored_wallet,
         )
         if reconciliation.status != "RECONCILED":
             return DammV2TransactionPipelineResult(

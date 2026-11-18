@@ -46,6 +46,15 @@ class SolanaTokenBalanceDeltaDecoderTests(unittest.TestCase):
         self.assertEqual(delta.delta_raw, -275)
         self.assertEqual(delta.decimals, 6)
 
+    def test_rejects_mixed_account_key_formats(self):
+        tx = _tx([], [], keys=[
+            {"pubkey": "parsed-key", "signer": True},
+            "compiled-key",
+        ])
+        result = decode_solana_token_account_balance_deltas(tx)
+        self.assertFalse(result.complete)
+        self.assertIn("ACCOUNT_KEYS_INVALID", [issue.code for issue in result.issues])
+
     def test_resolves_loaded_addresses(self):
         tx = _tx([_entry(3)], [_entry(3, amount="120")],
                  keys=["static-0", "static-1", "static-2"])

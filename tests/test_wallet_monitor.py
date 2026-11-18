@@ -388,7 +388,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_transaction_without_recognized_events_is_archived_before_checkpoint(self) -> None:
         stop_event = asyncio.Event()
-        raw_transaction = {"meta": {"err": None}, "transaction": {"message": {"accountKeys": [], "instructions": []}}}
+        raw_transaction = {"meta": {"err": None, "innerInstructions": []}, "transaction": {"message": {"accountKeys": [], "instructions": []}}}
 
         class NoEventSource:
             async def get_transaction_async(self, signature: str):
@@ -425,7 +425,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
         import tempfile
         stop_event = asyncio.Event()
-        raw_transaction = {"meta": {"err": None}, "transaction": {"message": {"accountKeys": [], "instructions": []}}}
+        raw_transaction = {"meta": {"err": None, "innerInstructions": []}, "transaction": {"message": {"accountKeys": [], "instructions": []}}}
 
         class ErrorSource:
             async def get_transaction_async(self, signature: str):

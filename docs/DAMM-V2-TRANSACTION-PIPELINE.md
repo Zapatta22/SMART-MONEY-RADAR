@@ -64,3 +64,9 @@ MATCHED cujo inventário de contas é inválido. O caso precisa gerar tentativa
 Erros em estágios posteriores preservam as associações e diagnósticos já
 produzidos, para que o adaptador de persistência não perca a identidade do swap
 que ficou pendente.
+
+Falhas de normalização também arquivam o payload bruto com `parse_status =
+parse_error`, sem avançar checkpoint, para permitir replay após correção do
+parser. Exceções inesperadas dentro do orquestrador transacional são convertidas
+em `REJECTED`, preservando os diagnósticos já coletados e mantendo o fluxo
+fail-closed.

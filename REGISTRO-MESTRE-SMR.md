@@ -1771,3 +1771,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI GitHub Actions `SMR tests`, run #518 (`44267390443`), associado exatamente ao commit `5e1448e13f7ec45878409ccc6c31b37066087f64`: **completed/success**. Job `test`, etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso.
 - PR #18 continua aberto, Draft e não integrado. PR #17 continua aberto, Draft e não integrado. `main` permanece intacta.
 - Nenhuma alteração de código foi feita nesta atualização documental. Nenhuma fixture RAW, banco de dados, importação, RPC/Helius, checkpoint ou operação on-chain foi tocada.
+
+
+## 88. Confirmação final do CI #519 e estado do PR #18 — 18/11/2026
+
+- Workflow GitHub Actions `SMR tests`, run #519 (`44267551234`), associado ao HEAD `ad8d9e84a7fd28e2d457ff90ffffe77f840fb210`: **completed/success**.
+- Job `test`: sucesso. Etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso.
+- Comparação do HEAD PR #18 contra o HEAD da base PR #17 (`fd0f73284039bacc4ec4e6b6a88def21f813ce0d`): **20 commits à frente, 0 atrás**; merge base igual ao HEAD da base.
+- Diff próprio da branch PR #18 contra a base: quatro arquivos — este Registro Mestre, documentação do decoder, módulo `token2022_transfer_fee_state.py` e seus testes. A correção CPI permanece na base PR #17, sem duplicação no diff próprio do PR #18.
+- PR #18 permanece aberto, Draft e não integrado; PR #17 permanece aberto, Draft e não integrado. `main` permanece intacta.
+- Esta confirmação não representa validação com fixture RAW mainnet, reconciliação econômica de swap, execução em tempo real ou prontidão operacional. Nenhum RPC/Helius, banco, importação, checkpoint, fixture RAW ou operação on-chain foi executado.

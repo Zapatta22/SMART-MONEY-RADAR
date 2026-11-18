@@ -136,6 +136,24 @@ def main() -> int:
                 if output.reconciliation else ()
             )
         ],
+        "wrapped_sol_lifecycles": [
+            {
+                "token_account": item.token_account,
+                "owner_wallet": item.owner_wallet,
+                "create_indices": list(item.create_indices),
+                "system_transfer_indices": list(item.system_transfer_indices),
+                "sync_native_indices": list(item.sync_native_indices),
+                "token_transfer_indices": list(item.token_transfer_indices),
+                "close_account_indices": list(item.close_account_indices),
+                "funding_amount_raw": item.funding_amount_raw,
+                "cycle_balances_before_close": list(item.cycle_balances_before_close),
+                "lamports_delta_raw": item.lamports_delta_raw,
+            }
+            for item in (
+                output.reconciliation.wrapped_sol_lifecycles
+                if output.reconciliation else ()
+            )
+        ],
         "bundles": len(output.bundles),
         "classification_sides": [item.classification.side for item in output.bundles],
         "expected_account_deltas": [

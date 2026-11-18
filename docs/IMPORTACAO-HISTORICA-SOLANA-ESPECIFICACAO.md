@@ -478,3 +478,8 @@ O relatório local não compartilha RAW, endereços, mints, assinaturas, quantid
 A especificação detalhada está em docs/DAMM-V2-RECONCILIACAO-ECONOMICA.md. Ela define os parâmetros por modo (ExactIn, PartialFill e ExactOut), o livro de quantidades brutas/líquidas, o tratamento de Token-2022 transfer fees/withheld, exclusividade por operação e os critérios fail-closed para MATCHED econômico.
 
 A auditoria dos cinco RAW não comprovou reconciliação econômica: fixture 1 apresentou DELTA_SIGN_MISMATCH e requer revisão de transfer fee; fixture 3 apresentou SNAPSHOT_SET_INCOMPLETE. ATTRIBUTED e FOUR_ACCOUNT_DELTAS_PRESENT continuam sendo estados estruturais, não confirmação econômica. As equações finais dependem da auditoria do código Meteora fixado; não implementar SwapObservation antes dessa prova.
+
+## 30. Auditoria de implementação oficial DAMM v2 (18/11/2026)
+A seção 12 de docs/DAMM-V2-RECONCILIACAO-ECONOMICA.md registra a auditoria do código MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f99868ba8e. Foram confirmadas as relações entre transferência bruta de entrada, crédito líquido do vault, taxas AMM, transferência bruta de saída, crédito líquido do usuário, PartialFill e ExactOut. Também foi confirmado que referral gera transferência separada e que o programa usa TransferChecked com a TransferFeeConfig do mint, não exigindo opcode TransferCheckedWithFee específico.
+
+O estado withheld Token-2022 e a configuração histórica do mint continuam exigindo evidência adicional. A especificação não autoriza MATCHED quando esses dados não estão disponíveis. Nenhum reconciliador foi implementado.

@@ -2024,3 +2024,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Corrigido helper Base58 do teste para contar bytes zero iniciais sem escape ambíguo.
 - CI #639–#642 sem execução de etapas; #642 (`44313722273`) também terminou com job sem steps. Nenhum teste/compileall foi executado pelo runner.
 - PR #25 continua Draft; validação runtime do teste sintético e integração ainda depende de Termux ou runner funcional.
+
+
+## 108. Preservação de RAW em erro de normalização e fail-closed abrangente — PR #25 (18/11/2026)
+
+- O orquestrador transacional agora captura exceções inesperadas de estágio como `REJECTED`, preservando associações, contextos, transferências, snapshots e reconciliação já produzidos.
+- O adaptador de persistência arquiva payload RAW com `parse_status=parse_error` quando a normalização falha, registra o tipo da exceção e mantém checkpoint intacto para replay.
+- Teste adicional simula erro de normalização e exige RAW arquivado, estado `parse_error` e ausência de assinatura processada.
+- Teste de inventário inválido verifica fila de replay e tentativa `INCOMPLETE` persistida em SQLite `:memory:`.
+- CI mais recente observado antes deste registro (#645) falhou sem etapas; runs posteriores a cada commit seguem indisponíveis sem evidência de execução de testes.
+- Nenhum teste runtime foi executado nesta sessão; PR #25 permanece Draft, sem merge, e `main` intacta.

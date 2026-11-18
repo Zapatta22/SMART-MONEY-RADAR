@@ -90,6 +90,35 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
 
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
+    def test_backfill_mode_marks_processed_without_advancing_checkpoint(
+        self, decode, normalize
+    ):
+        self.store.save_checkpoint(self.wallet, "previous-signature")
+        normalize.return_value = self.normalized
+        decode.return_value = []
+
+        result = process_raydium_cpmm_observation(
+            self.store,
+            self.payload,
+            wallet_address=self.wallet,
+            signature=self.signature,
+            advance_checkpoint=False,
+        )
+
+        self.assertEqual(result.status, "no_cpmm_swaps")
+        self.assertTrue(result.checkpoint_advanced)
+        self.assertTrue(self.store.has_processed_signature(self.wallet, self.signature))
+        self.assertEqual(self.store.get_checkpoint(self.wallet), "previous-signature")
+        self.store.advance_checkpoint_in_order(
+            self.wallet,
+            self.signature,
+            123,
+            expected_previous_signature="previous-signature",
+        )
+        self.assertEqual(self.store.get_checkpoint(self.wallet), self.signature)
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_solana_token_transfers")
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_token_account_balance_deltas")
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.reconcile_raydium_cpmm_swaps")

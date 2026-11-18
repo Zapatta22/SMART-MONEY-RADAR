@@ -94,7 +94,7 @@ def process_raydium_cpmm_observation(
         store.save_observation(
             wallet_address, signature, payload, [],
             parse_status="parse_error", parser_version="1",
-            parse_error=f"{type(exc).__name__}: {exc}",
+            parse_error=type(exc).__name__,
             advance_checkpoint=False,
         )
         raise
@@ -197,7 +197,7 @@ def process_raydium_cpmm_observation(
             list(normalized.activity_events),
             parse_status="parse_error",
             parser_version=normalized.transaction.parser_version,
-            parse_error=f"{type(exc).__name__}: {exc}",
+            parse_error=type(exc).__name__,
             normalized_observation=failed_normalized,
         )
         raise

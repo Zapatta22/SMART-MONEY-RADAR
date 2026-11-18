@@ -2822,3 +2822,17 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #1068 (run `44380902804`) e workflow Mainnet #10 (run `44380915218`) iniciados no momento do registro; resultados ainda não confirmados.
 - Critério de sucesso não é apenas encontrar múltiplos swaps: é necessário obter pipeline `RECONCILED` e evidência de funding wSOL compartilhado. Ausência de candidato no lote de 30 significa apenas que a busca limitada não encontrou exemplo, não que o padrão não exista.
 - PR #25 permanece OPEN/DRAFT, sem merge. Nenhuma classificação BUY/SELL ou execução financeira habilitada.
+
+
+## 193. Primeiras transações Mainnet com dois `swap2` identificadas — 18/11/2026
+
+- Scanner Mainnet #18 (run `44381409652`) SUCCESS: 100 assinaturas finalizadas do programa DAMM v2 consultadas, sem falhas de RPC. Foram identificadas quatro transações com duas associações `swap2` MATCHED:
+  - `3TzUJxV7tGnFHgNwRmDiSpw6jUcjZ52kA7NxH7FWezVMm3MC632tKnRPZ86jPd2oNhtPtj4vbPf4gkqQBxRGHXRx` — slot 471052307.
+  - `3jYsMveuktP9k5UZ1NkyiVmQqtKs4Yfo6rGRPSc4PybzsnMdvPSZDxjwvdgjHPmbm41WDZnuqMzuXXzED99f6tyB` — slot 471052306.
+  - `2yw6Lmw6V6DFDw9vvdb9vo3WhY7jyHRK5nTsitJpt6QuDx9styWVZzX7BNfabCZbHrFuwqukTVe2TFAKyQkmWuSa` — slot 471052305.
+  - `4e2PXZqk2eHSdqRyYvy8472e7n12KC9of7M36tu1UcRULFZYB48xAUvhQBFqMzivWfShPLsx7fcU5vrFRRQrNqW3` — slot 471052305.
+- A varredura posterior #21 (run `44381547015`) também consultou 100 assinaturas sem falhas e encontrou quatro transações multi-swap recentes, slots 471052584–471052586. Todas foram rejeitadas pelo pipeline com o mesmo motivo: `reconciliação econômica INCOMPLETE: funding SOL agregado diverge do valor bruto total das transferências wSOL`.
+- A evidência comprova que transações Mainnet com múltiplos `swap2` existem, mas ainda não comprova que o padrão específico de funding compartilhado seja compatível com o decoder atual. Não relaxar validação econômica. Próximo passo: inspecionar detalhadamente uma transação candidata, incluindo instruções SystemProgram, SyncNative, transferências wSOL e deltas de saldo.
+- Foi incluído diagnóstico `pipeline_reason` no scanner e uma etapa de inspeção dedicada para a primeira candidata `78AuFWUBHsF6P8XgdzFsrz7XRuErsdcMzysRxq845zjTqQ9b7jeVcLd9obwJyL8MSJMTkV9WcRrnTPfPtgTq5UK` (slot 471052586); workflow #22 (run `44381696357`) ainda em execução no momento deste registro.
+- Scanner aceita transaction version 1, usa RPC PublicNode como endpoint primário configurado e Solana Labs como fallback; limite atual 100 assinaturas. O fluxo de validação conhecida single-swap segue aprovado.
+- CI #1068 (run `44380902804`) SUCCESS: 483 testes e compileall aprovados. PR #25 continua OPEN/DRAFT, sem merge; BUY/SELL e execução financeira permanecem desabilitados.

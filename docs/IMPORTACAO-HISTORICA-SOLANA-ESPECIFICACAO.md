@@ -285,3 +285,15 @@ Os perfis Event CPI Jupiter v6 e Meteora DLMM continuam `UNKNOWN`. Os cinco RAW 
 6. Criar testes sintéticos para ExactIn, PartialFill, ExactOut, eventos desconhecidos, payload truncado, múltiplos swaps, hierarquia CPI inválida e Token-2022 fees.
 
 Não integrar este decoder ao pipeline CPMM existente sem um adaptador DAMM v2 separado e testes próprios. Nenhum banco, importação, RPC/Helius, checkpoint ou operação on-chain foi executado.
+
+## 19. Primeiro parser estrutural DAMM v2 (18/11/2026)
+
+Foi adicionado ao PR #16 o módulo `src/smart_money_radar/data_sources/damm_v2_decoder.py`, com testes em `tests/test_damm_v2_decoder.py`, referenciado ao commit oficial MeteoraAg/damm-v2 `18936b18c26708f6e9b52cacc01ea2f99868ba8e`.
+
+O parser reconhece discriminadores exatos de `swap` legacy e `swap2`, além do wrapper Anchor Event CPI + discriminador EvtSwap2. Faz parsing estrito de tamanhos, modos, direção, booleano Borsh, parâmetros, resultado, fees, timestamp e reservas. Em ExactOut preserva amount_0 como output desejado e amount_1 como input máximo.
+
+O parser é deliberadamente estrutural: não liga evento a instrução, não decodifica papéis de contas, não interpreta BUY/SELL, não cria SwapObservation e não substitui a reconciliação de transferências SPL/Token-2022 e deltas de token accounts/vaults. Não foi integrado ao pipeline CPMM.
+
+Commits funcionais: `9bd940d86209bfe89a03dd66e5bfa23593ae3ba9` e `8562da8c2d8d87228b706aff2012fa36b2d16ef0`. Os testes novos ainda aguardam execução local e CI; o estado não deve ser considerado validado até essa evidência.
+
+Próximo passo: fast-forward no clone PR16, executar os testes específicos do decoder e a suíte completa; corrigir qualquer falha antes de ampliar a auditoria ou construir reconciliação econômica.

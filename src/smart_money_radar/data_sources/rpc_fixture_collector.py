@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import time
 import urllib.error
@@ -56,8 +57,19 @@ class RpcFixtureCollector:
         parsed_endpoint = urlparse(endpoint)
         if parsed_endpoint.scheme != "https" or not parsed_endpoint.hostname:
             raise ValueError("O endpoint RPC deve ser uma URL HTTPS válida.")
-        if timeout <= 0 or min_interval_seconds < 0:
-            raise ValueError("Timeout deve ser positivo e intervalo não negativo.")
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+            or isinstance(min_interval_seconds, bool)
+            or not isinstance(min_interval_seconds, (int, float))
+            or not math.isfinite(min_interval_seconds)
+            or min_interval_seconds < 0
+        ):
+            raise ValueError(
+                "Timeout deve ser finito e positivo; intervalo deve ser finito e não negativo."
+            )
         self.endpoint = endpoint
         self.output_dir = Path(output_dir)
         self.timeout = timeout

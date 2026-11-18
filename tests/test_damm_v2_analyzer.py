@@ -83,6 +83,15 @@ class DammV2AnalyzerTests(unittest.TestCase):
         original = b"\x00\x00SMR"
         self.assertEqual(_decode_base58(b58encode(original)), original)
 
+    def test_rejects_mixed_account_key_formats(self):
+        raw = transaction([], {})
+        raw["result"]["transaction"]["message"]["accountKeys"] = [
+            {"pubkey": "parsed-key", "signer": True},
+            "compiled-key",
+        ]
+        with self.assertRaisesRegex(ValueError, "mistura formatos"):
+            analyze_damm_v2_swap_events(raw)
+
     def test_resolves_damm_program_from_loaded_addresses(self):
         raw = transaction(
             [{"programId": "aggregator", "accounts": [], "data": b58encode(b"route")}],

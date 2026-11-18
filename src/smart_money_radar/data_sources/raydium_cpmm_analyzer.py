@@ -142,13 +142,18 @@ def _inner_cpi_paths(
             or not isinstance(height, int)
             or height < 2
         ):
+            # A partir de um item sem stackHeight, não reutiliza uma pilha
+            # anterior que pode já não corresponder ao contexto de execução.
+            stack_paths = {1: ()}
             result.append(((position,), None))
             continue
 
         parent_path = stack_paths.get(height - 1)
         if parent_path is None:
+            # Sem o pai imediato, não há base suficiente para afirmar a
+            # hierarquia deste CPI nem dos descendentes seguintes.
+            stack_paths = {1: ()}
             result.append(((position,), height))
-            stack_paths[height] = (position,)
             continue
 
         for known_height in tuple(stack_paths):

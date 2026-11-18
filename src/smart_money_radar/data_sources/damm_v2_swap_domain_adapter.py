@@ -106,8 +106,25 @@ def build_damm_v2_swap_domain_bundles(
             or not isinstance(association.cpi_path, tuple)
             or any(isinstance(part, bool) or not isinstance(part, int) or part < 0
                    for part in association.cpi_path)
+            or isinstance(association.stack_height, bool)
+            or not isinstance(association.stack_height, int)
+            or association.stack_height < 1
+            or isinstance(association.event_inner_instruction_index, bool)
+            or not isinstance(association.event_inner_instruction_index, int)
+            or association.event_inner_instruction_index < 0
+            or isinstance(association.event_stack_height, bool)
+            or not isinstance(association.event_stack_height, int)
+            or association.event_stack_height != association.stack_height + 1
+            or not isinstance(association.event_cpi_path, tuple)
+            or len(association.event_cpi_path) != len(association.cpi_path) + 1
+            or association.event_cpi_path[:-1] != association.cpi_path
+            or (
+                association.inner_instruction_index is not None
+                and association.event_inner_instruction_index <= association.inner_instruction_index
+            )
+            or accounts.program != METEORA_DAMM_V2_PROGRAM_ID
         ):
-            raise ValueError("identidade CPI inválida")
+            raise ValueError("identidade CPI ou programa DAMM v2 inválido")
         if item.status != "ATTRIBUTED":
             raise ValueError("transferências não estão ATTRIBUTED")
         if (

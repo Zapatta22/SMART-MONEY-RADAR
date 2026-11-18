@@ -638,7 +638,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         output_transfer = _transfer(
             "vault-b", "user-b", "mint-b", 90,
-            program_id=SPL_TOKEN_PROGRAM_ID, outer=2, inner=2,
+            program_id=TOKEN_2022_PROGRAM_ID, outer=2, inner=2,
         )
         upstream = _transfer(
             "pool-in", "user-a", "mint-a", 100,

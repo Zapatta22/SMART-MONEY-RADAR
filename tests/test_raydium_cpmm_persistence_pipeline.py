@@ -205,5 +205,32 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
 
 
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_solana_token_transfers")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_token_account_balance_deltas")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.reconcile_raydium_cpmm_swaps")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.build_swap_domain_bundles")
+    def test_missing_reconciliation_result_keeps_checkpoint_pending(
+        self, build, reconcile, deltas, transfers, decode, normalize
+    ):
+        normalize.return_value = self.normalized
+        decode.return_value = [object()]
+        transfers.return_value = [object()]
+        deltas.return_value = [object()]
+        reconcile.return_value = []
+        build.return_value = []
+
+        result = process_raydium_cpmm_observation(
+            self.store, self.payload, wallet_address=self.wallet,
+            signature=self.signature,
+        )
+
+        self.assertEqual(result.status, "pending_reconciliation")
+        self.assertEqual(result.unresolved_swaps, 1)
+        self.assertFalse(result.checkpoint_advanced)
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+
+
 if __name__ == "__main__":
     unittest.main()

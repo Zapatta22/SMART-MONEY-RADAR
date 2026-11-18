@@ -345,6 +345,12 @@ def reconcile_damm_v2_economic_batch(
 
         expected_accounts = set(expected)
         claimed_ids = {id(transfer) for transfer in claimed_transfers}
+        inventory_ids = {id(transfer) for transfer in all_transfers}
+        missing_claimed = claimed_ids - inventory_ids
+        if missing_claimed:
+            raise ValueError(
+                "inventário completo não contém todas as transferências atribuídas"
+            )
         unclaimed = [
             transfer for transfer in all_transfers
             if (

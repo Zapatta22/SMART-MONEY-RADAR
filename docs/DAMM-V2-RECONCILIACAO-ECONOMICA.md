@@ -142,3 +142,65 @@ Esses resultados não autorizam correção por inferência, importação ou gera
 6. Só então avaliar adaptador para contratos de domínio.
 
 Até a conclusão desses passos, MATCHED deve significar apenas associação estrutural nos módulos já existentes, nunca reconciliação econômica.
+
+## 12. Auditoria das equações no código oficial fixado
+
+Auditoria direta do código MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f99868ba8e confirmou os comportamentos abaixo. Arquivos centrais: programs/cp-amm/src/instructions/swap/swap_exact_in.rs, swap_partial_fill.rs, swap_exact_out.rs, state/pool.rs, state/fee.rs, utils/token.rs e instructions/swap/ix_p_swap.rs.
+
+### 12.1 Semântica dos valores de entrada
+
+- included_transfer_fee_amount_in é o valor bruto passado à transferência do usuário para o vault.
+- SwapResult2.included_fee_input_amount é a entrada líquida recebida pelo pool após a transfer fee Token-2022, mas antes de excluir a taxa de negociação do AMM.
+- SwapResult2.excluded_fee_input_amount é a entrada após a taxa de negociação do AMM, usada no cálculo/reserva da curva.
+- A transferência Token-2022 não é codificada pelo programa Meteora como uma instrução especial TransferCheckedWithFee. O código invoca TransferChecked; o Token-2022 aplica a TransferFeeConfig do mint. Portanto, não exigir opcode separado para reconhecer a taxa. É necessário decodificar a transferência e validar a configuração/epoch e o withheld amount correspondente.
+
+### 12.2 EXACT_IN
+
+1. amount_0 é transferido em bruto do usuário; calculate_transfer_fee_excluded_amount calcula o crédito líquido do vault.
+2. Esse valor líquido é entregue a get_swap_result_from_exact_input.
+3. included_fee_input_amount corresponde ao valor líquido de entrada antes da taxa AMM; excluded_fee_input_amount corresponde ao valor após a taxa AMM.
+4. output_amount é o valor bruto enviado pelo vault de saída ao usuário, antes da transfer fee externa.
+5. excluded_transfer_fee_amount_out é o crédito líquido esperado ao destinatário depois da transfer fee.
+6. A saída mínima é validada contra esse crédito líquido.
+
+### 12.3 PARTIAL_FILL
+
+1. amount_0 é o limite bruto solicitado; primeiro é convertido em entrada líquida após a transfer fee.
+2. A função de curva retorna amount_left e a saída. Quando existe entrada não consumida, o código subtrai amount_left do montante disponível após a taxa AMM e reconstrói a entrada com taxa AMM incluída, quando a taxa é cobrada no input.
+3. Quando amount_left == 0, included_fee_input_amount é o montante de entrada líquido disponibilizado ao pool.
+4. O montante bruto realmente transferido do usuário é recalculado com calculate_transfer_fee_included_amount sobre included_fee_input_amount; portanto, não é necessariamente todo amount_0.
+5. amount_left não é valor devolvido ao usuário: a transferência é dimensionada ao consumo efetivo, deixando o restante na conta do usuário.
+6. A saída é transferida em bruto e excluded_transfer_fee_amount_out é validado contra o mínimo de saída.
+
+### 12.4 EXACT_OUT
+
+1. amount_0 é a saída líquida desejada pelo usuário.
+2. calculate_transfer_fee_included_amount converte essa saída líquida no valor bruto que o vault deve transferir; esse valor é included_transfer_fee_amount_out.
+3. O cálculo do AMM determina a entrada necessária. included_fee_input_amount é a entrada antes de excluir a taxa AMM; excluded_fee_input_amount é a entrada após a taxa AMM.
+4. A entrada bruta do usuário é calculada com calculate_transfer_fee_included_amount sobre included_fee_input_amount; esse valor é included_transfer_fee_amount_in e precisa ser menor ou igual a amount_1 (máximo bruto de entrada).
+5. excluded_transfer_fee_amount_out é igual ao amount_0 líquido solicitado.
+6. amount_left é zero no resultado exact-out produzido pelo código.
+
+### 12.5 Taxa AMM, modo de cobrança e referral
+
+- FeeMode::get_fee_mode deriva se as taxas são cobradas no input ou output a partir de CollectFeeMode e direção. Logo, a reconciliação precisa conhecer collect_fee_mode, trade_direction e has_referral; não basta conhecer o modo ExactIn/PartialFill/ExactOut.
+- claiming_fee, protocol_fee, compounding_fee e referral_fee são componentes do cálculo de taxa AMM, não transfer fees Token-2022.
+- claiming_fee e compounding_fee participam do accounting do pool; protocol_fee é contabilizado internamente no pool; referral, quando ativo, causa uma transferência adicional do vault para a conta referral, no token determinado por fees_on_token_a.
+- O débito do vault não pode ser reconciliado olhando apenas a transferência principal de saída: a transferência referral e a forma de cobrança da taxa alteram o efeito total do vault. A transferência referral deve ser identificada e atribuída separadamente.
+- apply_swap_result atualiza as reservas internas do pool com regras próprias para fee-on-input/output e adiciona compounding fee ao token B. As reservas do evento são snapshots pós-swap, não substitutos dos movimentos de token accounts.
+
+### 12.6 Limite probatório Token-2022
+
+O código Meteora calcula a transfer fee a partir da TransferFeeConfig do mint no epoch corrente e invoca TransferChecked. O crédito líquido do destinatário e o withheld amount pertencem a campos distintos do estado do token account. Os deltas padrão preTokenBalances/postTokenBalances mostram o saldo spendable, não bastam sozinhos para provar todos os campos withheld nem a configuração histórica do mint. Sem estado/configuração histórica válida no epoch da transação e evidência de withheld, manter o caso Token-2022 em estado não reconciliado.
+
+### 12.7 Equações mínimas a validar por operação
+
+Definições: G_in = included_transfer_fee_amount_in; N_in = included_fee_input_amount; A_in = excluded_fee_input_amount; G_out = included_transfer_fee_amount_out; N_out = excluded_transfer_fee_amount_out.
+
+- Entrada: débito bruto da conta do usuário = G_in; crédito spendable do vault = N_in; diferença = transfer fee de entrada, comprovada pela configuração/estado Token-2022 ou zero para SPL Token.
+- Saída principal: débito bruto do vault = G_out; crédito spendable do usuário = N_out; diferença = transfer fee de saída, comprovada ou zero para SPL Token.
+- Taxa AMM de entrada, quando fees_on_input: diferença entre N_in e A_in precisa ser explicada pelos componentes de fee e regras de rounding do programa.
+- Saídas adicionais (referral) são transferências separadas e devem ser reconciliadas à parte; não devem ser confundidas com G_out.
+- Para taxas cobradas no output, o accounting de reserva inclui componentes AMM além da transferência principal. A igualdade de deltas do vault com a transferência principal isolada não é um invariante válido.
+
+Essas relações foram derivadas do código fixado, mas ainda precisam ser implementadas como testes sintéticos com arredondamento, ambos os sentidos, três modos e todas as combinações de FeeMode. Nenhum reconciliador foi implementado; nenhum RAW foi alterado ou enviado.

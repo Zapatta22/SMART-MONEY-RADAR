@@ -67,7 +67,7 @@ class RpcFixtureCollectorTests(unittest.TestCase):
     def test_rejects_null_result(self):
         collector = RpcFixtureCollector(
             "https://rpc.example", tempfile.mkdtemp(),
-            opener=Mock(return_value=FakeResponse(b'{"result":null}')),
+            opener=Mock(return_value=FakeResponse(b'{"jsonrpc":"2.0","id":1,"result":null}')),
         )
         with self.assertRaisesRegex(RuntimeError, "não encontrada"):
             collector.collect(SIG)
@@ -83,6 +83,29 @@ class RpcFixtureCollectorTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 collector.collect(invalid)
         opener.assert_not_called()
+
+    def test_rejects_missing_or_wrong_jsonrpc_version(self):
+        collector = RpcFixtureCollector(
+            "https://rpc.example", tempfile.mkdtemp(),
+            opener=Mock(return_value=FakeResponse(b'{"id":1,"result":{}}')),
+        )
+        with self.assertRaisesRegex(RuntimeError, "JSON-RPC 2.0"):
+            collector.collect(SIG)
+
+    def test_rejects_mismatched_or_boolean_response_id(self):
+        for response_id in (2, True):
+            body = json.dumps({
+                "jsonrpc": "2.0", "id": response_id,
+                "result": {"slot": 123, "transaction": {"signatures": [SIG]}},
+            }).encode()
+            collector = RpcFixtureCollector(
+                "https://rpc.example", tempfile.mkdtemp(),
+                opener=Mock(return_value=FakeResponse(body)),
+            )
+            with self.subTest(response_id=response_id), self.assertRaisesRegex(
+                RuntimeError, "ID de resposta divergente"
+            ):
+                collector.collect(SIG)
 
     def test_rejects_non_object_json_response(self):
         collector = RpcFixtureCollector(

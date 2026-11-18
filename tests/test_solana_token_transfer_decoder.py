@@ -291,6 +291,27 @@ class TokenTransferDecoderTests(unittest.TestCase):
         self.assertEqual(result[0].cpi_path, (0, 0))
         self.assertEqual(result[0].stack_height, 3)
 
+    def test_retains_nested_cpi_program_ancestry(self):
+        inner = [
+            {"programId": "scopes-router", "accounts": [], "data": "1", "stackHeight": 2},
+            {"programId": "pump-swap", "accounts": [], "data": "2", "stackHeight": 3},
+            {
+                "programId": SPL_TOKEN_PROGRAM_ID,
+                "accounts": [0, 1, 2],
+                "data": _transfer(3, 8),
+                "stackHeight": 4,
+            },
+        ]
+        result = decode_solana_token_transfers(_tx(
+            [{"programId": "router", "accounts": [], "data": "1"}],
+            meta={"err": None, "innerInstructions": [{"index": 0, "instructions": inner}]},
+        ))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(
+            result[0].cpi_program_path,
+            ("router", "scopes-router", "pump-swap"),
+        )
+
     def test_uses_flat_position_without_stack_height(self):
         result = decode_solana_token_transfers(_tx(
             [{"programId": "router", "accounts": [], "data": "1"}],

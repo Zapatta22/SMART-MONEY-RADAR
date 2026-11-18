@@ -104,3 +104,8 @@ smr-api
 ```
 
 A API continua restrita ao próprio dispositivo. Este comando não configura acesso remoto pelo Android nem substitui autenticação TLS para exposição em rede.
+
+
+### Correção do empacotamento do comando smr-api
+
+A primeira execução do CI após registrar o entry point falhou durante `pip install -e .`, antes dos testes, por `TOMLDecodeError` na linha `[project.scripts]`: a edição havia gravado os caracteres literais `\\n` entre as duas entradas, em vez de uma quebra de linha. O arquivo foi corrigido para duas linhas TOML válidas no commit `ec8445224ca88070f83cac9fb12862348fc876f1`. O conteúdo foi relido e confirma `smr` e `smr-api` em linhas separadas. Nova execução do CI é necessária; ainda não se declara validação dos testes do launcher.

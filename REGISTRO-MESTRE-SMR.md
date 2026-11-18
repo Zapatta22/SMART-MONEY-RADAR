@@ -2276,3 +2276,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Corrigida somente a instrução de importação; conteúdo restante preservado. Verificação posterior do conteúdo GitHub confirmou ausência de sequências literais `\\n` e import multilinha formatado corretamente.
 - Commit corretivo: `a5715de67228cee087905ca1a941fbb98943fe1c`.
 - Esta é uma correção revisada estaticamente, não uma validação runtime. `unittest` e `compileall` continuam pendentes no ambiente Termux/runner funcional.
+
+
+## 135. Corrigida ordem de validação dos bundles CPMM — PR #25 (18/11/2026)
+
+- Auditoria do caminho de persistência Raydium CPMM encontrou uso de `bundle_identity_mismatch` no cálculo de `unresolved` antes da atribuição da variável. Em qualquer caminho com swap decodificado, isso podia gerar `UnboundLocalError`, cair no tratamento de exceção e manter a observação em replay mesmo quando reconciliação e bundle fossem válidos.
+- Reordenado o fluxo: primeiro calcula a divergência de cardinalidade/identidade das reconciliações, constrói e valida os bundles (IDs únicos, conjunto exato, chain/carteira/assinatura e consistência dos três operation IDs); somente depois calcula `unresolved` e decide se pode marcar a assinatura como processada.
+- O teste já existente `test_matched_swap_is_persisted_before_checkpoint` cobre o caminho positivo MATCHED + bundle válido e deverá exercitar a variável na execução runtime.
+- Commit corretivo: `e323cb91f2d6ea6c122a9d5cb11ffe97ae5c13a5`. Revisão estática posterior confirmou `bundle_identity_mismatch` definido antes do cálculo de `unresolved`.
+- Ainda sem unittest/compileall runtime após a correção. Nenhum checkpoint, banco persistente, RPC ou estado on-chain foi alterado.

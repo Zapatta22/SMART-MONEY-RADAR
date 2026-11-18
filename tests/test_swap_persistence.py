@@ -220,5 +220,38 @@ class SwapPersistenceTests(unittest.TestCase):
 
 
 
+    def test_pending_signatures_returns_archived_unprocessed_rows_only(self):
+        self.store.save_observation(
+            "wallet-a", "pending-1", {"meta": {"err": None}}, [],
+            parse_status="no_events", parser_version="1",
+            advance_checkpoint=False,
+        )
+        self.store.save_observation(
+            "wallet-a", "pending-2", {"meta": {"err": None}}, [],
+            parse_status="no_events", parser_version="1",
+            advance_checkpoint=False,
+        )
+        self.store.save_observation(
+            "wallet-a", "processed-1", {"meta": {"err": None}}, [],
+            parse_status="no_events", parser_version="1",
+            advance_checkpoint=False,
+        )
+        self.store.mark_processed("wallet-a", "processed-1")
+        self.assertEqual(
+            self.store.get_pending_signatures("wallet-a"),
+            ["pending-1", "pending-2"],
+        )
+        self.assertEqual(
+            self.store.get_pending_signatures("wallet-a", limit=1),
+            ["pending-1"],
+        )
+
+    def test_pending_signatures_rejects_invalid_limit(self):
+        for invalid in (0, -1, True, 1.5):
+            with self.subTest(limit=invalid):
+                with self.assertRaises(ValueError):
+                    self.store.get_pending_signatures("wallet-a", limit=invalid)
+
+
 if __name__ == "__main__":
     unittest.main()

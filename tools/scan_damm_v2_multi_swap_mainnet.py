@@ -180,6 +180,8 @@ def scan(endpoints: tuple[str, ...], limit: int, pages: int) -> dict:
                     for context in result.contexts
                 ],
                 "shared_wsol_input_accounts": shared_wsol_inputs,
+                "shared_wsol_accounts": shared_wsol_accounts,
+                "reconciled_shared_wsol_accounts": reconciled_shared_wsol_accounts,
                 "funded_shared_wsol_input_accounts": len(funded_shared_wsol_inputs),
             }
             candidates.append(candidate)

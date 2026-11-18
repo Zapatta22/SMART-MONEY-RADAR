@@ -52,8 +52,14 @@ O `WalletMonitor` agora executa DAMM v2 antes do pipeline Raydium CPMM:
 - O CPMM continua sendo o coordenador final do checkpoint nesta etapa; assim,
   transações sem swaps CPMM ainda são marcadas como processadas somente depois
   de DAMM v2 liberar a transação.
-- Bundles são idempotentes no EventStore. Uma repetição após falha de outro
-  venue não deve duplicar operações.
+- Antes de normalizar/persistir, o CPMM exige que `transaction.signatures`
+  exista, não esteja vazia, contenha apenas strings não vazias sem duplicatas,
+  e que a primeira assinatura corresponda à notificação recebida. Essa
+  validação também protege o caminho de transações com falha on-chain.
+- Bundles são idempotentes no EventStore. Cada trio observation/classification/
+  evidence é gravado atomicamente em uma transação SQLite e usa
+  `ON CONFLICT(operation_id) DO UPDATE`; replay regrava bundles já salvos sem
+  duplicar operações. O lote de vários bundles não é uma transação única.
 
 Testes de persistência usam SQLite `:memory:`; o teste do monitor simula
 bloqueio DAMM e confirma que CPMM não é chamado e checkpoint não avança.

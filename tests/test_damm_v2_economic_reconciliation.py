@@ -1,0 +1,239 @@
+import unittest
+
+from smart_money_radar.data_sources.damm_v2_accounts import DammV2SwapAccounts
+from smart_money_radar.data_sources.damm_v2_analyzer import DammV2SwapEventAssociation
+from smart_money_radar.data_sources.damm_v2_decoder import DammV2EvtSwap2, DammV2SwapResult
+from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
+    reconcile_damm_v2_economic_batch,
+)
+from smart_money_radar.data_sources.damm_v2_transfer_analyzer import DammV2SwapTransferContext, DammV2TransferEvidence
+from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
+    SolanaTokenAccountBalanceDelta,
+    SolanaTokenBalanceDeltaIssue,
+    SolanaTokenBalanceDeltaResult,
+)
+from smart_money_radar.data_sources.solana_token_transfer_decoder import (
+    SPL_TOKEN_PROGRAM_ID,
+    TOKEN_2022_PROGRAM_ID,
+    SolanaTokenTransfer,
+)
+
+
+def _accounts():
+    return DammV2SwapAccounts(
+        pool_authority="authority", pool="pool",
+        input_token_account="user-a", output_token_account="user-b",
+        token_a_vault="vault-a", token_b_vault="vault-b",
+        token_a_mint="mint-a", token_b_mint="mint-b", payer="payer",
+        token_a_program=TOKEN_2022_PROGRAM_ID,
+        token_b_program=TOKEN_2022_PROGRAM_ID,
+        referral_token_account="referral", event_authority="event",
+        program="damm", remaining_accounts=(),
+        input_vault="vault-a", output_vault="vault-b",
+        input_mint="mint-a", output_mint="mint-b",
+        input_token_program=TOKEN_2022_PROGRAM_ID,
+        output_token_program=TOKEN_2022_PROGRAM_ID,
+    )
+
+
+def _event(referral_fee=0, has_referral=False):
+    return DammV2EvtSwap2(
+        pool=bytes(32), trade_direction="A_TO_B",
+        collect_fee_mode="BOTH_TOKEN", has_referral=has_referral,
+        amount_0=100, amount_1=90, swap_mode="EXACT_IN",
+        swap_result=DammV2SwapResult(
+            included_fee_input_amount=95,
+            excluded_fee_input_amount=90,
+            amount_left=0, output_amount=90, next_sqrt_price=1 << 64,
+            claiming_fee=2, protocol_fee=1, compounding_fee=1,
+            referral_fee=referral_fee,
+        ),
+        included_transfer_fee_amount_in=100,
+        included_transfer_fee_amount_out=90,
+        excluded_transfer_fee_amount_out=90,
+        current_timestamp=1_700_000_000,
+        reserve_a_amount=1_000, reserve_b_amount=2_000,
+    )
+
+
+def _context(outer=0, path=(0,), event=None):
+    association = DammV2SwapEventAssociation(
+        status="MATCHED", instruction_index=outer,
+        inner_instruction_index=1, cpi_path=path, stack_height=3,
+        instruction=None, event_inner_instruction_index=5,
+        event_cpi_path=path + (0,), event_stack_height=4,
+        event=_event() if event is None else event,
+    )
+    return DammV2SwapTransferContext(association, _accounts())
+
+
+def _transfer(source, destination, mint, amount, fee=None, decimals=6,
+              outer=0, inner=2, path=(0, 0)):
+    return SolanaTokenTransfer(
+        program_id=TOKEN_2022_PROGRAM_ID,
+        program_name="Token-2022",
+        instruction_type="TRANSFER_CHECKED_WITH_FEE" if fee is not None else "TRANSFER_CHECKED",
+        instruction_index=outer, inner_instruction_index=inner,
+        stack_height=4, cpi_path=path,
+        source_account=source, destination_account=destination,
+        authority="authority", mint=mint, amount_raw=amount,
+        decimals=decimals, execution_status="EXECUTED",
+        source_format="compiled", fee_amount_raw=fee,
+    )
+
+
+def _evidence(context, input_transfer, output_transfer, referral=None):
+    association = context.association
+    return DammV2TransferEvidence(
+        status="ATTRIBUTED",
+        instruction_index=association.instruction_index,
+        inner_instruction_index=association.inner_instruction_index,
+        cpi_path=association.cpi_path,
+        input_transfer=input_transfer,
+        output_transfer=output_transfer,
+        referral_transfer=referral,
+        reason="fixture attribution",
+        transfer_fee_review_required=True,
+    )
+
+
+def _deltas(values):
+    rows = []
+    for index, (account, mint, amount, decimals) in enumerate(values):
+        rows.append(SolanaTokenAccountBalanceDelta(
+            account_index=index, token_account=account, mint=mint,
+            owner="owner", pre_amount_raw=1_000,
+            post_amount_raw=1_000 + amount, delta_raw=amount,
+            decimals=decimals,
+        ))
+    return SolanaTokenBalanceDeltaResult(tuple(rows), ())
+
+
+class DammV2EconomicReconciliationTests(unittest.TestCase):
+    def setUp(self):
+        self.context = _context()
+        self.input = _transfer("user-a", "vault-a", "mint-a", 100, fee=5)
+        self.output = _transfer("vault-b", "user-b", "mint-b", 90, fee=0)
+        self.evidence = _evidence(self.context, self.input, self.output)
+
+    def test_reconciles_gross_debits_and_net_credits_against_account_deltas(self):
+        deltas = _deltas([
+            ("user-a", "mint-a", -100, 6),
+            ("vault-a", "mint-a", 95, 6),
+            ("vault-b", "mint-b", -90, 6),
+            ("user-b", "mint-b", 90, 6),
+        ])
+        result = reconcile_damm_v2_economic_batch(
+            [self.context], [self.evidence], deltas
+        )
+        self.assertEqual(result.status, "RECONCILED")
+        self.assertEqual(result.operation_count, 1)
+        self.assertEqual(len(result.expected_account_deltas), 4)
+
+    def test_rejects_net_credit_that_disagrees_with_explicit_transfer_fee(self):
+        bad_input = _transfer("user-a", "vault-a", "mint-a", 100, fee=4)
+        evidence = _evidence(self.context, bad_input, self.output)
+        result = reconcile_damm_v2_economic_batch(
+            [self.context], [evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("crédito líquido", result.reason)
+
+    def test_rejects_missing_or_incomplete_balance_snapshots(self):
+        incomplete = SolanaTokenBalanceDeltaResult(
+            (), (SolanaTokenBalanceDeltaIssue(None, "SNAPSHOTS_MISSING"),)
+        )
+        result = reconcile_damm_v2_economic_batch(
+            [self.context], [self.evidence], incomplete
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("SNAPSHOTS_MISSING", result.reason)
+
+    def test_rejects_delta_mismatch(self):
+        result = reconcile_damm_v2_economic_batch(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 94, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("delta diverge", result.reason)
+
+    def test_aggregates_sequential_swaps_sharing_the_same_token_accounts(self):
+        second = _context(path=(1,))
+        second_input = _transfer(
+            "user-a", "vault-a", "mint-a", 100, fee=5, inner=7, path=(1, 0)
+        )
+        second_output = _transfer(
+            "vault-b", "user-b", "mint-b", 90, fee=0, inner=8, path=(1, 0)
+        )
+        results = reconcile_damm_v2_economic_batch(
+            [self.context, second],
+            [
+                self.evidence,
+                _evidence(second, second_input, second_output),
+            ],
+            _deltas([
+                ("user-a", "mint-a", -200, 6),
+                ("vault-a", "mint-a", 190, 6),
+                ("vault-b", "mint-b", -180, 6),
+                ("user-b", "mint-b", 180, 6),
+            ]),
+        )
+        self.assertEqual(results.status, "RECONCILED")
+        self.assertEqual(results.operation_count, 2)
+
+    def test_requires_explicit_referral_fee_for_token_2022(self):
+        context = _context(event=_event(referral_fee=5, has_referral=True))
+        referral = _transfer(
+            "vault-b", "referral", "mint-b", 5, fee=None, inner=3
+        )
+        evidence = _evidence(context, self.input, self.output, referral)
+        result = reconcile_damm_v2_economic_batch(
+            [context], [evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -95, 6),
+                ("user-b", "mint-b", 90, 6),
+                ("referral", "mint-b", 5, 6),
+            ])
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("não está explícita", result.reason)
+
+    def test_reconciles_referral_transfer_with_explicit_token_2022_fee(self):
+        context = _context(event=_event(referral_fee=5, has_referral=True))
+        referral = _transfer(
+            "vault-b", "referral", "mint-b", 5, fee=1, inner=3
+        )
+        evidence = _evidence(context, self.input, self.output, referral)
+        result = reconcile_damm_v2_economic_batch(
+            [context], [evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -95, 6),
+                ("user-b", "mint-b", 90, 6),
+                ("referral", "mint-b", 4, 6),
+            ])
+        )
+        self.assertEqual(result.status, "RECONCILED")
+
+    def test_rejects_transfer_reuse(self):
+        result = reconcile_damm_v2_economic_batch(
+            [self.context, self.context],
+            [self.evidence, self.evidence],
+            _deltas([]),
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("reutilizada", result.reason)
+
+
+if __name__ == "__main__":
+    unittest.main()

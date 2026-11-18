@@ -276,7 +276,7 @@ def decode_wrapped_sol_account_lifecycle(
                 or resolved[2] != owner_wallet
                 or resolved[3] != NATIVE_MINT
             ):
-                raise ValueError("criação ATA wSOL não corresponde à carteira/conta esperada")
+                raise ValueError(\n                    "criação ATA wSOL não corresponde à carteira/conta esperada: " + repr((data, resolved, owner_wallet, NATIVE_MINT))\n                )
             creates.append(index)
         elif program == SYSTEM_PROGRAM_ID and len(data) == 12:
             if int.from_bytes(data[:4], "little") == 2 and token_account in resolved:

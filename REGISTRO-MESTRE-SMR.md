@@ -1709,3 +1709,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits desta correção: código c60d99d8cbb088a3999ae2813f9bd8864e088bc1, testes 73d26dc303cc9508865fc673f7d8dbf4443ea749, documentação ab4f947bfb35ba590b830bf2a1ff28afd55224d4.
 - A validação CI #495 (340 testes) refere-se ao head anterior e8b30976efe36de2878efec79b8d25035ac3efbc; não valida estas alterações novas.
 - Estado: aguardando CI no novo head. PR permanece Draft, aberto e não integrado.
+
+
+### CI corretivo da compatibilidade TLV — 18/11/2026
+
+- Primeira execução após os novos testes: run 44264725856 (#499), falhou em 2 testes focais porque os literais binários foram gravados com barras invertidas duplicadas; os testes não estavam fornecendo os bytes pretendidos.
+- Corrigidos os literais para bytes reais: cauda 0x7f e terminador 00 00 seguido por bytes residuais.
+- Commit corretivo dos testes: ab6d994ddf2e7adf86039c3a4bf3ba4bce9b2888.
+- Novo CI do PR: run 44264858445 (#503), evento pull_request, associado ao head ab6d994ddf2e7adf86039c3a4bf3ba4bce9b2888; estado observado: queued.
+- A execução #499 não deve ser usada como validação final. A execução #495 (340 testes) valida apenas o head anterior e8b3097.
+- Próxima ação: consultar o resultado do run #503, confirmar todos os testes e compileall, depois revisar novamente o diff completo e a mergeability do PR. Não integrar nem remover o estado Draft nesta etapa.

@@ -1921,3 +1921,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits da branch até esta atualização: código/testes `7933eba86931b387ae60385b459cf531b396f435`; documentação `9f3b3d5e151f8b380094e68a7877dd38721a9286`. Esta seção será registrada no commit documental seguinte.
 - Validação pendente: executar os testes novos e suíte completa, compileall e CI. Nenhuma execução foi alegada nesta etapa; o CI ainda precisa ser consultado.
 - Limites: o adaptador não integra parser/normalizador, não persiste SQLite, não altera checkpoints, não consulta RPC/Helius, não modifica fixtures RAW e não cria sinais ou ordens. PR #24 permanece Draft; nenhuma alteração na `main`.
+
+
+## 100. Endurecimento de proveniência CPI no adaptador de domínio — PR #24 (18/11/2026)
+
+- Revisão estática do novo adaptador identificou necessidade de não depender exclusivamente do status `RECONCILED` recebido: o adaptador também revalida localmente que input/output transfer têm `cpi_path_valid is True`, pertencem à instrução externa associada, ocorrem antes do Event CPI, têm stackHeight descendente e caminho CPI descendente do swap.
+- Também revalida que os Token Programs das transferências correspondem aos programas de input/output resolvidos nas contas DAMM v2.
+- Adicionado teste negativo para rejeitar `cpi_path_valid=False`.
+- Commits adicionais: guarda CPI/programa `84036f22db67b0e68d2289a6c47885f13f897383`; teste `24135bbde0a6b2d7d04913370d66760a6f15182a`.
+- Nenhum teste foi executado por esta atualização GitHub; a validação runtime continua pendente.
+- PR #24 continua Draft, aberto e não integrado; PR #23 continua sendo sua base. `main` permanece intacta.

@@ -47,6 +47,12 @@ class TransferFeeStateDecoderTests(unittest.TestCase):
     def test_accepts_zero_padding(self):
         self.assertEqual(decode_transfer_fee_config(mint_data([tlv(1, config())]) + bytes(12)).withheld_amount, 7)
 
+    def test_rejects_nonzero_mint_padding(self):
+        data = bytearray(mint_data([tlv(1, config())]))
+        data[100] = 1
+        with self.assertRaisesRegex(ValueError, "padding do mint"):
+            decode_transfer_fee_config(bytes(data))
+
     def test_rejects_wrong_account_type(self):
         with self.assertRaisesRegex(ValueError, "AccountType"):
             decode_transfer_fee_config(account_data([tlv(1, config())]))

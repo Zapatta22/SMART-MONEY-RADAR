@@ -1881,3 +1881,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - GitHub confirmou a presença da guarda e do teste; isso não equivale à execução dos testes.
 - PR #23 continua Draft, aberto e sem merge. HEAD conhecido após a correção: `262c59a9a23171f1015843625fb611d6ab0dd969`; compare com PR #22: 20 commits à frente, 0 atrás, quatro arquivos próprios.
 - CI e execução local da suíte permanecem pendentes. Não houve alteração em `main`, RAW fixtures, SQLite, checkpoints, RPC/Helius ou operações on-chain.
+
+
+
+## 97. CI #584 após correção de inventário — 18/11/2026
+
+- O commit documental `f9ed8f22b983df070c1365e12e196b1427981d06` acionou o workflow `SMR tests`, run #584, ID `44300868194`.
+- Job `test`, ID `134789931058`, terminou failure; consulta de etapas retornou lista vazia (`steps=[]`) e download de logs retornou 404 `BlobNotFound`.
+- A resposta resumida disponível não expôs `runner_id`; não inferir esse campo. Não há evidência de que checkout, instalação, unittest ou compileall tenham iniciado.
+- A falha não comprova defeito nos testes e tampouco representa aprovação. Causa raiz externa do problema pré-etapas continua não confirmada.
+- Nenhum retry foi realizado. PR #23 permanece Draft, aberto e sem merge.
+- A validação local no Termux permanece pendente; não declarar testes aprovados até obter saída real.

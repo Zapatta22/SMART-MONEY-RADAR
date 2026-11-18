@@ -221,6 +221,32 @@ class TransactionParserTests(unittest.TestCase):
 
         self.assertEqual(events, [])
 
+    def test_invalid_owned_balance_entry_does_not_become_zero(self) -> None:
+        transaction = dict(self.transaction)
+        transaction["meta"] = {
+            **self.transaction["meta"],
+            "preTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-incomplete-before",
+                    "uiTokenAmount": {"amount": "not-a-number", "decimals": 6},
+                },
+            ],
+            "postTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-incomplete-before",
+                    "uiTokenAmount": {"amount": "2000000", "decimals": 6},
+                },
+            ],
+        }
+        transaction["transaction"] = {"message": {"instructions": []}}
+
+        self.assertEqual(
+            parse_transaction(transaction, self.wallet, self.signature),
+            [],
+        )
+
     def test_rejects_invalid_spl_decimal_scale(self) -> None:
         transaction = dict(self.transaction)
         transaction["meta"] = {

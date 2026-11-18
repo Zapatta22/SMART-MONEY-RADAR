@@ -180,5 +180,45 @@ class SwapPersistenceTests(unittest.TestCase):
         self.assertIsNone(self.store.get_swap_bundle(build_swap_operation_id("solana", "missing-signature", 0)))
 
 
+    def test_deferred_checkpoint_allows_swap_bundle_pipeline_to_finish_first(self):
+        store = SQLiteEventStore(":memory:")
+        try:
+            store.save_observation(
+                "wallet-b", "sig-b", {"meta": {"err": None}}, [],
+                parse_status="no_events", parser_version="1",
+                advance_checkpoint=False,
+            )
+            self.assertFalse(store.has_processed_signature("wallet-b", "sig-b"))
+            self.assertIsNone(store.get_checkpoint("wallet-b"))
+
+            operation_id = build_swap_operation_id("solana", "sig-b", 3, (1,))
+            observation = SwapObservation(
+                operation_id=operation_id, chain="solana", wallet_address="wallet-b",
+                signature="sig-b", input_mint="mint-in", output_mint="mint-out",
+                input_amount=Decimal("1"), output_amount=Decimal("2"),
+                observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc), parser_version="1",
+            )
+            classification = SwapClassification(
+                operation_id=operation_id, side="UNKNOWN", confidence=Decimal("0"),
+                reason="awaiting reference asset",
+            )
+            evidence = SwapEvidence(
+                operation_id=operation_id, program_id="raydium-program",
+                venue="Raydium CPMM", instruction_index=3, cpi_path=(1,),
+                evidence=("reconciled",),
+            )
+            self.assertTrue(store.save_swap_bundle(observation, classification, evidence))
+            store.mark_processed("wallet-b", "sig-b")
+            self.assertTrue(store.has_processed_signature("wallet-b", "sig-b"))
+            self.assertEqual(store.get_checkpoint("wallet-b"), "sig-b")
+        finally:
+            store.close()
+
+    def test_mark_processed_rejects_missing_parent_observation(self):
+        with self.assertRaises(KeyError):
+            self.store.mark_processed("wallet-missing", "sig-missing")
+
+
+
 if __name__ == "__main__":
     unittest.main()

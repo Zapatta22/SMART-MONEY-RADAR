@@ -138,3 +138,10 @@ Uso:
 `PYTHONPATH=src python tools/audit_solana_protocol_coverage.py /caminho/para/raw`
 
 A execução local nos cinco RAW ainda está pendente. Não confundir os cinco candidatos documentados com resultado de cobertura observado: o relatório local é necessário para saber quais programas aparecem efetivamente em cada transação.
+
+
+### 12. CI da auditoria de cobertura
+
+- Workflow `SMR tests`, run `44250502846` (#381), concluído com sucesso.
+- 259 testes unitários aprovados; compileall aprovado.
+- CI valida a lógica em fixtures sintéticas. A análise dos cinco arquivos RAW reais depende da execução local pelo usuário.

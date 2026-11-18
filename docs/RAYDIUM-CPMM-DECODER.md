@@ -34,3 +34,8 @@ Os testes unitários sintéticos validam o contrato estrutural. Não constituem 
 - Raydium CPMM SDK demo (swapBaseOut): https://github.com/raydium-io/raydium-sdk-V2-demo/blob/master/src/cpmm/swapBaseOut.ts
 
 A documentação oficial consultada confirma que SwapBaseInput e SwapBaseOutput usam as mesmas 13 contas-base e que o sentido input/output é orientado pelo usuário. O código on-chain de SwapBaseOutput confirma que o valor solicitado de output é ajustado por transfer-fee antes do cálculo, reforçando que os argumentos da instrução, isoladamente, não substituem a observação das transferências realmente executadas.
+
+
+## Formatos de contas aceitos pelo analyzer
+
+O analyzer aceita contas compiladas como índices numéricos em `message.accountKeys` (incluindo endereços carregados por Address Lookup Tables em `meta.loadedAddresses`) e contas já resolvidas como strings de endereço. Isso não significa que todo formato de resposta RPC foi validado: a entrada deve continuar contendo instruções com `data` codificada em Base58 e a lista de contas no formato esperado pelo analyzer. Instruções internas em `meta.innerInstructions` são deliberadamente ignoradas nesta versão.

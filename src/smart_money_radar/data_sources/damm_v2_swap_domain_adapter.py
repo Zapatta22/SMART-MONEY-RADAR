@@ -93,6 +93,7 @@ def build_damm_v2_swap_domain_bundles(
         deltas_by_account[delta.token_account] = delta
 
     bundles = []
+    seen_operation_keys: set[tuple[int, int | None, tuple[int, ...]]] = set()
     for context, item in zip(contexts, transfer_evidence):
         association = context.association
         event = association.event
@@ -135,6 +136,14 @@ def build_damm_v2_swap_domain_bundles(
             or accounts.program != METEORA_DAMM_V2_PROGRAM_ID
         ):
             raise ValueError("identidade CPI ou programa DAMM v2 inválido")
+        operation_key = (
+            association.instruction_index,
+            association.inner_instruction_index,
+            association.cpi_path,
+        )
+        if operation_key in seen_operation_keys:
+            raise ValueError("identidade de swap DAMM v2 duplicada no lote")
+        seen_operation_keys.add(operation_key)
         if item.status != "ATTRIBUTED":
             raise ValueError("transferências não estão ATTRIBUTED")
         if (

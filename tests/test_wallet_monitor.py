@@ -102,6 +102,13 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
         stop_event = asyncio.Event()
         messages = [
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 42}),
+            json.dumps({
+                "jsonrpc": "2.0",
+                "method": "unrecognizedNotification",
+                "params": {"subscription": 42, "result": {"value": {
+                    "signature": "forged-signature", "err": None,
+                }}},
+            }),
             json.dumps(
                 {
                     "jsonrpc": "2.0",

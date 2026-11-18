@@ -158,6 +158,11 @@ class RealMainnetToken2022FeeFixtureTests(unittest.TestCase):
                 self.assertFalse(store.has_processed_signature(wallet, signature))
                 self.assertIsNone(store.get_checkpoint(wallet))
                 self.assertEqual(store.get_pending_signatures(wallet), [signature])
+                audit = store.get_swap_reconciliation_attempts(wallet, signature)
+                self.assertEqual(len(audit), 1)
+                self.assertEqual(audit[0]["status"], "INCOMPLETE")
+                self.assertIn("delta pre/post", audit[0]["reason"])
+
                 self.assertEqual(store.get_raw_transaction(wallet, signature), result)
             finally:
                 store.close()

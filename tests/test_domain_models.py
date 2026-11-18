@@ -47,8 +47,8 @@ class DomainContractTests(unittest.TestCase):
         self.assertEqual(SwapClassification("op-1", "SELL", Decimal("0.8"), "saída de ativo").side, "SELL")
         unknown = SwapClassification("op-1", "UNKNOWN", Decimal("0"), "evidência insuficiente")
         self.assertEqual(unknown.side, "UNKNOWN")
-        with self.assertRaises(ValueError):
-            SwapClassification("op-1", "UNKNOWN", Decimal("0.2"), "ambíguo")
+        uncertain = SwapClassification("op-1", "UNKNOWN", Decimal("0.2"), "ambíguo")
+        self.assertEqual(uncertain.confidence, Decimal("0.2"))
         with self.assertRaises(ValueError):
             SwapClassification("op-1", "BUY", Decimal("1.1"), "inválido")
         with self.assertRaises(ValueError):

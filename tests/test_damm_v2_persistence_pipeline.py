@@ -290,10 +290,14 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
             self.store.get_pending_signatures("wallet"), ["signature"]
         )
 
-        retry = process_damm_v2_observation(
-            self.store, _raw(), wallet_address="wallet",
-            signature="signature", observed_at=observed_at,
-        )
+        with patch(
+            "smart_money_radar.domain.damm_v2_persistence_pipeline.process_damm_v2_transaction",
+            return_value=reconciled,
+        ):
+            retry = process_damm_v2_observation(
+                self.store, _raw(), wallet_address="wallet",
+                signature="signature", observed_at=observed_at,
+            )
 
         self.assertEqual(retry.status, "reconciled")
         self.assertTrue(retry.ready_for_next_venue)

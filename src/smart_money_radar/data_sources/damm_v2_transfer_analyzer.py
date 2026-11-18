@@ -136,6 +136,19 @@ def analyze_damm_v2_transfer_evidence(
                     ):
                         selected["referral"].append(transfer_index)
 
+        # When the referral account is also the user's output account, the
+        # principal output and referral payment share the same source/destination.
+        # If multiple referral candidates exist, the event's exact referral_fee
+        # safely distinguishes the referral leg; duplicate exact matches remain
+        # ambiguous and fail closed.
+        if len(selected["referral"]) > 1:
+            exact_referral = [
+                index for index in selected["referral"]
+                if transfers[index].amount_raw == event.swap_result.referral_fee
+            ]
+            if exact_referral:
+                selected["referral"] = exact_referral
+
         # A referral account may intentionally be the same token account as
         # the user's input/output account. Once a transfer is uniquely identified
         # as referral by fee-vault -> referral-account, do not also count it as

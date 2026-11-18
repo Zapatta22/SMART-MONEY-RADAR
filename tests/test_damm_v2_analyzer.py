@@ -80,7 +80,7 @@ def transaction(outer, inner):
 
 class DammV2AnalyzerTests(unittest.TestCase):
     def test_base58_round_trip_preserves_leading_zero_bytes(self):
-        original = b"\\x00\\x00SMR"
+        original = b"\x00\x00SMR"
         self.assertEqual(_decode_base58(b58encode(original)), original)
 
     def test_resolves_damm_program_from_loaded_addresses(self):

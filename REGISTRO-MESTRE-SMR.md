@@ -2782,3 +2782,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Próxima validação de maior valor: obter fixture mainnet DAMM v2 com dois swaps e wSOL compartilhado; rodar `tools/validate_damm_v2_mainnet.py` e conferir RECONCILED, dois bundles e evidência de funding agregada. Até lá, suporte validado apenas por teste sintético.
 
 - CI #1054 (run `44378925314`) SUCCESS no commit `848d35e123630417c8d79b5e52bb219f4495b199`: 480 testes passaram e compileall passou, incluindo o relatório com a lista completa de índices de funding.
+
+
+## 189. Mainnet DAMM v2 reconciliado e endurecimento de entradas do decoder — 18/11/2026
+
+- Evidência real de Mainnet confirmada nos logs do workflow #8 (run `44378911504`, job `135065453319`) para assinatura `1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT`, slot 451432630: status `RECONCILED`, reconciliation `RECONCILED`, um bundle emitido, funding wSOL de 20.700 lamports, SystemProgram transfer no índice 5 e SyncNative no índice 6. Classificação permanece UNKNOWN. A transação tem um swap DAMM v2; isto valida o caminho Mainnet de uma operação, não o cenário multi-swap compartilhado.
+- Decoder `solana_wrapped_sol_funding.py` endurecido para validar tipo/identidade de token account e source wallet, amount como unsigned 64-bit (bool, negativo e overflow rejeitados) e limite de instrução como inteiro não negativo (bool rejeitado).
+- Testes adicionais cobrem amount inválido/overflow e boundary booleano.
+- CI #1059 (run `44379283925`) e #1060 (run `44379296088`) SUCCESS; última execução #1060 no HEAD `226909d5213a7b355d0c185207bf23d3b7def084`: 482 testes passaram e compileall passou.
+- Próximo passo: obter fixture real Mainnet com múltiplos swaps DAMM v2 que compartilhem a mesma conta wSOL. Até essa evidência existir, suporte multi-swap está comprovado apenas sinteticamente. Nenhuma ordem, BUY/SELL ou merge foi habilitado.

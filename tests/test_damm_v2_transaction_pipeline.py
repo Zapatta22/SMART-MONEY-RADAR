@@ -10,6 +10,7 @@ def _raw_transaction():
     return {
         "result": {
             "transaction": {
+                "signatures": ["signature"],
                 "message": {
                     "accountKeys": [],
                     "instructions": [],
@@ -106,6 +107,29 @@ class DammV2TransactionPipelineTests(unittest.TestCase):
         result = self._process(raw)
         self.assertEqual(result.status, "REJECTED")
         self.assertIn("mistura formatos", result.reason)
+
+    def test_missing_transaction_signatures_fails_closed(self):
+        raw = _raw_transaction()
+        del raw["result"]["transaction"]["signatures"]
+        result = self._process(raw)
+        self.assertEqual(result.status, "REJECTED")
+        self.assertIn("primeira assinatura única", result.reason)
+
+    def test_secondary_signature_cannot_be_used_as_transaction_id(self):
+        raw = _raw_transaction()
+        raw["result"]["transaction"]["signatures"] = [
+            "different-primary-signature", "signature"
+        ]
+        result = self._process(raw)
+        self.assertEqual(result.status, "REJECTED")
+        self.assertIn("primeira assinatura única", result.reason)
+
+    def test_duplicate_transaction_signatures_fail_closed(self):
+        raw = _raw_transaction()
+        raw["result"]["transaction"]["signatures"] = ["signature", "signature"]
+        result = self._process(raw)
+        self.assertEqual(result.status, "REJECTED")
+        self.assertIn("primeira assinatura única", result.reason)
 
     def test_failed_on_chain_transaction_fails_closed(self):
         raw = _raw_transaction()

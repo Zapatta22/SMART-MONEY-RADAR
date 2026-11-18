@@ -2780,3 +2780,5 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Atualizado `tools/validate_damm_v2_mainnet.py` para emitir `system_transfer_indices` como lista completa, além do campo legado `system_transfer_index`, permitindo auditar no relatório a evidência agregada sem guardar payload RAW.
 - Commit: `848d35e123630417c8d79b5e52bb219f4495b199`. CI específico desse commit ainda não foi consultada; o núcleo de reconciliação foi validado em #1051 (480 testes + compileall) no commit `6dbb8c51ee95388e4ac2b82efe12d51870f05d25`.
 - Próxima validação de maior valor: obter fixture mainnet DAMM v2 com dois swaps e wSOL compartilhado; rodar `tools/validate_damm_v2_mainnet.py` e conferir RECONCILED, dois bundles e evidência de funding agregada. Até lá, suporte validado apenas por teste sintético.
+
+- CI #1054 (run `44378925314`) SUCCESS no commit `848d35e123630417c8d79b5e52bb219f4495b199`: 480 testes passaram e compileall passou, incluindo o relatório com a lista completa de índices de funding.

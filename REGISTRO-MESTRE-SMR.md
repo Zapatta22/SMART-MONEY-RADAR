@@ -2688,3 +2688,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - PR #25 foi atualizado para remover a afirmação antiga de runtime pendente e registrar 466/466 + compileall aprovados. Continua aberto, Draft, base `feat/damm-v2-swap-domain-adapter`, sem merge; `main` permanece intacta.
 - Próxima ação de engenharia: revisar a rotina de coleta e obter a fixture RAW mainnet DAMM v2 localmente no Termux, verificar manifesto/hash e executar auditoria do pipeline contra a transação real. Não coletar fixture CPMM novamente nem repetir a suíte completa sem mudança de código.
 - Limite: CI verde valida testes e compilação, não comprova que o coletor já capturou fixture DAMM v2 real, nem valida execução de ordens. Sem BUY/SELL automático.
+
+## 180. Captura e auditoria de fixture real Meteora DAMM v2 — 18/11/2026
+
+- No Termux, o usuário executou `tools/collect_damm_v2_fixture.py` contra o RPC público Solana Mainnet. O coletor retornou `OK` para a assinatura `1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT`, slot `451432630`, SHA-256 `5c053e372d5bb6456e154f2025ab8c51f234941b4e521c64c66f53510c5b948e`.
+- Arquivos RAW e manifesto foram gravados localmente em `data/fixtures/raw/damm-v2/`; não foram enviados ao GitHub.
+- A primeira chamada do auditor apontou apenas diretório incorreto: o auditor procura manifestos diretamente na pasta indicada e não percorre subpastas. Reexecutado no diretório específico `data/fixtures/raw/damm-v2`, o resultado foi `valid: true`, `errors: []`, com assinatura, slot e SHA-256 correspondentes ao coletor.
+- A auditoria confirma integridade do arquivo, manifesto e coerência básica da resposta RPC; não comprova, por si só, a interpretação semântica do swap nem a reconciliação econômica pelo pipeline DAMM v2.
+- Próxima etapa: inspecionar localmente a estrutura da transação (programas/instruções, CPI, signatários e proprietários dos token accounts) e então executar o pipeline contra a fixture real com uma carteira monitorada identificada por evidência, sem inventar endereço. Não publicar RAW nem manifesto no repositório público.
+- PR #25 continua aberto e Draft, sem merge; `main` permanece preservada. Nenhuma ordem é enviada e a classificação BUY/SELL continua bloqueada até validação e política de ativo-base/quote.

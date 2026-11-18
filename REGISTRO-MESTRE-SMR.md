@@ -470,3 +470,34 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Procurar outra operação CPMM token-token com duas contas de usuário persistentes e deltas/vaults conciliáveis; preferir um par sem WSOL temporário. Repetir o processo de coleta, inspeção, anonimização e teste. Não relaxar o requisito de evidência.
 - Após segunda fixture positiva independente, fazer revisão do caminho MATCHED e então considerar integração do builder à persistência proposta no PR #4.
+
+
+## 27. Atualização 2026-11-18 — segunda fixture mainnet positiva MATCHED em rota multi-venue
+
+### Coleta e artefato
+- O workflow de coleta foi atualizado para o candidato `3DNxx…DK4t`; a coleta executou automaticamente após o commit, sem ação manual do usuário.
+- Run de coleta `44228609083`: sucesso. Job de RPC e upload de artefato concluídos.
+- Artefato bruto privado `14394540849`, ZIP `smr-mainnet-candidate-raw-44228609083.zip`; expira em 7 dias. Contém payload RPC e manifesto.
+- Slot `388739013`, versão `0`, commitment `finalized`, `meta.err=null`; raw SHA-256 `89dbe2cb81c8995206c541b410660c81f493a571141e61e1b3074c6c90e9e082`.
+- Projeção mínima anonimizada adicionada em `data/fixtures/mainnet/anonymized/raydium-cpmm-route-multivenue.json`, manifesto adjacente. Projection SHA-256 validado pelo CI: `7cb198239b5f1c7e83e9b80d3191c8f402db91da87930471349349d32b4e8233`. Vinte endereços foram pseudonimizados; mapa reversível permanece fora do repositório.
+- A projeção mantém todas as 21 posições internas e stackHeight, transferências relevantes, CPMM CPI, loaded addresses e quatro snapshots pre/post necessários. Instruções não relevantes foram reduzidas a programa/stackHeight, sem alterar a ordem dos CPIs. Documentação: `docs/MAINNET-CPMM-MULTIVENUE-FIXTURE.md`.
+
+### Resultado econômico observado
+- Um swap Raydium CPMM aparece como CPI interno `14`, dentro da instrução externa `2`, `stackHeight=2`, CPI path `(3,)`. Transferências de entrada/saída são descendentes em índices internos `15` e `16`, `stackHeight=3`.
+- Input efetivo: `4,484,029,903` unidades brutas, 6 decimals = `4484.029903`.
+- Output efetivo: `165,074,030` unidades brutas, 8 decimals = `1.65074030`.
+- Conta de entrada da carteira: delta líquido zero, pois recebeu e enviou exatamente `4,484,029,903`; ambas as transferências foram decodificadas e reconciliadas.
+- Conta de saída da carteira: delta `+74,030`, pois recebeu `165,074,030` e encaminhou `165,000,000`; o fluxo líquido coincide exatamente.
+- Vault de entrada: delta `+4,484,029,903`; vault de saída: delta `-165,074,030`. Ambos coincidem com as transferências do swap.
+- Resultado do reconciliador: `MATCHED`. Builder gera um bundle. Classificação padrão `UNKNOWN`; referência explícita no mint de entrada produz `BUY`, e no mint de saída produz `SELL`. Não se presume que qualquer mint seja stablecoin/quote.
+
+### Testes e CI
+- Novo teste `tests/test_real_mainnet_raydium_cpmm_multivenue.py`: verifica manifesto/hash, CPI identity, 10 transferências, saldo líquido zero de entrada, encaminhamento parcial da saída, deltas dos dois vaults, MATCHED e regras UNKNOWN/BUY/SELL.
+- Primeiro CI do novo teste: run `44229045690`, falhou somente porque o hash esperado no manifesto não correspondia aos bytes gravados pela API do GitHub; o teste econômico de reconciliação passou. O hash foi corrigido para o valor observado pelo runner.
+- Novo CI após a correção ainda precisa ser confirmado. Não registrar a suíte como aprovada até o run atualizado concluir com sucesso.
+- PR #13 permanece aberto, sem merge. Nenhuma ordem, assinatura ou submissão financeira foi criada.
+
+### Estado consolidado e próxima ação
+- Agora há duas fixtures mainnet positivas independentes para o caminho CPMM `MATCHED`: (1) rota Jupiter com duas operações CPMM, sendo a primeira MATCHED e a segunda INCOMPLETE; (2) rota multi-venue com uma operação CPMM MATCHED e contas intermediárias reconciliadas por todas as transferências.
+- As fixtures fail-closed anteriores permanecem intactas: conta temporária sem delta, divergência Token-2022 gross/net, e swaps em rota sem prova completa.
+- Próxima ação: confirmar CI da correção do manifesto. Se passar, revisar o diff agregado do PR #13 e a integridade das projeções antes de propor qualquer merge. Não fazer merge sem aprovação explícita do usuário.

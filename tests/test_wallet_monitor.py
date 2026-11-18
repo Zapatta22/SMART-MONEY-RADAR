@@ -496,7 +496,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "history.sqlite3")
             store.save_observation(
-                "public-wallet", "pending-first-run", simulated_transaction(), [],
+                "public-wallet", "pending-first-run", simulated_transaction("pending-first-run"), [],
                 parse_status="no_events", parser_version="1",
                 advance_checkpoint=False,
             )

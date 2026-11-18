@@ -112,7 +112,7 @@ def reconcile_raydium_cpmm_swaps(
         raise ValueError("monitored_wallet é obrigatório")
     if any(
         transfer.execution_status != "EXECUTED"
-        or transfer.instruction_type not in {"TRANSFER", "TRANSFER_CHECKED"}
+        or transfer.instruction_type not in {"TRANSFER", "TRANSFER_CHECKED", "TRANSFER_CHECKED_WITH_FEE"}
         for transfer in transfers
     ):
         return [

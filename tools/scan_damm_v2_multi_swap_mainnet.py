@@ -216,6 +216,7 @@ def scan(
                         "status": "FOUND_NON_SHARED_WSOL_MULTI_SWAP",
                         "inspected": inspected,
                         "failures": dict(failures),
+                        "failure_samples": failure_samples,
                         "signature_rpc": "primary" if signature_rpc == endpoints[0] else "fallback",
                         "candidate": candidate,
                     }

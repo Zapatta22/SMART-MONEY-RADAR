@@ -95,3 +95,14 @@ Quando uma operação estiver completa:
 - Não calcular preço USD, PnL ou rentabilidade a partir de quantidades isoladas.
 - Não inferir liquidez, volume ou propriedade de carteira sem fonte.
 - Não substituir fixture real por fixture sintética.
+
+## Decoder de transferências — primeiro incremento
+
+Foi adicionado `solana_token_transfer_decoder.py` para extrair instruções base `Transfer` (opcode 3) e `TransferChecked` (opcode 12) dos programas SPL Token e Token-2022. O decoder aceita dados compilados em Base58 e instruções `jsonParsed`, resolve account keys estáticas/loaded, e preserva programa, source/destination/authority, mint, amount bruto, decimals, índice externo, índice interno, stackHeight, cpi_path e status de execução.
+
+Limites atuais: não decodifica `TransferCheckedWithFee` nem outras instruções de extensão Token-2022; amount bruto da instrução não deve ser tratado como valor líquido recebido em tokens com taxa. Ainda não correlaciona transferências a swaps nem calcula quantidades econômicas.
+
+Referências oficiais consultadas:
+- Solana — Transfer tokens: https://solana.com/docs/tokens/basics/transfer-tokens
+- Token-2022 — compatibilidade byte a byte das instruções base: https://github.com/solana-labs/solana-program-library/blob/master/docs/src/token-2022.md
+- SPL Token instruction source: https://github.com/solana-program/token/blob/main/interface/src/instruction.rs

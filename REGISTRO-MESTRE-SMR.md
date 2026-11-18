@@ -2609,3 +2609,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commit da correção de fixture: ba3ccd0e8b1292b6b47f1312be5f4d90346a85e7.
 - Próxima validação: executar isoladamente apenas `test_backfills_signatures_since_persisted_checkpoint`. Se passar, executar `test_wallet_monitor.py` uma vez com timeout curto; investigar separadamente o teste de sobreposição se não houver resumo final. Não repetir testes já aprovados.
 - PR #25 permanece aberto, Draft, sem merge; branch `feat/damm-v2-transaction-pipeline` baseada em `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 172. Runtime aprovado para avanço do checkpoint no backfill — PR #25 (18/11/2026)
+
+- Após sincronizar o commit `c376593e20e87feda74e6b84184a14429218fe65`, o usuário executou isoladamente `tests.test_wallet_monitor.WalletMonitorTests.test_backfills_signatures_since_persisted_checkpoint`.
+- Resultado observado no Termux: `Ran 1 test ... OK`. A fixture agora fornece slot 901 tanto na página de assinaturas quanto na transação, e o checkpoint avançou para `new-signature`, conforme a asserção.
+- Isso valida em runtime o caminho específico de backfill/CAS anteriormente bloqueado. Ainda não valida a classe completa `WalletMonitor`.
+- Próxima ação: executar isoladamente `test_websocket_notification_overlapping_backfill_is_deduplicated`, pois foi o teste que impediu a bateria anterior de apresentar resumo final. Não repetir o teste de checkpoint já aprovado.
+- PR #25 permanece aberto, Draft, sem merge; branch `feat/damm-v2-transaction-pipeline` baseada em `feat/damm-v2-swap-domain-adapter`; `main` preservada.

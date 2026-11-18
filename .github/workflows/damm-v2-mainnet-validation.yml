@@ -51,3 +51,5 @@ jobs:
         run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
       - name: Scan recent Mainnet transactions for shared-wSOL multi-swap
         run: PYTHONPATH=src:tools python tools/scan_damm_v2_multi_swap_mainnet.py --limit 100
+      - name: Scan recent Mainnet transactions for non-shared-wSOL multi-swap
+        run: PYTHONPATH=src:tools python tools/scan_damm_v2_multi_swap_mainnet.py --limit 100 --pages 1 --target non-shared-wsol

@@ -47,6 +47,20 @@ class DammV2TransactionPipelineTests(unittest.TestCase):
         self.assertEqual(result.status, "REJECTED")
         self.assertIn("meta.err ausente", result.reason)
 
+    def test_missing_inner_instruction_metadata_fails_closed(self):
+        raw = _raw_transaction()
+        del raw["result"]["meta"]["innerInstructions"]
+        result = self._process(raw)
+        self.assertEqual(result.status, "REJECTED")
+        self.assertIn("meta.innerInstructions ausente/nulo", result.reason)
+
+    def test_null_inner_instruction_metadata_fails_closed(self):
+        raw = _raw_transaction()
+        raw["result"]["meta"]["innerInstructions"] = None
+        result = self._process(raw)
+        self.assertEqual(result.status, "REJECTED")
+        self.assertIn("meta.innerInstructions ausente/nulo", result.reason)
+
     def test_failed_on_chain_transaction_fails_closed(self):
         raw = _raw_transaction()
         raw["result"]["meta"]["err"] = {"InstructionError": [0, "Custom"]}

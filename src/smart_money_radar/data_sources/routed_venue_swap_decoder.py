@@ -309,26 +309,26 @@ def decode_meteora_dlmm_swap2_event(data: bytes) -> MeteoraDlmmSwap2Event:
     if data[:8] != DLMM_SWAP2_EVENT_DISCRIMINATOR:
         raise ValueError("discriminator não é Meteora DLMM Swap2Evt")
     reader = _BorshReader(data[8:])
-    value = MeteoraDlmmSwap2Event(
-        lb_pair=reader.pubkey(),
-        from_address=reader.pubkey(),
-        start_bin_id=reader.i32(),
-        end_bin_id=reader.i32(),
-        swap_for_y=reader.boolean(),
-        fee_bps=reader.u128(),
-        amount_in=reader.u64(),
-        amount_left=reader.u64(),
-        amount_out=reader.u64(),
-        mm_fee=reader.u64(),
-        protocol_fee=reader.u64(),
-        limit_order_fee=reader.u64(),
-        host_fee=reader.u64(),
-        fees_on_input=reader.boolean(),
-        fees_on_token_x=reader.boolean(),
-        trailing_bytes=b"",
-    )
+    lb_pair = reader.pubkey()
+    from_address = reader.pubkey()
+    start_bin_id = reader.i32()
+    end_bin_id = reader.i32()
+    swap_for_y = reader.boolean()
+    fee_bps = reader.u128()
+    amount_in = reader.u64()
+    amount_left = reader.u64()
+    amount_out = reader.u64()
+    mm_fee = reader.u64()
+    protocol_fee = reader.u64()
+    limit_order_fee = reader.u64()
+    host_fee = reader.u64()
+    fees_on_input = reader.boolean()
+    fees_on_token_x = reader.boolean()
     return MeteoraDlmmSwap2Event(
-        **{**value.__dict__, "trailing_bytes": reader.remaining}
+        lb_pair, from_address, start_bin_id, end_bin_id, swap_for_y,
+        fee_bps, amount_in, amount_left, amount_out, mm_fee, protocol_fee,
+        limit_order_fee, host_fee, fees_on_input, fees_on_token_x,
+        reader.remaining,
     )
 
 
@@ -670,12 +670,6 @@ def decode_routed_venue_swaps(
             and transfer.execution_status == "EXECUTED"
             and PUMP_SWAP_PROGRAM_ID in transfer.cpi_program_path
         ]
-        output_candidates = [
-            transfer for transfer in transfers
-            if transfer.instruction_index == outer_index
-            and transfer.destination_account == user_out_account
-            and transfer.mint == sell.user_quote_token_account and False
-        ]
         # Resolve output mint from the final user token account metadata.
         output_info = metadata.get(user_out_account)
         if output_info is not None:
@@ -716,10 +710,10 @@ def decode_routed_venue_swaps(
         input_transfer = input_candidates[0]
         output_transfer = output_candidates[0]
         intermediate_transfer = intermediate_candidates[0]
-        input_net = _net_transfer_amount(input_transfer, proof_mints)
+        _net_transfer_amount(input_transfer, proof_mints)
         output_net = _net_transfer_amount(output_transfer, proof_mints)
         intermediate_net = _net_transfer_amount(intermediate_transfer, proof_mints)
-        if input_net != amount_in or output_net != sell.user_quote_amount_out or intermediate_net != sell.base_amount_in:
+        if input_transfer.amount_raw != amount_in or output_net != sell.user_quote_amount_out or intermediate_net != sell.base_amount_in:
             unresolved.append(f"PumpSwap outer={outer_index}: net transfer diverge do evento")
             continue
         input_info = metadata.get(user_in_account)
@@ -746,7 +740,7 @@ def decode_routed_venue_swaps(
             cpi_path=cpi_path,
             input_mint=trade.mint,
             output_mint=output_mint,
-            input_amount_raw=input_net,
+            input_amount_raw=input_transfer.amount_raw,
             output_amount_raw=output_net,
             input_decimals=input_info[2],
             output_decimals=output_info[2],
@@ -817,7 +811,7 @@ def decode_routed_venue_swaps(
             unresolved.append(f"Meteora DLMM outer={outer_index}: output transfer não identificado")
             continue
         output_transfer = output_candidates[0]
-        input_net = _net_transfer_amount(input_transfer, proof_mints)
+        _net_transfer_amount(input_transfer, proof_mints)
         output_net = _net_transfer_amount(output_transfer, proof_mints)
         input_info = metadata.get(user_in_account)
         output_info = metadata.get(user_out_account)
@@ -826,7 +820,7 @@ def decode_routed_venue_swaps(
             or output_info is None or output_info[0] != monitored_wallet
             or input_info[1] != input_transfer.mint
             or output_info[1] != output_mint
-            or input_net != amount_in
+            or input_transfer.amount_raw != amount_in
             or output_net < min_amount_out
         ):
             unresolved.append(f"Meteora DLMM outer={outer_index}: ownership/mint/amount não confere")
@@ -855,7 +849,7 @@ def decode_routed_venue_swaps(
             cpi_path=cpi_path,
             input_mint=input_transfer.mint,
             output_mint=output_mint,
-            input_amount_raw=input_net,
+            input_amount_raw=input_transfer.amount_raw,
             output_amount_raw=output_net,
             input_decimals=input_info[2],
             output_decimals=output_info[2],
@@ -863,7 +857,7 @@ def decode_routed_venue_swaps(
                 f"swap2 lb_pair={lb_pair} amount_in={amount_in} "
                 f"min_amount_out={min_amount_out} remaining_accounts_info={tail_hex}",
                 f"input transfer {input_transfer.source_account}->{input_transfer.destination_account} "
-                f"mint={input_transfer.mint} net={input_net}",
+                f"mint={input_transfer.mint} gross={input_transfer.amount_raw}",
                 f"output transfer {output_transfer.source_account}->{output_transfer.destination_account} "
                 f"mint={output_mint} net={output_net}",
                 event_evidence,

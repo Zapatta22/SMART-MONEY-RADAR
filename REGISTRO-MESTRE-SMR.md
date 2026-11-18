@@ -1075,3 +1075,26 @@ Novo teste `tests/test_offline_fixture_structure_inspector.py`:
 - A ferramenta é código pronto para executar localmente, mas ainda não foi executada no Termux.
 - Nenhuma importação SQLite, associação de carteira, migração, criação de DB, RPC/Helius ou operação on-chain foi realizada.
 - Após CI aprovado, a próxima ação operacional será o usuário executar o inspetor no Termux para obter contagens/estrutura sem revelar identificadores. Só então será definida a política de associação carteira↔transação e a ingestão histórica segura.
+
+
+## 58. Revisão de segurança do inspetor e correção de vazamento potencial — 2026-11-18
+
+### CI do primeiro corte
+- Run `44248192946` (`SMR tests`, run number 352) concluído com `success`.
+- Instalação do projeto, testes unitários e compileall concluídos com sucesso para o head anterior `1f614457022bd75d259c78c98076b039c35cfc12`.
+
+### Revisão adicional após CI
+A leitura direta do código identificou uma possibilidade de exposição: exceções de sistema operacional poderiam incluir o caminho do manifesto, e nomes de campos arbitrários em JSON poderiam ser reproduzidos no relatório. Embora os testes iniciais tenham passado, isso não atendia integralmente à promessa de saída sem identificadores.
+
+Correções aplicadas na branch:
+- Exceções `OSError` agora viram mensagem genérica `manifesto inacessível`, sem ecoar caminho.
+- Listas de campos no relatório são filtradas por allowlists fixas de nomes RPC conhecidos; chaves arbitrárias do payload não são reproduzidas.
+- Novo teste garante que caminho sintético contendo texto de carteira/assinatura não aparece no relatório quando o manifesto não pode ser aberto.
+
+### Commits e estado
+- Correção do inspetor: `6e6da41e78452aad5e00ccc85b7545c63ef560cb`.
+- Teste de redação de caminho: `366f38cbc68c196750a4341124fc3810c8f26c1a`.
+- Novo head do PR #16: `366f38cbc68c196750a4341124fc3810c8f26c1a`.
+- Aguardando novo CI para o head atualizado; o sucesso do run anterior não valida estes dois commits.
+- PR #16 permanece Draft, aberto, não merged.
+- Nenhum dado RAW foi enviado; nenhuma execução local, RPC, banco, migração, checkpoint ou operação on-chain ocorreu.

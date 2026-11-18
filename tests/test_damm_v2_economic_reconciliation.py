@@ -631,14 +631,14 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         self.assertIn("não está explícita", result.reason)
 
     def test_reconciles_supported_scopes_router_upstream_and_downstream_transfers(self):
-        context = _context(event=_event(referral_fee=0, has_referral=False))
+        context = _context(outer=2, event=_event(referral_fee=0, has_referral=False))
         input_transfer = _transfer(
             "user-a", "vault-a", "mint-a", 100,
             program_id=SPL_TOKEN_PROGRAM_ID, outer=2, inner=1,
         )
         output_transfer = _transfer(
             "vault-b", "user-b", "mint-b", 90,
-            program_id=SPL_TOKEN_PROGRAM_ID, outer=3, inner=1,
+            program_id=SPL_TOKEN_PROGRAM_ID, outer=2, inner=2,
         )
         upstream = _transfer(
             "pool-in", "user-a", "mint-a", 100,

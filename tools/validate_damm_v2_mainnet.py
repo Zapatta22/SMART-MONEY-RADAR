@@ -450,6 +450,16 @@ def main() -> int:
         "inner_instruction_programs": [
             {
                 "outer_index": group.get("index"),
+                "outer_program": (
+                    keys[raw["transaction"]["message"]["instructions"][group["index"]]["programIdIndex"]]
+                    if (
+                        isinstance(group.get("index"), int)
+                        and 0 <= group["index"] < len(raw["transaction"]["message"]["instructions"])
+                        and isinstance(raw["transaction"]["message"]["instructions"][group["index"]], dict)
+                        and isinstance(raw["transaction"]["message"]["instructions"][group["index"]].get("programIdIndex"), int)
+                        and 0 <= raw["transaction"]["message"]["instructions"][group["index"]]["programIdIndex"] < len(keys)
+                    ) else None
+                ),
                 "instructions": [
                     {
                         "inner_index": inner_index,

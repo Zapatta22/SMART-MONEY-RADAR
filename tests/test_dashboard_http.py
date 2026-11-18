@@ -51,6 +51,11 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertIn("reconciliation", payload)
         self.assertIn("storage", payload)
 
+    def test_reconciliation_query_rejects_limit_above_500(self):
+        with self.assertRaises(HTTPError) as caught:
+            self.request("/api/v1/reconciliation/attempts?limit=501", self.token)
+        self.assertEqual(caught.exception.code, 400)
+
     def test_unknown_route_returns_404(self):
         with self.assertRaises(HTTPError) as caught:
             self.request("/missing", self.token)

@@ -2857,3 +2857,23 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #1084 (run `44382709318`) SUCCESS: 483 testes e compileall aprovados.
 - Workflow Mainnet #29 (run `44382931922`) está inspecionando a candidata acima com a etapa detalhada; scanner paginado também executa. O workflow foi atualizado para apontar a assinatura `4cm2y...`.
 - Conclusão provisória: o padrão real observado em 16/16 candidatas é round-trip de wSOL, não funding múltiplo para mesma conta. Próximo passo é examinar instruções de funding, SyncNative, transferências SPL e deltas da candidata #29 para explicar a divergência econômica. Manter fail-closed; não ativar BUY/SELL ou execução financeira.
+
+
+## 196. Candidata Mainnet revela ciclo wSOL create/fund/swap/close/recreate/swap/close — 18/11/2026
+
+- Workflow Mainnet #29 (run `44382931922`) SUCCESS: validação conhecida single-swap, inspeção detalhada da candidata e scanner paginado concluíram. Candidata inspecionada: `4cm2yJUSTzevqYAh5N9vknk2jCmocwgbrJR2s7CiPp8DPCuBBgyMqxKU6qk7F5YSdtLDTJpneRrz4TTn7odqDy6k`, slot 471054827.
+- Pipeline: 2 associações swap/`EvtSwap2` MATCHED e 2 transfer evidences ATTRIBUTED. Reconciliação permanece INCOMPLETE; bundles = 0; nenhuma classificação/execução.
+- Evidência estrutural observada para a mesma ATA wSOL `6gWbcXGP9SDcFxK14T8SeCcitSqoLTir3GxoHVfqLwrs` e carteira monitorada `8mgqGQqRr75muaiSkimDAL91QcGv4dQujFfNXc3pRXdY`:
+  1. ATA wSOL criada no índice externo 1.
+  2. SystemProgram transfer no índice 3 da carteira monitorada para a ATA wSOL: `5,253,182,520` lamports.
+  3. SyncNative no índice 4.
+  4. Primeiro swap no índice 5 consome `5,092,426,526` lamports-equivalentes de wSOL da ATA.
+  5. Token Program CloseAccount no índice 6 fecha a ATA e devolve o saldo restante à carteira.
+  6. ATA wSOL criada novamente no índice 8.
+  7. Segundo swap no índice 9 envia `5,091,426,733` wSOL para a mesma ATA.
+  8. Token Program CloseAccount no índice 10 fecha novamente a ATA e devolve o saldo à carteira.
+- Diferença funding menos input do primeiro swap: `160,755,994` lamports, que permanece na ATA antes do primeiro fechamento. O segundo swap devolve `5,091,426,733` wSOL antes do segundo fechamento. A conta tem pre/post lamports agregados iguais a zero porque é criada e fechada dentro da mesma transação; snapshots simples pre/post não capturam os saldos intermediários.
+- Causa da rejeição atual: o decoder wSOL exige que o total de SystemProgram funding seja exatamente igual ao gross input wSOL e não modela saldos residuais devolvidos por CloseAccount nem ciclos repetidos de criação/fechamento da mesma ATA. O fail-closed atual é correto; não relaxar igualdade nem aceitar apenas pela presença de CloseAccount.
+- Próximo trabalho técnico: projetar evidência de lifecycle wSOL por ciclo, reconstruindo funding, SyncNative, transferências SPL atribuídas e CloseAccount (conta, autoridade e destino), incluindo ATA recriada na mesma transação. Exigir fechamento para a carteira monitorada e balanço completo de cada ciclo; criar fixtures sintéticas antes de validar qualquer novo padrão Mainnet.
+- Scanner paginado #28 confirmou 16 transações multi-swap entre 300 inspecionadas; as 16 candidatas exibem round-trip da mesma conta wSOL (input no primeiro swap, output no segundo), não duas entradas wSOL independentes. CI #1084 SUCCESS: 483 testes e compileall.
+- PR #25 continua OPEN/DRAFT e sem merge. Não habilitar BUY/SELL, ordens ou execução financeira.

@@ -37,3 +37,21 @@ O monitor aceita `reference_mints` como sequência explícita de mints de refer�
 - O armazenamento dos bundles é atômico por operação, não para o conjunto inteiro de uma transação multi-swap. Se o processo falhar entre bundles, o replay completa as operações restantes sem duplicar IDs.
 - Swaps não reconciliados ficam pendentes para replay/auditoria; ainda não existe tabela própria de resultados negativos de reconciliação.
 - A integração está isolada no PR #14, baseado na branch do PR #13, e não está na `main`.
+
+## Auditoria persistente de reconciliação (PR #14)
+
+A tabela `swap_reconciliation_attempts` registra histórico append-only por operação e tentativa, separada das tabelas dos bundles positivos.
+
+Cada linha contém:
+- `attempt_id`: identificador da execução de reconciliação (uma tentativa agrupa os swaps da transação);
+- carteira e assinatura da transação observada;
+- `operation_id` determinístico, índice da instrução, índice interno quando disponível e caminho CPI;
+- status `MATCHED`, `INCOMPLETE`, `AMBIGUOUS` ou `UNRESOLVED`;
+- motivo técnico retornado pelo reconciliador ou motivo explícito para ausência de resultado;
+- horário de gravação.
+
+A gravação de todos os resultados de uma tentativa é atômica. Cada replay gera novo `attempt_id`, preservando o histórico anterior. Se o decoder identificar um swap sem resultado correspondente do reconciliador, o adaptador grava `UNRESOLVED` para essa identidade e mantém o checkpoint bloqueado.
+
+A tabela possui FK para a observação pai e índice por carteira/assinatura. Não possui FK para `swap_observations`, pois uma tentativa negativa deve existir mesmo quando nenhum bundle positivo foi produzido. O armazenamento expõe `save_swap_reconciliation_attempt()` e `get_swap_reconciliation_attempts()`; `storage_stats()` inclui a contagem da tabela.
+
+A auditoria não transforma resultados negativos em bundles, não reclassifica swaps e não altera as regras de checkpoint. Ela apenas preserva evidência explicável de cada tentativa.

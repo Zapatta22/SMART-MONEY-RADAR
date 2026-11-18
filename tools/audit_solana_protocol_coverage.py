@@ -120,10 +120,15 @@ def inspect_manifest(manifest_path: Path, root: Path, index: int) -> dict[str, A
         resolved_root = root.resolve(strict=True)
         if manifest_path.resolve(strict=True).parent != resolved_root:
             return {"index": index, "status": "MANIFEST_INVALID"}
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        raw_name = manifest.get("raw_file") if isinstance(manifest, dict) else None
+        if not isinstance(raw_name, str) or Path(raw_name).name != raw_name:
+            return {"index": index, "status": "FIXTURE_INVALID"}
+        candidate_raw = resolved_root / raw_name
+        if candidate_raw.is_symlink() or candidate_raw.resolve(strict=True).parent != resolved_root:
+            return {"index": index, "status": "FIXTURE_INVALID"}
         audit = audit_fixture(manifest_path)
         if not audit.valid:
-            return {"index": index, "status": "FIXTURE_INVALID"}
-        if audit.raw_path.is_symlink() or audit.raw_path.resolve(strict=True).parent != resolved_root:
             return {"index": index, "status": "FIXTURE_INVALID"}
         payload = json.loads(audit.raw_path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):

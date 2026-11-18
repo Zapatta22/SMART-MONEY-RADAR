@@ -81,13 +81,16 @@ def process_raydium_cpmm_observation(
     payload = _rpc_payload(raw_transaction)
     transaction = payload.get("transaction")
     signatures = transaction.get("signatures") if isinstance(transaction, dict) else None
-    if signatures is not None:
-        if (
-            not isinstance(signatures, list)
-            or any(not isinstance(item, str) or not item for item in signatures)
-            or signature not in signatures
-        ):
-            raise ValueError("A assinatura informada não corresponde às assinaturas do payload RPC.")
+    if (
+        not isinstance(signatures, list)
+        or not signatures
+        or any(not isinstance(item, str) or not item for item in signatures)
+        or len(set(signatures)) != len(signatures)
+        or signatures[0] != signature
+    ):
+        raise ValueError(
+            "A assinatura informada deve corresponder à primeira assinatura única do payload RPC."
+        )
 
     try:
         normalized = normalize_transaction(

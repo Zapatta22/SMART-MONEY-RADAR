@@ -3029,3 +3029,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI push #44413649563 SUCCESS no commit `943a18f2208d5fba123207c7012d83a53a227175`: 498 testes aprovados em 4,147s; `compileall` concluído. O novo teste aparece como `ok`.
 - PR #25 segue OPEN/DRAFT e sem merge; `main` intacta. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
 - Próxima ação: verificar o check de PR no HEAD atual e aprofundar auditoria de evidências Mainnet, especialmente a correspondência de pool e contas para operações múltiplas reais.
+
+
+## 210. Auditoria das PRs empilhadas #23–#25 e correção dos testes da PR #24 — 18/11/2026
+
+- Confirmada a cadeia de dependências: PR #23 (`feat/damm-v2-economic-reconciliation`) → PR #24 (`feat/damm-v2-swap-domain-adapter`) → PR #25 (`feat/damm-v2-transaction-pipeline`). As 383 commits inicialmente exibidas na PR #25 são cumulativas em relação à base empilhada; a PR #25 altera 41 arquivos e não representa 383 commits exclusivos da etapa final.
+- PR #23 tinha um check antigo FAILURE. O job foi reexecutado sem alterar código e passou: run `44308645725`, tentativa 2, 374 testes aprovados em 3,995s e `compileall` concluído.
+- A reexecução da PR #24 revelou dois defeitos reais em `tests/test_damm_v2_swap_domain_adapter.py`: (1) import multilinha escrito literalmente com `\n`, causando SyntaxError; (2) ausência do import de `SQLiteEventStore`, causando NameError no teste de round-trip.
+- Corrigidos os dois defeitos diretamente na branch da PR #24. Commits: `d3f4b50710734e366c2afeb86374103aade81007` (import multilinha) e `58a19750672851a79e59d4cdfc953a37870e7769` (SQLiteEventStore).
+- CI push #44413972426 SUCCESS no commit `58a19750672851a79e59d4cdfc953a37870e7769`: 380 testes aprovados em 3,798s e `compileall` concluído.
+- PR #25 permanece OPEN/DRAFT, sem merge. Check PR no HEAD `7010960b0461bdf4d282df5c625ea6bf88b70717` passou com 498 testes em 4,179s e `compileall`. O teste novo de divergência de pool também aparece como `ok`.
+- As três PRs continuam Draft e nenhuma foi integrada à `main`. A PR #25 depende da atualização/integração ordenada das PRs anteriores; não executar merge fora da sequência aprovada.
+- Próxima ação: revisar se o head da PR #25 já contém integralmente os dois reparos da PR #24 e validar novamente o estado de mergeability/checks após a atualização da cadeia, sem alterar o estado Draft.

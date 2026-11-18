@@ -2493,3 +2493,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #933 (`44332520139`), disparado no HEAD anterior `f2541b7`, repetiu falha de job sem steps/logs. A API confirmou `runner_id=0`, `runner_name=""`, `steps=[]`, duração aproximada de 2 s. Runner `ubuntu-latest` continua sem provisionamento; testes não foram executados.
 - Código e testes do coletor foram relidos no GitHub após as alterações; revisão estática apenas. Runtime unittest/compileall ainda pendente. Não coletar fixture RAW mainnet até validação runtime.
 - PR #25 continua Draft, aberto, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 160. Revisão dos novos testes temporais e CI #942 — PR #25 (18/11/2026)
+
+- Revisão estática dos testes temporais detectou que `repr(10**10000)` no parâmetro de `subTest` poderia lançar `ValueError` pela proteção de conversão de inteiros muito grandes do Python, antes de testar o construtor. Corrigido usando rótulos descritivos estáveis para cada caso, mantendo a entrada inteira gigantesca no teste de rejeição.
+- Commit da correção do teste: `163fbbbdbe66b4fed394b855a2e06bdda4d37591`.
+- CI #942 (`44332736153`), HEAD `684917bbc4061cf08d089b2a3142c14ddb65c991`, job `134901176367`: `runner_id=0`, `runner_name=""`, `steps=[]`, duração aproximada de 4 s. Repetição do problema de provisionamento do runner, sem execução de testes. O commit de correção dos testes ocorreu depois desse run, portanto não foi coberto por ele.
+- Código e testes RPC reconsultados no GitHub após correções; revisão estática, sem runtime. Aguardar runner funcional para unittest e compileall; não coletar fixture mainnet antes disso.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.

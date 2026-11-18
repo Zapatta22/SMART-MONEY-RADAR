@@ -79,3 +79,34 @@ Relatório deve conter contagens e razões, sem imprimir endereços, assinaturas
 ## 8. Próxima etapa técnica permitida
 
 Implementar e testar somente um planejador/dry-run offline, sem SQLite e sem persistência. Antes disso, a política de associação deve aceitar mapeamento explícito por transação; quando o operador não fornecer a associação, o resultado deve ser `WALLET_UNASSIGNED`. Não presumir que as cinco transações pertencem a uma única carteira.
+
+
+## 9. Implementação inicial do planejador (18/11/2026)
+
+Foi adicionado `tools/plan_solana_historical_import.py` e sua suíte `tests/test_historical_import_planner.py`.
+
+Comportamento implementado:
+- Descoberta determinística de manifestos `*.manifest.json` no diretório fornecido.
+- Reutiliza `audit_fixture()` para validar hash, assinatura, slot, commitment, encoding e marcador de não anonimizado.
+- Rejeita manifesto/payload via symlink e caminhos resolvidos fora do diretório autorizado.
+- Aceita mapeamento explícito local JSON no formato `{signature: monitored_wallet}`; não imprime os valores.
+- Sem associação explícita: `WALLET_UNASSIGNED`.
+- Divergência entre mapeamento e campo explícito do manifesto: `WALLET_MAPPING_CONFLICT`.
+- Transação com `meta.err` não nulo: `ON_CHAIN_FAILED`.
+- Associação explícita válida: `READY_FOR_REVIEW`, nunca autorização para gravar.
+- Falhas de auditoria recebem estados de manifesto/hash/assinatura/slot.
+- Saída limitada a índice e estado, sem caminhos, carteiras ou assinaturas.
+- Declara `network_access=false`, `database_access=false`, `writes_files=false`, `checkpoint_changes=false` e `execution_authorized=false`.
+
+Uso:
+`PYTHONPATH=src python tools/plan_solana_historical_import.py /caminho/para/raw`
+Opcionalmente:
+`--wallet-map /caminho/privado/wallet-map.json`
+
+O mapeamento deve permanecer local e não deve ser enviado ao GitHub. O planejador não detecta nem valida a cobertura de protocolos DEX; `READY_FOR_REVIEW` exige uma revisão posterior de protocolo e carteira. Nenhuma persistência foi implementada.
+
+### Limites da implementação
+- Ainda não há importação SQLite nem escrita de observações.
+- Não há comparação com duplicatas já persistidas, pois não existe acesso ao banco neste dry-run.
+- Não existe classificação automática de venue/protocolo neste planejador; essa revisão permanece pendente.
+- O script não é autorização para importar os dados.

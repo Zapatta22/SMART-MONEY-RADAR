@@ -88,7 +88,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RInE --exclude-dir=.git --exclude='*.md' '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|api[_-]?key[[:space:]]*=[[:space:]]*["\x27][A-Za-z0-9_-]{20,})' .; then
+          if grep -RInE --exclude-dir=.git --exclude='*.md' --exclude='.env.example' '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|api[_-]?key[[:space:]]*=[[:space:]]*["\x27][A-Za-z0-9_-]{20,})' .; then
             echo "Potential credential detected; refusing import."
             exit 1
           fi

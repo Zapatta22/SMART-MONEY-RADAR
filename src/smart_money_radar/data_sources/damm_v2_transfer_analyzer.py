@@ -1,9 +1,8 @@
 """Atribuição conservadora de transferências SPL a swaps DAMM v2.
 
-Este módulo atribui instruções Transfer/TransferChecked aos papéis de input e
-output de uma operação já associada a EvtSwap2. Atribuição não equivale a
-reconciliação econômica: valores, deltas de token accounts/vaults e taxas
-Token-2022 precisam de validação independente.
+Este módulo atribui transferências de input, output e referral a uma operação
+já associada a EvtSwap2. Atribuição não equivale a reconciliação econômica:
+deltas de token accounts/vaults e taxas Token-2022 ainda exigem validação.
 """
 from collections import defaultdict
 from collections.abc import Mapping, Sequence

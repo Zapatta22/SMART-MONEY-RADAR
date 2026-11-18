@@ -172,6 +172,19 @@ class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
         )[0]
         self.assertEqual(result.status, "INCOMPLETE")
 
+    def test_outer_swap_remains_scoped_to_its_inner_instruction_group(self):
+        transfers = _pair(path=(2, 0), height=4)
+        transfers[0] = SolanaTokenTransfer(
+            **{**transfers[0].__dict__, "cpi_path_valid": False}
+        )
+        result = reconcile_raydium_cpmm_swaps(
+            [_swap()],
+            transfers,
+            _deltas(),
+            monitored_wallet=WALLET,
+        )[0]
+        self.assertEqual(result.status, "MATCHED")
+
     def test_inner_swap_without_stack_height_is_not_reconciled(self):
         result = reconcile_raydium_cpmm_swaps(
             [_swap(path=(2,), inner_index=3, stack_height=None)],

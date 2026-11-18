@@ -55,3 +55,5 @@ Limites importantes:
 - Este módulo ainda não gera `SwapObservation`, `SwapClassification` ou `SwapEvidence`, e não persiste operações.
 
 Referência de formato RPC: https://solana.com/docs/rpc/json-structures (seções Transactions, Inner Instructions e Loaded Addresses).
+
+Quando um item intermediário não traz `stackHeight`, o cálculo descarta a pilha de ancestrais previamente conhecida. Assim, uma instrução posterior com altura maior não será ligada a um pai possivelmente obsoleto; seu caminho fica em fallback linear até que a hierarquia volte a ser demonstrável.

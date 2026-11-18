@@ -688,19 +688,18 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                 "slot": 471107341,
             }
         }
-        result = _reconcile(
-            [context], [evidence], _deltas([
-                ("user-a", "mint-a", -100, 6),
-                ("vault-a", "mint-a", 95, 6),
-                ("vault-b", "mint-b", -95, 6),
-                ("user-b", "mint-b", 90, 6),
-                ("referral", "mint-b", 5, 6),
-            ]),
-            raw_transaction=raw,
-            transfer_fee_absence_proofs=(proof,),
-        )
-        self.assertEqual(result.status, "INCOMPLETE")
-        self.assertIn("outra transação/slot", result.reason)
+        with self.assertRaisesRegex(ValueError, "outra transação/slot"):
+            _reconcile(
+                [context], [evidence], _deltas([
+                    ("user-a", "mint-a", -100, 6),
+                    ("vault-a", "mint-a", 95, 6),
+                    ("vault-b", "mint-b", -95, 6),
+                    ("user-b", "mint-b", 90, 6),
+                    ("referral", "mint-b", 5, 6),
+                ]),
+                raw_transaction=raw,
+                transfer_fee_absence_proofs=(proof,),
+            )
 
     def test_reconciles_referral_transfer_with_explicit_token_2022_fee(self):
         context = _context(event=_event(referral_fee=5, has_referral=True))

@@ -17,7 +17,7 @@ from smart_money_radar.data_sources.damm_v2_transaction_pipeline import (
 DEFAULT_RPC = "https://api.mainnet-beta.solana.com"
 
 
-def fetch_transaction(endpoint: str, signature: str, *, max_supported_transaction_version: int = 0) -> dict:
+def fetch_transaction(endpoint: str, signature: str, *, max_supported_transaction_version: int = 1) -> dict:
     body = json.dumps({
         "jsonrpc": "2.0",
         "id": 1,

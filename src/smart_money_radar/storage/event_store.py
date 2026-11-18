@@ -30,8 +30,10 @@ class SQLiteEventStore:
 
     def _connect(self) -> sqlite3.Connection:
         if self._memory_connection is not None:
+            self._memory_connection.execute("PRAGMA foreign_keys = ON")
             return self._memory_connection
         connection = sqlite3.connect(self.database_path, timeout=15.0)
+        connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 15000")
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
@@ -339,6 +341,8 @@ class SQLiteEventStore:
         )
         if operation_id != expected_id:
             raise ValueError("operation_id não corresponde à identidade determinística da instrução/CPI.")
+        if observation.chain.strip().lower() != "solana":
+            raise ValueError("Esta versão do EventStore aceita swaps apenas da chain Solana.")
         with self._connection_scope() as connection:
             with connection:
                 parent = connection.execute(
@@ -404,6 +408,8 @@ class SQLiteEventStore:
                 """SELECT program_id, venue, instruction_index, cpi_path_json, evidence_json
                    FROM swap_evidence WHERE operation_id = ?""", (operation_id,)
             ).fetchone()
+        if cls is None or ev is None:
+            raise RuntimeError("Bundle de swap incompleto: classificação ou evidência ausente.")
         return {
             "observation": SwapObservation(
                 operation_id=operation_id, chain=obs[0], wallet_address=obs[1], signature=obs[2],

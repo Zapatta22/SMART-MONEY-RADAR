@@ -5,6 +5,7 @@ on:
     branches: ["feat/damm-v2-transaction-pipeline"]
     paths:
       - "tools/validate_damm_v2_mainnet.py"
+      - "tools/inspect_token_2022_transfer_fee_config.py"
       - "tools/scan_damm_v2_multi_swap_mainnet.py"
       - "tools/inspect_damm_v2_instruction_shapes.py"
       - ".github/workflows/damm-v2-mainnet-validation.yml"
@@ -80,3 +81,6 @@ jobs:
         env:
           SMR_DAMM_V2_SIGNATURE: 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9
         run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
+      - name: Inspect current Token-2022 referral mint fee configuration
+        continue-on-error: true
+        run: PYTHONPATH=src:tools python tools/inspect_token_2022_transfer_fee_config.py --mint GgGQzgwUBcPZddt4UFULRLeJK2WFhSyFY1VavYK4MCCc --transaction-slot 471107341

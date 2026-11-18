@@ -243,6 +243,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
     async def test_backfills_signatures_since_persisted_checkpoint(self) -> None:
         stop_event = asyncio.Event()
         transaction = simulated_transaction("new-signature")
+        transaction["slot"] = 901
 
         class BackfillDataSource:
             def __init__(self) -> None:

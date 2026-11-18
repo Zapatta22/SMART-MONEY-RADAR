@@ -501,3 +501,5 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Agora há duas fixtures mainnet positivas independentes para o caminho CPMM `MATCHED`: (1) rota Jupiter com duas operações CPMM, sendo a primeira MATCHED e a segunda INCOMPLETE; (2) rota multi-venue com uma operação CPMM MATCHED e contas intermediárias reconciliadas por todas as transferências.
 - As fixtures fail-closed anteriores permanecem intactas: conta temporária sem delta, divergência Token-2022 gross/net, e swaps em rota sem prova completa.
 - Próxima ação: revisar o diff agregado do PR #13 e a integridade das projeções antes de propor qualquer merge. Não fazer merge sem aprovação explícita do usuário.
+
+- Confirmação final do estado do branch: PR #13 permanece open e mergeable, head `25f6b7dc1f094fbc214cc3982e8a575bc4be7b20`; CI run `44229203783` no commit de atualização do Registro também success. Nenhum merge foi executado.

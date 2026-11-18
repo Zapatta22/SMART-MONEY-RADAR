@@ -363,6 +363,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             [self.context, self.context],
             [self.evidence, self.evidence],
             _deltas([]),
+            all_transfers=[self.input, self.output],
         )
         self.assertEqual(result.status, "AMBIGUOUS")
         self.assertIn("reutilizada", result.reason)

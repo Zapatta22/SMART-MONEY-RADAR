@@ -273,6 +273,35 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "RECONCILED")
 
+    def test_rejects_non_boolean_cpi_path_validity(self):
+        invalid = SolanaTokenTransfer(
+            **{**self.input.__dict__, "cpi_path_valid": 1}
+        )
+        evidence = _evidence(self.context, invalid, self.output)
+        result = _reconcile(
+            [self.context], [evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("proveniência CPI", result.reason)
+
+    def test_rejects_duplicate_reference_in_transfer_inventory(self):
+        result = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ]),
+            all_transfers=[self.input, self.output, self.input],
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("referência duplicada", result.reason)
+
     def test_rejects_unattributed_transfer_touching_a_swap_account(self):
         unrelated = _transfer(
             "third-party", "user-a", "mint-a", 1, fee=0, inner=3

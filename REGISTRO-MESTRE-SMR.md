@@ -138,3 +138,13 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - Commits posteriores adicionaram validação determinística do `operation_id` e ajustaram os testes para usar o helper real. A validação dessa revisão ainda depende do próximo resultado CI.
 - Limite importante: a persistência está implementada como API do EventStore, mas ainda não está conectada ao pipeline de reconstrução de swaps; não há decodificação Raydium integrada nem fixture mainnet real aprovada.
 - Próxima tarefa: confirmar CI do commit mais recente e revisar eventuais falhas; em seguida, trazer os módulos locais Raydium e testes para integrar o produtor dos contratos.
+
+## 16. Atualização 2026-11-18 — validação da persistência e estado do PR #2
+
+- CI atualizado para o commit `07fa7739b997cabf5b1cdda121b9c7f6c53b5617`: workflow `SMR tests` aprovado; **104 testes passaram** e `python -m compileall -q src tests` passou. Execução: [GitHub Actions](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44217615420).
+- Os dois testes adicionais cobrem: rejeição de `operation_id` não determinístico e rollback integral quando a inserção de evidência falha. Isso confirma atomicidade do bundle na suíte automatizada.
+- PR #2 continua aberto como draft, não mesclado, com estado mergeable reportado pelo GitHub: [PR #2](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/2).
+- Correção de histórico operacional: uma atualização de teste foi enviada por engano à `main` sem indicar a branch; o arquivo foi imediatamente removido em commit corretivo. Comparação da árvore entre o SHA-base anterior e a `main` confirmou **nenhuma diferença de arquivos** (árvore de trabalho restaurada), mas a `main` contém dois commits adicionais de criação/remoção. A branch de trabalho está 2 commits atrás e 12 à frente da `main`; PR permanece mergeable. Não houve alteração persistente de código/arquivos na `main`.
+- O CI de 104 testes é validação do código de persistência e testes existentes; não valida decodificadores Raydium, reconstrução econômica nem fixtures mainnet.
+- Estado técnico: persistência dedicada implementada e validada em CI; ainda não conectada ao parser/normalizador que produzirá swaps reais.
+- Próxima tarefa: revisar e integrar os módulos Raydium locais e os respectivos testes. Não mesclar PR #2 até revisão técnica completa e confirmação do estado da branch/base.

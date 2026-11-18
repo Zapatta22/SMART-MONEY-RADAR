@@ -100,6 +100,15 @@ class SQLiteEventStore:
                     )
                     """
                 )
+                checkpoint_columns = {
+                    row[1] for row in connection.execute(
+                        "PRAGMA table_info(wallet_checkpoints)"
+                    ).fetchall()
+                }
+                if "slot" not in checkpoint_columns:
+                    connection.execute(
+                        "ALTER TABLE wallet_checkpoints ADD COLUMN slot INTEGER"
+                    )
                 connection.execute(
                     """
                     CREATE TABLE IF NOT EXISTS observed_transactions (
@@ -378,11 +387,26 @@ class SQLiteEventStore:
             (wallet_address, signature),
         )
         connection.execute(
-            """INSERT INTO wallet_checkpoints (wallet_address, signature)
-               VALUES (?, ?)
+            """INSERT INTO wallet_checkpoints (wallet_address, signature, slot)
+               VALUES (
+                   ?, ?,
+                   (SELECT slot FROM observed_transactions
+                    WHERE wallet_address = ? AND signature = ?)
+               )
                ON CONFLICT(wallet_address) DO UPDATE SET
-                   signature = excluded.signature, updated_at = CURRENT_TIMESTAMP""",
-            (wallet_address, signature),
+                   signature = excluded.signature,
+                   slot = COALESCE(excluded.slot, wallet_checkpoints.slot),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE
+                   (wallet_checkpoints.slot IS NULL AND excluded.slot IS NULL)
+                   OR (
+                       excluded.slot IS NOT NULL
+                       AND (
+                           wallet_checkpoints.slot IS NULL
+                           OR excluded.slot > wallet_checkpoints.slot
+                       )
+                   )""",
+            (wallet_address, signature, wallet_address, signature),
         )
 
     def mark_processed(self, wallet_address: str, signature: str) -> None:
@@ -950,13 +974,27 @@ class SQLiteEventStore:
                 )
                 connection.execute(
                     """
-                    INSERT INTO wallet_checkpoints (wallet_address, signature)
-                    VALUES (?, ?)
+                    INSERT INTO wallet_checkpoints (wallet_address, signature, slot)
+                    VALUES (
+                        ?, ?,
+                        (SELECT slot FROM observed_transactions
+                         WHERE wallet_address = ? AND signature = ?)
+                    )
                     ON CONFLICT(wallet_address) DO UPDATE SET
                         signature = excluded.signature,
+                        slot = COALESCE(excluded.slot, wallet_checkpoints.slot),
                         updated_at = CURRENT_TIMESTAMP
+                    WHERE
+                        (wallet_checkpoints.slot IS NULL AND excluded.slot IS NULL)
+                        OR (
+                            excluded.slot IS NOT NULL
+                            AND (
+                                wallet_checkpoints.slot IS NULL
+                                OR excluded.slot > wallet_checkpoints.slot
+                            )
+                        )
                     """,
-                    (wallet_address, signature),
+                    (wallet_address, signature, wallet_address, signature),
                 )
 
 

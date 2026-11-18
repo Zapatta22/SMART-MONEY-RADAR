@@ -1942,3 +1942,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commit do teste de integração: `dec4726592f386fea53b01a12c282ad8c340a55a`; atualização documental: `61c92db828c282ad8634565ecf888fff47e32bf4`.
 - Execução de testes ainda pendente. CI #598 no commit anterior terminou sem etapas (`steps=[]`) e logs BlobNotFound; não há evidência de execução nem aprovação CI. Não repetir retries automáticos.
 - PR #24 continua Draft, aberto e sem merge. `main` permanece intacta.
+
+
+## 102. Endurecimento adicional da ligação swap↔EvtSwap2 e CI #602 — PR #24 (18/11/2026)
+
+- O adaptador passou a revalidar também a relação pai/filho do próprio evento: `event_stack_height == swap_stack_height + 1`, caminho do Event CPI exatamente um nível abaixo do caminho do swap, evento posterior à instrução swap e índices tipados/não negativos.
+- Exige que o programa das contas resolvidas seja o Program ID canônico Meteora DAMM v2.
+- Confere que o índice inner da evidência atribuída coincide com o índice da associação.
+- Testes existentes foram ajustados para usar o Program ID canônico; novo teste negativo cobre caminho CPI do evento que não descende do swap.
+- Commits: reforço de vínculo CPI `09916957bc37eb71c1b480bd3da59dcdef35821a`; fixture com programa canônico `70ae114da9cf143d78ae2288852788f8ada7e4cc`; teste negativo `20a77ac331d0414835ea4168eb8d9e2801443c70`; endurecimento final de índices/identidade `80e3735b458c66dc63223c09b8fdba179fe49c7c`.
+- CI #602 (run `44310450270`) no commit documental anterior terminou `failure`; job `134822897989` retornou `steps=[]`, sem logs disponíveis. Não há evidência de checkout/testes/compileall; não classificar como falha de testes nem aprovação. Nenhum retry realizado.
+- Nenhum teste local foi executado nesta atualização GitHub. PR #24 permanece Draft, aberto e sem merge; `main` intacta.

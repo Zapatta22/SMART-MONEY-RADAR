@@ -1,14 +1,14 @@
 {
-  "schema": "smr.anonymized-fixture.v1",
-  "signature": "22eMQm4iya5tzcA8kwK3pXUavurvSD76AcarZY51ZzNG5DoVHwungJCRSjFSWLr4FtXTze8LbrSQ9LvJnUQA6KxK",
+  "schema": "smr.pseudonymized-fixture.v2",
+  "fixture_id": "smr-fixture-raydium-cpmm-token2022-fee-v1",
   "slot": 344357800,
   "commitment": "finalized",
-  "raw_sha256": "12e48f9cb3082355756b1bd96bbbb68f2561f3bae82191585c818a089f4c0e00",
-  "projection_file": "22eMQm4iya5tzcA8kwK3pXUavurvSD76AcarZY51ZzNG5DoVHwungJCRSjFSWLr4FtXTze8LbrSQ9LvJnUQA6KxK.json",
-  "projection_sha256": "0f400421d25dd40ca65d13216543d292be1b8aa1a61c5b57550220f019c0556c",
-  "anonymized": true,
+  "projection_file": "raydium-cpmm-token2022-fee.json",
+  "projection_sha256": "e63ad3fb799b208a5a4209587d3f11d3820476c472f297866a9b4ab244127a73",
+  "pseudonymized": true,
+  "anonymized": false,
   "replaced_addresses": 3,
   "mapping_file": null,
-  "provenance_manifest": "22eMQm4iya5tzcA8kwK3pXUavurvSD76AcarZY51ZzNG5DoVHwungJCRSjFSWLr4FtXTze8LbrSQ9LvJnUQA6KxK.manifest.json",
-  "protected_address_count": 12
+  "protected_address_count": 12,
+  "privacy_note": "Public metadata remains potentially correlatable with Solana mainnet. This fixture is pseudonymized, not anonymous. Signature and blockhash fields are synthetic placeholders; raw payload fingerprints and reversible mappings are not published."
 }

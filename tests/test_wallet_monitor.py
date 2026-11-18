@@ -26,6 +26,7 @@ def simulated_transaction() -> dict[str, object]:
         },
         "transaction": {
             "message": {
+                "accountKeys": [],
                 "instructions": [],
             }
         },

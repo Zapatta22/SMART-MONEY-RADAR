@@ -1868,3 +1868,16 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Isso confirma problema de provisionamento/indisponibilidade do runner GitHub Actions; não há evidência de falha dos testes e também não há aprovação automatizada.
 - Naquele head, PR #23 vs PR #22 estava 17 commits à frente, 0 atrás, quatro arquivos próprios e mergeable=true. O commit desta seção altera somente o Registro Mestre.
 - Próxima ação técnica segura: restaurar runner funcional e executar a suíte/compileall sobre o head atualizado antes de avançar para integração com SwapObservation. PRs permanecem Draft; `main` intacta.
+
+
+
+## 96. Correção da completude do inventário no PR #23 — 18/11/2026
+
+- Auditoria estática identificou lacuna no reconciliador econômico: ele rejeitava transferências não atribuídas que aparecessem em `all_transfers`, mas não verificava se todas as transferências referenciadas pelas evidências atribuídas estavam contidas nesse inventário.
+- Isso permitia que o chamador fornecesse um inventário parcial (inclusive sem uma das transferências atribuídas) sem a ausência ser detectada.
+- Corrigido em `src/smart_money_radar/data_sources/damm_v2_economic_reconciliation.py`: o conjunto de IDs das transferências atribuídas agora precisa estar contido no conjunto de IDs do inventário. Transferência atribuída ausente resulta em `INCOMPLETE`.
+- Novo teste `test_rejects_claimed_transfer_missing_from_complete_inventory` adicionado em `tests/test_damm_v2_economic_reconciliation.py`.
+- Commits: código `62721773a028c0b85da5712b31811ab1b605484c`; teste `262c59a9a23171f1015843625fb611d6ab0dd969`.
+- GitHub confirmou a presença da guarda e do teste; isso não equivale à execução dos testes.
+- PR #23 continua Draft, aberto e sem merge. HEAD conhecido após a correção: `262c59a9a23171f1015843625fb611d6ab0dd969`; compare com PR #22: 20 commits à frente, 0 atrás, quatro arquivos próprios.
+- CI e execução local da suíte permanecem pendentes. Não houve alteração em `main`, RAW fixtures, SQLite, checkpoints, RPC/Helius ou operações on-chain.

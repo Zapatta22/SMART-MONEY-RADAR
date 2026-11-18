@@ -145,7 +145,7 @@ class RpcFixtureCollectorTests(unittest.TestCase):
                 collector.collect(SIG)
 
     def test_rejects_boolean_or_negative_slot(self):
-        for slot in (True, -1):
+        for slot in (True, -1, 2**64):
             payload = json.loads(rpc_bytes())
             payload["result"]["slot"] = slot
             collector = RpcFixtureCollector(
@@ -156,7 +156,7 @@ class RpcFixtureCollectorTests(unittest.TestCase):
                 collector.collect(SIG)
 
     def test_rejects_invalid_transaction_version(self):
-        for version in (None, True, -1, {"unexpected": "object"}):
+        for version in (None, True, -1, 1, {"unexpected": "object"}):
             payload = json.loads(rpc_bytes())
             payload["result"]["version"] = version
             collector = RpcFixtureCollector(

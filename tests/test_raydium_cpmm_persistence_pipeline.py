@@ -106,7 +106,7 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         )
 
         self.assertEqual(result.status, "no_cpmm_swaps")
-        self.assertTrue(result.checkpoint_advanced)
+        self.assertFalse(result.checkpoint_advanced)
         self.assertTrue(self.store.has_processed_signature(self.wallet, self.signature))
         self.assertEqual(self.store.get_checkpoint(self.wallet), "previous-signature")
         self.store.advance_checkpoint_in_order(

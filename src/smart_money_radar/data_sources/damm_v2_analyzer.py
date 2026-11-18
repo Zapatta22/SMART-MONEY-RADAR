@@ -6,7 +6,7 @@ Token-2022 e não cria SwapObservation.
 """
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, Any
+from typing import Any, Literal
 
 from smart_money_radar.data_sources.damm_v2_decoder import (
     METEORA_DAMM_V2_PROGRAM_ID,
@@ -55,7 +55,7 @@ def _decode_base58(value: str) -> bytes:
     except ValueError as exc:
         raise ValueError("instruction data contém Base58 inválido") from exc
     body = number.to_bytes((number.bit_length() + 7) // 8, "big")
-    return b"\\x00" * (len(value) - len(value.lstrip("1"))) + body
+    return b"\x00" * (len(value) - len(value.lstrip("1"))) + body
 
 
 def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any]) -> list[str]:

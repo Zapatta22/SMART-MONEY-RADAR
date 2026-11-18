@@ -77,8 +77,8 @@ def _fetch_signatures(
         before = last_signature
     return collected, first_endpoint or endpoints[0]
 
-def scan(endpoints: tuple[str, ...], limit: int) -> dict:
-    signatures, signature_rpc = _fetch_signatures(endpoints, limit)
+def scan(endpoints: tuple[str, ...], limit: int, pages: int) -> dict:
+    signatures, signature_rpc = _fetch_signatures(endpoints, limit, pages)
     inspected = 0
     candidates = []
     failures = Counter()

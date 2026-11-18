@@ -79,7 +79,7 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         }
         self.assertEqual(len(operation_ids), 2)
 
-    def test_intermediate_accounts_without_net_deltas_fail_closed_individually(self) -> None:
+    def test_matches_first_hop_and_rejects_token2022_net_credit_mismatch(self) -> None:
         result = self.fixture["result"]
         swaps = decode_raydium_cpmm_swaps(self.fixture)
         transfers = decode_solana_token_transfers(self.fixture)

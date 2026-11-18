@@ -101,3 +101,17 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - O histórico local do Termux registra decodificador CPMM, mapeamento de contas e testes conjuntos CPMM/normalização/AMM v4 aprovados em 25/25. A pasta local informada não é um repositório Git; esses arquivos ainda precisam ser reconciliados com a `main` sem perda.
 - Nenhuma integração parser→reconstrução econômica foi iniciada nesta etapa.
 - O SMR permanece em monitoramento/análise somente leitura, sem execução de compras ou vendas reais.
+
+
+## 13. Atualização 2026-11-18 — reconciliação da cópia local e branch de trabalho
+
+- Branch criada a partir da `main`: `feat/raydium-swap-reconciliation`. No momento da criação, comparação confirmou zero commits de diferença em relação à `main` (base `c87ef7005e1dc0b70336986df54da58b208b0aba`). Nenhum código foi ainda adicionado à branch.
+- Inventário Termux em `~/SMART-MONEY-RADAR-ETAPA16` encontrou seis módulos locais: `raydium_cpmm_decoder.py`, `raydium_cpmm_accounts.py`, `raydium_cpmm_analyzer.py`, `raydium_amm_v4_decoder.py`, `raydium_amm_v4_accounts.py`, `raydium_amm_v4_analyzer.py`; também `domain/normalization.py` com imports desses dois analisadores, `solana_token_instruction_decoder.py`, `dex_interpreter.py`, `transaction_parser.py`, `domain/models.py` e `domain/program_registry.py`.
+- Testes locais identificados: `test_raydium_amm_v4_decoder.py`, `test_raydium_parser_integration.py`, `test_raydium_account_semantics.py`, `test_raydium_account_decoder.py`, `test_raydium_analyzer.py`, `test_raydium_cpmm_analyzer.py` e `test_normalization.py`.
+- Inventário local encontrou referências de testes a `tests/data/fixtures/raw` e `tests/data/fixtures/anonymized`, mas ambos os diretórios estavam ausentes no caminho esperado. A busca posterior por `*.raw.json`, `*.anon.json` e diretórios com nome fixture ainda não foi executada.
+- Verificação remota confirma que a `main` tem `domain/normalization.py` sem imports Raydium e que não contém os módulos Raydium. Portanto, a normalização local é uma versão modificada que exige comparação cuidadosa; não substituir a versão remota nem `domain/models.py` (que contém os contratos do PR #1) sem revisão de diff.
+- Documentos remotos das Etapas 10/11 confirmam que as cinco assinaturas listadas são candidatas, não fixtures reais aprovadas; nenhuma coleta RPC real foi comprovada. Testes sintéticos não devem ser apresentados como evidência mainnet.
+- O SQLite remoto `event_store.py` já persiste observações normalizadas, eventos legados e `token_balance_deltas`, com replay/transação atômica; ainda não há persistência específica dos três contratos de swap.
+- Fluxo de trabalho reafirmado: GitHub + Codespaces + ChatGPT como fluxo principal; Termux é cópia local preservada e fonte de arquivos ainda não enviados. Não executar `git pull`, inicializar Git na pasta local, nem modificar ou apagar originais.
+- Próxima ação: trazer os arquivos locais necessários para revisão no GitHub/Codespaces, começando pelos seis módulos Raydium e testes, depois dependências estritamente necessárias. Fixtures brutas/anônimas só devem ser incluídas após localizar, auditar e verificar proveniência; não inventar nem gerar fixtures rotuladas como reais.
+- Limites: branch de trabalho sem alterações de código até agora; nenhuma integração parser→swap, persistência dos contratos, validação com fixture real ou execução financeira foi concluída. SMR permanece somente leitura.

@@ -94,6 +94,7 @@ def build_swap_domain_bundles(
         raise ValueError("reference_mints deve conter apenas mints não vazios")
 
     bundles = []
+    seen_operation_ids: set[str] = set()
     for item in reconciliations:
         if item.status != "MATCHED":
             continue
@@ -114,6 +115,9 @@ def build_swap_domain_bundles(
         operation_id = build_swap_operation_id(
             chain, signature, swap.instruction_index, swap.cpi_path
         )
+        if operation_id in seen_operation_ids:
+            raise ValueError("operation_id duplicado nas reconciliações.")
+        seen_operation_ids.add(operation_id)
         observation = SwapObservation(
             operation_id=operation_id,
             chain=chain,

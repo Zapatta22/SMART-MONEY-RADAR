@@ -90,3 +90,17 @@ A auditoria não transforma resultados negativos em bundles, não reclassifica s
 - O servidor é criado sem iniciar automaticamente; o chamador controla explicitamente o ciclo de vida.
 - `tests/test_dashboard_http.py` cobre autenticação, dashboard, rota desconhecida, método de mutação, host não-loopback e token curto.
 - A implementação ainda depende de CI e revisão de segurança; não deve ser exposta em rede nem usada como serviço de produção nesta fase.
+
+
+### Inicialização controlada da API local
+
+O comando `smr-api` é registrado como entry point do pacote. Ele usa `SMR_API_TOKEN` (obrigatório, mínimo 32 caracteres) e `SMR_DB_PATH` (opcional; padrão `data/smr_history.sqlite3`). A inicialização não chama `HeliusSettings`, não exige `SMR_ALLOW_NETWORK` e não faz RPC. Opções `--host` e `--port` existem, mas `create_read_only_server()` recusa qualquer host que não seja loopback. Encerrar com Ctrl+C fecha o servidor e o EventStore.
+
+Exemplo local (não compartilhar o token):
+
+```bash
+export SMR_API_TOKEN="$(openssl rand -hex 32)"
+smr-api
+```
+
+A API continua restrita ao próprio dispositivo. Este comando não configura acesso remoto pelo Android nem substitui autenticação TLS para exposição em rede.

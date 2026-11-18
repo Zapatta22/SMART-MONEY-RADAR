@@ -778,3 +778,18 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Próxima ação
 - Aguardar CI do head atualizado e corrigir somente falhas demonstradas. Manter PR #15 Draft e não fazer merge.
+
+
+## 42. Continuação 2026-11-18 — comando para iniciar a API local
+
+- CI do adaptador HTTP inicial: run `44239424161` passou integralmente (job de testes e compileall).
+- Adicionado entry point `smr-api` em `pyproject.toml` e função `main()` em `services/dashboard_http.py`.
+- O launcher exige `SMR_API_TOKEN` (32+ caracteres), usa `SMR_DB_PATH` ou `data/smr_history.sqlite3`, não carrega configurações Helius e não habilita RPC/rede Solana.
+- `--host`/`--port` configuráveis; a validação do servidor continua recusando qualquer host não-loopback.
+- Ctrl+C encerra servidor e fecha EventStore.
+- Testes adicionados em `tests/test_dashboard_http_main.py` para token obrigatório e ciclo de vida de encerramento.
+- Commits: launcher `025af8b28277f036e5af79b4e10e6e9ace128fd3`, entry point `61df0b483b3188067ad5a3a092ddfd394fad1c75`, testes `6e69218610f444aa67f24c1108c235368712f0a1`.
+- CI desta etapa ainda pendente; manter PR #15 Draft até conclusão.
+
+### Próxima ação
+- Verificar CI do head atualizado; corrigir apenas falhas reais. Depois revisar limites de query e cobertura de erros HTTP antes de qualquer uso pelo Android.

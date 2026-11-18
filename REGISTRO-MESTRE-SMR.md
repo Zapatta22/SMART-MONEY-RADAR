@@ -2721,3 +2721,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Estado do PR #25 verificado: aberto, Draft, mergeable, branch `feat/damm-v2-transaction-pipeline`, HEAD `5384b33dab4840eeb640e2bc2743388020363bcd`, base `feat/damm-v2-swap-domain-adapter`; sem merge e sem alteração em `main`.
 - Próxima prioridade: testar integração completa com múltiplos swaps e funding wSOL, mantendo rejeição fail-closed para sequências não atribuíveis; em paralelo, revisar exposição de segredos/histórico agora que o repositório está público. Nenhuma credencial pode ser considerada segura apenas por não aparecer no HEAD: verificar histórico e revogar imediatamente qualquer segredo que tenha sido commitado. Não publicar fixtures RAW, manifestos locais, mapas de anonimização ou dados privados.
 - Nenhuma ordem, classificação BUY/SELL ou alteração de checkpoint foi habilitada.
+
+
+## 183. Teste de bloqueio de lote parcialmente associado — 18/11/2026
+
+- Adicionado em `tests/test_damm_v2_transaction_pipeline.py` o teste `test_mixed_matched_and_unresolved_swaps_rejects_entire_batch`.
+- O cenário injeta duas associações no pipeline: uma MATCHED e outra EVENT_MISSING. A expectativa é rejeitar o lote inteiro, preservar as duas associações para diagnóstico e não produzir contexts nem bundles. Isso protege contra processamento parcial de uma transação que contém mais de um swap candidato.
+- Commit `860a8fdebe415f944c29fbf45a78dc4b8bca5525`. CI ainda não apareceu na consulta imediatamente após o commit; aprovação pendente de confirmação explícita do workflow.
+- Busca de código público por padrões comuns encontrou no HEAD pesquisável apenas nomes de variáveis, placeholders documentados e chaves simuladas de teste; nenhum valor de credencial real foi identificado nesses resultados. Isso NÃO equivale a auditoria de todo o histórico Git, nem à confirmação do GitHub Secret Scanning. A conexão disponível não expõe API de alertas de segredo nem administração de segurança. Como o repositório é público, histórico completo e segredos eventualmente commitados ainda exigem auditoria dedicada; qualquer credencial real exposta deve ser revogada/rotacionada.
+- PR #25 permanece Draft e aberto; nenhuma alteração em main, nenhum merge e nenhuma execução financeira.
+- Próxima ação: confirmar CI do novo teste; depois priorizar integração multi-swap com funding wSOL e cobertura mainnet adicional. Não relaxar fail-closed para acelerar.

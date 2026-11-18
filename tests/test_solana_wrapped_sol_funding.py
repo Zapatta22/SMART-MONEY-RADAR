@@ -90,6 +90,49 @@ class WrappedSolFundingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "SyncNative"):
             self._decode(_transaction(sync_index=None))
 
+
+    def test_rejects_funding_from_a_different_wallet(self):
+        raw = _transaction()
+        raw["result"]["transaction"]["message"]["instructions"][0]["accounts"] = [1, 0]
+        with self.assertRaisesRegex(ValueError, "origem/destino"):
+            self._decode(raw)
+
+    def test_rejects_sync_native_after_the_swap(self):
+        raw = _transaction()
+        instructions = raw["result"]["transaction"]["message"]["instructions"]
+        sync = instructions.pop(1)
+        instructions.append(sync)
+        with self.assertRaisesRegex(ValueError, "ordem"):
+            decode_wrapped_sol_funding(
+                raw, token_account="wsol-account", source_wallet="wallet",
+                amount_raw=20700, before_instruction_index=2,
+            )
+
+    def test_rejects_duplicate_sync_native(self):
+        raw = _transaction()
+        instructions = raw["result"]["transaction"]["message"]["instructions"]
+        instructions.insert(2, dict(instructions[1]))
+        with self.assertRaisesRegex(ValueError, "univocamente"):
+            self._decode(raw)
+
+    def test_rejects_duplicate_system_transfers(self):
+        raw = _transaction()
+        instructions = raw["result"]["transaction"]["message"]["instructions"]
+        instructions.insert(1, dict(instructions[0]))
+        with self.assertRaisesRegex(ValueError, "ambíguas"):
+            self._decode(raw)
+
+    def test_rejects_missing_lamport_snapshots(self):
+        raw = _transaction()
+        raw["result"]["meta"]["preBalances"] = []
+        with self.assertRaisesRegex(ValueError, "lamport snapshots"):
+            self._decode(raw)
+
+    def test_returns_none_when_no_native_funding_touches_the_account(self):
+        raw = _transaction()
+        raw["result"]["transaction"]["message"]["instructions"].pop(0)
+        self.assertIsNone(self._decode(raw))
+
     def test_rejects_nonzero_wrapped_account_lamport_delta(self):
         with self.assertRaisesRegex(ValueError, "lamports"):
             self._decode(_transaction(lamports_delta=1))

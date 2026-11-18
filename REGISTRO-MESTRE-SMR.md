@@ -2971,3 +2971,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Evidência permanece em fixture RPC sintética determinística; não equivale a captura Mainnet completa.
 - PR #25 permanece OPEN/DRAFT, sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
 - Próxima ação: reforçar a fronteira de coordenação do WalletMonitor em teste de integração, provando que `ready_for_next_venue=False` impede execução da venue CPMM e preserva checkpoint quando a reconciliação multi-swap DAMM v2 falha.
+
+
+## 205. WalletMonitor integrado ao lote multi-swap com falha econômica — 18/11/2026
+
+- Adicionado `test_wallet_monitor_blocks_cpmm_on_real_two_swap_economic_mismatch` em `tests/test_damm_v2_persistence_pipeline.py`.
+- O teste usa o payload RPC sintético completo de duas operações e o SQLiteEventStore real; o snapshot de saída da segunda operação contém divergência de uma unidade mínima.
+- Executa `WalletMonitor._collect_transaction` de verdade. A chamada DAMM v2 percorre analyzer, contas, transferências, snapshots e reconciliação; a falha econômica do lote retorna `ready_for_next_venue=False`.
+- CPMM é substituído apenas por um spy para comprovar a fronteira de coordenação: `process_raydium_cpmm_observation` não é chamado.
+- Verificações aprovadas: método retorna False; duas tentativas permanecem INCOMPLETE; assinatura não é marcada como processada; checkpoint continua inexistente; assinatura permanece na fila pendente.
+- CI push #44412408828 SUCCESS no commit `1b97635b615753f32614deeeb7ccf4d132fdb776`: 495 testes aprovados em 3,905s e `compileall` concluído. Log registra a mensagem de bloqueio do monitor: 0/2 swaps reconciliados, 2 pendências, checkpoint preservado.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
+- Próxima ação: validar também o fluxo positivo no WalletMonitor com dois swaps reconciliados, comprovando que CPMM só é chamado depois da persistência bem-sucedida de ambos os bundles; depois revisar os checks da PR no head atual.

@@ -2502,3 +2502,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #942 (`44332736153`), HEAD `684917bbc4061cf08d089b2a3142c14ddb65c991`, job `134901176367`: `runner_id=0`, `runner_name=""`, `steps=[]`, duração aproximada de 4 s. Repetição do problema de provisionamento do runner, sem execução de testes. O commit de correção dos testes ocorreu depois desse run, portanto não foi coberto por ele.
 - Código e testes RPC reconsultados no GitHub após correções; revisão estática, sem runtime. Aguardar runner funcional para unittest e compileall; não coletar fixture mainnet antes disso.
 - PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 161. Limites do protocolo Solana e CI #943/#944 — PR #25 (18/11/2026)
+
+- Coletor RPC agora limita `slot` ao intervalo unsigned 64-bit (`0..2**64-1`) e restringe `version` a `"legacy"` ou `0`, coerente com `maxSupportedTransactionVersion: 0` enviado na requisição. Versões futuras/inesperadas e slots fora do domínio são rejeitados antes de persistir RAW. Testes negativos ampliados para `slot=2**64` e `version=1`.
+- Commits: implementação `cc3344690bd19a8994dea880f0541051b2e55ac3`; testes `cd4965e04460e174e17ff8b1bffc53b0a0f9266a`.
+- CI #943 (`44332831615`) e #944 (`44332856069`) foram disparados no commit `163fbbbdbe66b4fed394b855a2e06bdda4d37591`; ambos jobs falharam sem executar steps. API confirmou runner IDs `0`, nomes vazios, listas de steps vazias e duração aproximada de 3 s. São novas ocorrências do problema de provisionamento, não resultados dos testes. As alterações de limite de slot/versão ocorreram após esses runs e não foram testadas por eles.
+- Revisão estática do coletor/testes segue em andamento; runtime e compileall ainda pendentes. Não repetir reruns automáticos; não coletar fixture RAW mainnet.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.

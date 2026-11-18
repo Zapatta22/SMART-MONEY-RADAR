@@ -172,6 +172,27 @@ class TestRaydiumCpmmAnalyzer(unittest.TestCase):
         self.assertEqual(result[1].cpi_path, (1,))
         self.assertEqual(result[1].stack_height, 2)
 
+    def test_does_not_infer_nested_path_across_missing_stack_height(self):
+        inner = [
+            {"programId": "OtherProgram", "accounts": [], "data": "1", "stackHeight": 2},
+            {"programId": "OtherProgram", "accounts": [], "data": "1"},
+            {
+                **_instruction(SWAP_BASE_OUTPUT_DISCRIMINATOR),
+                "stackHeight": 3,
+            },
+        ]
+        meta = {
+            "err": None,
+            "innerInstructions": [{"index": 0, "instructions": inner}],
+        }
+        result = decode_raydium_cpmm_swaps(_transaction(
+            [{"programId": "Router", "accounts": [], "data": "1"}],
+            meta=meta,
+        ))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].cpi_path, (2,))
+        self.assertEqual(result[0].stack_height, 3)
+
     def test_uses_flat_cpi_position_when_stack_height_is_missing(self):
         meta = {
             "err": None,

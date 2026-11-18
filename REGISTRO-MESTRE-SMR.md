@@ -2301,3 +2301,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Testes adicionados para processamento fora de ordem (slot 450 depois do 500) e para impedir substituição de checkpoint conhecido por assinatura sem slot.
 - Commits: fonte `b65255e29ff8adf8cf77c3229759c91adc38a1ef`; testes `68f49b842ce0cc3b1558e7b0ba2b016286371a52`.
 - Revisão estática/releitura GitHub concluídas. Runtime unittest/compileall ainda não executados após as alterações. Banco persistente do usuário não foi aberto nem migrado nesta atividade.
+
+## 138. Slot de transações com falha no backfill — PR #25 (18/11/2026)
+
+- A monotonicidade por slot revelou um caso adjacente: o ramo de backfill para falhas on-chain arquivava `payload=None` e descartava o `slot` já fornecido por `getSignaturesForAddress`. Sem slot, uma assinatura falhada mais recente não conseguiria avançar um checkpoint que já tivesse slot conhecido.
+- `save_observation()` agora aceita `slot` explícito opcional, valida inteiro não negativo (booleans rejeitados) e rejeita divergência com o slot do envelope normalizado. O backfill transmite `item.slot` ao arquivar falhas on-chain.
+- Teste adicionado confirmando que o slot RPC de uma transação falhada fica gravado no checkpoint.
+- Commits: EventStore `548175d93e324c16ef25e7126c8550c592940703`; WalletMonitor `10f6cd9b35914e257783d55bda75f116f7a56e76`; teste `94cddbf1c506b0ece2665de4ebdf4733615519dc`.
+- Revisão estática/releitura GitHub concluídas; runtime unittest/compileall ainda pendentes.

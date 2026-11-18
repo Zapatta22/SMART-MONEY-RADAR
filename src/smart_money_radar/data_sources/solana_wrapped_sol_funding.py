@@ -244,8 +244,6 @@ def decode_wrapped_sol_account_lifecycle(
     meta = payload.get("meta")
     if not isinstance(transaction, dict) or not isinstance(meta, dict):
         raise ValueError("transaction/meta ausentes")
-    if meta.get("err", "missing") is not None:
-        raise ValueError("transação não comprovadamente executada")
     message = transaction.get("message")
     if not isinstance(message, dict):
         raise ValueError("transaction.message ausente")
@@ -304,6 +302,8 @@ def decode_wrapped_sol_account_lifecycle(
 
     if not creates and not closes:
         return None
+    if meta.get("err", "missing") is not None:
+        raise ValueError("transação não comprovadamente executada")
     if not creates or len(creates) != len(closes):
         raise ValueError("lifecycle wSOL possui criação/fechamento incompleto")
     if any(create >= close for create, close in zip(creates, closes)):

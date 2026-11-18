@@ -2773,3 +2773,10 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 
 - Validação final da implementação: CI #1051 (run `44378721507`) SUCCESS no commit de código `6dbb8c51ee95388e4ac2b82efe12d51870f05d25`: 480 testes passaram e compileall passou. Os runs intermediários #1045/#1047/#1049 falharam enquanto a alteração estava incompleta (teste antigo ainda esperava rejeição de transferências duplicadas); o commit de teste #1051 atualizou a expectativa e confirmou a implementação integrada.
 - HEAD atual do PR após atualização documental: `83f2db22e17df2aedb39ace867957c495d3cfc47`; o commit adicional é apenas registro. PR #25 permanece OPEN/DRAFT, sem merge.
+
+
+## 188. Relatório da validação Mainnet expõe todos os funding transfers — 18/11/2026
+
+- Atualizado `tools/validate_damm_v2_mainnet.py` para emitir `system_transfer_indices` como lista completa, além do campo legado `system_transfer_index`, permitindo auditar no relatório a evidência agregada sem guardar payload RAW.
+- Commit: `848d35e123630417c8d79b5e52bb219f4495b199`. CI específico desse commit ainda não foi consultada; o núcleo de reconciliação foi validado em #1051 (480 testes + compileall) no commit `6dbb8c51ee95388e4ac2b82efe12d51870f05d25`.
+- Próxima validação de maior valor: obter fixture mainnet DAMM v2 com dois swaps e wSOL compartilhado; rodar `tools/validate_damm_v2_mainnet.py` e conferir RECONCILED, dois bundles e evidência de funding agregada. Até lá, suporte validado apenas por teste sintético.

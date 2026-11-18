@@ -137,7 +137,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             ("vault-b", "mint-b", -90, 6),
             ("user-b", "mint-b", 90, 6),
         ])
-        result = reconcile_damm_v2_economic_batch(
+        result = _reconcile(
             [self.context], [self.evidence], deltas
         )
         self.assertEqual(result.status, "RECONCILED")
@@ -181,7 +181,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
     def test_rejects_net_credit_that_disagrees_with_explicit_transfer_fee(self):
         bad_input = _transfer("user-a", "vault-a", "mint-a", 100, fee=4)
         evidence = _evidence(self.context, bad_input, self.output)
-        result = reconcile_damm_v2_economic_batch(
+        result = _reconcile(
             [self.context], [evidence], _deltas([
                 ("user-a", "mint-a", -100, 6),
                 ("vault-a", "mint-a", 95, 6),
@@ -196,14 +196,14 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         incomplete = SolanaTokenBalanceDeltaResult(
             (), (SolanaTokenBalanceDeltaIssue(None, "SNAPSHOTS_MISSING"),)
         )
-        result = reconcile_damm_v2_economic_batch(
+        result = _reconcile(
             [self.context], [self.evidence], incomplete
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("SNAPSHOTS_MISSING", result.reason)
 
     def test_rejects_delta_mismatch(self):
-        result = reconcile_damm_v2_economic_batch(
+        result = _reconcile(
             [self.context], [self.evidence], _deltas([
                 ("user-a", "mint-a", -100, 6),
                 ("vault-a", "mint-a", 94, 6),
@@ -222,7 +222,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         second_output = _transfer(
             "vault-b", "user-b", "mint-b", 90, fee=0, inner=4, path=(1, 0)
         )
-        results = reconcile_damm_v2_economic_batch(
+        results = _reconcile(
             [self.context, second],
             [
                 self.evidence,
@@ -244,7 +244,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             "vault-b", "referral", "mint-b", 5, fee=None, inner=3
         )
         evidence = _evidence(context, self.input, self.output, referral)
-        result = reconcile_damm_v2_economic_batch(
+        result = _reconcile(
             [context], [evidence], _deltas([
                 ("user-a", "mint-a", -100, 6),
                 ("vault-a", "mint-a", 95, 6),
@@ -262,7 +262,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             "vault-b", "referral", "mint-b", 5, fee=1, inner=3
         )
         evidence = _evidence(context, self.input, self.output, referral)
-        result = reconcile_damm_v2_economic_batch(
+        result = _reconcile(
             [context], [evidence], _deltas([
                 ("user-a", "mint-a", -100, 6),
                 ("vault-a", "mint-a", 95, 6),
@@ -291,7 +291,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         self.assertIn("não atribuídas", result.reason)
 
     def test_rejects_transfer_reuse(self):
-        result = reconcile_damm_v2_economic_batch(
+        result = _reconcile(
             [self.context, self.context],
             [self.evidence, self.evidence],
             _deltas([]),

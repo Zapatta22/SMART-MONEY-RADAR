@@ -101,3 +101,50 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - O histórico local do Termux registra decodificador CPMM, mapeamento de contas e testes conjuntos CPMM/normalização/AMM v4 aprovados em 25/25. A pasta local informada não é um repositório Git; esses arquivos ainda precisam ser reconciliados com a `main` sem perda.
 - Nenhuma integração parser→reconstrução econômica foi iniciada nesta etapa.
 - O SMR permanece em monitoramento/análise somente leitura, sem execução de compras ou vendas reais.
+
+
+## 13. Atualização 2026-11-18 — reconciliação da cópia local e branch de trabalho
+
+- Branch criada a partir da `main`: `feat/raydium-swap-reconciliation`. No momento da criação, comparação confirmou zero commits de diferença em relação à `main` (base `c87ef7005e1dc0b70336986df54da58b208b0aba`). Nenhum código foi ainda adicionado à branch.
+- Inventário Termux em `~/SMART-MONEY-RADAR-ETAPA16` encontrou seis módulos locais: `raydium_cpmm_decoder.py`, `raydium_cpmm_accounts.py`, `raydium_cpmm_analyzer.py`, `raydium_amm_v4_decoder.py`, `raydium_amm_v4_accounts.py`, `raydium_amm_v4_analyzer.py`; também `domain/normalization.py` com imports desses dois analisadores, `solana_token_instruction_decoder.py`, `dex_interpreter.py`, `transaction_parser.py`, `domain/models.py` e `domain/program_registry.py`.
+- Testes locais identificados: `test_raydium_amm_v4_decoder.py`, `test_raydium_parser_integration.py`, `test_raydium_account_semantics.py`, `test_raydium_account_decoder.py`, `test_raydium_analyzer.py`, `test_raydium_cpmm_analyzer.py` e `test_normalization.py`.
+- Inventário local encontrou referências de testes a `tests/data/fixtures/raw` e `tests/data/fixtures/anonymized`, mas ambos os diretórios estavam ausentes no caminho esperado. A busca posterior por `*.raw.json`, `*.anon.json` e diretórios com nome fixture ainda não foi executada.
+- Verificação remota confirma que a `main` tem `domain/normalization.py` sem imports Raydium e que não contém os módulos Raydium. Portanto, a normalização local é uma versão modificada que exige comparação cuidadosa; não substituir a versão remota nem `domain/models.py` (que contém os contratos do PR #1) sem revisão de diff.
+- Documentos remotos das Etapas 10/11 confirmam que as cinco assinaturas listadas são candidatas, não fixtures reais aprovadas; nenhuma coleta RPC real foi comprovada. Testes sintéticos não devem ser apresentados como evidência mainnet.
+- O SQLite remoto `event_store.py` já persiste observações normalizadas, eventos legados e `token_balance_deltas`, com replay/transação atômica; ainda não há persistência específica dos três contratos de swap.
+- Fluxo de trabalho reafirmado: GitHub + Codespaces + ChatGPT como fluxo principal; Termux é cópia local preservada e fonte de arquivos ainda não enviados. Não executar `git pull`, inicializar Git na pasta local, nem modificar ou apagar originais.
+- Próxima ação: trazer os arquivos locais necessários para revisão no GitHub/Codespaces, começando pelos seis módulos Raydium e testes, depois dependências estritamente necessárias. Fixtures brutas/anônimas só devem ser incluídas após localizar, auditar e verificar proveniência; não inventar nem gerar fixtures rotuladas como reais.
+- Limites: branch de trabalho sem alterações de código até agora; nenhuma integração parser→swap, persistência dos contratos, validação com fixture real ou execução financeira foi concluída. SMR permanece somente leitura.
+
+## 14. Atualização 2026-11-18 — plano técnico Raydium e persistência
+
+- Criado `docs/RAYDIUM-SWAP-INTEGRATION-PLAN.md` na branch `feat/raydium-swap-reconciliation`.
+- Commit do plano: `2ec79b53474815d6b96e2fb0d98de11e5fed31d0`.
+- O documento registra o fluxo proposto de instruções externas/CPI → decodificação por programa → reconciliação com deltas → `SwapObservation`/`SwapClassification`/`SwapEvidence` → persistência SQLite atômica.
+- Também define princípios conservadores (`UNKNOWN` em ambiguidade), idempotência, replay, proveniência de fixtures, plano de testes e sequência de implementação.
+- A revisão do código remoto confirma que `normalization.py` hoje produz envelope, eventos legados e deltas SPL; `event_store.py` já persiste esses dados e permite replay. A persistência dedicada dos três contratos ainda não existe.
+- **Estado desta entrega:** documentação de planejamento criada; nenhum módulo Raydium local foi transferido ou integrado; nenhum runtime, parser ou esquema SQLite foi alterado; nenhum teste foi executado por causa deste documento.
+- Próxima ação permanece: transferir os módulos e testes locais para revisão controlada. Após isso, implementar adaptadores e reconciliação em etapas pequenas, sem substituir arquivos remotos inteiros.
+- Limites preservados: branch isolada, `main` intacta, V1 somente leitura, sem RPC pago ou execução financeira.
+
+## 15. Atualização 2026-11-18 — persistência dos três contratos (em revisão)
+
+- Implementada na branch a migração incremental de três tabelas: `swap_observations`, `swap_classifications` e `swap_evidence`.
+- Adicionados `SQLiteEventStore.save_swap_bundle()` e `get_swap_bundle()`: gravam/recuperam os três contratos em uma transação SQLite, mantêm quantidades/confiança como Decimal textual, serializam caminho CPI/evidências em JSON e fazem upsert idempotente por `operation_id`.
+- A gravação exige que a transação pai já exista em `observed_transactions`, que os três contratos compartilhem o mesmo ID e que o ID corresponda ao helper determinístico `build_swap_operation_id(chain, signature, instruction_index, cpi_path)`.
+- Criado `tests/test_swap_persistence.py` com cobertura de round-trip, precisão decimal, idempotência, divergência de IDs e ausência da transação pai.
+- CI do commit `d090b9d973e297834b8edb3a29d1132b9e603811`: workflow `SMR tests` passou; 102 testes aprovados e `compileall` aprovado. Essa execução ocorreu antes da validação adicional de identidade determinística; os commits posteriores estão aguardando a execução de CI atualizada.
+- PR #2 aberto como draft: [Draft: persist separated swap contracts in SQLite](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/2). Não foi mesclado; `main` permanece intacta.
+- Commits posteriores adicionaram validação determinística do `operation_id` e ajustaram os testes para usar o helper real. A validação dessa revisão ainda depende do próximo resultado CI.
+- Limite importante: a persistência está implementada como API do EventStore, mas ainda não está conectada ao pipeline de reconstrução de swaps; não há decodificação Raydium integrada nem fixture mainnet real aprovada.
+- Próxima tarefa: confirmar CI do commit mais recente e revisar eventuais falhas; em seguida, trazer os módulos locais Raydium e testes para integrar o produtor dos contratos.
+
+## 16. Atualização 2026-11-18 — validação da persistência e estado do PR #2
+
+- CI atualizado para o commit `07fa7739b997cabf5b1cdda121b9c7f6c53b5617`: workflow `SMR tests` aprovado; **104 testes passaram** e `python -m compileall -q src tests` passou. Execução: [GitHub Actions](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44217615420).
+- Os dois testes adicionais cobrem: rejeição de `operation_id` não determinístico e rollback integral quando a inserção de evidência falha. Isso confirma atomicidade do bundle na suíte automatizada.
+- PR #2 continua aberto como draft, não mesclado, com estado mergeable reportado pelo GitHub: [PR #2](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/2).
+- Correção de histórico operacional: uma atualização de teste foi enviada por engano à `main` sem indicar a branch; o arquivo foi imediatamente removido em commit corretivo. Comparação da árvore entre o SHA-base anterior e a `main` confirmou **nenhuma diferença de arquivos** (árvore de trabalho restaurada), mas a `main` contém dois commits adicionais de criação/remoção. A branch de trabalho está 2 commits atrás e 12 à frente da `main`; PR permanece mergeable. Não houve alteração persistente de código/arquivos na `main`.
+- O CI de 104 testes é validação do código de persistência e testes existentes; não valida decodificadores Raydium, reconstrução econômica nem fixtures mainnet.
+- Estado técnico: persistência dedicada implementada e validada em CI; ainda não conectada ao parser/normalizador que produzirá swaps reais.
+- Próxima tarefa: revisar e integrar os módulos Raydium locais e os respectivos testes. Não mesclar PR #2 até revisão técnica completa e confirmação do estado da branch/base.

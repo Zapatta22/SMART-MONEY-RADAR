@@ -50,6 +50,55 @@ class SQLiteEventStoreTests(unittest.TestCase):
         self.assertEqual(store.get_checkpoint("wallet-a"), "signature-a")
         store.close()
 
+    def test_checkpoint_does_not_regress_when_transactions_arrive_out_of_slot_order(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        wallet = "wallet-slot-order"
+        newer_payload = {
+            "slot": 500, "meta": {"err": None},
+            "transaction": {"signatures": ["sig-new"], "message": {"instructions": []}},
+        }
+        older_payload = {
+            "slot": 450, "meta": {"err": None},
+            "transaction": {"signatures": ["sig-old"], "message": {"instructions": []}},
+        }
+        newer = normalize_transaction(newer_payload, wallet, "sig-new")
+        older = normalize_transaction(older_payload, wallet, "sig-old")
+        store.save_observation(
+            wallet, "sig-new", newer_payload, list(newer.activity_events),
+            parse_status=newer.transaction.parse_status,
+            parser_version=newer.transaction.parser_version,
+            normalized_observation=newer,
+        )
+        store.save_observation(
+            wallet, "sig-old", older_payload, list(older.activity_events),
+            parse_status=older.transaction.parse_status,
+            parser_version=older.transaction.parser_version,
+            normalized_observation=older,
+        )
+        store.mark_processed(wallet, "sig-old")
+        self.assertEqual(store.get_checkpoint(wallet), "sig-new")
+        self.assertTrue(store.has_processed_signature(wallet, "sig-old"))
+        self.assertTrue(store.has_processed_signature(wallet, "sig-new"))
+        store.close()
+
+    def test_checkpoint_with_known_slot_is_not_replaced_by_unknown_slot(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        wallet = "wallet-known-slot"
+        payload = {
+            "slot": 700, "meta": {"err": None},
+            "transaction": {"signatures": ["sig-known"], "message": {"instructions": []}},
+        }
+        normalized = normalize_transaction(payload, wallet, "sig-known")
+        store.save_observation(
+            wallet, "sig-known", payload, list(normalized.activity_events),
+            parse_status=normalized.transaction.parse_status,
+            parser_version=normalized.transaction.parser_version,
+            normalized_observation=normalized,
+        )
+        store.save_checkpoint(wallet, "sig-unknown")
+        self.assertEqual(store.get_checkpoint(wallet), "sig-known")
+        store.close()
+
     def test_allows_unknown_time_from_rpc(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "history.sqlite3")

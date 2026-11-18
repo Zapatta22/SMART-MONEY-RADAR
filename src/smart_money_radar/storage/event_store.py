@@ -8,7 +8,8 @@ from decimal import Decimal
 from pathlib import Path
 
 from smart_money_radar.domain.models import (
-    ActivityEvent, SwapClassification, SwapEvidence, SwapObservation, TokenBalanceDelta,\n    build_swap_operation_id,
+    ActivityEvent, SwapClassification, SwapEvidence, SwapObservation, TokenBalanceDelta,
+    build_swap_operation_id,
 )
 from smart_money_radar.domain.normalization import NormalizedObservation
 

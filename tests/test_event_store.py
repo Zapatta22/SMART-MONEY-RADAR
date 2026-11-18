@@ -97,9 +97,10 @@ class SQLiteEventStoreTests(unittest.TestCase):
         self.assertTrue(store.has_processed_signature(wallet, "sig-new"))
         store.close()
 
-    def test_ordered_backfill_advances_checkpoint_across_same_slot_signatures(self) -> None:
+    def test_ordered_backfill_advances_same_slot_only_from_expected_predecessor(self) -> None:
         store = SQLiteEventStore(":memory:")
         wallet = "wallet-same-slot"
+        store.save_checkpoint(wallet, "sig-base")
         for signature in ("sig-first", "sig-second"):
             payload = {
                 "slot": 800, "meta": {"err": None},
@@ -111,9 +112,18 @@ class SQLiteEventStoreTests(unittest.TestCase):
                 parse_status=normalized.transaction.parse_status,
                 parser_version=normalized.transaction.parser_version,
                 normalized_observation=normalized,
+                advance_checkpoint=False,
             )
-        store.advance_checkpoint_in_order(wallet, "sig-first", 800)
-        store.advance_checkpoint_in_order(wallet, "sig-second", 800)
+        store.advance_checkpoint_in_order(
+            wallet, "sig-first", 800, expected_previous_signature="sig-base"
+        )
+        with self.assertRaisesRegex(ValueError, "Checkpoint mudou durante o backfill"):
+            store.advance_checkpoint_in_order(
+                wallet, "sig-second", 800, expected_previous_signature="sig-base"
+            )
+        store.advance_checkpoint_in_order(
+            wallet, "sig-second", 800, expected_previous_signature="sig-first"
+        )
         self.assertEqual(store.get_checkpoint(wallet), "sig-second")
         store.close()
 

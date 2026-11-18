@@ -2959,3 +2959,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O cenário de sucesso é uma fixture RPC sintética determinística, não uma captura Mainnet integral. As evidências Mainnet existentes continuam documentadas nas seções anteriores; não confundir os dois níveis de validação.
 - PR #25 permanece OPEN/DRAFT e sem merge. A `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
 - Próxima ação: acrescentar o teste negativo complementar com duas operações em que ambas as contas/transferências são decodificáveis, mas a reconciliação econômica de apenas uma falha; comprovar que nenhum bundle do lote é persistido e que a venue seguinte/checkpoint continuam bloqueados.
+
+
+## 204. Falha econômica isolada bloqueia os dois swaps do lote — 18/11/2026
+
+- Adicionado `test_two_swap2_economic_mismatch_blocks_both_bundles_and_next_venue`, reutilizando a fixture RPC ponta a ponta de duas operações já validada na seção 203.
+- A segunda operação mantém analyzer, contas e transferências decodificáveis; apenas o snapshot post da token account de saída da segunda operação é alterado em uma unidade mínima (delta esperado 90, observado 89).
+- O pipeline executa as etapas reais e a reconciliação econômica rejeita o lote completo: `pending_reconciliation`, 2 swaps decodificados, 0 reconciliados, 2 unresolved, 0 bundles salvos e `ready_for_next_venue=False`.
+- O teste confirma duas tentativas `INCOMPLETE`, ausência de bundle para ambos os operation IDs, assinatura não processada e checkpoint inexistente. Assim, uma divergência econômica em apenas uma das operações impede que qualquer operação do lote seja liberada.
+- CI push #44412231534 SUCCESS e CI PR #44412243276 SUCCESS no commit `a3a40ddb3cb45dbd0e3986986ce98e058c792e2c`: 494 testes aprovados em 3,902s e `compileall` concluído. Ambos os novos testes (sucesso completo e falha econômica) aparecem como `ok`.
+- Evidência permanece em fixture RPC sintética determinística; não equivale a captura Mainnet completa.
+- PR #25 permanece OPEN/DRAFT, sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
+- Próxima ação: reforçar a fronteira de coordenação do WalletMonitor em teste de integração, provando que `ready_for_next_venue=False` impede execução da venue CPMM e preserva checkpoint quando a reconciliação multi-swap DAMM v2 falha.

@@ -2238,3 +2238,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commit adicional de formatação das fixtures: `b5bc5ed431ffe89f80fb1a9eb063eac171698601`.
 - Revisão estática das rotas DAMM persistence → WalletMonitor → CPMM: DAMM não avança checkpoint; pendência DAMM impede CPMM; CPMM é o único coordenador final de checkpoint; falhas/exceções deixam observação replayável. Falhas on-chain são resultado terminal conhecido e podem avançar checkpoint após validação no CPMM.
 - Nenhum teste runtime/compileall foi executado nesta rodada; nenhum RPC/WebSocket real foi acessado. PR #25 continua Draft, main e estado persistente preservados.
+
+
+## 131. Validação estrita dos argumentos do cliente Helius — PR #25 (18/11/2026)
+
+- Auditoria de API pública encontrou coerção de booleanos em limites: `True` passava por comparações numéricas e podia ser enviado como `limit=1`; também não havia validação explícita de assinatura/cursor vazios em alguns métodos.
+- `get_signatures_for_address()` agora exige carteira string não vazia, limite inteiro não booleano entre 1 e 1000 e cursores `before/until` como strings não vazias quando fornecidos.
+- `get_activity()` exige limite inteiro não booleano entre 1 e 100; `get_transaction()` exige assinatura string não vazia.
+- Testes negativos adicionados para limite booleano em paginação e histórico, cursor vazio e assinatura vazia.
+- Commits: cliente `5e3717e17ded1ed1b15e2c9e440c072fec900f4d`; testes `c3eb02a34a11c60a9564d4387aa87e638e884845`.
+- Revisão estática; unittest/compileall ainda não executados. Sem RPC real.

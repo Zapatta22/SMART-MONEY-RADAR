@@ -15,7 +15,7 @@ from smart_money_radar.domain.program_registry import PROGRAMS_BY_ID
 
 # Escopo real dos decoders presentes nesta branch. Não equivale a suporte integral
 # de todas as instruções de cada programa.
-DECODER_SCOPE = {
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"\n\nDECODER_SCOPE = {
     RAYDIUM_CPMM_PROGRAM_ID: "Raydium CPMM: swap_base_input/output estrutural",
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA": "SPL Token: Transfer/TransferChecked",
     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb": "Token-2022: Transfer/TransferChecked",
@@ -56,6 +56,20 @@ def _program_id(instruction: Any, keys: list[str]) -> str | None:
     if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(keys):
         return None
     return keys[index]
+
+
+def _decode_base58(value: Any) -> bytes | None:
+    if not isinstance(value, str) or not value:
+        return None
+    number = 0
+    try:
+        for char in value:
+            number = number * 58 + BASE58_ALPHABET.index(char)
+    except ValueError:
+        return None
+    leading_zeroes = len(value) - len(value.lstrip("1"))
+    body = number.to_bytes((number.bit_length() + 7) // 8, "big") if number else b""
+    return (b"\\x00" * leading_zeroes) + body
 
 
 def _inspect_payload(payload: dict[str, Any]) -> dict[str, Any]:

@@ -2034,3 +2034,10 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Teste de inventário inválido verifica fila de replay e tentativa `INCOMPLETE` persistida em SQLite `:memory:`.
 - CI mais recente observado antes deste registro (#645) falhou sem etapas; runs posteriores a cada commit seguem indisponíveis sem evidência de execução de testes.
 - Nenhum teste runtime foi executado nesta sessão; PR #25 permanece Draft, sem merge, e `main` intacta.
+
+
+## 109. Estado de CI após integração do monitor — PR #25 (18/11/2026)
+
+- CI #646–#652 continua sem executar testes. Último run observado: #652 (`44314028359`), job `134835287722`, status failure com `steps=null`; consulta de steps retorna lista vazia. Não há logs disponíveis.
+- O padrão é indisponibilidade do runner/artefato de log, não evidência de falha de unittest ou compileall. Nenhum retry adicional foi disparado.
+- PR #25 permanece Draft, aberto, sem merge; `main` intacta.

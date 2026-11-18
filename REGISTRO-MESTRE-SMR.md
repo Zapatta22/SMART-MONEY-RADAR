@@ -1661,3 +1661,15 @@ PR #17 continua Draft, aberto e não integrado; PR #16 continua Draft e não int
 
 ### Próxima etapa técnica
 Implementar, isoladamente e com testes sintéticos, o decoder de estado Token-2022 (`TransferFeeConfig` e `TransferFeeAmount`), incluindo seleção da taxa aplicável ao epoch histórico e validação de bytes/offsets. Não iniciar reconciliador nem persistência até essa camada ser revisada.
+
+
+## 84. Bloqueio de evidência CPI não confiável na reconciliação CPMM (18/11/2026)
+
+- Correção autorizada pelo usuário para o finding da auditoria de integração: o decoder já marcava `SolanaTokenTransfer.cpi_path_valid=False` após `stackHeight` ausente/inconsistente, mas dois consumidores aceitavam a transferência sem consultar o indicador.
+- Em `raydium_cpmm_transfer_reconciliation.py`, `_is_descendant()` agora rejeita transferências internas cujo `cpi_path_valid` não seja explicitamente `True`. Swaps externos continuam usando o escopo do grupo `innerInstructions` associado à instrução externa, sem exigir prova de descendência CPI interna.
+- Em `swap_bundle_builder.py`, `_validate_transfer_evidence()` revalida o indicador no limite do domínio para swaps internos; evidência CPI não confiável gera `ValueError` e não pode produzir `SwapDomainBundle`.
+- Testes de regressão adicionados: caminho aparentemente descendente com `cpi_path_valid=False` resulta `INCOMPLETE`; builder rejeita reconciliação marcada MATCHED quando a transferência interna tem caminho não confiável; teste preserva o comportamento de swap externo escopado ao grupo externo.
+- Commits GitHub na branch `feat/damm-v2-economic-fee-math`: `cf8773983b2c14ea8293cedf6c2724844229aa98` (reconciliação), `8f357b9f0b92c3b14efdcf3b1a9b80656cba2fc7` (limite do domínio), `feea909deeb50723badb015eebdef17d787aa4bf` (teste de reconciliação), `0dbcd4f184063de2c4d891d3c0b1c428602000bd` (teste do builder) e `3ea650b642311210bd052bf4ca33d27807c82c10` (teste de preservação do swap externo).
+- Esta seção registra a implementação; CI ainda precisa confirmar os testes focais, suíte completa e compileall no HEAD resultante.
+- Escopo: nenhuma alteração em `main`, RAW fixtures, banco de dados, imports de dados, RPC/Helius, checkpoints, persistência ou operações on-chain. PR #17 permanece Draft e não integrado; PR #18 não foi alterado.
+- Próxima ação: acompanhar o CI do HEAD desta correção e revisar o resultado antes de qualquer nova mudança.

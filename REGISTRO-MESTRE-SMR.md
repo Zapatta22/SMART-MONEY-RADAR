@@ -387,3 +387,37 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Ainda não há fixture mainnet que passe MATCHED. Isso é uma lacuna real de validação, não motivo para enfraquecer as regras.
 - Próximo passo: localizar swap token-token com contas de usuário persistentes e deltas de ambos os lados, ou analisar cuidadosamente o candidato multi-swap `39Btokf…` sem presumir atribuição de owner/transferências.
 - Não integrar persistência nem ativar execução financeira até existir caminho positivo comprovado por fixture real.
+
+
+## 24. Atualização 2026-11-18 — fixture real Jupiter com dois swaps CPMM
+
+### Coleta e anonimização
+- Transação finalized, slot `469955314`, version `1`, `meta.err=null`.
+- Assinatura e payload bruto permanecem documentados em manifesto privado/artefato de coleta; raw artifact run `44226316427`, retenção 7 dias. O bruto e o mapa reversível não foram commitados.
+- Projeção anonimizada commitada: `data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json`; manifesto adjacente. Raw SHA-256 `b0088af96188b178ade106476b831f7ccd85fea3b8b26abb7fb39ab6d4cee96b`; projeção SHA-256 `dd00ef311cf9d18d2bf249eb6e287e22dade132c6c586abb69bd5cda16a2408d`; 10 endereços substituídos, 16 endereços protegidos. Program IDs e mints foram preservados; contas pessoais foram pseudonimizadas.
+
+### Resultado da inspeção
+- Uma instrução externa Jupiter contém **dois swaps Raydium CPMM em CPI**, no mesmo grupo `innerInstructions`, índices internos 0 e 6, com caminhos CPI distintos.
+- As duas operações são decodificadas separadamente e recebem operation IDs diferentes com base no CPI path.
+- O swap CPMM 1 tem conta intermediária de saída sem delta líquido pre/post; o swap CPMM 2 tem conta intermediária de entrada sem delta líquido pre/post. As contas participam de transferências durante a rota, mas seus saldos no início e fim da transação são iguais.
+- O reconciliador retorna `INCOMPLETE` para as duas operações, por ausência de delta de uma token account do usuário em cada swap. O builder retorna lista vazia. Não há divisão artificial de delta agregado nem criação de observações econômicas.
+- A segunda operação também envolve Token-2022; a fixture Token-2022 anterior continua cobrindo explicitamente a divergência entre transferência bruta e delta líquido do vault.
+
+### Testes e CI
+- Novo teste: `tests/test_real_mainnet_raydium_cpmm_jupiter_multiswap.py`.
+- PR #13 push CI run `44226455918`: **190 testes**, `OK`; `python -m compileall -q src tests` aprovado.
+- Os três testes da nova fixture passaram: integridade do manifesto/hash, decodificação de dois CPIs distintos, e fail-closed individual sem bundles.
+- Fixture/manifesto e teste estão no branch `feat/real-mainnet-cpmm-fee-fixture`, PR #13, head `d1a2d845b3026f39ec0c9a0df9172b8a600fae13`; PR aberto, não merged.
+
+### Coletor reutilizável
+- PR #11 branch inclui `.github/workflows/collect-solana-multiswap-fixture.yml`, workflow manual para coletar, anonimizar e publicar somente projeção + manifesto no branch de integração; raw e mapa reversível não são publicados no repositório.
+- O primeiro run `44226316427` foi concluído com sucesso; a cópia final da fixture foi feita no branch do PR #13.
+- O workflow foi ajustado para manual-only e target branch `feat/real-mainnet-cpmm-fee-fixture`, evitando coleta automática por push.
+
+### Estado consolidado
+- Agora existem três fixtures mainnet reais que testam comportamentos fail-closed: conta temporária de saída, divergência Token-2022 entre gross transfer e vault delta, e rota Jupiter com dois swaps CPMM e contas intermediárias sem delta líquido.
+- Ainda **não existe** fixture real `MATCHED`; esse é o próximo critério de validação positiva.
+- Não houve persistência nova, execução de ordens, assinatura ou submissão de transação.
+
+### Próxima ação
+- Procurar fixture mainnet com um swap CPMM direto token-token, sem contas intermediárias, com ambas as token accounts do usuário e ambos os vaults tendo deltas exatos que reconciliem com transferências suportadas. Manter todas as salvaguardas atuais.

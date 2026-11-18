@@ -53,6 +53,8 @@ def _is_descendant(
     if swap.inner_instruction_index is None:
         # The RPC innerInstructions group is scoped to this outer instruction.
         return transfer.inner_instruction_index is not None
+    if transfer.cpi_path_valid is not True:
+        return False
     if (
         swap.stack_height is None
         or transfer.stack_height is None

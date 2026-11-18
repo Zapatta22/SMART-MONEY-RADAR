@@ -23,6 +23,7 @@ from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     TOKEN_2022_PROGRAM_ID, SolanaTokenTransfer,
 )
+from smart_money_radar.storage.event_store import SQLiteEventStore
 
 
 def _context():

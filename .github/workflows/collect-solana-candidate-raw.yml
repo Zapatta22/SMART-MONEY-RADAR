@@ -47,3 +47,5 @@ jobs:
             data/fixtures/raw/*.manifest.json
           if-no-files-found: error
           retention-days: 7
+
+# Candidate collection uses the collector's supported transaction-version ceiling.

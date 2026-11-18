@@ -3165,3 +3165,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI de PR #25 #1229 (run `44419527316`) SUCCESS no HEAD `a79fb6941f5b06d101d64984d0cbb92ec0b7d6bb`: 521 testes em 3,907s e `compileall` concluído. O CI #1233 (run `44419758247`) está validando a alteração de agregação de taxas no commit `d8a7159ce9dbf4d62eda2c246e4a9b810c63f301`; resultado ainda não confirmado.
 - Nenhuma consulta histórica Helius foi comprovada até aqui. Sem secret de acesso beta, a etapa histórica será ignorada; o caso permanece bloqueado e não pode ser liberado.
 - PR #25 permanece OPEN/DRAFT e sem merge; `main` intacta.
+
+
+## 221. Robustez do workflow Mainnet e validação de testes após auditoria agregada — 18/11/2026
+
+- CI #1233 (run `44419758247`) SUCCESS no commit `d8a7159ce9dbf4d62eda2c246e4a9b810c63f301`: 521 testes em 3,994s e `compileall` concluído. CI #1235 (run `44419841383`) SUCCESS no commit `f06cfea906fe1d9cf86ee23d5f1ef49b32047a4c`; CI #1236 (run `44419861136`) SUCCESS no commit `5c2c0e21468a1239baaf690fc11b07f14f71d0d1`.
+- Mainnet #64 e #65 falharam antes das etapas de diagnóstico: primeiro o RPC público retornou HTTPError; após trocar para PublicNode, o endpoint não encontrou a transação baseline `1z8...`. Não é falha dos testes do cliente histórico; é limitação/indisponibilidade de dados no endpoint usado para a transação baseline.
+- Para que uma assinatura baseline indisponível não impeça os diagnósticos seguintes, a etapa `Validate known real Mainnet transaction` agora usa `continue-on-error: true`. O RPC padrão do workflow foi trocado para PublicNode, mantendo a mesma URL como fonte alternativa da coleta.
+- Mainnet #66 (run `44419926312`) foi disparado no commit `3b4065664949700ac8a137a1523c178b7068537a`; aguardando execução da etapa de posição transacional do caso bloqueado.
+- O secret `SMR_HELIUS_HISTORICAL_RPC_URL` não está configurado no ambiente GitHub (valor vazio confirmado nos logs). Portanto, a etapa de auditoria histórica fica condicionalmente ignorada até que o endpoint beta seja fornecido. Nenhuma chave foi publicada ou gravada no repositório.
+- Estado econômico do caso `2Zg...`: 2 swaps reconhecidos, segunda operação com referral bruto `71,448,140`; transferência de output `84,396,359,546` e referral são para a mesma conta/mint. A auditoria deve comparar o delta withheld agregado com as taxas calculadas de ambas as pernas. Sem consulta histórica real, permanece `INCOMPLETE`, sem bundles e sem avanço de checkpoint.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` intacta.

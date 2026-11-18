@@ -34,6 +34,10 @@ class RaydiumCpmmSwapReconciliation:
     output_decimals: int | None = None
     input_transfer: SolanaTokenTransfer | None = None
     output_transfer: SolanaTokenTransfer | None = None
+    input_token_account_delta_raw: int | None = None
+    output_token_account_delta_raw: int | None = None
+    input_vault_delta_raw: int | None = None
+    output_vault_delta_raw: int | None = None
 
 
 def _transfer_key(transfer: SolanaTokenTransfer) -> tuple[int, int | None]:
@@ -296,6 +300,10 @@ def reconcile_raydium_cpmm_swaps(
                 output_decimals=output_delta.decimals,
                 input_transfer=input_transfer,
                 output_transfer=output_transfer,
+                input_token_account_delta_raw=input_delta.delta_raw,
+                output_token_account_delta_raw=output_delta.delta_raw,
+                input_vault_delta_raw=input_vault_delta.delta_raw,
+                output_vault_delta_raw=output_vault_delta.delta_raw,
             ))
 
     # One transfer cannot be assigned to two distinct swap operations.

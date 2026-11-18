@@ -57,12 +57,23 @@ O `WalletMonitor` agora executa DAMM v2 antes do pipeline Raydium CPMM:
   e que a primeira assinatura corresponda à notificação recebida. Essa
   validação também protege o caminho de transações com falha on-chain.
 - Bundles são idempotentes no EventStore. Cada trio observation/classification/
-  evidence é gravado atomicamente em uma transação SQLite e usa
-  `ON CONFLICT(operation_id) DO UPDATE`; replay regrava bundles já salvos sem
-  duplicar operações. O lote de vários bundles não é uma transação única.
+  evidence é gravado atomicamente em uma transação SQLite. Replay idêntico não
+  regrava; replay divergente e bundle incompleto são rejeitados por padrão.
+  Substituição exige `replace_existing=True` explícito. O lote de vários
+  bundles não é uma transação única.
+- As operações críticas de `save_observation()` e `save_swap_bundle()`
+  iniciam com `BEGIN IMMEDIATE`, serializando a leitura de estado existente e
+  a gravação dentro do SQLite antes de decidir sobre RAW/bundle.
+- O avanço de checkpoint do backfill usa compare-and-swap: recebe a assinatura
+  anterior esperada, valida que o cursor ainda corresponde a ela e rejeita
+  avanço obsoleto. Se o checkpoint já for a própria assinatura alvo, a chamada
+  é idempotente. Isso protege transações diferentes no mesmo slot contra dois
+  workers que tentem avançar a partir do mesmo predecessor.
 
-Testes de persistência usam SQLite `:memory:`; o teste do monitor simula
-bloqueio DAMM e confirma que CPMM não é chamado e checkpoint não avança.
+Testes de persistência usam SQLite `:memory:`; os testes de checkpoint cobrem
+avanço ordenado no mesmo slot e rejeição de predecessor obsoleto. O teste do
+monitor simula bloqueio DAMM e confirma que CPMM não é chamado e checkpoint
+não avança.
 
 A auditoria negativa de persistência também cobre um swap/Event CPI sintético
 MATCHED cujo inventário de contas é inválido. O caso precisa gerar tentativa

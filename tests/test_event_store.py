@@ -327,6 +327,52 @@ class SQLiteEventStoreTests(unittest.TestCase):
         self.assertEqual(store.get_token_deltas(wallet, "sig-fail"), [])
         store.close()
 
+    def test_migration_backfills_checkpoint_slot_from_existing_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy-checkpoint.sqlite3"
+            import sqlite3
+            connection = sqlite3.connect(path)
+            connection.executescript("""
+                CREATE TABLE wallet_checkpoints (
+                    wallet_address TEXT PRIMARY KEY,
+                    signature TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT INTO wallet_checkpoints(wallet_address, signature)
+                    VALUES ('wallet-a', 'checkpoint-sig');
+                CREATE TABLE observed_transactions (
+                    wallet_address TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    payload_json TEXT,
+                    parse_status TEXT NOT NULL,
+                    parser_version TEXT NOT NULL,
+                    parse_error TEXT,
+                    observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    chain TEXT,
+                    slot INTEGER,
+                    occurred_at TEXT,
+                    PRIMARY KEY(wallet_address, signature)
+                );
+                INSERT INTO observed_transactions(
+                    wallet_address, signature, payload_json, parse_status,
+                    parser_version, chain, slot
+                ) VALUES (
+                    'wallet-a', 'checkpoint-sig', '{"meta":{}}',
+                    'no_events', '1', 'solana', 1200
+                );
+            """)
+            connection.commit()
+            connection.close()
+
+            store = SQLiteEventStore(path)
+            with store._connection_scope() as migrated:
+                row = migrated.execute(
+                    "SELECT slot FROM wallet_checkpoints WHERE wallet_address = ?",
+                    ("wallet-a",),
+                ).fetchone()
+            self.assertEqual(row[0], 1200)
+            store.close()
+
     def test_migrates_legacy_observation_table_without_losing_rows(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "legacy.sqlite3"

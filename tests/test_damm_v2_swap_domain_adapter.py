@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -131,6 +132,20 @@ class DammV2SwapDomainAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "propriedade"):
             build_damm_v2_swap_domain_bundles(
                 contexts=[context], transfer_evidence=[evidence],
+                balance_deltas=deltas, reconciliation=reconciliation,
+                monitored_wallet="wallet-1", signature="signature-1",
+                observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc),
+                parser_version="smr-test",
+            )
+
+
+    def test_rejects_untrusted_transfer_cpi_path(self):
+        context, evidence, deltas, reconciliation = _inputs()
+        invalid_transfer = replace(evidence.input_transfer, cpi_path_valid=False)
+        invalid_evidence = replace(evidence, input_transfer=invalid_transfer)
+        with self.assertRaisesRegex(ValueError, "proveniência CPI"):
+            build_damm_v2_swap_domain_bundles(
+                contexts=[context], transfer_evidence=[invalid_evidence],
                 balance_deltas=deltas, reconciliation=reconciliation,
                 monitored_wallet="wallet-1", signature="signature-1",
                 observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc),

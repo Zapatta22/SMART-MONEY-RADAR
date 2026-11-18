@@ -305,6 +305,39 @@ class TransactionParserTests(unittest.TestCase):
             [],
         )
 
+    def test_rejects_account_index_reused_by_another_owner(self) -> None:
+        transaction = dict(self.transaction)
+        transaction["meta"] = {
+            **self.transaction["meta"],
+            "preTokenBalances": [
+                {
+                    "accountIndex": 4,
+                    "owner": self.wallet,
+                    "mint": "mint-cross-owner-index",
+                    "uiTokenAmount": {"amount": "1000000", "decimals": 6},
+                },
+                {
+                    "accountIndex": 4,
+                    "owner": "different-wallet",
+                    "mint": "mint-cross-owner-index",
+                    "uiTokenAmount": {"amount": "1000000", "decimals": 6},
+                },
+            ],
+            "postTokenBalances": [
+                {
+                    "accountIndex": 4,
+                    "owner": self.wallet,
+                    "mint": "mint-cross-owner-index",
+                    "uiTokenAmount": {"amount": "2000000", "decimals": 6},
+                },
+            ],
+        }
+        transaction["transaction"] = {"message": {"instructions": []}}
+        self.assertEqual(
+            parse_transaction(transaction, self.wallet, self.signature),
+            [],
+        )
+
     def test_rejects_invalid_spl_decimal_scale(self) -> None:
         transaction = dict(self.transaction)
         transaction["meta"] = {

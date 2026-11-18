@@ -92,6 +92,7 @@ def scan(endpoints: tuple[str, ...], limit: int) -> dict:
                 {"result": raw}, monitored_wallet=wallet, signature=signature,
                 observed_at=datetime.now(timezone.utc),
                 parser_version="smr-damm-v2-multi-swap-mainnet-scan",
+            )
             shared_funding_accounts = []
             if result.status == "RECONCILED" and result.reconciliation is not None:
                 input_counts = Counter(

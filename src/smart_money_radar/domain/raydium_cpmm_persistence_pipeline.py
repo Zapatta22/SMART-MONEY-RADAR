@@ -18,12 +18,16 @@ from smart_money_radar.data_sources.solana_token_balance_deltas import (
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     decode_solana_token_transfers,
 )
+from smart_money_radar.domain.models import build_swap_operation_id
 from smart_money_radar.domain.normalization import normalize_transaction
 from smart_money_radar.domain.swap_bundle_builder import (
     SwapDomainBundle,
     build_swap_domain_bundles,
 )
-from smart_money_radar.storage.event_store import SQLiteEventStore
+from smart_money_radar.storage.event_store import (
+    SQLiteEventStore,
+    SwapReconciliationRecord,
+)
 
 
 @dataclass(frozen=True)
@@ -135,6 +139,50 @@ def process_raydium_cpmm_observation(
         matched = [
             item for item in reconciliations if item.status == "MATCHED"
         ]
+
+        # Persist every decoded swap's outcome independently from positive bundles.
+        # A missing reconciler result is explicit UNRESOLVED evidence, never a pass.
+        reconciled_keys = set()
+        audit_records: list[SwapReconciliationRecord] = []
+        for item in reconciliations:
+            swap = item.swap
+            key = (
+                swap.instruction_index,
+                swap.inner_instruction_index,
+                tuple(swap.cpi_path),
+            )
+            reconciled_keys.add(key)
+            audit_records.append(SwapReconciliationRecord(
+                operation_id=build_swap_operation_id(
+                    "solana", signature, swap.instruction_index, tuple(swap.cpi_path)
+                ),
+                instruction_index=swap.instruction_index,
+                inner_instruction_index=swap.inner_instruction_index,
+                cpi_path=tuple(swap.cpi_path),
+                status=item.status,
+                reason=item.reason,
+            ))
+        for swap in swaps:
+            key = (
+                swap.instruction_index,
+                swap.inner_instruction_index,
+                tuple(swap.cpi_path),
+            )
+            if key in reconciled_keys:
+                continue
+            audit_records.append(SwapReconciliationRecord(
+                operation_id=build_swap_operation_id(
+                    "solana", signature, swap.instruction_index, tuple(swap.cpi_path)
+                ),
+                instruction_index=swap.instruction_index,
+                inner_instruction_index=swap.inner_instruction_index,
+                cpi_path=tuple(swap.cpi_path),
+                status="UNRESOLVED",
+                reason="O reconciliador não retornou resultado para este swap decodificado.",
+            ))
+        store.save_swap_reconciliation_attempt(
+            wallet_address, signature, audit_records
+        )
         unresolved = max(
             0,
             len(swaps) - len(matched),

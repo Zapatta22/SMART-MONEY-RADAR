@@ -68,6 +68,31 @@ class FakeDataSource:
 
 
 class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_constructor_rejects_invalid_timing_and_backfill_parameters(self) -> None:
+        from math import nan, inf
+
+        invalid_parameters = (
+            {"initial_backoff_seconds": True},
+            {"maximum_backoff_seconds": inf},
+            {"stable_session_seconds": nan},
+            {"transaction_retry_attempts": True},
+            {"backfill_page_limit": True},
+            {"backfill_max_pages": True},
+        )
+        store = SQLiteEventStore(":memory:")
+        try:
+            for parameters in invalid_parameters:
+                with self.subTest(parameters=parameters):
+                    with self.assertRaises(ValueError):
+                        WalletMonitor(
+                            HeliusSettings(api_key="simulated-key"),
+                            object(),  # type: ignore[arg-type]
+                            store,
+                            **parameters,
+                        )
+        finally:
+            store.close()
+
     async def test_websocket_subscription_response_requires_json_rpc_2(self) -> None:
         monitor = WalletMonitor.__new__(WalletMonitor)
         with self.assertRaisesRegex(RuntimeError, "versão JSON-RPC 2.0"):

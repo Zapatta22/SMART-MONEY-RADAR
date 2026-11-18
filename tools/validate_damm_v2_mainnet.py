@@ -127,6 +127,21 @@ def main() -> int:
                 "stack_height": item.stack_height,
                 "cpi_path": item.cpi_path,
                 "status": item.status,
+                "event": (
+                    {
+                        "trade_direction": item.event.trade_direction,
+                        "swap_mode": item.event.swap_mode,
+                        "has_referral": item.event.has_referral,
+                        "amount_0": item.event.amount_0,
+                        "amount_1": item.event.amount_1,
+                        "included_transfer_fee_amount_in": item.event.included_transfer_fee_amount_in,
+                        "included_transfer_fee_amount_out": item.event.included_transfer_fee_amount_out,
+                        "excluded_transfer_fee_amount_out": item.event.excluded_transfer_fee_amount_out,
+                        "referral_fee": item.event.swap_result.referral_fee,
+                        "output_amount": item.event.swap_result.output_amount,
+                    }
+                    if item.event else None
+                ),
             }
             for item in output.associations
         ],
@@ -279,6 +294,7 @@ def main() -> int:
                 "output_vault": item.accounts.output_vault,
                 "input_mint": item.accounts.input_mint,
                 "output_mint": item.accounts.output_mint,
+                "referral_token_account": item.accounts.referral_token_account,
             }
             for item in output.contexts
         ],

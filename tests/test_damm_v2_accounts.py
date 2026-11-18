@@ -36,7 +36,7 @@ def event(direction="A_TO_B", pool=bytes(32)):
 class DammV2AccountsTests(unittest.TestCase):
     def setUp(self):
         self.keys = [
-            "authority", "pool", "user-in", "user-out", "vault-a", "vault-b",
+            "authority", "1" * 32, "user-in", "user-out", "vault-a", "vault-b",
             "mint-a", "mint-b", "payer", SPL_TOKEN_PROGRAM_ID,
             TOKEN_2022_PROGRAM_ID, "referral", "event-authority",
             METEORA_DAMM_V2_PROGRAM_ID, "remaining",

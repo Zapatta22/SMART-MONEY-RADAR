@@ -2258,6 +2258,8 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits: settings `db819ced08e3dbf9f4851405b83129d0615f6b40` e `d27d604c251881750c473f820833aa03044f5330`; testes `41ca7f2af36174e829b2c4237d83774bc569cd26` e `87fc209218ed46730e5920c81ec8a5ec3750ec29`.
 - Revisão estática; unittest/compileall pendentes. Nenhuma autorização de rede ou chamada externa foi ativada.
 
+- CI do HEAD `3b0cdb82f58ac70ff9d08ebcf1e5092d25c91eeb`: workflow `SMR tests`, run #829 (`44322124291`), job `134863546972`, terminou `failure`, mas `steps=null` e `logs_url=null`; não há evidência de que instalação, unittest ou compileall tenham iniciado. Classificar como falha de infraestrutura/runner sem diagnóstico, não como falha de teste. Não disparar retry sem logs/steps.
+
 
 ## 133. Validação estrita de parâmetros do WalletMonitor — PR #25 (18/11/2026)
 

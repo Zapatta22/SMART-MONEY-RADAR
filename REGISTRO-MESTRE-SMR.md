@@ -2164,3 +2164,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Adicionados testes para item sem assinatura e duplicata na mesma página.
 - Commits: fonte `ccef35f7c217df62c7902b98be68aafa97e91885`; testes `98dc46b74ece2767451334cbc2253f407245634f`.
 - Revisão estática do backfill indica que falha de página interrompe antes do processamento/avanço subsequente; o checkpoint existente permanece como referência para nova tentativa. Sem runtime/compileall ou RPC real nesta rodada. PR #25 Draft; main e estado persistente preservados.
+
+
+## 123. Parser SPL valida representação bruta e identidade de token account — PR #25 (18/11/2026)
+
+- Auditoria adicional do parser encontrou dois riscos de saldo fabricado: `uiTokenAmount.amount` aceitava representações decimais/fracionárias que não correspondem ao campo bruto inteiro do JSON-RPC; e entradas repetidas com o mesmo `accountIndex` podiam ser somadas como se fossem token accounts distintas.
+- O parser agora exige `amount` como string ASCII de dígitos (unidades mínimas inteiras) e, quando `accountIndex` é fornecido, exige inteiro não negativo e identidade única por snapshot. Índices repetidos ou conflitantes invalidam as mints envolvidas e impedem delta.
+- Adicionados testes negativos para amount fracionário e accountIndex duplicado.
+- Commits: parser `668bdbe869eab50273a089acaecaa578dbcb8f3c`; testes `657c1175dcbbfe3e5ff9eff12f0d82f7d6187a3c`.
+- Revisão estática; runtime/compileall pendentes. Nenhum dado persistente ou RPC real foi alterado.

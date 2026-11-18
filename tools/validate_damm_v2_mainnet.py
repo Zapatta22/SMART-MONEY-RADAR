@@ -22,6 +22,10 @@ from smart_money_radar.data_sources.solana_transaction_position import get_trans
 from smart_money_radar.data_sources.token2022_fee_absence_proof import (
     build_no_transfer_fee_proof,
 )
+from smart_money_radar.domain.damm_v2_persistence_pipeline import (
+    process_damm_v2_observation,
+)
+from smart_money_radar.storage.event_store import SQLiteEventStore
 from smart_money_radar.data_sources.token2022_fee_proof_resolver import (
     resolve_token2022_no_fee_proofs,
 )
@@ -202,6 +206,19 @@ def main() -> int:
             parser_version="smr-damm-v2-mainnet-validation",
             transfer_fee_absence_proofs=tuple(fee_absence_proofs),
         )
+        memory_store = SQLiteEventStore(":memory:")
+        try:
+            persistence_result = process_damm_v2_observation(
+                memory_store,
+                {"result": raw},
+                wallet_address=wallet,
+                signature=args.signature,
+                observed_at=datetime.now(timezone.utc),
+                transfer_fee_absence_proofs=tuple(fee_absence_proofs),
+            )
+            checkpoint_after_persistence = memory_store.get_checkpoint(wallet)
+        finally:
+            memory_store.close()
     except (KeyError, TypeError, ValueError, RuntimeError) as exc:
         print(json.dumps({"status": "ERROR", "reason": str(exc)}, ensure_ascii=False))
         return 2
@@ -267,6 +284,12 @@ def main() -> int:
         "reconciliation_status": (
             output.reconciliation.status if output.reconciliation else None
         ),
+        "persistence_status": persistence_result.status,
+        "persistence_decoded_swaps": persistence_result.decoded_swaps,
+        "persistence_reconciled_swaps": persistence_result.reconciled_swaps,
+        "persistence_saved_bundles": persistence_result.saved_bundles,
+        "persistence_ready_for_next_venue": persistence_result.ready_for_next_venue,
+        "checkpoint_after_persistence": checkpoint_after_persistence,
         "cross_venue_transfers": [
             {
                 "outer_instruction_index": transfer.outer_instruction_index,

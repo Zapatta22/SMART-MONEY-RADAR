@@ -72,6 +72,18 @@ class RpcFixtureCollectorTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "não encontrada"):
             collector.collect(SIG)
 
+    def test_rejects_invalid_timeout_values(self):
+        for timeout in (True, False, 0, -1, float("nan"), float("inf"), "20", 10**10000):
+            with self.subTest(timeout=repr(timeout)), self.assertRaises(ValueError):
+                RpcFixtureCollector("https://rpc.example", "unused", timeout=timeout)
+
+    def test_rejects_invalid_minimum_interval_values(self):
+        for interval in (True, False, -1, float("nan"), float("inf"), "0.25", 10**10000):
+            with self.subTest(interval=repr(interval)), self.assertRaises(ValueError):
+                RpcFixtureCollector(
+                    "https://rpc.example", "unused", min_interval_seconds=interval
+                )
+
     def test_requires_https(self):
         with self.assertRaises(ValueError):
             RpcFixtureCollector("http://insecure.example", "unused")

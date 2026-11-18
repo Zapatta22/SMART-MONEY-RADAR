@@ -4,9 +4,10 @@
 
 - Slot: `388739013`; versão RPC: `0`; commitment: `finalized`; `meta.err=null`.
 - A transação foi obtida por `getTransaction` no RPC público Solana mainnet.
-- Assinatura, hash SHA-256 do payload bruto e hash da projeção estão no manifesto adjacente à fixture.
+- A fixture usa identificador sintético no campo de assinatura e blockhash sintético; o manifesto publica apenas um `fixture_id` e o hash SHA-256 da projeção. A assinatura original e o hash do payload bruto não são publicados.
 - O arquivo de teste é uma projeção mínima anonimizada: preserva a ordem de todas as 21 instruções internas e seus `stackHeight`, as contas/bytes das transferências relevantes, o swap CPMM, a tabela de endereços carregados e os quatro snapshots pre/post necessários à reconciliação. Instruções não relevantes mantêm apenas programa e altura de pilha para não alterar os caminhos CPI.
-- Vinte endereços de carteiras/contas foram pseudonimizados. Program IDs e mints foram preservados. O payload bruto e o mapa reversível não fazem parte do repositório.
+- Vinte endereços de carteiras/contas foram pseudonimizados. Program IDs, mints, slot, horário e quantidades exatas foram preservados para permitir a reprodução econômica. O payload bruto, seu fingerprint e o mapa reversível não fazem parte do repositório.
+- **Limite de privacidade:** este artefato é pseudonimizado, não anônimo. Os metadados on-chain preservados ainda podem permitir correlação com a transação pública. Os campos de assinatura e blockhash são placeholders sintéticos e não identificam a transação original.
 
 ## Operação CPMM
 

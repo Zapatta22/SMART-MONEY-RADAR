@@ -2041,3 +2041,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #646–#652 continua sem executar testes. Último run observado: #652 (`44314028359`), job `134835287722`, status failure com `steps=null`; consulta de steps retorna lista vazia. Não há logs disponíveis.
 - O padrão é indisponibilidade do runner/artefato de log, não evidência de falha de unittest ou compileall. Nenhum retry adicional foi disparado.
 - PR #25 permanece Draft, aberto, sem merge; `main` intacta.
+
+
+## 110. Coletor dedicado para fixture RAW mainnet DAMM v2 — PR #25 (18/11/2026)
+
+- Identificado no catálogo versionado `data/fixtures/candidates/solana_mainnet_candidates.json` um candidato específico Meteora DAMM v2:
+  `1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT`, slot reportado 451432630.
+- Criado `tools/collect_damm_v2_fixture.py`, que seleciona exatamente um candidato DAMM v2 no catálogo e usa o `RpcFixtureCollector` existente para obter `getTransaction` finalized/JSON.
+- O coletor grava RAW e manifesto local em `data/fixtures/raw/damm-v2/`, com SHA-256; não envia fixture ao GitHub, não anonimiza, não importa SQLite e não avança checkpoint.
+- Criado `tests/test_damm_v2_fixture_collector.py` para confirmar seleção única e rejeitar catálogo ausente/ambíguo.
+- Documentado comando Termux com endpoint RPC somente leitura em `docs/DAMM-V2-TRANSACTION-PIPELINE.md`.
+- A fixture ainda não foi coletada nesta sessão; a transação candidata não foi tratada como evidência RAW até o retorno do RPC e validação de hash/estrutura.

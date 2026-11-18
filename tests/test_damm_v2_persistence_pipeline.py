@@ -147,6 +147,28 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
         self.assertEqual(attempts[0]["status"], "INCOMPLETE")
         self.assertIn("14 contas", attempts[0]["reason"])
 
+    def test_normalization_error_archives_raw_without_checkpoint(self):
+        from unittest.mock import patch
+        with patch(
+            "smart_money_radar.domain.damm_v2_persistence_pipeline.normalize_transaction",
+            side_effect=ValueError("invalid normalized payload"),
+        ):
+            with self.assertRaisesRegex(ValueError, "invalid normalized payload"):
+                process_damm_v2_observation(
+                    self.store, _raw(), wallet_address="wallet",
+                    signature="signature",
+                )
+        self.assertIsNotNone(
+            self.store.get_raw_transaction("wallet", "signature")
+        )
+        self.assertEqual(
+            self.store.get_observation_metadata("wallet", "signature")["parse_status"],
+            "parse_error",
+        )
+        self.assertFalse(
+            self.store.has_processed_signature("wallet", "signature")
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

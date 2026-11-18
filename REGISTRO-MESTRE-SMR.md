@@ -2475,3 +2475,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits: implementação `6d0bd74de6b8c8c811cbe57f6273b9cd67c22bc1`; testes `14093a16d9396d4f2ef771e7ed9081b227636645`; limpeza `a0069e093c13024270d0d048387f5fa1a1aac1e8`; teste de versão nula `eb50a431163ef6c5cab4f14e125b5a605469e4db`.
 - Alterações revisadas estaticamente no GitHub. Runtime unittest/compileall ainda não executados para estes commits; CI depende de runner funcional. Fixture RAW mainnet segue bloqueada até execução runtime e revisão da fixture real.
 - PR #25 permanece aberto, Draft, sem merge, com base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 158. Reincidência de falha de provisionamento do runner — CI #932 (18/11/2026)
+
+- O commit `4f40a51518fc9b808e8e7e04eaf08c7728306fae` disparou run #932 (`44332421990`). A consulta direta ao endpoint de jobs confirmou novamente: job `134900072387`, `runner_id=0`, `runner_name=""`, `steps=[]`, início `15:09:57Z`, fim `15:09:59Z`, conclusão `failure`.
+- A repetição confirma que o workflow está sendo disparado corretamente, mas nenhum runner `ubuntu-latest` chega a ser atribuído ao job. Portanto, a falha está na alocação/infraestrutura GitHub Actions ou na disponibilidade de runner para o repositório, antes de checkout e antes de qualquer teste. Não alterar código de produção para tentar corrigir esse sintoma e não repetir retries em loop.
+- A alteração RPC recente segue validada apenas por inspeção estática no GitHub; execução runtime ainda pendente. Para runtime sem Termux, é necessário restabelecer runner GitHub Actions ou usar outro executor autorizado e conectado ao repositório.
+- PR #25 segue Draft, aberto, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.

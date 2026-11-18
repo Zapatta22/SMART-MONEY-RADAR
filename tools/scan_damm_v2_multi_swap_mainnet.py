@@ -64,7 +64,7 @@ def scan(endpoints: tuple[str, ...], limit: int) -> dict:
         fetch_errors = []
         for endpoint in endpoints:
             try:
-                raw = fetch_transaction(endpoint, signature)
+                raw = fetch_transaction(\n                    endpoint, signature, max_supported_transaction_version=1\n                )
                 break
             except Exception as exc:
                 fetch_errors.append(f"{type(exc).__name__}: {str(exc)[:100]}")

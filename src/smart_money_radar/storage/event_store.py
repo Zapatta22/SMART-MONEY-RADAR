@@ -658,6 +658,13 @@ class SQLiteEventStore:
             if any(isinstance(item, bool) or not isinstance(item, int) or item < 0
                    for item in record.cpi_path):
                 raise ValueError("cpi_path deve conter índices inteiros não negativos.")
+            expected_operation_id = build_swap_operation_id(
+                "solana", signature, record.instruction_index, record.cpi_path
+            )
+            if record.operation_id != expected_operation_id:
+                raise ValueError(
+                    "operation_id não corresponde à identidade da instrução/CPI auditada."
+                )
             rows.append((
                 record.operation_id, record.instruction_index,
                 record.inner_instruction_index,

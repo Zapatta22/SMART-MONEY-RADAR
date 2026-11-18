@@ -22,6 +22,9 @@ from smart_money_radar.data_sources.solana_transaction_position import get_trans
 from smart_money_radar.data_sources.token2022_fee_absence_proof import (
     build_no_transfer_fee_proof,
 )
+from smart_money_radar.data_sources.token2022_fee_proof_resolver import (
+    resolve_token2022_no_fee_proofs,
+)
 from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
     _is_descendant_transfer,
 )
@@ -156,8 +159,19 @@ def main() -> int:
         raw = fetch_transaction(args.rpc_url, args.signature)
         wallet = infer_monitored_wallet(raw)
         keys = raw["transaction"]["message"]["accountKeys"]
-        fee_absence_proofs = []
+        fee_proof_resolution = resolve_token2022_no_fee_proofs(
+            {"result": raw},
+            monitored_wallet=wallet,
+            signature=args.signature,
+            rpc_endpoint=args.rpc_url,
+        )
+        fee_absence_proofs = list(fee_proof_resolution.proofs)
+        unresolved_fee_mints = list(fee_proof_resolution.unresolved_mints)
         for mint in args.prove_no_transfer_fee_mint:
+            if any(proof.mint == mint for proof in fee_absence_proofs):
+                continue
+            if mint in unresolved_fee_mints:
+                continue
             if isinstance(raw.get("slot"), bool) or not isinstance(raw.get("slot"), int):
                 raise RuntimeError("slot da transação ausente para prova de taxa zero")
             tx_index = get_transaction_index(args.rpc_url, raw["slot"], args.signature)
@@ -270,6 +284,7 @@ def main() -> int:
                 if output.reconciliation else ()
             )
         ],
+        "unresolved_transfer_fee_mints": unresolved_fee_mints,
         "transfer_fee_absence_proofs": [
             {
                 "mint": proof.mint,

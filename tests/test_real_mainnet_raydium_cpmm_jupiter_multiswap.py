@@ -48,7 +48,13 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         cls.manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
     def test_projection_manifest_and_hash_are_valid(self) -> None:
-        self.assertTrue(self.manifest["anonymized"])
+        self.assertTrue(self.manifest["pseudonymized"])
+        self.assertFalse(self.manifest["anonymized"])
+        self.assertNotIn("signature", self.manifest)
+        self.assertNotIn("raw_sha256", self.manifest)
+        self.assertEqual(self.manifest["fixture_id"], "smr-fixture-raydium-cpmm-jupiter-multiswap-v1")
+        self.assertEqual(self.fixture["result"]["transaction"]["signatures"][0], "1" * 64)
+        self.assertEqual(self.fixture["result"]["transaction"]["message"]["recentBlockhash"], "1" * 32)
         self.assertEqual(self.manifest["commitment"], "finalized")
         self.assertEqual(self.manifest["slot"], 469955314)
         self.assertEqual(
@@ -57,7 +63,7 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         )
         self.assertEqual(
             self.fixture["result"]["transaction"]["signatures"][0],
-            self.manifest["signature"],
+            "1" * 64,
         )
         self.assertIsNone(self.fixture["result"]["meta"]["err"])
 
@@ -71,7 +77,7 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         operation_ids = {
             build_swap_operation_id(
                 "solana",
-                self.manifest["signature"],
+                self.manifest["fixture_id"],
                 item.instruction_index,
                 item.cpi_path,
             )
@@ -121,7 +127,7 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         bundles = build_swap_domain_bundles(
             reconciliations,
             chain="solana",
-            signature=self.manifest["signature"],
+            signature=self.manifest["fixture_id"],
             monitored_wallet=wallet,
             observed_at=datetime.fromtimestamp(result["blockTime"], tz=timezone.utc),
             parser_version="smr-real-mainnet-jupiter-multiswap-v1",
@@ -136,7 +142,7 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         sell_bundles = build_swap_domain_bundles(
             reconciliations,
             chain="solana",
-            signature=self.manifest["signature"],
+            signature=self.manifest["fixture_id"],
             monitored_wallet=wallet,
             observed_at=datetime.fromtimestamp(result["blockTime"], tz=timezone.utc),
             parser_version="smr-real-mainnet-jupiter-multiswap-v1",

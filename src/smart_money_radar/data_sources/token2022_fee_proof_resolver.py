@@ -15,6 +15,10 @@ from smart_money_radar.data_sources.solana_transaction_position import get_trans
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     TOKEN_2022_PROGRAM_ID,
 )
+from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
+    ROUTED_VENUE_PROGRAM_IDS,
+    SCOPES_ROUTER_PROGRAM_ID,
+)
 from smart_money_radar.data_sources.token2022_fee_absence_proof import (
     Token2022NoTransferFeeProof,
     build_no_transfer_fee_proof,
@@ -104,7 +108,7 @@ def resolve_token2022_no_fee_proofs(
         observed_at=datetime.now(timezone.utc),
         parser_version=PARSER_VERSION,
     )
-    referral_mints = sorted({
+    referral_mints = {
         item.referral_transfer.mint
         for item in preflight.transfer_evidence
         if (
@@ -114,7 +118,24 @@ def resolve_token2022_no_fee_proofs(
             and item.referral_transfer.instruction_type != "TRANSFER_CHECKED_WITH_FEE"
             and isinstance(item.referral_transfer.mint, str)
         )
-    })
+    }
+    routed_mints = {
+        transfer.mint
+        for transfer in preflight.transfers
+        if (
+            transfer.program_id == TOKEN_2022_PROGRAM_ID
+            and transfer.instruction_type != "TRANSFER_CHECKED_WITH_FEE"
+            and transfer.cpi_path_valid is True
+            and transfer.cpi_program_path
+            and transfer.cpi_program_path[0] == SCOPES_ROUTER_PROGRAM_ID
+            and any(
+                program in ROUTED_VENUE_PROGRAM_IDS
+                for program in transfer.cpi_program_path[1:]
+            )
+            and isinstance(transfer.mint, str)
+        )
+    }
+    referral_mints = sorted(referral_mints | routed_mints)
     if not referral_mints:
         return Token2022FeeProofResolution((), (), ())
     slot = payload.get("slot")

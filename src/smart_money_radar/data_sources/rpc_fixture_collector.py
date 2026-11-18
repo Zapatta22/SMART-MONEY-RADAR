@@ -150,7 +150,6 @@ class RpcFixtureCollector:
         if raw_path.exists() or manifest_path.exists():
             raise FileExistsError("Fixture já existe; preservando evidência original.")
         digest = hashlib.sha256(raw_bytes).hexdigest()
-        version = result.get("version", "legacy")
         manifest = {
             "signature": signature,
             "slot": slot,

@@ -871,3 +871,16 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Próxima ação
 - Aguardar CI; se aprovado, preparar instrução única e simples para o usuário executar no Termux, somente depois de confirmar caminho do banco real.
+
+
+## 49. CI aprovado do inicializador Android — 2026-11-18
+
+- CI run `44240462766` concluído com sucesso no head `a8699f0388b80979de298cfa31d86f1703108ae3`.
+- **245 testes unitários aprovados** (`Ran 245 tests ... OK`).
+- `python -m compileall -q src tests`: aprovado.
+- Inclui testes de sintaxe Bash, ausência de criação de banco inexistente e ausência de migração em banco incompleto.
+- O script Android não foi executado em dispositivo real; validação CI não substitui teste no Termux do usuário.
+- PR #15 permanece aberto, Draft, mergeable, base `integration/pr13-sqlite-persistence`; sem merge. `main` intacta.
+
+### Próxima ação
+- Antes de pedir execução no Android, confirmar existência e caminho do banco histórico real do usuário. O script aborta se não encontrar o arquivo ou as tabelas esperadas, sem modificar o banco.

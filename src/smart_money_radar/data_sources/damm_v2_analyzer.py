@@ -63,6 +63,8 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any]) -> list[s
     if not isinstance(raw, list):
         raise ValueError("message.accountKeys ausente ou inválido")
     parsed = any(isinstance(item, dict) for item in raw)
+    if parsed and not all(isinstance(item, dict) for item in raw):
+        raise ValueError("message.accountKeys mistura formatos jsonParsed e compiled")
     keys: list[str] = []
     for item in raw:
         key = item.get("pubkey") if isinstance(item, dict) else item

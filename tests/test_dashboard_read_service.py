@@ -46,7 +46,10 @@ class DashboardReadServiceTests(unittest.TestCase):
                          "2026-11-18T00:00:00+00:00")
         self.assertEqual(result["recent_events"][0]["amount"], "1.2500")
         store.get_reconciliation_diagnostics.assert_called_once_with(
-            wallet_address="wallet-a"
+            wallet_address="wallet-a",
+            since=None,
+            until=None,
+            top_reasons_limit=10,
         )
         store.storage_stats.assert_called_once_with()
         store.get_events.assert_called_once_with(

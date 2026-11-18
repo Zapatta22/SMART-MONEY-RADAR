@@ -64,6 +64,31 @@ class SwapPersistenceTests(unittest.TestCase):
         ))
         self.assertEqual(self.store.get_swap_bundle(self.observation.operation_id)["evidence"], self.evidence)
 
+    def test_existing_bundle_is_updated_without_creating_duplicate(self):
+        self.assertTrue(self.store.save_swap_bundle(
+            self.observation, self.classification, self.evidence
+        ))
+        revised_classification = SwapClassification(
+            operation_id=self.observation.operation_id,
+            side="BUY",
+            confidence=Decimal("0.90"),
+            reason="Reference asset and swap direction are now established.",
+        )
+        revised_evidence = SwapEvidence(
+            operation_id=self.observation.operation_id,
+            program_id="raydium-cpmm-program",
+            venue="Raydium CPMM",
+            instruction_index=2,
+            cpi_path=(0, 1),
+            evidence=("outer instruction 2", "verified inner CPI path"),
+        )
+        self.assertFalse(self.store.save_swap_bundle(
+            self.observation, revised_classification, revised_evidence
+        ))
+        bundle = self.store.get_swap_bundle(self.observation.operation_id)
+        self.assertEqual(bundle["classification"], revised_classification)
+        self.assertEqual(bundle["evidence"], revised_evidence)
+
     def test_rejects_contracts_with_different_operation_ids(self):
         wrong = SwapClassification(
             operation_id="swap:other", side="UNKNOWN",

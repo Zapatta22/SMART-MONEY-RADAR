@@ -1,0 +1,40 @@
+name: SMR DAMM v2 mainnet validation
+
+on:
+  push:
+    branches: ["feat/damm-v2-transaction-pipeline"]
+    paths:
+      - "tools/validate_damm_v2_mainnet.py"
+      - ".github/workflows/damm-v2-mainnet-validation.yml"
+      - "src/smart_money_radar/data_sources/damm_v2_*.py"
+      - "src/smart_money_radar/data_sources/solana_token_*.py"
+  workflow_dispatch:
+    inputs:
+      signature:
+        description: "Solana mainnet transaction signature"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-mainnet-transaction:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      SMR_SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
+      SMR_DAMM_V2_SIGNATURE: ${{ inputs.signature || '1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Fetch public transaction and run DAMM v2 pipeline
+        run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py

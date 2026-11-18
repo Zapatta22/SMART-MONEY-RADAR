@@ -2511,3 +2511,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #943 (`44332831615`) e #944 (`44332856069`) foram disparados no commit `163fbbbdbe66b4fed394b855a2e06bdda4d37591`; ambos jobs falharam sem executar steps. API confirmou runner IDs `0`, nomes vazios, listas de steps vazias e duração aproximada de 3 s. São novas ocorrências do problema de provisionamento, não resultados dos testes. As alterações de limite de slot/versão ocorreram após esses runs e não foram testadas por eles.
 - Revisão estática do coletor/testes segue em andamento; runtime e compileall ainda pendentes. Não repetir reruns automáticos; não coletar fixture RAW mainnet.
 - PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 162. Documentação do coletor e CI #951 — PR #25 (18/11/2026)
+
+- `docs/DAMM-V2-TRANSACTION-PIPELINE.md` agora documenta as validações do coletor RPC: envelope JSON-RPC 2.0 e ID correspondente, rejeição de erro não nulo, assinatura primária única, slot unsigned 64-bit, versão `legacy`/0 e parâmetros temporais finitos/estritos. Commit `3fea83f58d2d84b87195b1b68f5ea723d4a2f9c7`.
+- CI #951 (`44333240301`) associado ao commit documental acima terminou failure; job `134902924895` tem `runner_id=0`, nome vazio e `steps=[]`, com duração aproximada de 3 s. Confirma que o job não chegou a executar steps. Causa operacional exata (por exemplo, disponibilidade/limite de runner) não foi exposta pela API consultável; não atribuir a quota/billing sem evidência.
+- O HEAD atual do PR foi confirmado com a implementação e testes RPC atualizados; runtime ainda não foi executado devido à ausência de runner. A revisão estática não substitui unittest/compileall.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.

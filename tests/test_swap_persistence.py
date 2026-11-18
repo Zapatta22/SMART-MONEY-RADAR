@@ -287,7 +287,7 @@ class SwapPersistenceTests(unittest.TestCase):
 
     def test_reconciliation_attempt_requires_parent_observation(self):
         record = SwapReconciliationRecord(
-            operation_id="operation-missing",
+            operation_id=build_swap_operation_id("solana", "sig-missing", 0, (0,)),
             instruction_index=0,
             inner_instruction_index=None,
             cpi_path=(0,),

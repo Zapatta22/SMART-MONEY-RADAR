@@ -92,6 +92,18 @@ class DammV2AnalyzerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mistura formatos"):
             analyze_damm_v2_swap_events(raw)
 
+    def test_missing_inner_instruction_metadata_fails_closed(self):
+        raw = transaction([], {})
+        del raw["result"]["meta"]["innerInstructions"]
+        with self.assertRaisesRegex(ValueError, "innerInstructions ausente/nulo"):
+            analyze_damm_v2_swap_events(raw)
+
+    def test_null_inner_instruction_metadata_fails_closed(self):
+        raw = transaction([], {})
+        raw["result"]["meta"]["innerInstructions"] = None
+        with self.assertRaisesRegex(ValueError, "innerInstructions ausente/nulo"):
+            analyze_damm_v2_swap_events(raw)
+
     def test_resolves_damm_program_from_loaded_addresses(self):
         raw = transaction(
             [{"programId": "aggregator", "accounts": [], "data": b58encode(b"route")}],

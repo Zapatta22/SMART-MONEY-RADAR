@@ -2098,3 +2098,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.
 
 - CI no HEAD subsequente: run #691 (`44317299989`), job `134846680569`, terminou `failure`, mas steps retornou `[]` e logs retornaram `BlobNotFound`. Portanto, também não há evidência de checkout/testes/compileall; não repetir retry sem diagnóstico do runner.
+
+
+## 115. Validação ALT consistente em analyzer e decodificadores — PR #25 (18/11/2026)
+
+- Auditoria identificou que o pipeline transacional conferia cardinalidade das ALT, mas os caminhos independentes do analyzer DAMM v2, decodificador SPL/Token-2022 e decodificador de deltas apenas anexavam `loadedAddresses`, sem confrontar `addressTableLookups`.
+- Os quatro caminhos agora validam a estrutura de `addressTableLookups`, índices writable/readonly (inteiros não negativos, sem bool), presença de `meta.loadedAddresses` quando há lookup tables e cardinalidade exata por tipo.
+- Endereços carregados não vazios sem lookup tables são rejeitados para impedir deslocamento/contaminação dos índices. Campos ausentes equivalem a lista vazia somente quando a transação não declara ALT.
+- Testes negativos adicionados para ausência de lookup com endereços carregados e contagem divergente; fixtures existentes com ALT foram corrigidas para colocar `addressTableLookups` em `transaction.message`, conforme o formato Solana.
+- Implementações: analyzer `4100eeff8073bf5795b0d26a149d3f888345c88d`; transfer decoder `1e3ff7501967c8584807f5296763c0fcdeb605dc`; balance decoder `fa5e9dbfb1a6f84c3d8fe3d70e769221b68ce9f8`; pipeline `487e75b9354c6c4311f5bb846a67967623e2c88e`.
+- Testes/fixtures: pipeline `01e8ac636edd74f2dbdbf65b344e631ef07c2c18`; analyzer `e95d51f5844a1d0a33b37545fa287933590ee5e8`; transfer fixtures `7d25ffb608c2dea85d24cd3adbd2ced0247122ef`, `5c4c3224c6370bfd173d3daccbc19676b5f1737f`; balance deltas `a5434719122a4e02ed0291d1c450d85f2de31eed`.
+- Revisão estática enviada ao PR #25. Os novos testes não foram executados em runtime/compileall nesta etapa. CI não é evidência de execução se o job não iniciar steps.
+- PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.

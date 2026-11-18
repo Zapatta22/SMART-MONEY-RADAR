@@ -1906,3 +1906,18 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Conclusão: suíte local completa e compileall aprovados no Termux. Validação CI remota permanece bloqueada por ausência de runner provisionado. Não fazer retry repetido sem mudança/diagnóstico do ambiente.
 - Próximas pendências: (1) atualizar o texto desatualizado da descrição do PR para refletir a validação local e o estado CI; (2) investigar provisionamento do runner sem mascarar a falha; (3) após CI ou plano alternativo de validação acordado, executar auditoria RAW controlada com evidência mainnet apropriada. Só depois avaliar integração econômica com `SwapObservation`.
 - Nenhuma alteração em `main`, RAW fixtures, SQLite persistente, checkpoints, RPC/Helius ou estado on-chain. PR #23 permanece Draft e não integrado.
+
+
+## 99. Primeiro adaptador DAMM v2 → contratos de domínio — PR #24 (18/11/2026)
+
+- Criada branch `feat/damm-v2-swap-domain-adapter` a partir do HEAD validado documentalmente do PR #23: `947c056e01bfc7b22037e19e3600a5248a29e281`. PR #24 aberto em Draft, base `feat/damm-v2-economic-reconciliation`; não integrado.
+- Implementado `src/smart_money_radar/data_sources/damm_v2_swap_domain_adapter.py`, que converte o lote DAMM v2 já reconciliado em três contratos independentes: `SwapObservation`, `SwapClassification` e `SwapEvidence`, ligados por `operation_id` determinístico.
+- Guarda principal: só aceita resultado `RECONCILED`, snapshots completos e cardinalidade idêntica entre contextos, evidências e operações.
+- A carteira monitorada só é aceita quando o campo `owner` dos deltas da token account de origem do input e da token account de destino do output coincide com o endereço monitorado.
+- Semântica econômica explícita: input é débito bruto `included_transfer_fee_amount_in`; output é crédito spendable líquido `excluded_transfer_fee_amount_out`. Conversão para `Decimal` usa decimals dos transfers.
+- `SwapClassification` permanece `UNKNOWN`, confiança zero. A direção A→B/B→A não basta para definir ativo-base/quote ou BUY/SELL.
+- Testes novos em `tests/test_damm_v2_swap_domain_adapter.py`: construção e vínculo dos três contratos, conversão Decimal bruto/líquido, rejeição de lote não reconciliado e rejeição de owner divergente.
+- Documentação criada em `docs/DAMM-V2-SWAP-DOMAIN-ADAPTER.md`.
+- Commits da branch até esta atualização: código/testes `7933eba86931b387ae60385b459cf531b396f435`; documentação `9f3b3d5e151f8b380094e68a7877dd38721a9286`. Esta seção será registrada no commit documental seguinte.
+- Validação pendente: executar os testes novos e suíte completa, compileall e CI. Nenhuma execução foi alegada nesta etapa; o CI ainda precisa ser consultado.
+- Limites: o adaptador não integra parser/normalizador, não persiste SQLite, não altera checkpoints, não consulta RPC/Helius, não modifica fixtures RAW e não cria sinais ou ordens. PR #24 permanece Draft; nenhuma alteração na `main`.

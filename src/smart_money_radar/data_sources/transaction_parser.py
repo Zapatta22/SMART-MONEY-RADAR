@@ -40,7 +40,16 @@ def parse_transaction(
         after = {}
 
     for mint in sorted(before.keys() | after.keys()):
-        delta = after.get(mint, Decimal("0")) - before.get(mint, Decimal("0"))
+        before_amount, before_decimals = before.get(mint, (Decimal("0"), None))
+        after_amount, after_decimals = after.get(mint, (Decimal("0"), None))
+        if (
+            before_decimals is not None
+            and after_decimals is not None
+            and before_decimals != after_decimals
+        ):
+            # A mint has one immutable decimal scale; reject conflicting RPC metadata.
+            continue
+        delta = after_amount - before_amount
         if delta == 0:
             continue
         events.append(
@@ -79,8 +88,11 @@ def _timestamp(value: Any) -> datetime | None:
         return None
 
 
-def _token_balances(value: Any, wallet_address: str) -> dict[str, Decimal]:
-    balances: dict[str, Decimal] = defaultdict(Decimal)
+def _token_balances(
+    value: Any, wallet_address: str
+) -> dict[str, tuple[Decimal, int]]:
+    raw_balances: dict[str, Decimal] = defaultdict(Decimal)
+    decimals_by_mint: dict[str, set[int]] = defaultdict(set)
     if not isinstance(value, list):
         return {}
     for entry in value:
@@ -101,10 +113,19 @@ def _token_balances(value: Any, wallet_address: str) -> dict[str, Decimal]:
             # O campo decimals do SPL Token é um u8 (0..255).
             if not 0 <= decimals <= 255 or not raw_amount.is_finite() or raw_amount < 0:
                 continue
-            balances[mint] += raw_amount / (Decimal(10) ** decimals)
+            raw_balances[mint] += raw_amount
+            decimals_by_mint[mint].add(decimals)
         except (KeyError, TypeError, ValueError, InvalidOperation, OverflowError):
             continue
-    return dict(balances)
+    # Uma mint deve usar a mesma escala em todas as token accounts.
+    return {
+        mint: (
+            raw_balances[mint] / (Decimal(10) ** next(iter(scales))),
+            next(iter(scales)),
+        )
+        for mint, scales in decimals_by_mint.items()
+        if len(scales) == 1
+    }
 
 
 def _sol_transfers(

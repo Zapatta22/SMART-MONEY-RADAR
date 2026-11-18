@@ -80,7 +80,8 @@ def _read_extensions(data: bytes, expected_account_type: int) -> dict[int, bytes
     return extensions
 
 
-def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
+def transfer_fee_config_present(mint_data: bytes) -> bool:
+    """Valida o layout TLV do mint e informa se TransferFeeConfig existe."""
     if not isinstance(mint_data, bytes):
         raise TypeError("mint_data deve ser bytes")
     if len(mint_data) < MINT_BASE_LENGTH:
@@ -89,7 +90,16 @@ def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
         raise ValueError("padding do mint deve conter somente bytes zero")
     payload = _read_extensions(mint_data, ACCOUNT_TYPE_MINT).get(EXTENSION_TRANSFER_FEE_CONFIG)
     if payload is None:
+        return False
+    if len(payload) != TRANSFER_FEE_CONFIG_LENGTH:
+        raise ValueError("tamanho inválido de TransferFeeConfig")
+    return True
+
+
+def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
+    if not transfer_fee_config_present(mint_data):
         raise ValueError("TransferFeeConfig ausente")
+    payload = _read_extensions(mint_data, ACCOUNT_TYPE_MINT)[EXTENSION_TRANSFER_FEE_CONFIG]
     if len(payload) != TRANSFER_FEE_CONFIG_LENGTH:
         raise ValueError("tamanho inválido de TransferFeeConfig")
     withheld = _read_u64(payload, 64)

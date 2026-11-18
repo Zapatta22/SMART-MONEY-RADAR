@@ -124,7 +124,6 @@ def main() -> int:
                 "stack_height": item.stack_height,
                 "cpi_path": item.cpi_path,
                 "status": item.status,
-                "reason": item.reason,
             }
             for item in output.associations
         ],

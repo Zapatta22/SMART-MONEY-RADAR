@@ -122,6 +122,96 @@ def _damm_two_swap2_one_invalid_accounts_raw():
     return raw
 
 
+def _damm_two_swap2_reconciled_raw():
+    from smart_money_radar.data_sources.solana_token_transfer_decoder import (
+        SPL_TOKEN_PROGRAM_ID,
+    )
+
+    keys = ["wallet", "authority", "payer", SPL_TOKEN_PROGRAM_ID,
+            METEORA_DAMM_V2_PROGRAM_ID]
+    snapshots = []
+    inner = []
+    for operation in range(2):
+        suffix = str(operation)
+        pool = "1" * 32
+        user_in, user_out = "user-in-" + suffix, "user-out-" + suffix
+        vault_a, vault_b = "vault-a-" + suffix, "vault-b-" + suffix
+        mint_a, mint_b = "mint-a-" + suffix, "mint-b-" + suffix
+        referral, event_authority = "referral-" + suffix, "event-" + suffix
+        account_values = [
+            "authority", pool, user_in, user_out, vault_a, vault_b,
+            mint_a, mint_b, "payer", SPL_TOKEN_PROGRAM_ID,
+            SPL_TOKEN_PROGRAM_ID, referral, event_authority,
+            METEORA_DAMM_V2_PROGRAM_ID,
+        ]
+        indexes = []
+        for value in account_values:
+            if value not in keys:
+                keys.append(value)
+            indexes.append(keys.index(value))
+        def checked_transfer(source, mint, destination, amount):
+            return {
+                "programId": SPL_TOKEN_PROGRAM_ID,
+                "accounts": [keys.index(source), keys.index(mint),
+                             keys.index(destination), keys.index("authority")],
+                "data": _b58encode(bytes((12,)) + _u64(amount) + bytes((6,))),
+                "stackHeight": 3,
+            }
+        event_body = (
+            bytes(32) + bytes((0, 0, 0))
+            + _u64(100) + _u64(90) + bytes((0,))
+            + _u64(100) + _u64(0) + _u64(0) + _u64(90) + bytes(16)
+            + _u64(0) + _u64(0) + _u64(0) + _u64(0)
+            + _u64(0) + _u64(0) + _u64(0)
+            + _u64(1) + _u64(2) + _u64(3)
+        )
+        event_data = EVENT_CPI_TAG + EVT_SWAP2_DISCRIMINATOR + event_body
+        inner.extend([
+            {
+                "programId": METEORA_DAMM_V2_PROGRAM_ID,
+                "accounts": indexes,
+                "data": _b58encode(SWAP2_DISCRIMINATOR + _u64(100) + _u64(90) + bytes((0,))),
+                "stackHeight": 2,
+            },
+            checked_transfer(user_in, mint_a, vault_a, 100),
+            checked_transfer(vault_b, mint_b, user_out, 90),
+            {
+                "programId": METEORA_DAMM_V2_PROGRAM_ID,
+                "accounts": [indexes[0]],
+                "data": _b58encode(event_data),
+                "stackHeight": 3,
+            },
+        ])
+        for account, mint, owner, before, after in (
+            (user_in, mint_a, "wallet", 1_000, 900),
+            (vault_a, mint_a, "pool-owner", 2_000, 2_100),
+            (vault_b, mint_b, "pool-owner", 3_000, 2_910),
+            (user_out, mint_b, "wallet", 4_000, 4_090),
+        ):
+            index = keys.index(account)
+            common = {
+                "accountIndex": index,
+                "mint": mint,
+                "owner": owner,
+                "uiTokenAmount": {"amount": str(before), "decimals": 6, "uiAmount": before / 1_000_000, "uiAmountString": str(before / 1_000_000)},
+            }
+            snapshots.append((index, common, {
+                **common,
+                "uiTokenAmount": {"amount": str(after), "decimals": 6, "uiAmount": after / 1_000_000, "uiAmountString": str(after / 1_000_000)},
+            }))
+    raw = _raw()
+    raw["transaction"]["message"] = {
+        "accountKeys": keys,
+        "instructions": [{
+            "programId": "aggregator", "accounts": [], "data": _b58encode(b"route")
+        }],
+    }
+    raw["meta"]["innerInstructions"] = [{"index": 0, "instructions": inner}]
+    raw["meta"]["preTokenBalances"] = [item[1] for item in snapshots]
+    raw["meta"]["postTokenBalances"] = [item[2] for item in snapshots]
+    return raw
+
+
 class DammV2PersistencePipelineTests(unittest.TestCase):
     def setUp(self):
         self.store = SQLiteEventStore(":memory:")
@@ -391,6 +481,40 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
                 "solana", "signature", instruction_index, cpi_path
             )
             self.assertIsNone(self.store.get_swap_bundle(operation_id))
+
+
+    def test_two_swap2_payload_runs_full_pipeline_and_persists_both_bundles(self):
+        from datetime import datetime, timezone
+
+        observed_at = datetime(2026, 11, 18, tzinfo=timezone.utc)
+        raw = _damm_two_swap2_reconciled_raw()
+        result = process_damm_v2_observation(
+            self.store, raw, wallet_address="wallet",
+            signature="signature", observed_at=observed_at,
+        )
+
+        self.assertEqual(result.status, "reconciled")
+        self.assertEqual(result.decoded_swaps, 2)
+        self.assertEqual(result.reconciled_swaps, 2)
+        self.assertEqual(result.unresolved_swaps, 0)
+        self.assertEqual(result.saved_bundles, 2)
+        self.assertTrue(result.ready_for_next_venue)
+
+        attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(all(item["status"] == "MATCHED" for item in attempts))
+        operation_ids = [
+            item["operation_id"] for item in attempts
+        ]
+        self.assertEqual(len(set(operation_ids)), 2)
+        persisted = [self.store.get_swap_bundle(item) for item in operation_ids]
+        self.assertTrue(all(item is not None for item in persisted))
+        self.assertTrue(all(item["classification"].side == "UNKNOWN" for item in persisted))
+        self.assertEqual(
+            [item["evidence"].instruction_index for item in persisted], [0, 0]
+        )
 
 
 if __name__ == "__main__":

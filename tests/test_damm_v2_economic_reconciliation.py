@@ -178,6 +178,31 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("fee explícita inválida", result.reason)
 
+    def test_rejects_event_output_gross_inconsistency(self):
+        inconsistent_event = DammV2EvtSwap2(
+            **{
+                **self.context.association.event.__dict__,
+                "swap_result": DammV2SwapResult(
+                    **{
+                        **self.context.association.event.swap_result.__dict__,
+                        "output_amount": 89,
+                    }
+                ),
+            }
+        )
+        context = _context(event=inconsistent_event)
+        evidence = _evidence(context, self.input, self.output)
+        result = _reconcile(
+            [context], [evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("output_amount", result.reason)
+
     def test_rejects_net_credit_that_disagrees_with_explicit_transfer_fee(self):
         bad_input = _transfer("user-a", "vault-a", "mint-a", 100, fee=4)
         evidence = _evidence(self.context, bad_input, self.output)
@@ -299,7 +324,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             ]),
             all_transfers=[self.input, self.output, self.input],
         )
-        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertEqual(result.status, "AMBIGUOUS")
         self.assertIn("referência duplicada", result.reason)
 
     def test_rejects_unattributed_transfer_touching_a_swap_account(self):
@@ -325,7 +350,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             [self.evidence, self.evidence],
             _deltas([]),
         )
-        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertEqual(result.status, "AMBIGUOUS")
         self.assertIn("reutilizada", result.reason)
 
 

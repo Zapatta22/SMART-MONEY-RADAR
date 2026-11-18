@@ -355,3 +355,16 @@ Os avisos ResourceWarning observados em testes HTTP não causaram falha. Esta va
 Próximo passo: analisar localmente os cinco RAW com o analisador DAMM v2 em modo redigido e sem efeitos colaterais. Em seguida, especificar a associação por operação entre instrução/evento, transferências SPL/Token-2022 e deltas por token account/vault. Exigir papéis de contas demonstráveis, preservar operações sequenciais, não dividir deltas líquidos compartilhados sem evidência e tratar explicitamente Token-2022 transfer fees. Resultados insuficientes devem permanecer incompletos/ambíguos; não criar SwapObservation nem persistir no SQLite nesta fase.
 
 Nenhum RAW foi enviado ao GitHub. Nenhuma importação, criação/migração SQLite, RPC/Helius, checkpoint ou operação on-chain foi executada.
+
+
+## 23. Mapeamento estrito de contas DAMM v2 — primeiro incremento (18/11/2026)
+
+Foi criado `src/smart_money_radar/data_sources/damm_v2_accounts.py` com testes em `tests/test_damm_v2_accounts.py`.
+
+O mapeador usa a ordem das 14 contas base do IDL oficial DAMM v2: pool authority, pool, input token account, output token account, token A vault, token B vault, token A mint, token B mint, payer, token A program, token B program, referral token account, event authority e program. Contas adicionais são preservadas como remaining accounts.
+
+A direção do EvtSwap2 determina quais vaults, mints e token programs são input/output. O mapeador exige correspondência entre pool no evento e pool da instrução e restringe os programas token a SPL Token/Token-2022. Não interpreta payer como carteira monitorada.
+
+Este incremento ainda não correlaciona transferências nem deltas; não produz quantidades, SwapObservation ou classificação. A presença de Token-2022 não significa que transfer-fee está suportada. A reconciliação deve permanecer incompleta quando a taxa ou o valor líquido não puderem ser provados.
+
+Estado de validação: implementação e testes adicionados ao PR #16; CI do commit anterior à última correção do teste ainda estava em andamento, e execução local pendente. Não considerar validado até teste local e CI do head atual.

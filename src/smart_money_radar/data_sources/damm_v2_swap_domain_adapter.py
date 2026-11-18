@@ -121,13 +121,30 @@ def build_damm_v2_swap_domain_bundles(
             raise ValueError("evidência de transferências diverge da associação")
         input_transfer = item.input_transfer
         output_transfer = item.output_transfer
+        for transfer in (input_transfer, output_transfer):
+            if (
+                transfer.cpi_path_valid is not True
+                or transfer.instruction_index != association.instruction_index
+                or transfer.inner_instruction_index is None
+                or association.event_inner_instruction_index is None
+                or transfer.inner_instruction_index >= association.event_inner_instruction_index
+                or transfer.stack_height is None
+                or association.stack_height is None
+                or transfer.stack_height <= association.stack_height
+                or not isinstance(transfer.cpi_path, tuple)
+                or len(transfer.cpi_path) <= len(association.cpi_path)
+                or transfer.cpi_path[:len(association.cpi_path)] != association.cpi_path
+            ):
+                raise ValueError("proveniência CPI das transferências não é confiável")
         if (
             input_transfer.source_account != accounts.input_token_account
             or input_transfer.destination_account != accounts.input_vault
             or input_transfer.mint != accounts.input_mint
+            or input_transfer.program_id != accounts.input_token_program
             or output_transfer.source_account != accounts.output_vault
             or output_transfer.destination_account != accounts.output_token_account
             or output_transfer.mint != accounts.output_mint
+            or output_transfer.program_id != accounts.output_token_program
         ):
             raise ValueError("contas ou mints das transferências divergem do contexto")
 

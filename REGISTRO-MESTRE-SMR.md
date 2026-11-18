@@ -3176,3 +3176,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O secret `SMR_HELIUS_HISTORICAL_RPC_URL` não está configurado no ambiente GitHub (valor vazio confirmado nos logs). Portanto, a etapa de auditoria histórica fica condicionalmente ignorada até que o endpoint beta seja fornecido. Nenhuma chave foi publicada ou gravada no repositório.
 - Estado econômico do caso `2Zg...`: 2 swaps reconhecidos, segunda operação com referral bruto `71,448,140`; transferência de output `84,396,359,546` e referral são para a mesma conta/mint. A auditoria deve comparar o delta withheld agregado com as taxas calculadas de ambas as pernas. Sem consulta histórica real, permanece `INCOMPLETE`, sem bundles e sem avanço de checkpoint.
 - PR #25 permanece OPEN/DRAFT e sem merge; `main` intacta.
+
+
+## 222. Posição Mainnet real resolvida e auditoria pronta para execução — 18/11/2026
+
+- Mainnet workflow #66 (run `44419926312`) SUCCESS no commit `3b4065664949700ac8a137a1523c178b7068537a`. As validações baseline e dos dois candidatos wSOL passaram; as duas buscas de multi-swap terminaram; os três inspectors de instruções passaram; validação e diagnósticos legacy passaram; inspeção do mint atual terminou. A etapa opcional de histórico foi SKIPPED porque `SMR_HELIUS_HISTORICAL_RPC_URL` está vazio.
+- A etapa `Resolve exact transaction index for blocked Token-2022 referral case` localizou de forma independente no bloco finalized a posição da assinatura `2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9`: slot `471107341`, `transaction_index=144`.
+- Com a evidência já registrada na seção 220, os parâmetros exatos do auditor histórico são: mint `GgGQzgwUBcPZddt4UFULRLeJK2WFhSyFY1VavYK4MCCc`; conta referral/destino compartilhado `DKfXG1ojeZzCgLuMiYJq7LD1RDVgeu7NHPLmsjgTjiRF`; transferências brutas para essa conta `84,396,359,546` e `71,448,140`.
+- CI #1240 (run `44420031113`) SUCCESS no commit `06bd9ebfc04c7ebb45e53b3c1a1bcbf34727c86e`: 521 testes em 3,919s e `compileall` concluído. O teste de agregação agora usa duas transferências e confere o total de taxas retidas.
+- A lacuna restante deixou de ser desconhecimento de assinatura, slot, índice, mint ou conta: é exclusivamente acesso ao endpoint Helius Historical Accounts beta. Sem esse endpoint, não é possível obter os snapshots históricos pré/pós-transação e a taxa permanece sem comprovação.
+- Nenhuma reconciliação foi liberada para a assinatura bloqueada; continua sem bundles e sem avanço de checkpoint. PR #25 OPEN/DRAFT e sem merge; `main` intacta.
+- Próxima ação: configurar `SMR_HELIUS_HISTORICAL_RPC_URL` como secret do repositório com endpoint Helius Mainnet Business habilitado e executar a etapa opcional. Se não houver esse acesso, planejar fonte histórica alternativa sem substituir evidência histórica por estado atual.

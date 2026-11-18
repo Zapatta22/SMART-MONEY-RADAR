@@ -242,6 +242,19 @@ class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(results[0].status, "AMBIGUOUS")
 
+    def test_marks_reused_transfer_as_ambiguous_for_both_nested_swaps(self):
+        parent = _swap(path=(0,), inner_index=0, stack_height=2)
+        child = _swap(path=(0, 0), inner_index=1, stack_height=3)
+        transfers = [
+            _transfer(INPUT_ACCOUNT, INPUT_VAULT, 100, 2, (0, 0, 0), 4),
+            _transfer(OUTPUT_VAULT, OUTPUT_ACCOUNT, 90, 3, (0, 0, 1), 4),
+        ]
+        results = reconcile_raydium_cpmm_swaps(
+            [parent, child], transfers, _deltas(), monitored_wallet=WALLET
+        )
+        self.assertEqual([item.status for item in results], ["AMBIGUOUS", "AMBIGUOUS"])
+        self.assertTrue(all("reivindicada" in item.reason for item in results))
+
     def test_rejects_duplicate_delta_accounts(self):
         deltas = _deltas() + _deltas()[:1]
         with self.assertRaisesRegex(ValueError, "duplicada"):

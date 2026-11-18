@@ -13,6 +13,9 @@ from websockets import connect
 from smart_money_radar.data_sources.helius import HeliusDataSource
 from smart_money_radar.data_sources.transaction_parser import PARSER_VERSION
 from smart_money_radar.domain.models import Wallet
+from smart_money_radar.data_sources.token2022_fee_proof_resolver import (
+    resolve_token2022_no_fee_proofs,
+)
 from smart_money_radar.domain.damm_v2_persistence_pipeline import (
     process_damm_v2_observation,
 )
@@ -269,11 +272,25 @@ class WalletMonitor:
                 transaction = None
             if transaction is not None:
                 try:
-                    damm_result = process_damm_v2_observation(
+                    fee_proof_resolution = await asyncio.to_thread(
+                        resolve_token2022_no_fee_proofs,
+                        transaction,
+                        monitored_wallet=wallet_address,
+                        signature=signature,
+                        rpc_endpoint=self.settings.http_url,
+                    )
+                    if fee_proof_resolution.reasons:
+                        self._logger.warning(
+                            "Prova de taxa Token-2022 indisponível para %d mint(s); mantendo fail-closed.",
+                            len(fee_proof_resolution.unresolved_mints),
+                        )
+                    damm_result = await asyncio.to_thread(
+                        process_damm_v2_observation,
                         self.event_store,
                         transaction,
                         wallet_address=wallet_address,
                         signature=signature,
+                        transfer_fee_absence_proofs=fee_proof_resolution.proofs,
                     )
                 except Exception as exc:
                     self._logger.warning(

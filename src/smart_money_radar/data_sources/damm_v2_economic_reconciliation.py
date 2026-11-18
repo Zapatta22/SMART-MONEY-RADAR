@@ -130,6 +130,7 @@ def reconcile_damm_v2_economic_batch(
     contexts: Sequence[DammV2SwapTransferContext],
     evidence: Sequence[DammV2TransferEvidence],
     balance_deltas: SolanaTokenBalanceDeltaResult,
+    all_transfers: Sequence[SolanaTokenTransfer],
 ) -> DammV2EconomicReconciliation:
     """Reconcilia todas as operações DAMM v2 do mesmo payload de transação.
 
@@ -146,6 +147,10 @@ def reconcile_damm_v2_economic_batch(
         raise ValueError("contexts/evidence devem conter o mesmo conjunto não vazio")
     if not isinstance(balance_deltas, SolanaTokenBalanceDeltaResult):
         raise TypeError("balance_deltas inválido")
+    if not isinstance(all_transfers, Sequence) or isinstance(all_transfers, (str, bytes)):
+        raise TypeError("all_transfers deve ser uma sequência")
+    if any(not isinstance(transfer, SolanaTokenTransfer) for transfer in all_transfers):
+        raise TypeError("all_transfers contém transferência inválida")
     if not balance_deltas.complete:
         return DammV2EconomicReconciliation(
             "INCOMPLETE", len(contexts), (),
@@ -297,6 +302,21 @@ def reconcile_damm_v2_economic_batch(
                     expected, referral.destination_account, referral.mint,
                     referral.decimals, referral_net,
                 )
+
+        expected_accounts = set(expected)
+        claimed_ids = {id(transfer) for transfer in claimed_transfers}
+        unclaimed = [
+            transfer for transfer in all_transfers
+            if (
+                transfer.source_account in expected_accounts
+                or transfer.destination_account in expected_accounts
+            )
+            and id(transfer) not in claimed_ids
+        ]
+        if unclaimed:
+            raise ValueError(
+                "há transferências não atribuídas que afetam token accounts do swap"
+            )
 
         actual: dict[str, object] = {}
         for delta in balance_deltas.deltas:

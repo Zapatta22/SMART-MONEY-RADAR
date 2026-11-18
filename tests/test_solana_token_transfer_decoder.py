@@ -99,12 +99,7 @@ class TokenTransferDecoderTests(unittest.TestCase):
 
     def test_resolves_loaded_addresses_for_compiled_cpi(self):
         result = decode_solana_token_transfers(_tx(
-            [{
-                "programId": SPL_TOKEN_PROGRAM_ID,
-                "accounts": [4, 5, 6],
-                "data": _transfer(3, 42),
-                "stackHeight": 2,
-            }],
+            [{"programId": "router", "accounts": [], "data": "1"}],
             keys=["static-0", "static-1", "static-2", "static-3"],
             meta={
                 "err": None,

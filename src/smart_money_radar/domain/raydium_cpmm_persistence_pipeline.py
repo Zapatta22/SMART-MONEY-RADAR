@@ -92,7 +92,7 @@ def process_raydium_cpmm_observation(
         or signatures[0] != signature
     ):
         raise ValueError(
-            "A assinatura informada deve corresponder à primeira assinatura única do payload RPC."
+            "A assinatura informada não corresponde à primeira assinatura única do payload RPC."
         )
 
     try:

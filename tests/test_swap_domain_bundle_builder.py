@@ -195,6 +195,10 @@ class SwapDomainBundleBuilderTests(unittest.TestCase):
 
     def test_rejects_matched_result_when_amount_or_transfer_identity_disagrees(self):
         matched = _matched()
+        wrong_delta_type = replace(matched, input_vault_delta_raw=True)
+        with self.assertRaisesRegex(ValueError, "Deltas por conta devem ser inteiros"):
+            self._build(matched=wrong_delta_type)
+
         wrong_amount = replace(matched, input_amount_raw=matched.input_amount_raw + 1)
         with self.assertRaisesRegex(ValueError, "Quantidade de entrada"):
             self._build(matched=wrong_amount)

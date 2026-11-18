@@ -2742,3 +2742,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O novo teste de lote parcial comprova que uma associação MATCHED misturada com EVENT_MISSING rejeita o lote inteiro e não emite contexts/bundles. Isto é regressão sintética; não equivale a fixture mainnet multi-swap.
 - Próxima frente: cobrir a associação funding↔swap para múltiplas operações sem relaxar as condições; depois adicionar fixture mainnet multi-swap obtida localmente e auditada sem enviar RAW/manifesto ao repositório público. Auditoria de histórico Git/segredos permanece pendente; buscas no código atual não substituem secret scanning do histórico completo.
 - Nenhuma ordem, BUY/SELL, checkpoint ou merge foi habilitado.
+
+
+## 185. Correção de rastreamento: integração wSOL já existe; limite é por operação — 18/11/2026
+
+- Correção da observação preliminar feita durante a busca textual: `decode_wrapped_sol_funding` está integrado em `damm_v2_economic_reconciliation.py`, dentro da reconciliação do input quando o mint é NATIVE_MINT e os argumentos `raw_transaction` e `monitored_wallet` estão presentes. A busca anterior limitada aos arquivos do pipeline/adaptador não encontrou a chamada porque ela está na camada de reconciliação.
+- Teste existente `test_reconciles_wrapped_sol_input_funded_and_synced_before_swap` cobre o caso wSOL de uma operação. Teste `test_aggregates_sequential_swaps_sharing_the_same_token_accounts` cobre compartilhamento de contas em swaps sequenciais sem demonstrar funding wSOL compartilhado.
+- Limitação real: a reconciliação chama o decoder por operação e exige que cada input de wSOL tenha um único funding top-level cujo valor seja exatamente igual ao amount bruto daquele input. Um funding agregado ou uma conta wSOL reutilizada por várias operações não está modelado como relação de lote; o comportamento conservador atual é rejeitar divergências/ambiguidade, não repartir funding.
+- Próximo passo correto: criar teste de regressão específico para duas operações DAMM v2 que reutilizam a mesma conta wSOL e provar que nenhum funding é contado duas vezes nem repartido por suposição. Depois desenhar a associação por transação e somente então alterar produção. Não afirmar que a integração está ausente.
+- CI #1039 (run `44377757156`) SUCCESS. Commit de registro anterior `9968d3fac01bfcd3499946d02057262859b08c99` foi validado por essa execução.

@@ -146,7 +146,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
                 if self.calls < 3:
                     return None
                 stop_event.set()
-                return simulated_transaction()
+                return simulated_transaction(signature)
 
         messages = [
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 42}),
@@ -312,7 +312,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
             async def get_transaction_async(self, signature: str):
                 self.transaction_calls.append(signature)
-                return simulated_transaction()
+                return simulated_transaction(signature)
 
         import tempfile
         from pathlib import Path
@@ -489,7 +489,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
             async def get_transaction_async(self, signature: str):
                 self.calls.append(signature)
-                return simulated_transaction()
+                return simulated_transaction(signature)
 
         import tempfile
         from pathlib import Path
@@ -525,7 +525,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
         class Source:
             async def get_transaction_async(self, signature: str):
                 stop_event.set()
-                return simulated_transaction()
+                return simulated_transaction(signature)
 
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "history.sqlite3")

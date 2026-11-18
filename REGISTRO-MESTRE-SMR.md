@@ -1,5 +1,5 @@
 # SMART MONEY RADAR (SMR) — REGISTRO MESTRE
-Última atualização: 2026-11-16 — Etapa 13
+Última atualização: 2026-11-17 — PR #1 validado e integrado à main
 
 ## 1. Estado executivo
 
@@ -73,8 +73,31 @@ Arquivos atualizados:
 
 ## 9. Próxima tarefa exata
 
-Executar o coletor Etapa 11 em ambiente com RPC HTTPS acessível e autorizado, usando as cinco assinaturas candidatas; auditar cada resposta finalized com o auditor Etapa 12; revisar manualmente instruções, CPI, signers, token accounts, pools/vaults e contas de protocolo; rodar o anonimizador Etapa 13 com `--protect` completo; verificar hashes, aliases e mapa confidencial; aprovar a primeira fixture real. Só depois implementar o primeiro decodificador do programa correspondente à fixture aprovada.
+Antes de alterar o parser, reconciliar a cópia local do Termux com o repositório remoto. O caminho local `~/SMART-MONEY-RADAR-ETAPA16` foi identificado como diretório sem metadados Git; portanto, não executar `git pull`, não inicializar Git nessa pasta e não sobrescrever arquivos. A árvore atual da `main` remota contém `transaction_parser.py`, `domain/normalization.py` e `storage/event_store.py`, mas não contém os decodificadores Raydium CPMM/AMM v4 mencionados no trabalho local. A cópia local registrou esses decodificadores e regressão 25/25, ainda sem integração Git comprovada. A próxima ação é comparar e transportar com segurança esses arquivos e testes para uma branch baseada na `main` atual, preservando a cópia local e sem duplicar testes já aprovados.
+
+Depois da reconciliação, implementar a reconstrução econômica em camada separada: associar instruções externas/CPI, deltas de saldo e contas/venues; gerar `SwapObservation`, `SwapClassification` e `SwapEvidence` sem inferir BUY/SELL quando houver ambiguidade; persistir os três registros de forma atômica no SQLite. Criar fixtures de transações reais anonimizadas e testes de regressão antes de avançar para Smart Money Intelligence e Risk Manager.
 
 ## 10. Protocolo de continuidade
 
-Usar este registro e `SMR-CODIGO-BASE-ETAPA13-2026-11-16.zip` como referência mais recente. Separar especificado, implementado, testado, validado remotamente e produção. Não declarar coleta/fixture real concluída até existir payload RPC integral finalized, hash conferido, proveniência e revisão semântica.
+Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `main` remota após o merge do PR #1 como referências atuais. Separar especificado, implementado, testado, validado remotamente e produção. Não declarar coleta/fixture real concluída até existir payload RPC integral finalized, hash conferido, proveniência e revisão semântica.
+
+
+## 11. Atualização 2026-11-17 — PR #1
+
+- Repositório: `Zapatta22/SMART-MONEY-RADAR`.
+- PR #1: [Implement separated swap domain contracts](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/1).
+- Branch de origem: `feat/swap-domain-contracts`; destino: `main`.
+- Validação: workflow GitHub Actions `SMR tests` concluído com sucesso; etapas de instalação, suíte `unittest` e `compileall` aprovadas. PR sem conflitos e sem comentários/revisões pendentes.
+- Merge concluído em 2026-11-17 21:21:44 (horário local UTC-4). Merge commit: `8e20bbdeeb2e7cdb1d785539c9b6504f47ed59e0`.
+- Confirmação remota: PR fechado como merged e `main` aponta para o mesmo SHA.
+- Arquivos integrados: `src/smart_money_radar/domain/models.py`, `tests/test_domain_models.py`, `docs/SWAP-DOMAIN-CONTRACTS.md`, `.github/workflows/smr-tests.yml`.
+- Contratos agora existentes na `main`: `SwapObservation`, `SwapClassification`, `SwapEvidence` e `build_swap_operation_id()`.
+- Limite: o PR não conectou parser/decodificadores, não alterou persistência SQLite e não habilitou execução de ordens. A integração econômica continua pendente.
+
+## 12. Estado atual confirmado e limites
+
+- A `main` remota está atualizada com o merge commit acima.
+- Na árvore remota consultada após o merge existem `transaction_parser.py`, `domain/normalization.py` e `storage/event_store.py`; não foram encontrados arquivos de decodificadores Raydium CPMM/AMM v4 nessa árvore.
+- O histórico local do Termux registra decodificador CPMM, mapeamento de contas e testes conjuntos CPMM/normalização/AMM v4 aprovados em 25/25. A pasta local informada não é um repositório Git; esses arquivos ainda precisam ser reconciliados com a `main` sem perda.
+- Nenhuma integração parser→reconstrução econômica foi iniciada nesta etapa.
+- O SMR permanece em monitoramento/análise somente leitura, sem execução de compras ou vendas reais.

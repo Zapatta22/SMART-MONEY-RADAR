@@ -51,6 +51,27 @@ class TokenTransferDecoderTests(unittest.TestCase):
                 "compiled-key",
             ]))
 
+    def test_rejects_loaded_addresses_without_lookup_tables(self):
+        tx = _tx([], meta={
+            "err": None,
+            "loadedAddresses": {"writable": ["unexpected"], "readonly": []},
+        })
+        with self.assertRaisesRegex(ValueError, "sem addressTableLookups"):
+            decode_solana_token_transfers(tx)
+
+    def test_rejects_loaded_address_count_mismatch(self):
+        tx = _tx([], meta={
+            "err": None,
+            "addressTableLookups": [{
+                "accountKey": "lookup-table",
+                "writableIndexes": [0],
+                "readonlyIndexes": [],
+            }],
+            "loadedAddresses": {"writable": [], "readonly": []},
+        })
+        with self.assertRaisesRegex(ValueError, "não corresponde à quantidade"):
+            decode_solana_token_transfers(tx)
+
     def test_decodes_compiled_transfer(self):
         result = decode_solana_token_transfers(_tx([{
             "programId": SPL_TOKEN_PROGRAM_ID,
@@ -223,6 +244,11 @@ class TokenTransferDecoderTests(unittest.TestCase):
             keys=["static-0", "static-1", "static-2", "static-3"],
             meta={
                 "err": None,
+                "addressTableLookups": [{
+                    "accountKey": "lookup-table",
+                    "writableIndexes": [0, 1],
+                    "readonlyIndexes": [0],
+                }],
                 "loadedAddresses": {
                     "writable": ["loaded-source", "loaded-destination"],
                     "readonly": ["loaded-authority"],

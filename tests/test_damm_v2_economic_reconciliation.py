@@ -144,6 +144,40 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         self.assertEqual(result.operation_count, 1)
         self.assertEqual(len(result.expected_account_deltas), 4)
 
+    def test_reconciles_legacy_token_2022_checked_using_event_gross_net_fields(self):
+        input_transfer = _transfer(
+            "user-a", "vault-a", "mint-a", 100, fee=None
+        )
+        output_transfer = _transfer(
+            "vault-b", "user-b", "mint-b", 90, fee=None
+        )
+        evidence = _evidence(self.context, input_transfer, output_transfer)
+        result = _reconcile(
+            [self.context], [evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        self.assertEqual(result.status, "RECONCILED")
+
+    def test_rejects_fee_amount_outside_transfer_amount(self):
+        invalid_input = _transfer(
+            "user-a", "vault-a", "mint-a", 100, fee=101
+        )
+        evidence = _evidence(self.context, invalid_input, self.output)
+        result = _reconcile(
+            [self.context], [evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("fee explícita inválida", result.reason)
+
     def test_rejects_net_credit_that_disagrees_with_explicit_transfer_fee(self):
         bad_input = _transfer("user-a", "vault-a", "mint-a", 100, fee=4)
         evidence = _evidence(self.context, bad_input, self.output)

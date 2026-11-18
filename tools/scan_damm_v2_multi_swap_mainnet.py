@@ -18,6 +18,7 @@ from smart_money_radar.data_sources.damm_v2_transaction_pipeline import process_
 from validate_damm_v2_mainnet import fetch_transaction, infer_monitored_wallet
 
 DEFAULT_RPC = "https://api.mainnet-beta.solana.com"
+FALLBACK_RPC = "https://solana-rpc.publicnode.com"
 
 
 def rpc_call(endpoint: str, method: str, params: list) -> object:
@@ -27,30 +28,51 @@ def rpc_call(endpoint: str, method: str, params: list) -> object:
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(request, timeout=20) as response:
         payload = json.loads(response.read())
     if not isinstance(payload, dict) or payload.get("id") != 1 or payload.get("error") is not None:
         raise RuntimeError(f"RPC inválido em {method}")
     return payload.get("result")
 
 
-def scan(endpoint: str, limit: int) -> dict:
-    signatures = rpc_call(endpoint, "getSignaturesForAddress", [
-        METEORA_DAMM_V2_PROGRAM_ID, {"limit": limit, "commitment": "finalized"}
-    ])
-    if not isinstance(signatures, list):
-        raise RuntimeError("RPC não retornou lista de assinaturas")
+def _fetch_signatures(endpoints: tuple[str, ...], limit: int) -> tuple[list, str]:
+    errors = []
+    for endpoint in endpoints:
+        try:
+            result = rpc_call(endpoint, "getSignaturesForAddress", [
+                METEORA_DAMM_V2_PROGRAM_ID, {"limit": limit, "commitment": "finalized"}
+            ])
+            if not isinstance(result, list):
+                raise RuntimeError("RPC não retornou lista de assinaturas")
+            return result, endpoint
+        except Exception as exc:
+            errors.append(f"{type(exc).__name__}: {str(exc)[:100]}")
+    raise RuntimeError("Falha ao obter assinaturas nos RPCs: " + " | ".join(errors))
+
+
+def scan(endpoints: tuple[str, ...], limit: int) -> dict:
+    signatures, signature_rpc = _fetch_signatures(endpoints, limit)
     inspected = 0
     candidates = []
-    failures = 0
+    failures = Counter()
     for item in signatures:
         signature = item.get("signature") if isinstance(item, dict) else None
         if not isinstance(signature, str) or not signature:
-            failures += 1
+            failures["assinatura ausente/inválida"] += 1
             continue
+        raw = None
+        fetch_errors = []
+        for endpoint in endpoints:
+            try:
+                raw = fetch_transaction(endpoint, signature)
+                break
+            except Exception as exc:
+                fetch_errors.append(f"{type(exc).__name__}: {str(exc)[:100]}")
+        if raw is None:
+            failures["; ".join(fetch_errors) or "transação indisponível"] += 1
+            continue
+        inspected += 1
         try:
-            raw = fetch_transaction(endpoint, signature)
-            inspected += 1
             associations = analyze_damm_v2_swap_events({"result": raw})
             swaps = [
                 association for association in associations
@@ -88,15 +110,17 @@ def scan(endpoint: str, limit: int) -> dict:
                 return {
                     "status": "FOUND_SHARED_WSOL_MULTI_SWAP",
                     "inspected": inspected,
-                    "failures": failures,
+                    "failures": dict(failures),
+                    "signature_rpc": "primary" if signature_rpc == endpoints[0] else "fallback",
                     "candidate": candidate,
                 }
-        except Exception:
-            failures += 1
+        except Exception as exc:
+            failures[f"análise {type(exc).__name__}: {str(exc)[:100]}"] += 1
     return {
         "status": "NO_SHARED_WSOL_MULTI_SWAP_FOUND",
         "inspected": inspected,
-        "failures": failures,
+        "failures": dict(failures),
+        "signature_rpc": "primary" if signature_rpc == endpoints[0] else "fallback",
         "multi_swap_candidates": candidates,
     }
 
@@ -104,14 +128,18 @@ def scan(endpoint: str, limit: int) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=30)
-    parser.add_argument("--rpc-url", default=os.environ.get("SMR_SOLANA_RPC_URL", DEFAULT_RPC))
+    parser.add_argument("--rpc-url", default=os.environ.get(
+        "SMR_DAMM_V2_SCAN_RPC_URL", os.environ.get("SMR_SOLANA_RPC_URL", DEFAULT_RPC)
+    ))
+    parser.add_argument("--fallback-rpc-url", default=FALLBACK_RPC)
     args = parser.parse_args()
     if not 1 <= args.limit <= 100:
         parser.error("--limit deve estar entre 1 e 100")
-    if not args.rpc_url.startswith("https://"):
-        parser.error("RPC deve usar HTTPS")
+    if not args.rpc_url.startswith("https://") or not args.fallback_rpc_url.startswith("https://"):
+        parser.error("RPCs devem usar HTTPS")
+    endpoints = tuple(dict.fromkeys((args.rpc_url, args.fallback_rpc_url)))
     try:
-        report = scan(args.rpc_url, args.limit)
+        report = scan(endpoints, args.limit)
     except Exception as exc:
         report = {"status": "SCAN_ERROR", "reason": f"{type(exc).__name__}: {exc}"}
     print(json.dumps(report, ensure_ascii=False, indent=2))

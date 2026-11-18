@@ -133,7 +133,8 @@ def _damm_two_swap2_reconciled_raw():
     inner = []
     for operation in range(2):
         suffix = str(operation)
-        pool = "1" * 32
+        pool_bytes = bytes((operation + 1,)) * 32
+        pool = _b58encode(pool_bytes)
         user_in, user_out = "user-in-" + suffix, "user-out-" + suffix
         vault_a, vault_b = "vault-a-" + suffix, "vault-b-" + suffix
         mint_a, mint_b = "mint-a-" + suffix, "mint-b-" + suffix
@@ -158,7 +159,7 @@ def _damm_two_swap2_reconciled_raw():
                 "stackHeight": 3,
             }
         event_body = (
-            bytes(32) + bytes((0, 0, 0))
+            pool_bytes + bytes((0, 0, 0))
             + _u64(100) + _u64(90) + bytes((0,))
             + _u64(100) + _u64(0) + _u64(0) + _u64(90) + bytes(16)
             + _u64(0) + _u64(0) + _u64(0) + _u64(0)

@@ -185,7 +185,7 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
         metadata = self.store.get_observation_metadata(self.wallet, self.signature)
         self.assertEqual(metadata["parse_status"], "parse_error")
-        self.assertIn("malformed CPMM instruction", metadata["parse_error"])
+        self.assertEqual(metadata["parse_error"], "ValueError")
 
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
     def test_rejects_signature_mismatch_before_persistence(self, normalize):

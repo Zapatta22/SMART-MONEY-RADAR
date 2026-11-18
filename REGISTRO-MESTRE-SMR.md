@@ -2219,3 +2219,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Adicionado teste em que o mesmo accountIndex aparece para a carteira monitorada e outro owner; o delta da mint não é emitido.
 - Commits: parser `bbb5e58c34311bc3e4ee4ccbb48c7c5b75d3b768`; teste `a22fe36fffcf47719b96340b8df5adf63c2beb28`.
 - Revisão estática; runtime/compileall pendentes. Nenhum RPC real ou banco persistente alterado.
+
+
+## 129. WalletMonitor aceita somente logsNotification JSON-RPC 2.0 — PR #25 (18/11/2026)
+
+- Auditoria do dispatcher WebSocket identificou que qualquer mensagem com `params.subscription` e `params.result.value.signature` poderia ser tratada como notificação de logs, mesmo sem validar `method` ou versão JSON-RPC. Isso permitia que mensagens de outro método fossem confundidas com eventos de carteira.
+- O monitor agora só processa notificações com `jsonrpc == "2.0"` e `method == "logsNotification"`; subscription ID continua validado como inteiro não booleano.
+- Fixtures de teste atualizadas para envelopes JSON-RPC válidos; o teste de integração inclui uma mensagem de método desconhecido com assinatura forjada antes da notificação legítima e confirma que ela é ignorada.
+- Commits: dispatcher `8ad9bfd7f8bdcfe1fd539c381098f03f0501dbc1`; fixtures `a376f6a9d4024586a710ab1bafa1945a769852f9`; teste `9ed84a5083ccd4516e8eab2db824c24798ae24b8`.
+- Revisão estática; runtime/compileall pendentes. Nenhuma conexão WebSocket real foi aberta.

@@ -127,6 +127,7 @@ def main() -> int:
                 "source_wallet": item.source_wallet,
                 "amount_raw": item.amount_raw,
                 "system_transfer_index": item.system_transfer_index,
+                "system_transfer_indices": list(item.system_transfer_indices),
                 "sync_native_index": item.sync_native_index,
                 "lamports_delta_raw": item.lamports_delta_raw,
             }

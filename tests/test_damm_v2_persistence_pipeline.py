@@ -99,6 +99,26 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
         )
         self.assertIsNone(self.store.get_checkpoint("wallet"))
 
+    def test_missing_inner_instruction_metadata_stays_pending_for_replay(self):
+        raw = _raw()
+        del raw["meta"]["innerInstructions"]
+        result = process_damm_v2_observation(
+            self.store, raw, wallet_address="wallet", signature="signature"
+        )
+        self.assertEqual(result.status, "pending_reconciliation")
+        self.assertFalse(result.ready_for_next_venue)
+        self.assertEqual(result.unresolved_swaps, 1)
+        self.assertIsNotNone(
+            self.store.get_raw_transaction("wallet", "signature")
+        )
+        self.assertFalse(
+            self.store.has_processed_signature("wallet", "signature")
+        )
+        self.assertIsNone(self.store.get_checkpoint("wallet"))
+        self.assertEqual(
+            self.store.get_pending_signatures("wallet"), ["signature"]
+        )
+
     def test_failed_on_chain_is_delegated_to_checkpoint_coordinator(self):
         result = process_damm_v2_observation(
             self.store,

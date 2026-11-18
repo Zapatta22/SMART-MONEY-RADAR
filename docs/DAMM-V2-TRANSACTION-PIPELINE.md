@@ -73,8 +73,11 @@ O `WalletMonitor` agora executa DAMM v2 antes do pipeline Raydium CPMM:
   CPMM com `advance_checkpoint=False`: `mark_processed()` registra a assinatura
   concluída sem mover o cursor. Só depois o WalletMonitor move o checkpoint via
   `advance_checkpoint_in_order()`. O fluxo WebSocket mantém o padrão
-  `advance_checkpoint=True`. Transações do backfill sem slot inteiro válido
-  interrompem a recuperação e preservam o cursor.
+  `advance_checkpoint=True`. Quando já existe checkpoint, observações pendentes
+  arquivadas também são processadas sem mover o cursor antes da consulta RPC;
+  a ordenação autoritativa do backfill é que confirma a sequência. Transações
+  do backfill sem slot inteiro válido interrompem a recuperação e preservam o
+  cursor.
 
 Testes de persistência usam SQLite `:memory:` para fluxos unitários e
 arquivo temporário com duas threads para concorrência: RAW divergente e bundle

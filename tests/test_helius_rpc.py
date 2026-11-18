@@ -73,6 +73,16 @@ class HeliusRpcTests(unittest.TestCase):
         with self.assertRaisesRegex(HeliusRpcError, "ID incompatível"):
             source.get_version()
 
+    def test_rejects_boolean_json_rpc_response_id(self) -> None:
+        source = HeliusDataSource(
+            self.settings,
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                {"jsonrpc": "2.0", "id": True, "result": {"solana-core": "invalid-id"}}
+            ),
+        )
+        with self.assertRaisesRegex(HeliusRpcError, "ID incompatível"):
+            source.get_version()
+
     def test_rejects_missing_json_rpc_version(self) -> None:
         source = HeliusDataSource(
             self.settings,

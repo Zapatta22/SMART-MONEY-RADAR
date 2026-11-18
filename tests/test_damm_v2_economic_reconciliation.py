@@ -336,7 +336,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                 "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
                 "accounts": [wallet, wsol_account, wallet, NATIVE_MINT,
                              "11111111111111111111111111111111", SPL_TOKEN_PROGRAM_ID],
-                "data": b58(b"\\x01"),
+                "data": b58(b"\x01"),
             },
             {
                 "programId": "11111111111111111111111111111111",
@@ -346,25 +346,25 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             {
                 "programId": SPL_TOKEN_PROGRAM_ID,
                 "accounts": [wsol_account],
-                "data": b58(b"\\x11"),
+                "data": b58(b"\x11"),
             },
             {"programId": "damm", "accounts": [], "data": b58(b"swap")},
             {
                 "programId": SPL_TOKEN_PROGRAM_ID,
                 "accounts": [wsol_account, wallet, wallet],
-                "data": b58(b"\\x09"),
+                "data": b58(b"\x09"),
             },
             {
                 "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
                 "accounts": [wallet, wsol_account, wallet, NATIVE_MINT,
                              "11111111111111111111111111111111", SPL_TOKEN_PROGRAM_ID],
-                "data": b58(b"\\x01"),
+                "data": b58(b"\x01"),
             },
             {"programId": "damm", "accounts": [], "data": b58(b"swap")},
             {
                 "programId": SPL_TOKEN_PROGRAM_ID,
                 "accounts": [wsol_account, wallet, wallet],
-                "data": b58(b"\\x09"),
+                "data": b58(b"\x09"),
             },
         ]
         raw = {

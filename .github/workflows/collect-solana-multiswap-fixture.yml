@@ -1,11 +1,6 @@
 name: SMR Jupiter multi-swap mainnet fixture
 
 on:
-  push:
-    branches:
-      - feat/github-actions-mainnet-fixture-collector
-    paths:
-      - ".github/workflows/collect-solana-multiswap-fixture.yml"
   workflow_dispatch:
     inputs:
       signature:
@@ -24,7 +19,7 @@ jobs:
     env:
       SMR_SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
       SIGNATURE: ${{ inputs.signature || '39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6' }}
-      TARGET_BRANCH: feat/raydium-cpmm-transfer-reconciliation
+      TARGET_BRANCH: feat/real-mainnet-cpmm-fee-fixture
     steps:
       - name: Checkout collector branch
         uses: actions/checkout@v4

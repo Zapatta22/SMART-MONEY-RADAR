@@ -90,7 +90,7 @@ class DammV2AccountsTests(unittest.TestCase):
         result = decode_damm_v2_swap_accounts(
             self.instruction, self.keys, event()
         )
-        self.assertEqual(result.pool, "pool")
+        self.assertEqual(result.pool, "1" * 32)
         bad = dict(self.instruction)
         bad["accounts"] = [999] + self.instruction["accounts"][1:]
         with self.assertRaisesRegex(ValueError, "accounts\\[0\\]"):

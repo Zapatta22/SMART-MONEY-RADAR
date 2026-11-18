@@ -244,6 +244,20 @@ def build_damm_v2_swap_domain_bundles(
             confidence=Decimal("0"),
             reason="ativo-base/quote não foi definido pela política de classificação",
         )
+        fee_absence_evidence = tuple(
+            (
+                f"Token-2022 transfer fee comprovadamente zero para mint {proof.mint}; "
+                f"signature={proof.signature}; slot={proof.transaction_slot}; "
+                f"transaction_index={proof.transaction_index}; "
+                f"snapshot_slot={proof.current_snapshot_slot}; {proof.basis}"
+            )
+            for proof in reconciliation.transfer_fee_absence_proofs
+            if (
+                item.referral_transfer is not None
+                and item.referral_transfer.mint == proof.mint
+                and event.has_referral
+            )
+        )
         evidence = SwapEvidence(
             operation_id=operation_id,
             program_id=METEORA_DAMM_V2_PROGRAM_ID,
@@ -256,7 +270,7 @@ def build_damm_v2_swap_domain_bundles(
                 "lote completo reconciliado contra deltas pre/post e lifecycle wSOL quando aplicável",
                 "propriedade das token accounts confirmada por snapshots ou ATA lifecycle para a carteira monitorada",
                 "input_amount representa débito bruto; output_amount representa crédito líquido",
-            ),
+            ) + fee_absence_evidence,
         )
         bundles.append(DammV2SwapDomainBundle(observation, classification, evidence))
 

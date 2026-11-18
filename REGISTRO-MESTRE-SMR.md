@@ -2418,3 +2418,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O teste verifica que o replay preliminar da pendência não altera o checkpoint antes da consulta `getSignaturesForAddress`; em seguida a assinatura aparece na sequência RPC, é processada e o cursor avança por CAS para ela. Também confirma que a assinatura termina processada e deixa de constar como pendente.
 - Commit: `839e873017a61f869515e30268379cd9cb2bad29`.
 - Teste ainda não executado em runtime. Próxima validação continua sendo Termux; CI #902 não forneceu steps/logs.
+
+
+## 152. Semântica correta de checkpoint_advanced no modo deferido — 18/11/2026
+
+- Auditoria do novo modo `advance_checkpoint=False` encontrou que o pipeline CPMM continuava retornando `checkpoint_advanced=True` nos resultados de sucesso/no-swap/falha on-chain, embora o cursor estivesse deliberadamente parado para o CAS do WalletMonitor.
+- Corrigido: os resultados agora refletem o argumento efetivo `advance_checkpoint`; no modo deferido retornam `False`. Isso evita que consumidores interpretem processamento persistido como cursor já avançado.
+- Teste `test_backfill_mode_marks_processed_without_advancing_checkpoint` atualizado para exigir `checkpoint_advanced=False` e depois comprovar o CAS separado.
+- Commits: implementação e teste em `033f0d2de6558762b9dd42bbc37dd391598d57db`; documentação atualizada neste registro.
+- Revisão estática; execução runtime pendente.

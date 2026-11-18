@@ -297,3 +297,17 @@ O parser é deliberadamente estrutural: não liga evento a instrução, não dec
 Commits funcionais: `9bd940d86209bfe89a03dd66e5bfa23593ae3ba9` e `8562da8c2d8d87228b706aff2012fa36b2d16ef0`. Os testes novos ainda aguardam execução local e CI; o estado não deve ser considerado validado até essa evidência.
 
 Próximo passo: fast-forward no clone PR16, executar os testes específicos do decoder e a suíte completa; corrigir qualquer falha antes de ampliar a auditoria ou construir reconciliação econômica.
+
+## 20. Validação do parser DAMM v2 contra fonte oficial e CI (18/11/2026)
+
+A implementação inicial em `src/smart_money_radar/data_sources/damm_v2_decoder.py` foi conferida com o código MeteoraAg/damm-v2 fixado no commit `18936b18c26708f6e9b52cacc01ea2f99868ba8e`.
+
+- `swap`: discriminator `f8c69e91e17587c8`, 24 bytes, parâmetros legacy amount_in/minimum_amount_out, semântica ExactIn.
+- `swap2`: discriminator `414b3f4ceb5b5b88`, 25 bytes, campos amount_0/amount_1/swap_mode.
+- `EvtSwap2`: wrapper Anchor Event CPI `e445a52e51cb9a1d` + discriminator `bd4233a826507599`, 196 bytes totais.
+- Ordem dos campos e enum values foram conferidos com `event.rs`, `SwapParameters2`, `SwapResult2`, `TradeDirection` e `CollectFeeMode` da fonte fixada.
+- ExactOut preserva amount_0 como output desejado e amount_1 como input máximo. Não inverter ou usar esses parâmetros como quantidades efetivamente transferidas.
+
+CI do commit `45ca36761dbefacbe30fb3f6cd694b6f32e4ed23`: run `44252571670` (#408), workflow SMR tests concluído com sucesso. Isso valida a execução automatizada do CI, mas não substitui a execução local do Termux, ainda pendente.
+
+O parser é somente estrutural. A próxima camada deverá associar evento e instrução por grupo externo/CPI e stack height, sem duplicar operações; em seguida reconciliar SPL/Token-2022 transfers, deltas de token accounts/vaults e transfer fees. Não produzir SwapObservation antes da reconciliação. Sem rede, banco, gravações, checkpoint, importação ou execução on-chain nesta etapa.

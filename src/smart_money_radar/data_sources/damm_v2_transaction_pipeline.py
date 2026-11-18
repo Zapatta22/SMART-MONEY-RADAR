@@ -218,12 +218,16 @@ def process_damm_v2_transaction(
         payload, message, meta = _payload_and_message(raw_transaction)
         transaction = payload.get("transaction")
         signatures = transaction.get("signatures") if isinstance(transaction, dict) else None
-        if signatures is not None and (
+        if (
             not isinstance(signatures, list)
+            or not signatures
             or any(not isinstance(item, str) or not item for item in signatures)
-            or signature not in signatures
+            or len(set(signatures)) != len(signatures)
+            or signatures[0] != signature
         ):
-            raise ValueError("signature não corresponde às assinaturas do payload")
+            raise ValueError(
+                "signature deve corresponder à primeira assinatura única do payload"
+            )
         # Resolver accountKeys antes da análise evita concluir "sem swap"
         # quando programIdIndex depende de endereços ALT ausentes/incompletos.
         keys = _account_keys(message, meta)

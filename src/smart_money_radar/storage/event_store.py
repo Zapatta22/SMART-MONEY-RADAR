@@ -8,7 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from smart_money_radar.domain.models import (
-    ActivityEvent, SwapClassification, SwapEvidence, SwapObservation, TokenBalanceDelta,
+    ActivityEvent, SwapClassification, SwapEvidence, SwapObservation, TokenBalanceDelta,\n    build_swap_operation_id,
 )
 from smart_money_radar.domain.normalization import NormalizedObservation
 
@@ -333,6 +333,11 @@ class SQLiteEventStore:
         operation_id = observation.operation_id
         if not (classification.operation_id == evidence.operation_id == operation_id):
             raise ValueError("Os três contratos devem compartilhar o mesmo operation_id.")
+        expected_id = build_swap_operation_id(
+            observation.chain, observation.signature, evidence.instruction_index, evidence.cpi_path
+        )
+        if operation_id != expected_id:
+            raise ValueError("operation_id não corresponde à identidade determinística da instrução/CPI.")
         with self._connection_scope() as connection:
             with connection:
                 parent = connection.execute(

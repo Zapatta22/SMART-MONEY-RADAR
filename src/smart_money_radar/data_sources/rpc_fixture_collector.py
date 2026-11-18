@@ -30,7 +30,9 @@ def _is_finite_number(value: object) -> bool:
 
 def _is_solana_signature(value: str) -> bool:
     """Valida alfabeto Base58 e tamanho decodificado de uma assinatura Ed25519."""
-    if not isinstance(value, str) or not value:
+    # Uma assinatura Ed25519 de 64 bytes ocupa no máximo 88 caracteres Base58.
+    # O limite evita converter strings arbitrariamente grandes em inteiros.
+    if not isinstance(value, str) or not value or len(value) > 88:
         return False
     number = 0
     for char in value:

@@ -2,7 +2,9 @@
 
 import json
 import sqlite3
+import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -12,6 +14,18 @@ from smart_money_radar.domain.models import (
     build_swap_operation_id,
 )
 from smart_money_radar.domain.normalization import NormalizedObservation
+
+
+@dataclass(frozen=True)
+class SwapReconciliationRecord:
+    """Resultado auditável de uma tentativa de reconciliar um swap CPMM."""
+
+    operation_id: str
+    instruction_index: int
+    inner_instruction_index: int | None
+    cpi_path: tuple[int, ...]
+    status: str
+    reason: str
 
 
 class SQLiteEventStore:
@@ -179,6 +193,28 @@ class SQLiteEventStore:
                         cpi_path_json TEXT NOT NULL, evidence_json TEXT NOT NULL,
                         FOREIGN KEY(operation_id) REFERENCES swap_observations(operation_id)
                             ON DELETE CASCADE)"""
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS swap_reconciliation_attempts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        attempt_id TEXT NOT NULL,
+                        wallet_address TEXT NOT NULL,
+                        signature TEXT NOT NULL,
+                        operation_id TEXT NOT NULL,
+                        instruction_index INTEGER NOT NULL,
+                        inner_instruction_index INTEGER,
+                        cpi_path_json TEXT NOT NULL,
+                        status TEXT NOT NULL CHECK(status IN ('MATCHED','INCOMPLETE','AMBIGUOUS','UNRESOLVED')),
+                        reason TEXT NOT NULL,
+                        attempted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(wallet_address, signature)
+                            REFERENCES observed_transactions(wallet_address, signature)
+                            ON DELETE CASCADE
+                    )"""
+                )
+                connection.execute(
+                    """CREATE INDEX IF NOT EXISTS idx_swap_reconciliation_signature
+                       ON swap_reconciliation_attempts(wallet_address, signature, attempted_at, id)"""
                 )
 
     def save_events(self, events: list[ActivityEvent]) -> int:
@@ -588,6 +624,84 @@ class SQLiteEventStore:
             for row in rows
         ]
 
+
+    def save_swap_reconciliation_attempt(
+        self,
+        wallet_address: str,
+        signature: str,
+        records: list[SwapReconciliationRecord],
+    ) -> str:
+        """Acrescenta resultados por swap sem os confundir com bundles MATCHED."""
+        if not wallet_address.strip() or not signature.strip():
+            raise ValueError("Carteira e assinatura da reconciliação são obrigatórias.")
+        if not records:
+            raise ValueError("A tentativa deve conter ao menos um resultado por swap.")
+        allowed = {"MATCHED", "INCOMPLETE", "AMBIGUOUS", "UNRESOLVED"}
+        rows = []
+        for record in records:
+            if not isinstance(record, SwapReconciliationRecord):
+                raise TypeError("records deve conter SwapReconciliationRecord.")
+            if not record.operation_id or not record.reason.strip():
+                raise ValueError("Identidade e motivo da reconciliação são obrigatórios.")
+            if record.status not in allowed:
+                raise ValueError("Status de reconciliação não suportado.")
+            if (isinstance(record.instruction_index, bool)
+                    or not isinstance(record.instruction_index, int)
+                    or record.instruction_index < 0):
+                raise ValueError("instruction_index deve ser inteiro não negativo.")
+            if record.inner_instruction_index is not None and (
+                isinstance(record.inner_instruction_index, bool)
+                or not isinstance(record.inner_instruction_index, int)
+                or record.inner_instruction_index < 0
+            ):
+                raise ValueError("inner_instruction_index inválido.")
+            if any(isinstance(item, bool) or not isinstance(item, int) or item < 0
+                   for item in record.cpi_path):
+                raise ValueError("cpi_path deve conter índices inteiros não negativos.")
+            rows.append((
+                record.operation_id, record.instruction_index,
+                record.inner_instruction_index,
+                json.dumps(list(record.cpi_path), separators=(",", ":")),
+                record.status, record.reason,
+            ))
+        attempt_id = uuid.uuid4().hex
+        with self._connection_scope() as connection:
+            with connection:
+                parent = connection.execute(
+                    "SELECT 1 FROM observed_transactions WHERE wallet_address = ? AND signature = ?",
+                    (wallet_address, signature),
+                ).fetchone()
+                if parent is None:
+                    raise KeyError("A observação pai deve existir antes da auditoria de reconciliação.")
+                connection.executemany(
+                    """INSERT INTO swap_reconciliation_attempts
+                       (attempt_id, wallet_address, signature, operation_id,
+                        instruction_index, inner_instruction_index, cpi_path_json, status, reason)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    [(attempt_id, wallet_address, signature, *row) for row in rows],
+                )
+        return attempt_id
+
+    def get_swap_reconciliation_attempts(
+        self, wallet_address: str, signature: str
+    ) -> list[dict]:
+        """Lista histórico de tentativas por swap, da mais antiga à mais recente."""
+        with self._connection_scope() as connection:
+            rows = connection.execute(
+                """SELECT attempt_id, operation_id, instruction_index,
+                          inner_instruction_index, cpi_path_json, status, reason, attempted_at
+                   FROM swap_reconciliation_attempts
+                   WHERE wallet_address = ? AND signature = ?
+                   ORDER BY id ASC""",
+                (wallet_address, signature),
+            ).fetchall()
+        return [{
+            "attempt_id": row[0], "operation_id": row[1],
+            "instruction_index": row[2], "inner_instruction_index": row[3],
+            "cpi_path": tuple(json.loads(row[4])), "status": row[5],
+            "reason": row[6], "attempted_at": row[7],
+        } for row in rows]
+
     def get_pending_signatures(
         self, wallet_address: str, *, limit: int = 100
     ) -> list[str]:
@@ -667,7 +781,8 @@ class SQLiteEventStore:
         with self._connection_scope() as connection:
             counts = {}
             for table in ("activity_events", "observed_transactions", "token_balance_deltas",
-                          "processed_signatures", "wallet_checkpoints"):
+                          "processed_signatures", "wallet_checkpoints",
+                          "swap_reconciliation_attempts"):
                 counts[table] = int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
             page_count = int(connection.execute("PRAGMA page_count").fetchone()[0])
             page_size = int(connection.execute("PRAGMA page_size").fetchone()[0])

@@ -291,7 +291,6 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                         ],
                         "instructions": [
                             {"programIdIndex": 2, "accounts": [0, 1], "data": "3Bxs4HanWsHUZCbH"},
-                            {"programIdIndex": 3, "accounts": [1], "data": "J"},
                             {"programIdIndex": 2, "accounts": [0, 1], "data": "3Bxs4HanWsHUZCbH"},
                             {"programIdIndex": 3, "accounts": [1], "data": "J"},
                             {"programIdIndex": 4, "accounts": [0, 1], "data": "swap"},
@@ -316,9 +315,12 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             [first_input, first_output, second_input, second_output],
             raw_transaction=raw, monitored_wallet="wallet",
         )
-        self.assertEqual(result.status, "INCOMPLETE")
-        self.assertIn("ambíguas", result.reason)
-        self.assertEqual(result.wrapped_sol_fundings, ())
+        self.assertEqual(result.status, "RECONCILED", result.reason)
+        self.assertEqual(len(result.wrapped_sol_fundings), 1)
+        funding = result.wrapped_sol_fundings[0]
+        self.assertEqual(funding.amount_raw, 200)
+        self.assertEqual(funding.system_transfer_indices, (0, 1))
+        self.assertEqual(funding.sync_native_index, 2)
 
     def test_rejects_fee_amount_outside_transfer_amount(self):
         invalid_input = _transfer(

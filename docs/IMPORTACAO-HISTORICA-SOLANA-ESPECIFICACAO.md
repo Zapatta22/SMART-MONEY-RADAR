@@ -249,3 +249,15 @@ Teste sintético valida wrapper, discriminador, 196 bytes, uma conta, stack heig
 - Decodificar campos do evento somente após fixar a versão de IDL/estrutura; reconciliar transferências SPL/Token-2022 e deltas de token accounts/vaults. Não criar SwapObservation apenas a partir do evento.
 
 Nenhum RAW foi enviado ao GitHub; nenhuma importação, banco, RPC/Helius, checkpoint ou operação on-chain foi realizada.
+
+
+## 17. CI do reconhecimento DAMM v2 EvtSwap2 (18/11/2026)
+
+- Head validado: `dea3f6428c7c7e85254fa8fb23645e6ed9df3b4e`.
+- Workflow `SMR tests`, run `44251933124` (#402), concluído com sucesso.
+- O teste sintético confirma a leitura do wrapper Event CPI Anchor e do discriminador EvtSwap2 em bytes 8–15, com tamanho total 196 bytes, uma conta e stack height 2. Também valida redação de Program ID e flags de ausência de rede, banco, escrita e checkpoint.
+- O resultado CI não prova o discriminador nos RAW locais. A validação local permanece pendente; executar o teste específico e o auditor nos cinco arquivos originais no clone PR16.
+- A documentação oficial Meteora confirma que EvtSwap2 é emitido pelos caminhos `swap` e `swap2`. Os modos são 0 ExactIn, 1 PartialFill e 2 ExactOut; em ExactOut, amount_0 é output desejado e amount_1 é input máximo. O decoder deve respeitar essa semântica.
+- Fonte oficial de eventos: https://github.com/MeteoraAg/docs/blob/main/developer-guides/damm-v2/program/events.mdx. Fonte de instruções: https://github.com/MeteoraAg/docs/blob/main/developer-guides/damm-v2/program/instructions.mdx.
+- Não gerar SwapObservation somente a partir do evento: associar o Event CPI à instrução swap e reconciliar transferências SPL/Token-2022 e deltas de token accounts/vaults, inclusive transfer fees.
+- Nenhum RAW foi enviado ao GitHub; não houve importação, SQLite, RPC/Helius, checkpoint ou operação on-chain.

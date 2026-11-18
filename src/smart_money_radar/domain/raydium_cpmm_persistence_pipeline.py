@@ -104,6 +104,8 @@ def process_raydium_cpmm_observation(
         signature,
         payload,
         list(normalized.activity_events),
+        parse_status=normalized.transaction.parse_status,
+        parser_version=normalized.transaction.parser_version,
         normalized_observation=normalized,
         advance_checkpoint=False,
     )

@@ -119,3 +119,22 @@ O mapeamento deve permanecer local e não deve ser enviado ao GitHub. O planejad
 - 255 testes unitários aprovados; compileall de `src` e `tests` aprovado.
 - CI valida os testes do planejador, mas não substitui a execução local sobre os cinco RAW do usuário.
 - Próxima validação: dry-run local sem mapa de carteiras; resultado esperado pela evidência atual é `WALLET_UNASSIGNED` para os cinco registros.
+
+
+## 11. Auditoria offline de cobertura de programas (18/11/2026)
+
+Foi adicionado `tools/audit_solana_protocol_coverage.py`, com testes em `tests/test_protocol_coverage_audit.py`.
+
+- Revalida cada par RAW/manifesto antes de inspecionar instruções.
+- Resolve `programId` direto ou `programIdIndex` contra `accountKeys` e endereços ALT carregados em payloads `json`.
+- Conta instruções top-level e CPI por nome de programa presente no registro; IDs, endereços, assinaturas, caminhos e nomes de arquivos não são exibidos.
+- Separa programas conhecidos no registro da cobertura estreita dos decoders existentes nesta branch.
+- Cobertura estrutural explicitamente reconhecida: Raydium CPMM (`swap_base_input/output`), SPL Token e Token-2022 (`Transfer/TransferChecked`). Isso não significa suporte integral a todos os tipos de instrução desses programas.
+- Programas registrados sem decoder de swap permanecem identificados como conhecidos, mas fora da cobertura de decoder; IDs não registrados são apenas contados.
+- Rejeita symlinks antes de ler payload externo.
+- Somente leitura: sem rede, SQLite, escrita de arquivos ou alteração de checkpoint.
+
+Uso:
+`PYTHONPATH=src python tools/audit_solana_protocol_coverage.py /caminho/para/raw`
+
+A execução local nos cinco RAW ainda está pendente. Não confundir os cinco candidatos documentados com resultado de cobertura observado: o relatório local é necessário para saber quais programas aparecem efetivamente em cada transação.

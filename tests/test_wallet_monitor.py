@@ -250,8 +250,8 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
             async def get_signatures_for_address_async(self, wallet_address: str, **kwargs):
                 return [
-                    {"signature": "new-signature", "err": None},
-                    {"signature": "old-checkpoint", "err": None},
+                    {"signature": "new-signature", "slot": 901, "err": None},
+                    {"signature": "old-checkpoint", "slot": 900, "err": None},
                 ]
 
             async def get_transaction_async(self, signature: str):
@@ -529,8 +529,8 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
         class FailedOnChainSource:
             async def get_signatures_for_address_async(self, wallet_address: str, **kwargs):
                 return [
-                    {"signature": "failed-signature", "err": {"InstructionError": [0, "failed"]}},
-                    {"signature": "old-checkpoint", "err": None},
+                    {"signature": "failed-signature", "slot": 901, "err": {"InstructionError": [0, "failed"]}},
+                    {"signature": "old-checkpoint", "slot": 900, "err": None},
                 ]
 
         import tempfile
@@ -654,6 +654,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
                 ready_for_next_venue=False,
                 reconciled_swaps=0,
                 decoded_swaps=1,
+                unresolved_swaps=1,
             )
             with patch(
                 "smart_money_radar.services.wallet_monitor.process_damm_v2_observation",

@@ -130,6 +130,33 @@ class HeliusRpcTests(unittest.TestCase):
             },
         )
 
+    def test_signatures_request_rejects_item_without_signature(self) -> None:
+        source = HeliusDataSource(
+            self.settings,
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                {"jsonrpc": "2.0", "id": 1, "result": [{"err": None}]}
+            ),
+        )
+        with self.assertRaisesRegex(HeliusRpcError, "sem assinatura válida"):
+            source.get_signatures_for_address("public-wallet")
+
+    def test_signatures_request_rejects_duplicate_signatures(self) -> None:
+        source = HeliusDataSource(
+            self.settings,
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": [
+                        {"signature": "duplicate-signature", "err": None},
+                        {"signature": "duplicate-signature", "err": None},
+                    ],
+                }
+            ),
+        )
+        with self.assertRaisesRegex(HeliusRpcError, "assinatura duplicada"):
+            source.get_signatures_for_address("public-wallet")
+
     def test_signatures_request_rejects_invalid_limit(self) -> None:
         source = HeliusDataSource(self.settings, opener=lambda *_args, **_kwargs: None)
         with self.assertRaises(ValueError):

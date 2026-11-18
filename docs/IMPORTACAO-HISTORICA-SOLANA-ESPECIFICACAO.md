@@ -368,3 +368,17 @@ A direção do EvtSwap2 determina quais vaults, mints e token programs são inpu
 Este incremento ainda não correlaciona transferências nem deltas; não produz quantidades, SwapObservation ou classificação. A presença de Token-2022 não significa que transfer-fee está suportada. A reconciliação deve permanecer incompleta quando a taxa ou o valor líquido não puderem ser provados.
 
 Estado de validação: implementação e testes adicionados ao PR #16; CI do commit anterior à última correção do teste ainda estava em andamento, e execução local pendente. Não considerar validado até teste local e CI do head atual.
+
+
+## 24. Correção e validação do mapeador de contas DAMM v2 (18/11/2026)
+
+A primeira validação local identificou defeito no codificador Base58 do pool do evento: a contagem de bytes zero iniciais usava uma sequência literal incorreta. O commit `08094285737314dda596c9874077056287d0f9ec` corrigiu a contagem para bytes nulos reais.
+
+Validação no Termux após fast-forward para o commit corrigido:
+- `test_damm_v2_accounts.py`: **5/5 testes aprovados**.
+- `compileall -q src tests`: concluído sem erro.
+- CI `SMR tests`, run `44255325088` (#441): success.
+
+O mapeador cobre a ordem das 14 contas base, remaining accounts, direção A→B/B→A, pool consistente com EvtSwap2, programas SPL/Token-2022 e resolução de índices compilados. Essa validação é de mapeamento estrutural; não demonstra transferências executadas nem valores econômicos por swap.
+
+Próxima etapa: atribuir transferências SPL/Token-2022 e deltas de token accounts/vaults a cada operação, preservando CPI ancestry e evitando dividir deltas compartilhados sem evidência. Token-2022 transfer-fee deve permanecer fail-closed até reconciliar bruto, líquido e taxa. Não criar `SwapObservation`, persistir SQLite ou integrar ao pipeline CPMM nesta fase.

@@ -6,7 +6,7 @@ Encadear os componentes DAMM v2 existentes em uma única operação por payload 
 
 ## Ordem do pipeline
 
-1. Validar `transaction.message`, `meta.err` e `meta.innerInstructions`; execução desconhecida, transação falha ou metadados CPI ausentes/nulos são rejeitados. Lista vazia é aceita como evidência explícita de ausência de CPI. Em mensagens compiladas com `addressTableLookups`, exigir `meta.loadedAddresses` e cardinalidade exata de endereços writable/readonly antes de analisar índices de programa ou conta.
+1. Validar `transaction.message`, `meta.err` e `meta.innerInstructions`; execução desconhecida, transação falha ou metadados CPI ausentes/nulos são rejeitados. Lista vazia é aceita como evidência explícita de ausência de CPI. Em mensagens compiladas com `addressTableLookups`, exigir `meta.loadedAddresses` e cardinalidade exata de endereços writable/readonly antes de analisar índices de programa ou conta. Rejeitar também `loadedAddresses` não vazio quando não há lookup tables; o analyzer e os decodificadores independentes aplicam a mesma validação.
 2. Executar `analyze_damm_v2_swap_events` e exigir associação única para todos os swaps e eventos DAMM v2 encontrados. Eventos órfãos e associações ambíguas bloqueiam o lote.
 3. Resolver a instrução original (externa ou inner) e as `accountKeys`, incluindo `loadedAddresses` quando o payload usa chaves compiladas. A lista `accountKeys` deve usar um único formato: todos os itens como objetos `jsonParsed` ou todos como strings `compiled`; listas mistas são rejeitadas pelo pipeline, analyzer DAMM v2 e decodificadores de transferências/deltas.
 4. Resolver contas e direção input/output com `decode_damm_v2_swap_accounts`.

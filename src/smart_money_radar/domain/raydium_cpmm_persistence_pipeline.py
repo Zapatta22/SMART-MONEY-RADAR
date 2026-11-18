@@ -214,6 +214,7 @@ def process_raydium_cpmm_observation(
             len(swaps) - len(matched),
             len(reconciliations) - len(matched),
             1 if reconciliation_identity_mismatch else 0,
+            1 if bundle_identity_mismatch else 0,
         )
         reconciliation_count_mismatch = (
             len(reconciliations) != len(swaps)
@@ -230,6 +231,28 @@ def process_raydium_cpmm_observation(
             parser_version=normalized.transaction.parser_version,
             reference_mints=reference_mints,
         )
+        expected_bundle_ids = {
+            build_swap_operation_id(
+                "solana", signature, item.swap.instruction_index,
+                tuple(item.swap.cpi_path),
+            )
+            for item in matched
+        }
+        actual_bundle_ids = [
+            bundle.observation.operation_id for bundle in bundles
+        ]
+        bundle_identity_mismatch = (
+            len(actual_bundle_ids) != len(set(actual_bundle_ids))
+            or set(actual_bundle_ids) != expected_bundle_ids
+            or any(
+                bundle.observation.chain != "solana"
+                or bundle.observation.wallet_address != wallet_address
+                or bundle.observation.signature != signature
+                or bundle.classification.operation_id != bundle.observation.operation_id
+                or bundle.evidence.operation_id != bundle.observation.operation_id
+                for bundle in bundles
+            )
+        )
         saved = 0
         for bundle in bundles:
             if store.save_swap_bundle(
@@ -239,7 +262,12 @@ def process_raydium_cpmm_observation(
 
         # Fail closed: if a decoder result was not represented by a bundle,
         # or any reconciliation was unresolved, leave the observation replayable.
-        if unresolved or reconciliation_count_mismatch or len(bundles) != len(matched):
+        if (
+            unresolved
+            or reconciliation_count_mismatch
+            or bundle_identity_mismatch
+            or len(bundles) != len(matched)
+        ):
             return RaydiumCpmmPipelineResult(
                 "pending_reconciliation",
                 signature,

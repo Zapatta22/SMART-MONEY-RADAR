@@ -402,10 +402,18 @@ class WalletMonitor:
                     parser_version=PARSER_VERSION,
                     slot=item.get("slot"),
                 )
+                self.event_store.advance_checkpoint_in_order(
+                    wallet_address, signature, item.get("slot")
+                )
                 continue
             if not await self._collect_transaction(wallet_address, signature, stop_event):
                 raise RuntimeError(
                     "Backfill pausado: uma transação ainda não pôde ser processada; cursor não avançado."
+                )
+            transaction_slot = item.get("slot")
+            if isinstance(transaction_slot, int) and not isinstance(transaction_slot, bool):
+                self.event_store.advance_checkpoint_in_order(
+                    wallet_address, signature, transaction_slot
                 )
 
     async def _receive_or_stop(self, websocket: Any, stop_event: asyncio.Event) -> Any:

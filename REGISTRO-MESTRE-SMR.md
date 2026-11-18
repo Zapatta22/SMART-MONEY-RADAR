@@ -2637,3 +2637,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Evidência: o cenário de notificação WebSocket concorrente com backfill concluiu sem reconexões; a correção do fixture com slots 901/900 e slot 901 na transação simulada removeu a falha que interrompia o teste.
 - O teste isolado `test_backfills_signatures_since_persisted_checkpoint` também havia passado anteriormente (seção 172).
 - Próxima validação: executar uma única vez a suíte completa `test_wallet_monitor.py`, agora que os dois casos isolados relevantes passaram. Não repetir os testes isolados já aprovados.
+
+
+## 175. Estado da execução remota de CI — 18/11/2026
+
+- Após o registro da seção 174, foi consultada a execução GitHub Actions associada ao commit `cdfbdee5baabc069bf5cfc07469b801011e49cf7`.
+- Execução `SMR tests`, run `44350299820`, run number `992`: conclusão `failure`.
+- O job `test` (ID `134963775404`) terminou como `failure`, mas a API retornou `logs_url: null` e `steps: null`; portanto, não há evidência de que os testes tenham iniciado. Isso é consistente com a falha de provisionamento de runner observada anteriormente, mas a causa raiz ainda não está confirmada.
+- O teste isolado de sobreposição WebSocket/backfill está aprovado localmente no Termux conforme seção 174. A suíte completa continua sem validação.
+- Não repetir disparos de CI sem corrigir ou esclarecer a indisponibilidade do runner. Não pedir ao usuário nova execução isolada. Próxima ação deve consolidar uma validação local única, ou resolver primeiro o provisionamento do CI; não alterar `main` nem mesclar PR #25.

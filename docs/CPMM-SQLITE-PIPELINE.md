@@ -119,3 +119,8 @@ O endpoint `GET /api/v1/reconciliation/attempts` aceita `limit` entre 1 e 500 (p
 ### Validação do launcher e limite HTTP
 
 CI run `44239943317` passou no head documental `8e509d8f6963e965b9d1f005f84c4d06c9f3d70a`, com instalação do pacote, 241 testes unitários aprovados e `python -m compileall -q src tests` aprovado. A execução inclui a correção de TOML do comando `smr-api`, seus testes de ciclo de vida e a validação do limite HTTP 1..500.
+
+
+### Painel visual local do SMR
+
+O adaptador HTTP também serve uma página HTML em `GET /` e `GET /dashboard`, sem exigir autenticação para carregar o conteúdo estático. A página não contém dados incorporados: solicita o token Bearer ao usuário e consulta os endpoints JSON já autenticados. O token é mantido apenas em memória JavaScript durante a sessão da página, sem localStorage/sessionStorage. A interface apresenta contagens de auditoria, status, motivos recorrentes, eventos recentes e tentativas filtráveis por status (limite de 100). A renderização de valores de dados usa `textContent`, não HTML dinâmico. A página envia CSP restritiva, `Cache-Control: no-store` e `nosniff`; scripts e estilos são inline e não há dependências externas. A página é acessível somente no mesmo dispositivo porque o servidor permanece loopback-only.

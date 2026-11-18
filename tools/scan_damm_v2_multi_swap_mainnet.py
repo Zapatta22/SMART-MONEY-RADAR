@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from smart_money_radar.data_sources.damm_v2_analyzer import analyze_damm_v2_swap_events
 from smart_money_radar.data_sources.damm_v2_decoder import METEORA_DAMM_V2_PROGRAM_ID
 from smart_money_radar.data_sources.damm_v2_transaction_pipeline import process_damm_v2_transaction
+from smart_money_radar.data_sources.solana_wrapped_sol_funding import NATIVE_MINT
 from validate_damm_v2_mainnet import fetch_transaction, infer_monitored_wallet
 
 DEFAULT_RPC = "https://api.mainnet-beta.solana.com"
@@ -93,16 +94,25 @@ def scan(endpoints: tuple[str, ...], limit: int) -> dict:
                 observed_at=datetime.now(timezone.utc),
                 parser_version="smr-damm-v2-multi-swap-mainnet-scan",
             )
-            shared_funding_accounts = []
-            if result.status == "RECONCILED" and result.reconciliation is not None:
-                input_counts = Counter(
-                    context.accounts.input_token_account for context in result.contexts
-                )
-                shared_funding_accounts = [
+            input_counts = Counter(
+                (context.accounts.input_token_account, context.accounts.input_mint)
+                for context in result.contexts
+            )
+            shared_wsol_inputs = [
+                {"token_account": account, "operations": count}
+                for (account, mint), count in input_counts.items()
+                if mint == NATIVE_MINT and count >= 2
+            ]
+            funding_accounts = set()
+            if result.reconciliation is not None:
+                funding_accounts = {
                     funding.token_account
                     for funding in result.reconciliation.wrapped_sol_fundings
-                    if input_counts[funding.token_account] >= 2
-                ]
+                }
+            funded_shared_wsol_inputs = [
+                item["token_account"] for item in shared_wsol_inputs
+                if item["token_account"] in funding_accounts
+            ]
 
             candidate = {
                 "signature": signature,
@@ -110,10 +120,11 @@ def scan(endpoints: tuple[str, ...], limit: int) -> dict:
                 "matched_swap2_count": len(swaps),
                 "pipeline_status": result.status,
                 "pipeline_reason": result.reason,
-                "shared_wsol_input_accounts": len(shared_funding_accounts),
+                "shared_wsol_input_accounts": shared_wsol_inputs,
+                "funded_shared_wsol_input_accounts": len(funded_shared_wsol_inputs),
             }
             candidates.append(candidate)
-            if shared_funding_accounts:
+            if result.status == "RECONCILED" and funded_shared_wsol_inputs:
                 return {
                     "status": "FOUND_SHARED_WSOL_MULTI_SWAP",
                     "inspected": inspected,

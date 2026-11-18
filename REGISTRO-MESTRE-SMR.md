@@ -2910,3 +2910,16 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #1121 (run `44386963977`) SUCCESS: 489 testes aprovados em 3,900s e compileall aprovado.
 - Texto de evidência do domínio e motivo de reconciliação agora descrevem corretamente snapshots pre/post **e** lifecycle wSOL quando aplicável, sem sugerir que toda conta efêmera tem delta observável.
 - PR #25 permanece OPEN/DRAFT, sem merge; head atualizado pelos commits desta etapa. BUY/SELL permanece UNKNOWN e execução financeira desabilitada.
+
+
+## 200. Retry idempotente após falha parcial de múltiplos bundles — 18/11/2026
+
+- Na branch da PR #25 foi adicionado o teste `test_partial_multi_bundle_write_retries_idempotently_after_second_bundle_failure` em `tests/test_damm_v2_persistence_pipeline.py`.
+- O teste usa `SQLiteEventStore` real e injeta uma falha única na segunda chamada de `save_swap_bundle`: comprova que o primeiro bundle permanece persistido, o segundo não é gravado, a assinatura continua pendente e o checkpoint não avança.
+- No replay, a reconciliação retorna os mesmos dois bundles; o primeiro é tratado idempotentemente (sem duplicação) e o segundo é persistido. O resultado final fica `reconciled`, com dois bundles disponíveis e sem avanço indevido de checkpoint.
+- A primeira execução do teste falhou porque o replay de fixture vazia retornou `no_damm_v2_swaps`; a simulação foi corrigida para devolver novamente o resultado reconciliado, mantendo a falha de persistência real na primeira tentativa.
+- Commit final: `45ab617686d663bbd653b99f697cec21d3811b34`.
+- CI #44410732347 SUCCESS no commit final: 490 testes aprovados em 3,901s; `compileall -q src tests` aprovado. O log identifica explicitamente o novo teste como `ok`.
+- Limite da evidência: esta cobertura exercita a orquestração de persistência/retry com contratos de bundle sintéticos e SQLite real; não substitui teste Mainnet nem fixture de dois swaps decodificados/reconciliados ponta a ponta.
+- PR #25 permanece OPEN/DRAFT, sem merge. A `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
+- Próxima ação: ampliar a integração DAMM v2 multi-swap entre analyzer, reconciliação econômica, adapter de domínio e persistência, mantendo identidade individual por instrução/CPI e fail-closed.

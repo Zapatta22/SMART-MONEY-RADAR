@@ -66,3 +66,12 @@ A auditoria não transforma resultados negativos em bundles, não reclassifica s
 - A camada de serviço não implementa SQL nem oferece métodos de escrita/checkpoint; validações e limites permanecem centralizados no EventStore.
 - `tests/test_reconciliation_diagnostics_service.py` verifica delegação dos filtros, preservação do resultado e ausência de operações de mutação na interface pública do serviço.
 - Esta camada prepara a futura API/interface, mas não cria endpoints HTTP, dashboard ou painel visual.
+
+
+## Serviço de leitura para o futuro dashboard (PR #15)
+
+- `src/smart_money_radar/services/dashboard_read.py` adiciona `DashboardReadService`, que compõe estatísticas do EventStore, diagnóstico de reconciliação e até 20 eventos recentes persistidos.
+- O retorno declara `mode=read_only` e normaliza `datetime`, `Decimal` e tuplas para valores serializáveis em JSON.
+- Aceita filtro opcional por carteira; não faz chamadas RPC/HTTP, não grava dados, não altera checkpoints e não executa transações.
+- `tests/test_dashboard_read_service.py` cobre composição, serialização, injeção do serviço de diagnóstico e superfície sem mutações.
+- Esta entrega é um serviço de consulta interno, não um servidor HTTP, endpoint REST, autenticação, nem interface gráfica. A escolha de framework HTTP fica para etapa própria após estabilizar o contrato de resposta.

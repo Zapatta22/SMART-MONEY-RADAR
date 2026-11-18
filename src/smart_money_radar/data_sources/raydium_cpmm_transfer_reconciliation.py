@@ -77,7 +77,16 @@ def _account_net_from_transfers(
         if transfer.source_account == account:
             net -= transfer.amount_raw
         if transfer.destination_account == account:
-            net += transfer.amount_raw
+            credited_amount = transfer.amount_raw
+            if transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE":
+                if (
+                    isinstance(transfer.fee_amount_raw, bool)
+                    or not isinstance(transfer.fee_amount_raw, int)
+                    or not 0 <= transfer.fee_amount_raw <= transfer.amount_raw
+                ):
+                    raise ValueError("TransferCheckedWithFee sem taxa válida")
+                credited_amount -= transfer.fee_amount_raw
+            net += credited_amount
     return net
 
 
@@ -297,7 +306,10 @@ def reconcile_raydium_cpmm_swaps(
                 reason="Transferências, CPI, mints, programas, carteira e deltas por token account reconciliados.",
                 wallet_address=monitored_wallet,
                 input_amount_raw=input_transfer.amount_raw,
-                output_amount_raw=output_transfer.amount_raw,
+                output_amount_raw=(
+                    output_transfer.amount_raw
+                    - (output_transfer.fee_amount_raw or 0)
+                ),
                 input_decimals=input_delta.decimals,
                 output_decimals=output_delta.decimals,
                 input_transfer=input_transfer,

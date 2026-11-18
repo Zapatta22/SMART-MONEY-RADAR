@@ -122,6 +122,31 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
             self.store.get_raw_transaction("wallet", "different-signature")
         )
 
+    def test_matched_event_with_invalid_account_inventory_is_audited_and_blocks_checkpoint(self):
+        result = process_damm_v2_observation(
+            self.store,
+            _damm_swap_event_raw(),
+            wallet_address="wallet",
+            signature="signature",
+        )
+        self.assertEqual(result.status, "pending_reconciliation")
+        self.assertFalse(result.ready_for_next_venue)
+        self.assertEqual(result.decoded_swaps, 1)
+        self.assertEqual(result.unresolved_swaps, 1)
+        self.assertFalse(
+            self.store.has_processed_signature("wallet", "signature")
+        )
+        self.assertEqual(
+            self.store.get_pending_signatures("wallet"),
+            ["signature"],
+        )
+        attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]["status"], "INCOMPLETE")
+        self.assertIn("14 contas", attempts[0]["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

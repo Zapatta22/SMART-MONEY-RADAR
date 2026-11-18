@@ -2065,3 +2065,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits: implementação 3ca36505d11ec53bbd8dcc4f290db2db7962a5f4; testes do pipeline 455fd607e18550b39939fac60ae4a308830d1d7b; fixtures do monitor fc1541f974f932fa4f15654089e7941cc40ab270; documentação 73292b0fed108ca8a14e5cc8831abf5160b50043.
 - Esta é revisão estática/correção enviada à branch do PR #25. Ainda não há execução local ou CI confirmada para estes commits; não declarar testes aprovados até obter execução real.
 - PR #25 permanece Draft e sem merge. main, RAW persistente, SQLite persistente, checkpoints, RPC/Helius e estado on-chain não foram alterados.
+
+
+## 112. Integridade de Address Lookup Tables antes da análise CPI — PR #25 (18/11/2026)
+
+- Segunda lacuna fail-open identificada na auditoria: para transações versionadas compiladas, a análise de programIdIndex dependia de meta.loadedAddresses. Se addressTableLookups existisse e loadedAddresses estivesse ausente/incompleto, o analyzer poderia não resolver o Program ID DAMM v2 e retornar falsamente ausência de swap.
+- O pipeline agora resolve/valida accountKeys antes de chamar o analyzer.
+- Quando message.addressTableLookups é não vazio e accountKeys usa chaves compiladas, exige meta.loadedAddresses e valida writable/readonly contra a soma dos writableIndexes/readonlyIndexes das lookup tables. Índices inválidos, contagem divergente ou metadados ausentes rejeitam a transação.
+- Adicionados testes negativos para loadedAddresses ausente e cardinalidade divergente; documentação atualizada.
+- Commits: validação dcad62896dde85a244fa975daaeb72416b6d3f77; testes 1fa5c91e0378a96b5c9c81c8aaa5f9c71b476dc0; documentação e355ac5f8cff1d119ed2810635debb383cb0754f.
+- Revisão estática enviada ao PR #25. Testes runtime e compileall continuam sem execução comprovada; CI segue sem steps/logs. Não afirmar aprovação.
+- PR #25 Draft, sem merge; main, RAW persistente, SQLite persistente, checkpoints, RPC/Helius e estado on-chain preservados.

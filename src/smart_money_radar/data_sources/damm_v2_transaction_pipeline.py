@@ -71,6 +71,14 @@ def _payload_and_message(raw_transaction: dict) -> tuple[dict, dict, dict]:
         raise ValueError("meta.err ausente: execução da transação não comprovada")
     if meta.get("err") is not None:
         raise ValueError("transação falhou on-chain")
+    # A ausência de innerInstructions não prova que não houve CPI. DAMM v2
+    # pode ser invocado por agregadores; sem esse campo não é seguro liberar
+    # a transação como NO_DAMM_V2_SWAPS.
+    inner_instructions = meta.get("innerInstructions")
+    if not isinstance(inner_instructions, list):
+        raise ValueError(
+            "meta.innerInstructions ausente/nulo: não é possível comprovar ausência de swaps CPI"
+        )
     instructions = message.get("instructions")
     if not isinstance(instructions, list):
         raise ValueError("message.instructions ausente ou inválido")

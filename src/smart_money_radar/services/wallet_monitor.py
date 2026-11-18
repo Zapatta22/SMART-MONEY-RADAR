@@ -163,7 +163,10 @@ class WalletMonitor:
                 notification = message.get("params")
                 if not isinstance(notification, dict):
                     continue
-                wallet_address = subscription_to_wallet.get(notification.get("subscription"))
+                subscription_id = notification.get("subscription")
+                if isinstance(subscription_id, bool) or not isinstance(subscription_id, int):
+                    continue
+                wallet_address = subscription_to_wallet.get(subscription_id)
                 result = notification.get("result")
                 value = result.get("value") if isinstance(result, dict) else None
                 if not wallet_address or not isinstance(value, dict):

@@ -2995,3 +2995,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O fluxo de CPMM neste teste é um spy, não uma execução real do parser CPMM; a prova cobre a ordem e a condição de entrada na próxima venue.
 - PR #25 permanece OPEN/DRAFT, sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
 - Próxima ação: auditar os checks associados ao head da PR, consolidar a documentação de continuidade e então avançar para cobertura de replay/idempotência do lote completo após falha transitória de persistência.
+
+
+## 207. Replay ponta a ponta após falha transitória no segundo bundle — 18/11/2026
+
+- Adicionado `test_full_two_swap_pipeline_retries_after_transient_second_bundle_write_failure`, usando a fixture de sucesso multi-swap e o pipeline real sem mocks nas etapas de análise, transferência, reconciliação ou adapter.
+- O SQLiteEventStore real grava o primeiro bundle e recebe uma falha transitória injetada somente na segunda chamada de `save_swap_bundle`.
+- Após a falha, o teste comprova: primeiro bundle presente; segundo ausente; duas tentativas de reconciliação registradas; assinatura não processada; checkpoint inexistente; assinatura pendente para replay.
+- O retry reexecuta o pipeline real. O primeiro bundle idêntico é reconhecido como idempotente; o segundo é gravado. Resultado final `reconciled`, 2 operações reconciliadas, 1 novo bundle salvo no retry e ambos recuperáveis no SQLite.
+- O histórico append-only contém quatro tentativas (duas por execução), mantendo os mesmos dois operation IDs. Nenhuma etapa depende de mock de `process_damm_v2_transaction`.
+- CI push #44412697052 SUCCESS e CI PR #44412708214 SUCCESS no commit `e0957323fcd3c22aef94d7ead1e1e1c03676caed`: 497 testes aprovados em 4,421s e `compileall` concluído. O novo teste aparece como `ok`.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
+- Próxima ação: verificar os checks exigidos e a descrição da PR sem alterar seu estado, depois avançar para a próxima venue/integração somente após revisão de eventuais lacunas remanescentes.

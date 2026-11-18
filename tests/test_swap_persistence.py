@@ -74,13 +74,7 @@ class SwapPersistenceTests(unittest.TestCase):
         self.assertIsNone(self.store.get_swap_bundle(self.observation.operation_id))
 
     def test_requires_parent_observation(self):
-        with self.assertRaises(KeyError):
-            self.store.save_swap_bundle(
-                self.observation,
-                self.classification,
-                self.evidence,
-            )
-        # The setUp parent exists; use a different signature to exercise the guard.
+        # A different signature exercises the missing-parent guard.
         orphan = SwapObservation(
             operation_id="swap:orphan", chain="solana", wallet_address="wallet-a",
             signature="missing-signature", input_mint="mint-a", output_mint="mint-b",

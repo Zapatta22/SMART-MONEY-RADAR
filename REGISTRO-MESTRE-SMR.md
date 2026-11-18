@@ -2335,3 +2335,26 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Testes atualizados/adicionados: replay idêntico, conflito sem sobrescrita, substituição explícita e bundle incompleto sem reparo automático.
 - Commits: EventStore `1656aa6626fde43cea3e67e6c931edad7642cf34`; testes `000d0123d57a340f06a9a45f8fd2a2114bfbb06c` e `9f9a49cba684c288637f3f1e24573c4eca643fb6`.
 - Releitura GitHub confirmou o guard e os testes; runtime unittest/compileall ainda não executados.
+
+
+## 142. Serialização das gravações críticas SQLite — PR #25 (18/11/2026)
+
+- Auditoria de concorrência identificou que `save_observation()` e `save_swap_bundle()` consultavam o estado existente antes de obter o bloqueio de escrita SQLite. Com duas conexões/processos, ambas poderiam tomar decisões com base em leituras concorrentes antigas antes de disputar a gravação.
+- As duas operações agora iniciam a transação com `BEGIN IMMEDIATE`, obtendo o bloqueio de escrita antes da leitura de RAW/bundle e mantendo a verificação + persistência atômicas. O RAW divergente continua sendo rejeitado; bundle idêntico é no-op, divergente/incompleto é rejeitado salvo substituição explicitamente autorizada.
+- Commit: EventStore `ebc753a7c555c0390cfdf5abd280b7b73215e53b`.
+- Revisão estática no GitHub. Runtime unittest/compileall ainda pendentes; nenhum banco persistente do usuário foi aberto.
+
+## 143. Compare-and-swap para checkpoint no mesmo slot — PR #25 (18/11/2026)
+
+- A função anterior `advance_checkpoint_in_order()` validava slot não regressivo, mas aceitava qualquer assinatura processada no mesmo slot. Dois workers concorrentes poderiam ler o mesmo predecessor e depois substituir o cursor um pelo outro, perdendo a ordem RPC.
+- A função agora exige `expected_previous_signature`, inicia `BEGIN IMMEDIATE`, compara o cursor atual com o predecessor esperado e rejeita a atualização se outro worker já tiver avançado. Repetição quando o cursor já é a assinatura alvo permanece idempotente. Slot menor continua rejeitado.
+- O WalletMonitor captura o predecessor antes de processar cada item do backfill e o transmite no avanço, inclusive para falhas on-chain. O teste cobre sequência correta no mesmo slot e rejeição de tentativa concorrente obsoleta.
+- Commits: EventStore `ebc753a7c555c0390cfdf5abd280b7b73215e53b`; WalletMonitor `071444007e1feb5fa42e81dd438b969b0ea0535d`; teste `7d7d6d94ab2b3c78133f2925fc32cfb36da8e218` e ajuste de fixture `0100230332f226370e06e12a31d7c97fdaf8c7b9`.
+- Revisão estática; runtime unittest/compileall ainda pendentes. Não altera `main`, SQLite persistente, RAW ou checkpoints reais.
+
+## 144. Correção do coletor de fixture DAMM v2 — PR #25 (18/11/2026)
+
+- Revisão do script `tools/collect_damm_v2_fixture.py` encontrou que `find_damm_v2_signature()` chamava a si própria sem condição de parada e que a função `main()` estava ausente, tornando o coletor inutilizável e fazendo o teste do catálogo terminar em recursão.
+- Restaurada a função pura de seleção: exige catálogo em lista e exatamente um candidato `Meteora DAMM v2` com assinatura não vazia. Restaurado `main()`, leitura JSON do catálogo, argumentos `--candidate-file` e `--output`, diretório padrão `data/fixtures/raw/damm-v2/` e chamada ao coletor RPC somente leitura.
+- Commit: `88f56b84c9d539f4904f6f939c0b49869750c1df`.
+- Revisão estática; teste do catálogo e execução real da coleta ainda pendentes. Nenhuma chamada RPC foi realizada e nenhum RAW foi criado.

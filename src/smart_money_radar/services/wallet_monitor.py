@@ -12,6 +12,9 @@ from websockets import connect
 from smart_money_radar.data_sources.helius import HeliusDataSource
 from smart_money_radar.data_sources.transaction_parser import PARSER_VERSION
 from smart_money_radar.domain.models import Wallet
+from smart_money_radar.domain.damm_v2_persistence_pipeline import (
+    process_damm_v2_observation,
+)
 from smart_money_radar.domain.raydium_cpmm_persistence_pipeline import (
     process_raydium_cpmm_observation,
 )
@@ -212,6 +215,26 @@ class WalletMonitor:
                 )
                 transaction = None
             if transaction is not None:
+                try:
+                    damm_result = process_damm_v2_observation(
+                        self.event_store,
+                        transaction,
+                        wallet_address=wallet_address,
+                        signature=signature,
+                    )
+                except Exception as exc:
+                    self._logger.warning(
+                        "Transação arquivada, mas o pipeline DAMM v2 não foi concluído (%s); checkpoint preservado.",
+                        type(exc).__name__,
+                    )
+                    return False
+                if not damm_result.ready_for_next_venue:
+                    self._logger.warning(
+                        "Transação permanece pendente no DAMM v2: %d/%d swap(s) reconciliados; checkpoint preservado.",
+                        damm_result.reconciled_swaps,
+                        damm_result.decoded_swaps,
+                    )
+                    return False
                 try:
                     result = process_raydium_cpmm_observation(
                         self.event_store,

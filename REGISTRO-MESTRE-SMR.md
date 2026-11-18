@@ -2656,3 +2656,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - A execução local ainda precisa ocorrer no Termux do usuário; não afirmar validação concluída antes da mensagem final de sucesso do script.
 - CI remoto permanece indisponível antes do provisionamento do runner (run 992, seção 175). Não disparar retries em loop.
 - Próxima ação operacional: uma única execução de `bash tools/validate_pr25.sh` no diretório local do projeto. O script interrompe no primeiro erro e preserva o resultado real.
+
+
+## 177. Diagnóstico e correções da validação consolidada PR #25 — 18/11/2026
+
+- O usuário executou `tools/validate_pr25.sh` no Termux. A suíte completa iniciou, mas a saída compartilhada foi truncada; foram identificados um FAIL em `test_signature_mismatch_is_rejected_before_persistence` e um ERROR em `test_adapter_bundle_round_trips_through_existing_sqlite_event_store`. A validação consolidada não passou.
+- A revisão direta dos arquivos no HEAD do PR identificou a causa do FAIL: `process_damm_v2_observation()` chamava `normalize_transaction()` e persistia a observação antes de validar que a assinatura solicitada era a assinatura primária única de `transaction.signatures`. O teste exigia rejeição antes de qualquer persistência.
+- Correção de produção aplicada: validação fail-closed da lista de assinaturas (lista presente/não vazia, strings não vazias, sem duplicatas e primeira assinatura igual à solicitada) imediatamente após extrair o payload e antes de normalização/persistência. Mensagem de erro explicita a divergência. Commit `31aa18dd98ba60609689eba4563aa8898f071f17`.
+- A revisão do ERROR confirmou que o teste de round-trip usava `SQLiteEventStore` sem importá-lo. Correção exclusiva de teste: import explícito do EventStore. Commit `ec86778b13b8fbf3a7dab184a7eddfb836053243`.
+- CI associado ao HEAD anterior: run #995 (`44351173108`) terminou failure; job `134966891758` retornou `logs_url=null` e `steps=null`. Não há evidência de execução remota dos testes.
+- As duas correções foram gravadas diretamente na branch `feat/damm-v2-transaction-pipeline`; ainda não há validação runtime posterior aos commits. PR #25 permanece aberto, Draft, sem merge; nenhuma alteração em `main`.
+- Próxima ação: sincronizar a branch e executar novamente a validação consolidada uma única vez. Não repetir testes isolados já aprovados nem coletar fixture RAW mainnet antes do resultado completo.

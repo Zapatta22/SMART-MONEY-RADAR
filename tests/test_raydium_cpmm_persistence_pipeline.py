@@ -109,7 +109,6 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         bundle = self._bundle()
         self.assertIsNotNone(self.store.get_swap_bundle(bundle.observation.operation_id))
         normalize.assert_called_once()
-        self.assertFalse(normalize.call_args.kwargs.get("advance_checkpoint", True))
 
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")

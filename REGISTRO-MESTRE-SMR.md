@@ -183,3 +183,12 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - CI também aprovou a branch limpa: **106 testes aprovados** e compileall aprovado no commit `1de587f904e7d5882758e8765bb80ee03bdd89f6`. Execução: [GitHub Actions](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44218148305).
 - PR #4 permanece draft e não mesclado. A implementação de persistência está validada, mas ainda não recebe operações reconstruídas pelo parser.
 - Próxima etapa técnica: revisão/porte dos módulos locais Raydium e integração do reconciliador com `save_swap_bundle()`. Não declarar suporte Raydium nem fixtures mainnet validadas antes disso.
+
+## 20. Atualização 2026-11-18 — teste de atualização de bundle
+
+- Revisão do EventStore confirmou que `save_swap_bundle()` faz UPSERT dos três contratos existentes, preservando a identidade da operação e atualizando classificação/evidências.
+- Foi acrescentado teste específico que grava inicialmente UNKNOWN, regrava a mesma operação como BUY com nova confiança/motivo e novas evidências, confirma que o retorno é `False` (operação já existente) e verifica que os dados recuperados são os atualizados.
+- CI no HEAD `36ca7d1c18f657387455753f4fb5ee09c79ce305`: **107 testes aprovados** e `python -m compileall -q src tests` aprovado. Execução: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44218381623.
+- PR #4 segue draft, não mesclado. Nenhuma mudança em código de produção nesta atualização; foi adicionada cobertura de regressão.
+- Nota de migração: a criação da FK ocorre automaticamente em bancos novos. Bases SQLite preexistentes que tenham sido criadas com a versão anterior da tabela `swap_observations` sem FK ainda exigirão migração explícita por rebuild de tabela; não foi executada migração automática porque não há base de produção/arquivo DB fornecido para validar.
+- Próxima ação de implementação: obter os módulos Raydium locais para revisão e porte seletivo; não alterar a versão divergente de `normalization.py` sem diff.

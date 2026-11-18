@@ -60,16 +60,16 @@ def _read_extensions(data: bytes, expected_account_type: int) -> dict[int, bytes
     offset = TLV_START
     while offset < len(data):
         remaining = data[offset:]
-        if not any(remaining):
+        # Match Token-2022's TLV iterator: a final single byte may be left
+        # unused during reallocation, and Uninitialized terminates the list.
+        if len(remaining) < 2:
             break
-        if len(data) - offset < 4:
-            raise ValueError("cabeçalho TLV truncado")
         extension_type = _read_u16(data, offset)
-        length = _read_u16(data, offset + 2)
         if extension_type == 0:
-            if any(remaining):
-                raise ValueError("padding TLV não inicializado contém bytes não zero")
             break
+        if len(remaining) < 4:
+            raise ValueError("cabeçalho TLV truncado")
+        length = _read_u16(data, offset + 2)
         value_start, value_end = offset + 4, offset + 4 + length
         if value_end > len(data):
             raise ValueError("payload TLV truncado")

@@ -198,7 +198,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                             SPL_TOKEN_PROGRAM_ID, "damm",
                         ],
                         "instructions": [
-                            {"programIdIndex": 2, "accounts": [0, 1], "data": "3Bxs4dhy4yn7qUy5"},
+                            {"programIdIndex": 2, "accounts": [0, 1], "data": "3Bxs4HanWsHUZCbH"},
                             {"programIdIndex": 3, "accounts": [1], "data": "J"},
                             {"programIdIndex": 4, "accounts": [0, 1], "data": "swap"},
                         ],

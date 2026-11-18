@@ -10,6 +10,7 @@ from typing import Any
 from websockets import connect
 
 from smart_money_radar.data_sources.helius import HeliusDataSource
+from smart_money_radar.data_sources.transaction_parser import PARSER_VERSION
 from smart_money_radar.domain.models import Wallet
 from smart_money_radar.domain.raydium_cpmm_persistence_pipeline import (
     process_raydium_cpmm_observation,

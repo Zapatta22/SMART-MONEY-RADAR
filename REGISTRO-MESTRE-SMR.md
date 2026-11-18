@@ -2791,3 +2791,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Testes adicionais cobrem amount inválido/overflow e boundary booleano.
 - CI #1059 (run `44379283925`) e #1060 (run `44379296088`) SUCCESS; última execução #1060 no HEAD `226909d5213a7b355d0c185207bf23d3b7def084`: 482 testes passaram e compileall passou.
 - Próximo passo: obter fixture real Mainnet com múltiplos swaps DAMM v2 que compartilhem a mesma conta wSOL. Até essa evidência existir, suporte multi-swap está comprovado apenas sinteticamente. Nenhuma ordem, BUY/SELL ou merge foi habilitado.
+
+
+## 190. CI Mainnet passa a reagir ao decoder wSOL — 18/11/2026
+
+- Identificada lacuna de automação: workflow `.github/workflows/damm-v2-mainnet-validation.yml` não era acionado quando apenas `solana_wrapped_sol_funding.py` mudava, pois o glob anterior cobria `solana_token_*.py`, mas não o decoder wSOL.
+- Corrigido o gatilho adicionando o caminho explícito `src/smart_money_radar/data_sources/solana_wrapped_sol_funding.py`. Commit `b46010b3290239b757abbb898206f632529173fd`.
+- A mudança disparou workflow de validação Mainnet #9 (run `44379455602`), inicialmente QUEUED. CI de testes #1061 (run `44379424567`) SUCCESS, com 482 testes e compileall aprovados (HEAD anterior documental `587bea2fb7857d94406837a6c71f38c29289475b`).
+- Próxima verificação imediata: aguardar workflow #9 e confirmar novamente a transação real DAMM v2 com status RECONCILED, funding 20.700 lamports e um bundle.

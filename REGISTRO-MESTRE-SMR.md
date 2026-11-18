@@ -115,3 +115,14 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - Fluxo de trabalho reafirmado: GitHub + Codespaces + ChatGPT como fluxo principal; Termux é cópia local preservada e fonte de arquivos ainda não enviados. Não executar `git pull`, inicializar Git na pasta local, nem modificar ou apagar originais.
 - Próxima ação: trazer os arquivos locais necessários para revisão no GitHub/Codespaces, começando pelos seis módulos Raydium e testes, depois dependências estritamente necessárias. Fixtures brutas/anônimas só devem ser incluídas após localizar, auditar e verificar proveniência; não inventar nem gerar fixtures rotuladas como reais.
 - Limites: branch de trabalho sem alterações de código até agora; nenhuma integração parser→swap, persistência dos contratos, validação com fixture real ou execução financeira foi concluída. SMR permanece somente leitura.
+
+## 14. Atualização 2026-11-18 — plano técnico Raydium e persistência
+
+- Criado `docs/RAYDIUM-SWAP-INTEGRATION-PLAN.md` na branch `feat/raydium-swap-reconciliation`.
+- Commit do plano: `2ec79b53474815d6b96e2fb0d98de11e5fed31d0`.
+- O documento registra o fluxo proposto de instruções externas/CPI → decodificação por programa → reconciliação com deltas → `SwapObservation`/`SwapClassification`/`SwapEvidence` → persistência SQLite atômica.
+- Também define princípios conservadores (`UNKNOWN` em ambiguidade), idempotência, replay, proveniência de fixtures, plano de testes e sequência de implementação.
+- A revisão do código remoto confirma que `normalization.py` hoje produz envelope, eventos legados e deltas SPL; `event_store.py` já persiste esses dados e permite replay. A persistência dedicada dos três contratos ainda não existe.
+- **Estado desta entrega:** documentação de planejamento criada; nenhum módulo Raydium local foi transferido ou integrado; nenhum runtime, parser ou esquema SQLite foi alterado; nenhum teste foi executado por causa deste documento.
+- Próxima ação permanece: transferir os módulos e testes locais para revisão controlada. Após isso, implementar adaptadores e reconciliação em etapas pequenas, sem substituir arquivos remotos inteiros.
+- Limites preservados: branch isolada, `main` intacta, V1 somente leitura, sem RPC pago ou execução financeira.

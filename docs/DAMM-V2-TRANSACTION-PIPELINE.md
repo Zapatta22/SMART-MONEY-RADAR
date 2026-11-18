@@ -57,3 +57,10 @@ O `WalletMonitor` agora executa DAMM v2 antes do pipeline Raydium CPMM:
 
 Testes de persistência usam SQLite `:memory:`; o teste do monitor simula
 bloqueio DAMM e confirma que CPMM não é chamado e checkpoint não avança.
+
+A auditoria negativa de persistência também cobre um swap/Event CPI sintético
+MATCHED cujo inventário de contas é inválido. O caso precisa gerar tentativa
+`INCOMPLETE`, manter a assinatura na fila de replay e preservar o checkpoint.
+Erros em estágios posteriores preservam as associações e diagnósticos já
+produzidos, para que o adaptador de persistência não perca a identidade do swap
+que ficou pendente.

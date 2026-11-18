@@ -439,8 +439,8 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Este é o primeiro caminho positivo `MATCHED` comprovado com fixture mainnet real. Não é ainda uma classificação BUY/SELL nem uma ordem negociável.
 
 ### CI
-- PR #13 head `84f2408242f447a7778755aa45ed18e443dbf872`.
-- CI run `44226758850`: **192 testes**, `OK`; `python -m compileall -q src tests` aprovado.
+- PR #13 code head `84f2408242f447a7778755aa45ed18e443dbf872`; register-only head was subsequently updated.
+- CI runs `44226758850` (code commit) and `44226848422` (register update): both **192 testes**, `OK`; `python -m compileall -q src tests` aprovado.
 - Testes da fixture confirmam separação dos dois CPIs, MATCHED apenas para o primeiro, INCOMPLETE para o segundo e exatamente um bundle produzido.
 - A opção `include_unchanged` não muda o padrão dos consumidores; só o teste de integração da rota opta explicitamente por ela.
 

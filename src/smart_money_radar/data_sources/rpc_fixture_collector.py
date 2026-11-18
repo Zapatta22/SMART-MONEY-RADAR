@@ -135,15 +135,22 @@ class RpcFixtureCollector:
         if not isinstance(result, dict):
             raise RuntimeError("Transação não encontrada ou resposta RPC sem result.")
         slot = result.get("slot")
-        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+        if (
+            isinstance(slot, bool)
+            or not isinstance(slot, int)
+            or slot < 0
+            or slot > 2**64 - 1
+        ):
             raise RuntimeError("Payload sem slot inteiro não negativo válido.")
         version = result.get("version", "legacy")
         if version != "legacy" and (
             isinstance(version, bool)
             or not isinstance(version, int)
-            or version < 0
+            or version != 0
         ):
-            raise RuntimeError("Payload com versão de transação inválida.")
+            raise RuntimeError(
+                "Payload com versão inválida ou acima de maxSupportedTransactionVersion=0."
+            )
         tx = result.get("transaction")
         if not isinstance(tx, dict):
             raise RuntimeError("Payload RPC sem objeto transaction válido.")

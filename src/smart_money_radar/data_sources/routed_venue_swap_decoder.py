@@ -756,7 +756,7 @@ def decode_routed_venue_swaps(
                 f"{intermediate_transfer.destination_account} mint={trade.quote_mint} "
                 f"net={intermediate_net}",
                 f"input transfer {input_transfer.source_account}->{input_transfer.destination_account} "
-                f"mint={trade.mint} net={input_net}",
+                f"mint={trade.mint} gross={input_transfer.amount_raw}",
                 f"output transfer {output_transfer.source_account}->{output_transfer.destination_account} "
                 f"mint={output_mint} net={output_net}",
                 f"event trailing bytes trade={len(trade.trailing_bytes)} sell={len(sell.trailing_bytes)}",

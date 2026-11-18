@@ -39,6 +39,16 @@ class DashboardHTTPTests(unittest.TestCase):
         req = Request(self.base + path, headers=headers, method=method)
         return urlopen(req)
 
+    def test_local_dashboard_page_is_served_without_exposing_api_data(self):
+        with self.request("/") as response:
+            body = response.read().decode("utf-8")
+            self.assertEqual(response.status, 200)
+            self.assertIn("text/html", response.headers["Content-Type"])
+            self.assertIn("Content-Security-Policy", response.headers)
+        self.assertIn("SMART MONEY RADAR", body)
+        self.assertIn("SMR_API_TOKEN", body)
+        self.assertIn("/api/v1/dashboard", body)
+
     def test_dashboard_requires_bearer_token(self):
         with self.assertRaises(HTTPError) as caught:
             self.request("/api/v1/dashboard")

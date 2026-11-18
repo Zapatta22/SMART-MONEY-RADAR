@@ -2384,3 +2384,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Transações do backfill com slot inválido agora interrompem a recuperação explicitamente; não são silenciosamente marcadas como avanço concluído.
 - Testes adicionados: EventStore confirma processamento sem mover checkpoint e posterior CAS; pipeline CPMM confirma que modo backfill deixa cursor anterior intacto até o CAS. Commits: `d13a163`, `db89d46`, `1feaa0f`, `efdc47d`, `a551ea7`, `e9b95b5`, `7a91dab`.
 - Revisão estática no GitHub. Execução runtime ainda pendente.
+
+
+## 148. Observações pendentes não podem antecipar backfill ancorado — PR #25 (18/11/2026)
+
+- A revisão do fluxo completo encontrou que `_backfill_wallet()` processava observações pendentes já arquivadas antes de consultar `getSignaturesForAddress`. Com checkpoint preexistente, esse replay poderia marcar e avançar uma assinatura fora da sequência autoritativa, contornando o CAS.
+- Corrigido: quando há checkpoint inicial, o replay dessas observações usa `advance_checkpoint=False`; a consulta RPC subsequente determina a ordem e o avanço via CAS. Quando não existe checkpoint inicial, preserva-se o comportamento de bootstrap já coberto pelo teste de primeira execução, sem iniciar varredura histórica ampla.
+- Commit: `2084fec2ebd62722323295b2c0d88dc7dd0261f1`. Documentação atualizada.
+- Revisão estática; runtime ainda pendente.

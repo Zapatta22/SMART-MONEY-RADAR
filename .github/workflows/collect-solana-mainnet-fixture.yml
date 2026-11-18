@@ -1,13 +1,6 @@
 name: SMR mainnet fixture collection
 
 on:
-  push:
-    branches:
-      - feat/github-actions-mainnet-fixture-collector
-    paths:
-      - ".github/workflows/collect-solana-mainnet-fixture.yml"
-      - "tools/collect_solana_fixtures.py"
-      - "src/smart_money_radar/data_sources/rpc_fixture_collector.py"
   workflow_dispatch:
     inputs:
       signature:

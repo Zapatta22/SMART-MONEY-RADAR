@@ -55,6 +55,18 @@ def process_damm_v2_observation(
         raise ValueError("signature é obrigatória.")
     timestamp = observed_at or datetime.now(timezone.utc)
     payload = _payload(raw_transaction)
+    transaction = payload.get("transaction")
+    signatures = transaction.get("signatures") if isinstance(transaction, dict) else None
+    if (
+        not isinstance(signatures, list)
+        or not signatures
+        or any(not isinstance(item, str) or not item for item in signatures)
+        or len(set(signatures)) != len(signatures)
+        or signatures[0] != signature
+    ):
+        raise ValueError(
+            "A assinatura informada não corresponde à primeira assinatura única do payload RPC."
+        )
     meta = payload.get("meta")
     if isinstance(meta, dict) and meta.get("err") is not None:
         return DammV2PersistenceResult(

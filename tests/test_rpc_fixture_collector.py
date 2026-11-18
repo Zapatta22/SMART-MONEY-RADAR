@@ -85,12 +85,18 @@ class RpcFixtureCollectorTests(unittest.TestCase):
         opener.assert_not_called()
 
     def test_rejects_missing_or_wrong_jsonrpc_version(self):
-        collector = RpcFixtureCollector(
-            "https://rpc.example", tempfile.mkdtemp(),
-            opener=Mock(return_value=FakeResponse(b'{"id":1,"result":{}}')),
-        )
-        with self.assertRaisesRegex(RuntimeError, "JSON-RPC 2.0"):
-            collector.collect(SIG)
+        for version in (None, "1.0"):
+            payload = {"id": 1, "result": {}}
+            if version is not None:
+                payload["jsonrpc"] = version
+            collector = RpcFixtureCollector(
+                "https://rpc.example", tempfile.mkdtemp(),
+                opener=Mock(return_value=FakeResponse(json.dumps(payload).encode())),
+            )
+            with self.subTest(version=version), self.assertRaisesRegex(
+                RuntimeError, "JSON-RPC 2.0"
+            ):
+                collector.collect(SIG)
 
     def test_rejects_mismatched_or_boolean_response_id(self):
         for response_id in (2, True):

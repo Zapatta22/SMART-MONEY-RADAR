@@ -23,6 +23,7 @@ class WrappedSolFundingEvidence:
     system_transfer_index: int
     sync_native_index: int
     lamports_delta_raw: int
+    system_transfer_indices: tuple[int, ...] = ()
 
 
 def _decode_base58(value: Any) -> bytes:
@@ -136,16 +137,18 @@ def decode_wrapped_sol_funding(
         if transfers:
             raise ValueError("há SystemProgram transfer envolvendo a conta wSOL sem origem/destino esperado")
         return None
-    if len(related) != 1 or len(transfers) != 1:
+    if len(related) != len(transfers):
         raise ValueError("funding wSOL possui transferências SystemProgram ambíguas")
-    transfer_index, _, _, funded_amount = related[0]
+    transfer_indices = tuple(item[0] for item in related)
+    funded_amount = sum(item[3] for item in related)
     if funded_amount != amount_raw:
-        raise ValueError("funding SOL diverge do valor bruto da transferência wSOL")
+        raise ValueError("funding SOL agregado diverge do valor bruto total das transferências wSOL")
     if len(syncs) != 1:
         raise ValueError("SyncNative não foi identificado univocamente para a conta wSOL")
     sync_index = syncs[0]
-    if not transfer_index < sync_index < before_instruction_index:
+    if not all(index < sync_index for index in transfer_indices) or not sync_index < before_instruction_index:
         raise ValueError("ordem SystemProgram transfer/SyncNative/swap inválida")
+    transfer_index = transfer_indices[0]
 
     account_index = keys.index(token_account)
     pre = meta.get("preBalances")
@@ -167,4 +170,5 @@ def decode_wrapped_sol_funding(
         system_transfer_index=transfer_index,
         sync_native_index=sync_index,
         lamports_delta_raw=lamports_delta,
+        system_transfer_indices=transfer_indices,
     )

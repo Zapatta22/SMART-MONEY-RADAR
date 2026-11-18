@@ -93,6 +93,24 @@ def decode_wrapped_sol_funding(
     before_instruction_index: int,
 ) -> WrappedSolFundingEvidence | None:
     """Find and validate one exact top-level SOL transfer + SyncNative pair."""
+    if not isinstance(raw_transaction, dict):
+        raise TypeError("raw_transaction deve ser um objeto")
+    if not isinstance(token_account, str) or not token_account:
+        raise ValueError("token_account inválida")
+    if not isinstance(source_wallet, str) or not source_wallet:
+        raise ValueError("source_wallet inválida")
+    if (
+        isinstance(amount_raw, bool)
+        or not isinstance(amount_raw, int)
+        or not 0 <= amount_raw <= (1 << 64) - 1
+    ):
+        raise ValueError("amount_raw deve ser inteiro unsigned 64-bit")
+    if (
+        isinstance(before_instruction_index, bool)
+        or not isinstance(before_instruction_index, int)
+        or before_instruction_index < 0
+    ):
+        raise ValueError("before_instruction_index deve ser inteiro não negativo")
     payload = raw_transaction.get("result", raw_transaction)
     if not isinstance(payload, dict):
         raise ValueError("payload RPC inválido")

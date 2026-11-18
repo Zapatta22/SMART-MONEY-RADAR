@@ -13,6 +13,11 @@ from smart_money_radar.data_sources.raydium_cpmm_transfer_reconciliation import 
 from smart_money_radar.data_sources.solana_token_balance_deltas import decode_token_account_balance_deltas
 from smart_money_radar.data_sources.solana_token_transfer_decoder import decode_solana_token_transfers
 from smart_money_radar.domain.swap_bundle_builder import build_swap_domain_bundles
+from smart_money_radar.domain.models import build_swap_operation_id
+from smart_money_radar.domain.raydium_cpmm_persistence_pipeline import (
+    process_raydium_cpmm_observation,
+)
+from smart_money_radar.storage.event_store import SQLiteEventStore
 
 FIXTURE_PATH = (Path(__file__).resolve().parents[1] / "data" / "fixtures" / "mainnet" / "anonymized" / "raydium-cpmm-route-multivenue.json")
 MANIFEST_PATH = FIXTURE_PATH.with_suffix(".json.manifest.json")
@@ -86,6 +91,48 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
         sell = build_swap_domain_bundles(reconciliations, reference_mints={swap.accounts.output_token_mint}, **common)
         self.assertEqual(buy[0].classification.side, "BUY")
         self.assertEqual(sell[0].classification.side, "SELL")
+
+
+    def test_real_mainnet_fixture_runs_end_to_end_through_sqlite_pipeline(self) -> None:
+        import tempfile
+
+        result = self.fixture["result"]
+        wallet = result["transaction"]["message"]["accountKeys"][0]
+        signature = result["transaction"]["signatures"][0]
+        operation_id = build_swap_operation_id("solana", signature, 2, (3,))
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "pipeline.sqlite3")
+            try:
+                outcome = process_raydium_cpmm_observation(
+                    store,
+                    self.fixture,
+                    wallet_address=wallet,
+                    signature=signature,
+                )
+
+                self.assertEqual(outcome.status, "processed")
+                self.assertEqual(outcome.decoded_swaps, 1)
+                self.assertEqual(outcome.matched_swaps, 1)
+                self.assertEqual(outcome.unresolved_swaps, 0)
+                self.assertEqual(outcome.saved_bundles, 1)
+                self.assertTrue(outcome.checkpoint_advanced)
+                self.assertTrue(store.has_processed_signature(wallet, signature))
+                self.assertEqual(store.get_checkpoint(wallet), signature)
+                self.assertEqual(store.get_raw_transaction(wallet, signature), result)
+
+                bundle = store.get_swap_bundle(operation_id)
+                self.assertIsNotNone(bundle)
+                self.assertEqual(bundle["observation"].input_amount, Decimal("4484.029903"))
+                self.assertEqual(bundle["observation"].output_amount, Decimal("1.65074030"))
+                self.assertEqual(bundle["classification"].side, "UNKNOWN")
+                self.assertIn("input_token_account_delta_raw:0", bundle["evidence"].evidence)
+                self.assertIn("output_token_account_delta_raw:74030", bundle["evidence"].evidence)
+                self.assertIn("input_vault_delta_raw:4484029903", bundle["evidence"].evidence)
+                self.assertIn("output_vault_delta_raw:-165074030", bundle["evidence"].evidence)
+            finally:
+                store.close()
+
 
 
 if __name__ == "__main__":

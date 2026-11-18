@@ -75,6 +75,15 @@ def process_raydium_cpmm_observation(
         raise TypeError("reference_mints deve ser uma lista ou tupla.")
     timestamp = observed_at or datetime.now(timezone.utc)
     payload = _rpc_payload(raw_transaction)
+    transaction = payload.get("transaction")
+    signatures = transaction.get("signatures") if isinstance(transaction, dict) else None
+    if signatures is not None:
+        if (
+            not isinstance(signatures, list)
+            or any(not isinstance(item, str) or not item for item in signatures)
+            or signature not in signatures
+        ):
+            raise ValueError("A assinatura informada não corresponde às assinaturas do payload RPC.")
 
     try:
         normalized = normalize_transaction(

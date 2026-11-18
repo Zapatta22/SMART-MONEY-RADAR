@@ -52,6 +52,34 @@ class SQLiteEventStoreTests(unittest.TestCase):
         self.assertEqual(store.get_checkpoint("wallet-a"), "signature-a")
         store.close()
 
+    def test_mark_processed_can_defer_checkpoint_for_ordered_backfill(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        wallet = "wallet-deferred"
+        store.save_checkpoint(wallet, "previous-signature")
+        payload = {
+            "slot": 900, "meta": {"err": None},
+            "transaction": {"signatures": ["next-signature"], "message": {"instructions": []}},
+        }
+        normalized = normalize_transaction(payload, wallet, "next-signature")
+        store.save_observation(
+            wallet, "next-signature", payload, list(normalized.activity_events),
+            parse_status=normalized.transaction.parse_status,
+            parser_version=normalized.transaction.parser_version,
+            normalized_observation=normalized,
+            advance_checkpoint=False,
+        )
+
+        store.mark_processed(wallet, "next-signature", advance_checkpoint=False)
+
+        self.assertTrue(store.has_processed_signature(wallet, "next-signature"))
+        self.assertEqual(store.get_checkpoint(wallet), "previous-signature")
+        store.advance_checkpoint_in_order(
+            wallet, "next-signature", 900,
+            expected_previous_signature="previous-signature",
+        )
+        self.assertEqual(store.get_checkpoint(wallet), "next-signature")
+        store.close()
+
     def test_failed_on_chain_backfill_persists_rpc_slot_for_checkpoint(self) -> None:
         store = SQLiteEventStore(":memory:")
         store.save_observation(

@@ -2122,6 +2122,8 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Revisão estática enviada ao PR #25. Testes runtime/compileall ainda não foram executados para esses commits; CI sem steps/logs não conta como validação.
 - PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.
 
+- CI do HEAD `c04cdfa910e36fccf23a66c9f220c92ffb72655d`: run #726 (`44318847758`), job `134852085527`, `steps=null` e `logs_url=null`. Falhou antes de disponibilizar etapas/logs; não há evidência de execução de unittest/compileall. Nenhum retry foi disparado.
+
 - CI do HEAD `50c64ead640aa2ae1be4eefb60dad32587114423`: run #717 (`44318265798`), job `134850068290`, falhou antes de iniciar steps (`steps=null`, `logs_url=null`). Não comprova falha nem aprovação dos testes; sem retry automático.
 
 

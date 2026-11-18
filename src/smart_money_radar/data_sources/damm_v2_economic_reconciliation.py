@@ -155,6 +155,8 @@ def reconcile_damm_v2_economic_batch(
         raise TypeError("all_transfers deve ser uma sequência")
     if any(not isinstance(transfer, SolanaTokenTransfer) for transfer in all_transfers):
         raise TypeError("all_transfers contém transferência inválida")
+    if len({id(transfer) for transfer in all_transfers}) != len(all_transfers):
+        raise ValueError("inventário de transferências contém referência duplicada")
     if not balance_deltas.complete:
         return DammV2EconomicReconciliation(
             "INCOMPLETE", len(contexts), (),
@@ -190,17 +192,41 @@ def reconcile_damm_v2_economic_batch(
             transfers = [item.input_transfer, item.output_transfer]
             if item.referral_transfer is not None:
                 transfers.append(item.referral_transfer)
+            if (
+                isinstance(association.instruction_index, bool)
+                or not isinstance(association.instruction_index, int)
+                or association.instruction_index < 0
+                or isinstance(association.stack_height, bool)
+                or not isinstance(association.stack_height, int)
+                or association.stack_height < 1
+                or isinstance(association.event_inner_instruction_index, bool)
+                or not isinstance(association.event_inner_instruction_index, int)
+                or association.event_inner_instruction_index < 0
+                or not isinstance(association.cpi_path, tuple)
+                or any(
+                    isinstance(part, bool) or not isinstance(part, int) or part < 0
+                    for part in association.cpi_path
+                )
+            ):
+                raise ValueError("metadados CPI da associação são inválidos")
             for transfer in transfers:
                 if (
-                    not transfer.cpi_path_valid
+                    transfer.cpi_path_valid is not True
+                    or isinstance(transfer.instruction_index, bool)
+                    or not isinstance(transfer.instruction_index, int)
                     or transfer.instruction_index != association.instruction_index
-                    or transfer.inner_instruction_index is None
-                    or association.event_inner_instruction_index is None
+                    or isinstance(transfer.inner_instruction_index, bool)
+                    or not isinstance(transfer.inner_instruction_index, int)
+                    or transfer.inner_instruction_index < 0
                     or transfer.inner_instruction_index >= association.event_inner_instruction_index
-                    or transfer.stack_height is None
-                    or association.stack_height is None
+                    or isinstance(transfer.stack_height, bool)
+                    or not isinstance(transfer.stack_height, int)
                     or transfer.stack_height <= association.stack_height
-                    or association.cpi_path is None
+                    or not isinstance(transfer.cpi_path, tuple)
+                    or any(
+                        isinstance(part, bool) or not isinstance(part, int) or part < 0
+                        for part in transfer.cpi_path
+                    )
                     or len(transfer.cpi_path) <= len(association.cpi_path)
                     or transfer.cpi_path[:len(association.cpi_path)] != association.cpi_path
                 ):

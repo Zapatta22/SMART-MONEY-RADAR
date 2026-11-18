@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "SMR-CODIGO-BASE-ETAPA16-2026-11-16.zip"
+      - "README.md"
   workflow_dispatch:
 
 permissions:

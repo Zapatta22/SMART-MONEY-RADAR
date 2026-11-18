@@ -166,6 +166,61 @@ class TransactionParserTests(unittest.TestCase):
             [],
         )
 
+    def test_rejects_conflicting_decimal_scales_for_same_mint(self) -> None:
+        transaction = dict(self.transaction)
+        transaction["meta"] = {
+            **self.transaction["meta"],
+            "preTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-conflicting-scale",
+                    "uiTokenAmount": {"amount": "1000000", "decimals": 6},
+                },
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-conflicting-scale",
+                    "uiTokenAmount": {"amount": "100", "decimals": 2},
+                },
+            ],
+            "postTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-conflicting-scale",
+                    "uiTokenAmount": {"amount": "2000000", "decimals": 6},
+                },
+            ],
+        }
+        transaction["transaction"] = {"message": {"instructions": []}}
+
+        events = parse_transaction(transaction, self.wallet, self.signature)
+
+        self.assertEqual(events, [])
+
+    def test_rejects_decimal_scale_change_between_pre_and_post_balances(self) -> None:
+        transaction = dict(self.transaction)
+        transaction["meta"] = {
+            **self.transaction["meta"],
+            "preTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-scale-change",
+                    "uiTokenAmount": {"amount": "1000000", "decimals": 6},
+                },
+            ],
+            "postTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-scale-change",
+                    "uiTokenAmount": {"amount": "200", "decimals": 2},
+                },
+            ],
+        }
+        transaction["transaction"] = {"message": {"instructions": []}}
+
+        events = parse_transaction(transaction, self.wallet, self.signature)
+
+        self.assertEqual(events, [])
+
     def test_rejects_invalid_spl_decimal_scale(self) -> None:
         transaction = dict(self.transaction)
         transaction["meta"] = {

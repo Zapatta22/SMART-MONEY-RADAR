@@ -165,7 +165,7 @@ class RpcFixtureCollector:
             or signatures[0] != signature
         ):
             raise RuntimeError(
-                "A assinatura solicitada deve ser única e ocupar a primeira posição do payload."
+                "A assinatura solicitada não confere: deve ser única e ocupar a primeira posição do payload."
             )
 
         self.output_dir.mkdir(parents=True, exist_ok=True)

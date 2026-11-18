@@ -17,6 +17,7 @@ from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
     DammV2SwapTransferContext,
     DammV2TransferEvidence,
 )
+from smart_money_radar.data_sources.solana_wrapped_sol_funding import NATIVE_MINT
 from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
     SolanaTokenBalanceDeltaResult,
 )
@@ -187,15 +188,30 @@ def build_damm_v2_swap_domain_bundles(
 
         input_delta = deltas_by_account.get(input_transfer.source_account)
         output_delta = deltas_by_account.get(output_transfer.destination_account)
-        if (
-            input_delta is None
-            or output_delta is None
-            or input_delta.owner != monitored_wallet
-            or output_delta.owner != monitored_wallet
-        ):
+        lifecycle_owners = {
+            lifecycle.token_account: lifecycle.owner_wallet
+            for lifecycle in reconciliation.wrapped_sol_lifecycles
+        }
+        input_owner = (
+            input_delta.owner if input_delta is not None
+            else lifecycle_owners.get(input_transfer.source_account)
+        )
+        output_owner = (
+            output_delta.owner if output_delta is not None
+            else lifecycle_owners.get(output_transfer.destination_account)
+        )
+        if input_owner != monitored_wallet or output_owner != monitored_wallet:
             raise ValueError("propriedade das token accounts não confirma a carteira monitorada")
-        if input_delta.mint != accounts.input_mint or output_delta.mint != accounts.output_mint:
-            raise ValueError("mints dos deltas da carteira divergem do swap")
+        if input_delta is None:
+            if accounts.input_mint != NATIVE_MINT:
+                raise ValueError("delta de input ausente sem evidência lifecycle wSOL")
+        elif input_delta.mint != accounts.input_mint:
+            raise ValueError("mint do delta input da carteira diverge do swap")
+        if output_delta is None:
+            if accounts.output_mint != NATIVE_MINT:
+                raise ValueError("delta de output ausente sem evidência lifecycle wSOL")
+        elif output_delta.mint != accounts.output_mint:
+            raise ValueError("mint do delta output da carteira diverge do swap")
 
         input_amount = _amount_decimal(
             event.included_transfer_fee_amount_in,
@@ -238,7 +254,7 @@ def build_damm_v2_swap_domain_bundles(
                 "EvtSwap2 associado estruturalmente ao swap",
                 "transferências input/output atribuídas e executadas",
                 "lote completo reconciliado contra deltas pre/post",
-                "propriedade das token accounts confirmada para a carteira monitorada",
+                "propriedade das token accounts confirmada por snapshots ou ATA lifecycle para a carteira monitorada",
                 "input_amount representa débito bruto; output_amount representa crédito líquido",
             ),
         )

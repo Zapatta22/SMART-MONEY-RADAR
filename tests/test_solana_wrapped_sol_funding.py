@@ -86,6 +86,20 @@ class WrappedSolFundingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "diverge"):
             self._decode(_transaction(amount=20701))
 
+    def test_aggregates_multiple_funding_transfers_before_one_sync_native(self):
+        raw = _transaction(amount=20700)
+        instructions = raw["result"]["transaction"]["message"]["instructions"]
+        transfer = dict(instructions[0])
+        sync = dict(instructions[1])
+        instructions[:] = [transfer, transfer, sync, instructions[2]]
+        result = decode_wrapped_sol_funding(
+            raw, token_account="wsol-account", source_wallet="wallet",
+            amount_raw=41400, before_instruction_index=3,
+        )
+        self.assertEqual(result.amount_raw, 41400)
+        self.assertEqual(result.system_transfer_indices, (0, 1))
+        self.assertEqual(result.sync_native_index, 2)
+
     def test_rejects_missing_sync_native(self):
         with self.assertRaisesRegex(ValueError, "SyncNative"):
             self._decode(_transaction(sync_index=None))
@@ -119,7 +133,7 @@ class WrappedSolFundingTests(unittest.TestCase):
         raw = _transaction()
         instructions = raw["result"]["transaction"]["message"]["instructions"]
         instructions.insert(1, dict(instructions[0]))
-        with self.assertRaisesRegex(ValueError, "ambíguas"):
+        with self.assertRaisesRegex(ValueError, "diverge"):
             self._decode(raw)
 
     def test_rejects_missing_lamport_snapshots(self):

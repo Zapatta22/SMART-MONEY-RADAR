@@ -2539,3 +2539,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #962 (`44333898967`), HEAD `f1b5e50ae442a49cd6fffb79c9d22b07902be7dc`, job `134905241316`: `runner_id=0`, nome vazio, `steps=[]`, ~3 s. Falha antes da execução. As alterações finais do analyzer/documentação foram posteriores e não foram executadas em runtime.
 - Revisão estática GitHub confirmada. Runtime unittest/compileall continua bloqueado por ausência de runner; não declarar testes aprovados nem coletar fixture mainnet.
 - PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 165. CI #963/#964 confirma falha pré-runner no HEAD atual — PR #25 (18/11/2026)
+
+- Run #963 (`44334123428`), commit `e13d6f2ed68b56436e090d3f49a6aac5c6524984`, e run #964 (`44334170775`), HEAD do PR `22115b529a909fd9df44884468496f41e4dc899c`, concluíram em failure antes de qualquer step.
+- Para o run #964, job `134906226864`: `runner_id=0`, `runner_name=""`, `steps=[]`, início `15:18:49Z`, conclusão `15:18:51Z`. Confirma que até o HEAD atual do PR não houve runner provisionado; nenhuma etapa de instalação, unittest ou compileall foi executada.
+- Não disparar rerun repetido. O código e os testes foram atualizados no GitHub, mas validação runtime requer que GitHub Actions consiga atribuir um runner ou que exista executor autorizado alternativo. Não coletar fixture RAW mainnet antes da validação.
+- PR #25 permanece aberto, Draft, mergeable, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.

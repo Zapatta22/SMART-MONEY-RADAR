@@ -1562,3 +1562,34 @@ PR #16 segue Draft, aberto e não merged; `main` intacta. Nenhum RAW foi enviado
 - Correção: extraída a função para src/smart_money_radar/data_sources/damm_v2_delta_coverage_audit.py; o script CLI agora importa essa função compartilhada.
 - Commits corretivos: módulo 5afcbb9c39d57e3b0b424bb1f1cbffc0f797b2da; refatoração CLI a3034ad69da208d2f33fa306a733ad72ee603e25.
 - Novo CI para o head corretivo: run 44257098656 (#469), ainda in_progress na última consulta. Não declarar aprovação até conclusão.
+
+
+## 81. Validação local da cobertura de deltas DAMM v2 nos cinco RAW (18/11/2026)
+
+O clone local PR16 foi atualizado por fast-forward até `1e85540`; a árvore de trabalho foi confirmada limpa antes da validação.
+
+### Testes
+- `test_damm_v2_delta_coverage_audit.py`: **6/6 aprovados**.
+- Suíte completa: **309 testes aprovados** (`Ran 309 tests`, `OK`).
+- Avisos `ResourceWarning` em testes HTTP/SQLite apareceram, mas não causaram falhas.
+- Esta execução não incluiu `compileall`; não declarar essa etapa como validada neste head local.
+
+### Auditoria local dos cinco RAW
+- `manifest_count=5`, `audited_count=5`, todos com status operacional `AUDITED`.
+- Fixture 1: um swap; uma transferência estruturalmente atribuída; cobertura bloqueada por `DELTA_SIGN_MISMATCH`; revisão de transfer fee necessária.
+- Fixture 2: nenhum swap DAMM v2 reconhecido; uma issue de delta no conjunto da transação.
+- Fixture 3: um swap; uma transferência estruturalmente atribuída; cobertura bloqueada por `SNAPSHOT_SET_INCOMPLETE`; uma issue de delta.
+- Fixtures 4 e 5: nenhum swap DAMM v2 reconhecido no escopo atual; sem issue de delta reportada.
+- As duas transferências com status `ATTRIBUTED` continuam sendo atribuições estruturais, não quantidades economicamente reconciliadas.
+- `AUDITED` significa que o par foi processado pela ferramenta, não que o swap passou na reconciliação.
+
+### Limites e segurança
+- Nenhuma operação DAMM v2 alcançou `FOUR_ACCOUNT_DELTAS_PRESENT` no relatório local.
+- Não há reconciliação econômica: ainda faltam igualdade exata entre transferências brutas, deltas líquidos e campos executados de EvtSwap2; contabilização das taxas do protocolo; análise de transfer fee/withheld fee Token-2022; e prova de exclusividade dos efeitos por operação.
+- Flags confirmaram `network_access=false`, `database_access=false`, `writes_files=false`, `checkpoint_changes=false`, `economic_reconciliation=false` e `execution_authorized=false`.
+- Nenhum RAW ou mapa de carteira foi enviado ao GitHub. Nenhuma importação, SQLite, RPC/Helius, checkpoint ou operação on-chain foi executada.
+
+### Próxima fronteira técnica
+Antes de implementar reconciliação econômica, especificar os invariantes por modo `ExactIn`, `PartialFill` e `ExactOut`, os campos efetivamente executados de `EvtSwap2`, as taxas do protocolo e os efeitos de Token-2022. Deltas pre/post são agregados à transação; se houver efeitos de outras instruções/operações sobre as mesmas contas, não repartir por heurística: manter `INCOMPLETE` ou `AMBIGUOUS`. Criar testes sintéticos positivos e negativos para cada regra antes de qualquer produção de `SwapObservation`.
+
+PR #16 permanece Draft, aberto e não integrado; `main` intacta.

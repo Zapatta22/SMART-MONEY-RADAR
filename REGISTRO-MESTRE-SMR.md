@@ -827,3 +827,18 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Próxima ação
 - Fazer revisão final de contrato e comportamento do adaptador (incluindo bind de host loopback, lifecycle e respostas de erro), depois preparar uma estratégia segura de conexão do painel Android. Não expor a API externamente sem TLS/autorização adicional e decisão explícita.
+
+
+## 46. Primeiro painel visual local — 2026-11-18
+
+- Adicionada interface HTML servida em `/` e `/dashboard` pelo adaptador local.
+- A página é estática e não autenticada, mas não retorna dados privados; chamadas à API continuam exigindo Bearer token.
+- Token informado pelo usuário permanece somente na memória JavaScript; não é gravado em armazenamento persistente do navegador.
+- Exibe métricas de reconciliação, quatro status, motivos recorrentes, eventos recentes e tabela de tentativas com filtro de status.
+- Valores recebidos são inseridos por `textContent`; cabeçalhos CSP, `no-store` e `nosniff`; nenhuma dependência externa.
+- Servidor continua limitado a loopback; sem CORS, acesso remoto, RPC ou escrita.
+- Commits: painel `d4de89da1eba73ad8fea97ac99711b22bb500f26`; teste HTTP `ac8dd700e2a795d6440e0a6cdfefa2bd8bae8967`.
+- CI ainda pendente; painel não deve ser considerado validado até execução de 242+ testes e compileall.
+
+### Próxima ação
+- Aguardar CI do painel; corrigir apenas falhas reais. Depois avaliar no Android a melhor forma de iniciar e abrir `http://127.0.0.1:8765/` localmente.

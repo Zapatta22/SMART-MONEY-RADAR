@@ -53,6 +53,9 @@ class _SMRRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(200, result)
                 return
             if parsed.path == "/api/v1/reconciliation/attempts":
+                requested_limit = int(params.get("limit", ["100"])[0])
+                if requested_limit < 1 or requested_limit > 500:
+                    raise ValueError("limit deve estar entre 1 e 500.")
                 result = self.server.diagnostics_service.list_attempts(
                     wallet_address=params.get("wallet_address", [None])[0],
                     signature=params.get("signature", [None])[0],
@@ -60,7 +63,7 @@ class _SMRRequestHandler(BaseHTTPRequestHandler):
                     status=params.get("status", [None])[0],
                     since=params.get("since", [None])[0],
                     until=params.get("until", [None])[0],
-                    limit=int(params.get("limit", ["100"])[0]),
+                    limit=requested_limit,
                 )
                 self._send_json(200, {"items": DashboardReadService._json_value(result)})
                 return

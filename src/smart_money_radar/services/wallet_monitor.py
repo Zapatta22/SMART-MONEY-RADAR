@@ -54,6 +54,7 @@ class WalletMonitor:
         backfill_page_limit: int = 100,
         backfill_max_pages: int = 10,
         reference_mints: Sequence[str] = (),
+        token2022_fee_proof_resolver: Callable[..., Any] | None = None,
         websocket_connector: Callable[..., Any] | None = None,
         sleep: Callable[[float], Any] = asyncio.sleep,
         logger: Logger | None = None,
@@ -100,6 +101,7 @@ class WalletMonitor:
         if any(not isinstance(mint, str) or not mint.strip() for mint in reference_mints):
             raise ValueError("reference_mints deve conter apenas mints não vazios.")
         self.reference_mints = tuple(reference_mints)
+        self._token2022_fee_proof_resolver = token2022_fee_proof_resolver
         self.backfill_max_pages = backfill_max_pages
         self._websocket_connector = websocket_connector or connect
         self._sleep = sleep
@@ -272,25 +274,28 @@ class WalletMonitor:
                 transaction = None
             if transaction is not None:
                 try:
-                    fee_proof_resolution = await asyncio.to_thread(
-                        resolve_token2022_no_fee_proofs,
-                        transaction,
-                        monitored_wallet=wallet_address,
-                        signature=signature,
-                        rpc_endpoint=self.settings.http_url,
-                    )
-                    if fee_proof_resolution.reasons:
-                        self._logger.warning(
-                            "Prova de taxa Token-2022 indisponível para %d mint(s); mantendo fail-closed.",
-                            len(fee_proof_resolution.unresolved_mints),
+                    fee_proofs = ()
+                    if self._token2022_fee_proof_resolver is not None:
+                        fee_proof_resolution = await asyncio.to_thread(
+                            self._token2022_fee_proof_resolver,
+                            transaction,
+                            monitored_wallet=wallet_address,
+                            signature=signature,
+                            rpc_endpoint=self.settings.http_url,
                         )
+                        fee_proofs = fee_proof_resolution.proofs
+                        if fee_proof_resolution.reasons:
+                            self._logger.warning(
+                                "Prova de taxa Token-2022 indisponível para %d mint(s); mantendo fail-closed.",
+                                len(fee_proof_resolution.unresolved_mints),
+                            )
                     damm_result = await asyncio.to_thread(
                         process_damm_v2_observation,
                         self.event_store,
                         transaction,
                         wallet_address=wallet_address,
                         signature=signature,
-                        transfer_fee_absence_proofs=fee_proof_resolution.proofs,
+                        transfer_fee_absence_proofs=fee_proofs,
                     )
                 except Exception as exc:
                     self._logger.warning(

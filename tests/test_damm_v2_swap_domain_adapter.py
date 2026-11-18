@@ -279,5 +279,90 @@ class DammV2SwapDomainAdapterTests(unittest.TestCase):
             )
 
 
+    def test_builds_and_persists_two_distinct_swap2_bundles_from_one_reconciled_batch(self):
+        context, evidence, deltas, _ = _inputs()
+        second_association = replace(
+            context.association,
+            instruction_index=3,
+            cpi_path=(1,),
+            event_cpi_path=(1, 0),
+        )
+        second_context = replace(context, association=second_association)
+        second_input = replace(
+            evidence.input_transfer,
+            instruction_index=3,
+            cpi_path=(1, 0),
+        )
+        second_output = replace(
+            evidence.output_transfer,
+            instruction_index=3,
+            cpi_path=(1, 0),
+        )
+        second_evidence = replace(
+            evidence,
+            instruction_index=3,
+            cpi_path=(1,),
+            input_transfer=second_input,
+            output_transfer=second_output,
+        )
+        aggregate_deltas = SolanaTokenBalanceDeltaResult((
+            SolanaTokenAccountBalanceDelta(
+                0, "user-a", "mint-a", "wallet-1", 1_000, 800, -200, 6
+            ),
+            SolanaTokenAccountBalanceDelta(
+                1, "vault-a", "mint-a", "pool-owner", 1_000, 1_190, 190, 6
+            ),
+            SolanaTokenAccountBalanceDelta(
+                2, "vault-b", "mint-b", "pool-owner", 2_000, 1_820, -180, 6
+            ),
+            SolanaTokenAccountBalanceDelta(
+                3, "user-b", "mint-b", "wallet-1", 500, 680, 180, 6
+            ),
+        ), ())
+        reconciliation = DammV2EconomicReconciliation(
+            "RECONCILED", 2, (), "both swaps reconciled"
+        )
+        bundles = build_damm_v2_swap_domain_bundles(
+            contexts=[context, second_context],
+            transfer_evidence=[evidence, second_evidence],
+            balance_deltas=aggregate_deltas,
+            reconciliation=reconciliation,
+            monitored_wallet="wallet-1",
+            signature="signature-multi",
+            observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc),
+            parser_version="smr-multi-swap-test",
+        )
+
+        self.assertEqual(len(bundles), 2)
+        operation_ids = [item.observation.operation_id for item in bundles]
+        self.assertEqual(len(set(operation_ids)), 2)
+        self.assertEqual(
+            [item.evidence.instruction_index for item in bundles], [2, 3]
+        )
+        self.assertTrue(all(item.classification.side == "UNKNOWN" for item in bundles))
+
+        store = SQLiteEventStore(":memory:")
+        try:
+            store.save_observation(
+                "wallet-1", "signature-multi",
+                {"meta": {"err": None}}, [],
+                parse_status="parsed", parser_version="smr-multi-swap-test",
+            )
+            for bundle in bundles:
+                self.assertTrue(store.save_swap_bundle(
+                    bundle.observation, bundle.classification, bundle.evidence
+                ))
+            for bundle in bundles:
+                persisted = store.get_swap_bundle(bundle.observation.operation_id)
+                self.assertEqual(persisted["observation"], bundle.observation)
+                self.assertEqual(persisted["classification"], bundle.classification)
+                self.assertEqual(persisted["evidence"], bundle.evidence)
+                self.assertFalse(store.save_swap_bundle(
+                    bundle.observation, bundle.classification, bundle.evidence
+                ))
+        finally:
+            store.close()
+
+
 if __name__ == "__main__":
     unittest.main()

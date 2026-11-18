@@ -41,5 +41,10 @@ jobs:
           python -m pip install -e .
       - name: Validate known real Mainnet transaction
         run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
+      - name: Inspect discovered real two-swap Mainnet candidate
+        continue-on-error: true
+        env:
+          SMR_DAMM_V2_SIGNATURE: 78AuFWUBHsF6P8XgdzFsrz7XRuErsdcMzysRxq845zjTqQ9b7jeVcLd9obwJyL8MSJMTkV9WcRrnTPfPtgTq5UK
+        run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
       - name: Scan recent Mainnet transactions for shared-wSOL multi-swap
         run: PYTHONPATH=src:tools python tools/scan_damm_v2_multi_swap_mainnet.py --limit 100

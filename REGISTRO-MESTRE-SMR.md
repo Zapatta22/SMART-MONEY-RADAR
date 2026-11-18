@@ -2173,3 +2173,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Adicionados testes negativos para amount fracionário e accountIndex duplicado.
 - Commits: parser `668bdbe869eab50273a089acaecaa578dbcb8f3c`; testes `657c1175dcbbfe3e5ff9eff12f0d82f7d6187a3c`.
 - Revisão estática; runtime/compileall pendentes. Nenhum dado persistente ou RPC real foi alterado.
+
+
+## 124. Identidade um-para-um obrigatória na reconciliação CPMM — PR #25 (18/11/2026)
+
+- Auditoria encontrou um caso de falsa conclusão possível: com dois swaps decodificados A e B, um reconciliador defeituoso poderia devolver dois resultados MATCHED para A. A cardinalidade seria 2 = 2, mas B ficaria sem resultado; o pipeline anterior podia considerar a contagem suficiente e avançar checkpoint.
+- O CPMM agora compara as chaves completas `(instruction_index, inner_instruction_index, cpi_path)` entre swaps decodificados e resultados de reconciliação. Exige unicidade em ambos os conjuntos e igualdade exata entre eles. Duplicatas, identidades ausentes, extras ou duplicadas nos swaps mantêm a transação pendente.
+- A auditoria por swap continua registrando explicitamente UNRESOLVED para a instrução sem resultado.
+- Adicionado teste de regressão com dois swaps decodificados e duas respostas MATCHED duplicadas para o primeiro; o segundo é registrado UNRESOLVED e o checkpoint não avança.
+- Commits: pipeline `faa53c65eba293e81707a6c3584e2f51ab5de684`; teste `1d79b5b701f757c72ff516e36f1b17309b794ac2`.
+- Revisão estática; execução runtime/compileall pendente. PR #25 Draft; main e estado persistente preservados.

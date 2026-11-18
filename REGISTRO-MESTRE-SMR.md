@@ -2678,3 +2678,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #1002 (44372728943), evento push, job 135043598061, reportou uma falha de mensagem no teste do coletor, embora o CI do PR #1001 tenha passado com a branch integrada. Manter a observação para reconciliação; não substituir o resultado verde do evento pull_request por esse evento push divergente.
 - Correções de assinatura e import SQLite já registradas na seção 177. Registro Mestre atualizado neste commit documental.
 - PR #25 permanece aberto, Draft, sem merge; main preservada. A fixture RAW mainnet DAMM v2 ainda não foi coletada; aprovação da suíte não equivale à validação de fixture DAMM v2 real nem autoriza execução de ordens.
+
+
+## 179. Confirmação final da CI integrada e continuidade — 18/11/2026
+
+- Após as correções da seção 178, o commit documental HEAD `3950ab575ada8b38b3870b7f9280efa87173e576` disparou CI #1004 (`44372973018`).
+- Job `135044474473` concluiu com status SUCCESS. Steps confirmados: checkout, setup Python, instalação do projeto, unittest completo (466 testes) e compileall; todos concluídos com sucesso.
+- A divergência anterior entre os eventos push e pull_request foi superada por uma execução verde posterior no HEAD atual. A CI #1004 é a evidência de validação mais recente; não há motivo para novo rerun neste momento.
+- PR #25 foi atualizado para remover a afirmação antiga de runtime pendente e registrar 466/466 + compileall aprovados. Continua aberto, Draft, base `feat/damm-v2-swap-domain-adapter`, sem merge; `main` permanece intacta.
+- Próxima ação de engenharia: revisar a rotina de coleta e obter a fixture RAW mainnet DAMM v2 localmente no Termux, verificar manifesto/hash e executar auditoria do pipeline contra a transação real. Não coletar fixture CPMM novamente nem repetir a suíte completa sem mudança de código.
+- Limite: CI verde valida testes e compilação, não comprova que o coletor já capturou fixture DAMM v2 real, nem valida execução de ordens. Sem BUY/SELL automático.

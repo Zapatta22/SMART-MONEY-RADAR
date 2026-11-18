@@ -1747,4 +1747,5 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O histórico original do PR #18 foi preservado como segundo parent do merge commit; o HEAD do PR #17 é o primeiro parent.
 - O Registro Mestre foi consolidado: seção 84 registra a correção CPI do PR #17 e a seção 85 preserva o registro técnico do decoder Token-2022 do PR #18.
 - Nenhum PR foi integrado; ambos permanecem Draft. `main` não foi modificada.
-- Próxima ação: executar CI no novo HEAD do PR #18 e revisar se os testes do decoder continuam aprovados junto da suíte completa.
+- CI do merge commit `c04fafcfd50b810b56cacbf1f110d703f29b8c10`: workflow `SMR tests`, run #515 (`44266493751`), **success**; `Run unit tests` e `Compile source and tests` concluídos com sucesso.
+- Próxima ação: revisar o diff integrado do PR #18 e confirmar se a mergeability permanece estável; não retirar Draft nem integrar sem autorização.

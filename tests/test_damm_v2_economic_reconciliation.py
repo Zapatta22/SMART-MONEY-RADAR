@@ -229,6 +229,184 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         row = next(x for x in result.expected_account_deltas if x.token_account == "user-a")
         self.assertEqual(row.expected_delta_raw, 0)
 
+    def test_reconciles_wsol_ata_created_and_closed_between_two_swaps(self):
+        wallet = "wallet"
+        wsol_account = "user-wsol"
+        token_account = "user-token"
+        wsol_vault = "vault-wsol"
+        token_vault = "vault-token"
+        token_mint = "mint-token"
+
+        def make_context(outer, path, input_account, output_account,
+                         input_vault, output_vault, input_mint, output_mint,
+                         event):
+            association = replace(
+                self.context.association,
+                instruction_index=outer,
+                inner_instruction_index=0,
+                cpi_path=path,
+                event_inner_instruction_index=4,
+                event_cpi_path=path + (0,),
+                event=event,
+            )
+            accounts = replace(
+                self.context.accounts,
+                input_token_account=input_account,
+                output_token_account=output_account,
+                input_vault=input_vault,
+                output_vault=output_vault,
+                input_mint=input_mint,
+                output_mint=output_mint,
+                token_a_vault=input_vault,
+                token_b_vault=output_vault,
+                token_a_mint=input_mint,
+                token_b_mint=output_mint,
+                token_a_program=SPL_TOKEN_PROGRAM_ID,
+                token_b_program=SPL_TOKEN_PROGRAM_ID,
+                input_token_program=SPL_TOKEN_PROGRAM_ID,
+                output_token_program=SPL_TOKEN_PROGRAM_ID,
+            )
+            return DammV2SwapTransferContext(association, accounts)
+
+        def make_event(input_amount, output_amount, direction):
+            event = self.context.association.event
+            return replace(
+                event,
+                trade_direction=direction,
+                included_transfer_fee_amount_in=input_amount,
+                included_transfer_fee_amount_out=output_amount,
+                excluded_transfer_fee_amount_out=output_amount,
+                swap_result=replace(
+                    event.swap_result,
+                    included_fee_input_amount=input_amount,
+                    output_amount=output_amount,
+                ),
+            )
+
+        first = make_context(
+            3, (0,), wsol_account, token_account, wsol_vault, token_vault,
+            NATIVE_MINT, token_mint, make_event(800, 90, "A_TO_B"),
+        )
+        second = make_context(
+            6, (1,), token_account, wsol_account, token_vault, wsol_vault,
+            token_mint, NATIVE_MINT, make_event(90, 700, "B_TO_A"),
+        )
+
+        def native_transfer(outer, inner, source, destination, mint, amount, decimals):
+            return SolanaTokenTransfer(
+                program_id=SPL_TOKEN_PROGRAM_ID,
+                program_name="SPL Token",
+                instruction_type="TRANSFER_CHECKED",
+                instruction_index=outer,
+                inner_instruction_index=inner,
+                stack_height=4,
+                cpi_path=((0, 0) if outer == 3 else (1, 0)),
+                source_account=source,
+                destination_account=destination,
+                authority=wallet,
+                mint=mint,
+                amount_raw=amount,
+                decimals=decimals,
+                execution_status="EXECUTED",
+                source_format="compiled",
+            )
+
+        transfers = [
+            native_transfer(3, 1, wsol_account, wsol_vault, NATIVE_MINT, 800, 9),
+            native_transfer(3, 2, token_vault, token_account, token_mint, 90, 6),
+            native_transfer(6, 1, token_account, token_vault, token_mint, 90, 6),
+            native_transfer(6, 2, wsol_vault, wsol_account, NATIVE_MINT, 700, 9),
+        ]
+        evidence = [
+            _evidence(first, transfers[0], transfers[1]),
+            _evidence(second, transfers[2], transfers[3]),
+        ]
+
+        def b58(data):
+            alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+            number = int.from_bytes(data, "big")
+            encoded = ""
+            while number:
+                number, digit = divmod(number, 58)
+                encoded = alphabet[digit] + encoded
+            return "1" * (len(data) - len(data.lstrip(b"\\0"))) + (encoded or "")
+
+        instructions = [
+            {
+                "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+                "accounts": [wallet, wsol_account, wallet, NATIVE_MINT,
+                             "11111111111111111111111111111111", SPL_TOKEN_PROGRAM_ID],
+                "data": b58(b"\\x01"),
+            },
+            {
+                "programId": "11111111111111111111111111111111",
+                "accounts": [wallet, wsol_account],
+                "data": b58((2).to_bytes(4, "little") + (1000).to_bytes(8, "little")),
+            },
+            {
+                "programId": SPL_TOKEN_PROGRAM_ID,
+                "accounts": [wsol_account],
+                "data": b58(b"\\x11"),
+            },
+            {"programId": "damm", "accounts": [], "data": b58(b"swap")},
+            {
+                "programId": SPL_TOKEN_PROGRAM_ID,
+                "accounts": [wsol_account, wallet, wallet],
+                "data": b58(b"\\x09"),
+            },
+            {
+                "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+                "accounts": [wallet, wsol_account, wallet, NATIVE_MINT,
+                             "11111111111111111111111111111111", SPL_TOKEN_PROGRAM_ID],
+                "data": b58(b"\\x01"),
+            },
+            {"programId": "damm", "accounts": [], "data": b58(b"swap")},
+            {
+                "programId": SPL_TOKEN_PROGRAM_ID,
+                "accounts": [wsol_account, wallet, wallet],
+                "data": b58(b"\\x09"),
+            },
+        ]
+        raw = {
+            "result": {
+                "transaction": {
+                    "message": {
+                        "accountKeys": [
+                            wallet, wsol_account, NATIVE_MINT, token_mint,
+                            wsol_vault, token_vault,
+                        ],
+                        "instructions": instructions,
+                    }
+                },
+                "meta": {
+                    "err": None,
+                    "preBalances": [10_000_000, 0, 1, 1, 1, 1],
+                    "postBalances": [10_000_000, 0, 1, 1, 1, 1],
+                },
+            }
+        }
+        result = reconcile_damm_v2_economic_batch(
+            [first, second], evidence,
+            _deltas([
+                (wsol_vault, NATIVE_MINT, 100, 9),
+                (token_account, token_mint, 0, 6),
+                (token_vault, token_mint, 0, 6),
+            ]),
+            transfers,
+            raw_transaction=raw,
+            monitored_wallet=wallet,
+        )
+        self.assertEqual(result.status, "RECONCILED", result.reason)
+        self.assertEqual(len(result.wrapped_sol_lifecycles), 1)
+        lifecycle = result.wrapped_sol_lifecycles[0]
+        self.assertEqual(lifecycle.create_indices, (0, 5))
+        self.assertEqual(lifecycle.close_account_indices, (4, 7))
+        self.assertEqual(lifecycle.funding_amount_raw, 1000)
+        self.assertEqual(lifecycle.cycle_balances_before_close, (200, 700))
+        self.assertNotIn(wsol_account, {
+            row.token_account for row in result.expected_account_deltas
+        })
+
     def test_rejects_shared_wsol_account_with_multiple_funding_transfers_as_ambiguous(self):
         accounts = replace(
             self.context.accounts,

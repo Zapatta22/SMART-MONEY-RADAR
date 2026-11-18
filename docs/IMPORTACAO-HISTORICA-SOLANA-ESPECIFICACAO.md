@@ -311,3 +311,31 @@ A implementação inicial em `src/smart_money_radar/data_sources/damm_v2_decoder
 CI do commit `45ca36761dbefacbe30fb3f6cd694b6f32e4ed23`: run `44252571670` (#408), workflow SMR tests concluído com sucesso. Isso valida a execução automatizada do CI, mas não substitui a execução local do Termux, ainda pendente.
 
 O parser é somente estrutural. A próxima camada deverá associar evento e instrução por grupo externo/CPI e stack height, sem duplicar operações; em seguida reconciliar SPL/Token-2022 transfers, deltas de token accounts/vaults e transfer fees. Não produzir SwapObservation antes da reconciliação. Sem rede, banco, gravações, checkpoint, importação ou execução on-chain nesta etapa.
+
+## 21. Associação conservadora de instrução DAMM v2 e evento EvtSwap2 (18/11/2026)
+
+Foi implementado `analyze_damm_v2_swap_events()` em `src/smart_money_radar/data_sources/damm_v2_analyzer.py`.
+
+Uma associação `MATCHED` exige cumulativamente:
+1. Instrução swap e evento no mesmo grupo `meta.innerInstructions[index]`, portanto sob a mesma instrução externa.
+2. O evento ocorre depois da instrução swap na sequência linear do grupo.
+3. `stackHeight` do evento é exatamente `stackHeight + 1` da instrução swap.
+4. O caminho CPI calculado para o evento tem como prefixo/pai exato o caminho CPI da instrução swap.
+5. A hierarquia deve ser demonstrável; ausência ou invalidade de `stackHeight` invalida a hierarquia restante do grupo e impede associação.
+
+O analisador resolve `programId` ou `programIdIndex`, incluindo `meta.loadedAddresses` para transações versionadas. Não usa fee payer, signatário, endereço de conta ou valor para inferir carteira/direção.
+
+Saída:
+- Um registro por instrução `swap`/`swap2`, com status `MATCHED`, `EVENT_MISSING` ou `AMBIGUOUS`.
+- Event CPI sem associação única aparece separadamente como `UNMATCHED_EVENT` ou `AMBIGUOUS`.
+- O Event CPI nunca gera uma segunda operação econômica. Swaps sequenciais mantêm índices e identidades separados.
+
+Limites:
+- A associação é estrutural; não valida papéis de contas, igualdade de parâmetros, mint, quantidades efetivamente transferidas ou reservas.
+- `EvtSwap2` e os argumentos de instrução não substituem transferências SPL/Token-2022 nem deltas de token accounts/vaults.
+- Não cria `SwapObservation`, não classifica BUY/SELL, não grava SQLite, não avança checkpoint e não acessa RPC.
+- O analisador não está integrado ao pipeline CPMM; uma futura integração deve ser um adaptador DAMM v2 separado.
+
+Testes sintéticos cobrem swap top-level com evento filho, swap aninhado sob agregador, múltiplos swaps/eventos sequenciais, stackHeight ausente, evento antes do swap, transação falha, loaded addresses e round-trip Base58 com bytes zero iniciais.
+
+CI run `44253659374` (#421), commit `708cc57d492fe8f784e9fbcbf641904b5829d913`: **274 testes OK e compileall aprovado**. A execução local desses novos testes ainda deve ser feita no Termux.

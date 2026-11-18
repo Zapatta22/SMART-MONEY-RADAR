@@ -814,3 +814,16 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Valores menores que 1 ou maiores que 500 retornam HTTP 400; novo teste cobre `limit=501`.
 - Commits: validação HTTP `2f93d3fa5d58a6be4bcd11dfd98c8a2485a4e1a8`; teste `d3b320a7e0d06a46f72f4f3cbf83a2576df7fbdd`.
 - CI precisa validar os commits desta proteção e a correção TOML anterior.
+
+
+## 45. CI aprovado — launcher e limite HTTP (2026-11-18)
+
+- CI run `44239943317` concluído com sucesso no commit `8e509d8f6963e965b9d1f005f84c4d06c9f3d70a`.
+- Instalação do pacote aprovada após correção do TOML.
+- **241 testes unitários aprovados**.
+- `python -m compileall -q src tests` aprovado.
+- Inclui testes do `smr-api` (token obrigatório, ciclo de vida e fechamento), adaptador HTTP e limite de consulta 1..500.
+- PR #15 permanece aberto, Draft, mergeable; base `integration/pr13-sqlite-persistence`; sem merge. `main` intacta.
+
+### Próxima ação
+- Fazer revisão final de contrato e comportamento do adaptador (incluindo bind de host loopback, lifecycle e respostas de erro), depois preparar uma estratégia segura de conexão do painel Android. Não expor a API externamente sem TLS/autorização adicional e decisão explícita.

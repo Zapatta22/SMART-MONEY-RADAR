@@ -1,4 +1,9 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from pathlib import Path
+import tempfile
+from threading import Barrier
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -66,6 +71,38 @@ class SwapPersistenceTests(unittest.TestCase):
             self.observation, self.classification, self.evidence
         ))
         self.assertEqual(self.store.get_swap_bundle(self.observation.operation_id)["evidence"], self.evidence)
+
+    def test_concurrent_divergent_bundle_writes_preserve_first_committed_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "concurrent.sqlite3")
+            try:
+                store.save_observation(
+                    "wallet-a", "sig-a", {"meta": {"err": None}}, [],
+                    parse_status="no_events", parser_version="1",
+                )
+                divergent = replace(
+                    self.observation,
+                    input_amount=Decimal("9.99"),
+                )
+                barrier = Barrier(2)
+
+                def persist(observation):
+                    barrier.wait()
+                    try:
+                        return ("saved", store.save_swap_bundle(
+                            observation, self.classification, self.evidence
+                        ))
+                    except ValueError:
+                        return ("rejected", False)
+
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    outcomes = list(executor.map(persist, (self.observation, divergent)))
+
+                self.assertCountEqual([item[0] for item in outcomes], ["saved", "rejected"])
+                persisted = store.get_swap_bundle(self.observation.operation_id)["observation"]
+                self.assertIn(persisted, (self.observation, divergent))
+            finally:
+                store.close()
 
     def test_existing_bundle_rejects_divergent_replay_without_explicit_replace(self):
         self.assertTrue(self.store.save_swap_bundle(

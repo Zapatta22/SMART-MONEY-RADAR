@@ -1892,3 +1892,17 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - A falha não comprova defeito nos testes e tampouco representa aprovação. Causa raiz externa do problema pré-etapas continua não confirmada.
 - Nenhum retry foi realizado. PR #23 permanece Draft, aberto e sem merge.
 - A validação local no Termux permanece pendente; não declarar testes aprovados até obter saída real.
+
+
+## 98. Validação local completa do PR #23 e CI sem runner — 18/11/2026 12:55 UTC
+
+- O clone Termux `~/SMART-MONEY-RADAR-PR23` foi atualizado com `git pull --ff-only origin feat/damm-v2-economic-reconciliation`, fast-forward de `b06e022` para `d6142ba37c55aae45f9756b9adec2e2be3520895`.
+- A suíte completa foi executada localmente no Android/Termux: `PYTHONPATH=src python -m unittest discover -s tests -v`; resultado: **374 testes executados, 374 aprovados, 0 falhas**, em 6.382 segundos.
+- O teste `test_rejects_transfer_reuse`, que havia falhado na primeira execução por o cenário não isolar reutilização de evidência de duplicidade de inventário, passou após a correção exclusiva do teste: `all_transfers=[self.input, self.output]`. Nenhuma lógica de produção foi alterada nesse commit.
+- Na mesma cadeia de comandos foi executado `python -m compileall -q src tests`. O processo retornou ao prompt sem erro; portanto compileall local aprovado.
+- Foram emitidos alguns `ResourceWarning` de HTTPError/conexões SQLite e avisos de lentidão asyncio; não interromperam a suíte e não causaram falhas. Permanecem como itens secundários de higiene técnica.
+- CI no mesmo HEAD `d6142ba...`: runs #586 (push, ID `44302535748`) e #587 (pull_request, ID `44302544704`) terminaram `failure` antes das etapas. Consulta direta do job #587, ID `134795696264`: `runner_id=0`, `runner_name=""`, `steps=[]`. Logo, esses runs não executaram checkout, unittest ou compileall; não são falhas dos testes nem aprovações de CI.
+- Estado remoto conferido: PR #23 continua aberto, Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`, HEAD `d6142ba37c55aae45f9756b9adec2e2be3520895`, base `feat/damm-v2-referral-transfer-attribution` (PR #22). Quatro arquivos próprios; PR permanece empilhado sobre PR #22.
+- Conclusão: suíte local completa e compileall aprovados no Termux. Validação CI remota permanece bloqueada por ausência de runner provisionado. Não fazer retry repetido sem mudança/diagnóstico do ambiente.
+- Próximas pendências: (1) atualizar o texto desatualizado da descrição do PR para refletir a validação local e o estado CI; (2) investigar provisionamento do runner sem mascarar a falha; (3) após CI ou plano alternativo de validação acordado, executar auditoria RAW controlada com evidência mainnet apropriada. Só depois avaliar integração econômica com `SwapObservation`.
+- Nenhuma alteração em `main`, RAW fixtures, SQLite persistente, checkpoints, RPC/Helius ou estado on-chain. PR #23 permanece Draft e não integrado.

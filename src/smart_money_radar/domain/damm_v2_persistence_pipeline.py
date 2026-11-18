@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from smart_money_radar.domain.models import build_swap_operation_id
+from smart_money_radar.data_sources.token2022_fee_absence_proof import Token2022NoTransferFeeProof
 from smart_money_radar.data_sources.transaction_parser import PARSER_VERSION
 from smart_money_radar.domain.normalization import normalize_transaction
 from smart_money_radar.data_sources.damm_v2_transaction_pipeline import (
@@ -47,6 +48,7 @@ def process_damm_v2_observation(
     wallet_address: str,
     signature: str,
     observed_at: datetime | None = None,
+    transfer_fee_absence_proofs: tuple[Token2022NoTransferFeeProof, ...] = (),
 ) -> DammV2PersistenceResult:
     """Arquiva e persiste DAMM v2; não avança checkpoint em hipótese alguma."""
     if not isinstance(wallet_address, str) or not wallet_address.strip():
@@ -106,6 +108,7 @@ def process_damm_v2_observation(
         signature=signature,
         observed_at=normalized.transaction.occurred_at or normalized.transaction.observed_at,
         parser_version=normalized.transaction.parser_version,
+        transfer_fee_absence_proofs=transfer_fee_absence_proofs,
     )
 
     associations = result.associations

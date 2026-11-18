@@ -353,6 +353,11 @@ class SwapPersistenceTests(unittest.TestCase):
         self.store.save_swap_reconciliation_attempt(
             "wallet-a", "sig-a", [matched]
         )
+        self.store.save_observation(
+            "wallet-a", "sig-pending", {"meta": {"err": None}}, [],
+            parse_status="pending", parser_version="1",
+            advance_checkpoint=False,
+        )
 
         report = self.store.get_reconciliation_diagnostics(
             wallet_address="wallet-a"
@@ -366,7 +371,7 @@ class SwapPersistenceTests(unittest.TestCase):
         self.assertEqual(report["statuses"]["UNRESOLVED"], 0)
         self.assertEqual(report["top_reasons"][0]["count"], 1)
         self.assertEqual(report["pending_transactions_count"], 1)
-        self.assertEqual(report["pending_transactions"][0]["signature"], "sig-a")
+        self.assertEqual(report["pending_transactions"][0]["signature"], "sig-pending")
 
     def test_query_reconciliation_attempts_filters_and_orders_newest_first(self):
         first = SwapReconciliationRecord(

@@ -582,3 +582,37 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Busca no conjunto atual de arquivos alterados não encontrou as três assinaturas originais nem os três fingerprints brutos dessas fixtures.
 - Os metadados econômicos preservados ainda permitem correlação on-chain. O histórico Git antigo ainda contém versões anteriores; nenhuma reescrita foi feita.
 - O commit documental desta atualização ocorre após o CI `44234097307` e altera apenas este Registro Mestre. O código, fixtures, manifestos e testes do commit validado `5fe434150647c2d46177c0b89151e51abdda1a85` não foram alterados depois.
+
+## 34. Atualização 2026-11-18 — revisão de compatibilidade PR #13 ↔ PR #4
+
+### Cadeia de dependências confirmada
+- PR #5 (`feat/raydium-cpmm-base-output`) parte da `main`.
+- PR #6 (`feat/raydium-cpmm-inner-cpi`) usa PR #5 como base.
+- PR #7 (`feat/raydium-cpmm-economic-reconciliation`) usa PR #6 como base.
+- PR #8 (`feat/solana-token-account-deltas`) usa PR #7 como base.
+- PR #9 (`feat/raydium-cpmm-transfer-reconciliation`) usa PR #8 como base.
+- PR #10 (`feat/swap-domain-bundle-builder`) usa PR #9 como base.
+- PR #12 (`feat/real-mainnet-cpmm-fixture`) usa PR #10 como base.
+- PR #13 (`feat/real-mainnet-cpmm-fee-fixture`) usa PR #12 como base.
+- PR #11 (coletor RPC) e PR #4 (persistência SQLite) são linhas separadas baseadas na `main`.
+- Todos os PRs #5–#13 consultados continuam abertos e não merged. PRs #5–#9 e #12–#13 reportam mergeable; PR #10 reportou mergeable na consulta mais recente. Não alterar bases nem fazer merge em lote sem revisar a sequência e o estado atualizado de cada PR.
+
+### Compatibilidade técnica confirmada
+- PR #13 produz `SwapDomainBundle` com `observation`, `classification` e `evidence`, compatível com a assinatura pública de `SQLiteEventStore.save_swap_bundle(observation, classification, evidence)` do PR #4.
+- O EventStore exige que a transação pai já exista em `observed_transactions`, identificada por `(wallet_address, signature)`; a FK composta e `ON DELETE CASCADE` também dependem dessa linha pai.
+- Sequência proposta para o futuro adaptador:
+  1. Receber payload RPC validado e assinatura real da transação.
+  2. Executar `normalize_transaction(raw, wallet, signature)`.
+  3. Persistir primeiro a transação pai com `save_observation(wallet, signature, raw, list(normalized.activity_events), normalized_observation=normalized)`.
+  4. Decodificar swaps CPMM, transferências SPL e deltas por token account com `include_unchanged=True`.
+  5. Executar reconciliação conservadora; apenas resultados `MATCHED` seguem ao builder.
+  6. Chamar `build_swap_domain_bundles(..., signature=signature, ...)` usando a assinatura real, nunca o `fixture_id` de uma fixture de teste.
+  7. Para cada bundle, chamar `save_swap_bundle(bundle.observation, bundle.classification, bundle.evidence)`.
+- Os deltas armazenados na tabela legada `token_balance_deltas` são por mint/carteira, não substituem os deltas por token account/vault. A evidência detalhada do CPMM fica em `SwapEvidence`; o payload RPC pai permanece disponível para replay.
+- `save_swap_bundle` é atômico para os três contratos de uma operação e idempotente por `operation_id`. A gravação do pai e dos bundles ocorre em transações separadas; em uma transação com vários swaps pode haver persistência parcial se o processo falhar entre bundles. Replay idempotente pode completar o restante, mas um adaptador futuro deve registrar/monitorar esse estado e testar recuperação após falha.
+
+### CI e limites
+- PR #4 head `817069c46bf23d67adf9a025360898a1a5ec6ced`: CI run `44218451061` success; **107 testes**, `OK`; `python -m compileall -q src tests` aprovado.
+- PR #13 code validation permanece CI run `44234097307` no commit `5fe434150647c2d46177c0b89151e51abdda1a85`: **196 testes**, `OK`; compileall aprovado. Commits posteriores no branch foram documentais.
+- A tabela `swap_observations` do PR #4 usa `CREATE TABLE IF NOT EXISTS`; isso não adiciona FK a uma tabela preexistente criada por uma versão anterior. O próprio histórico do PR registra que bancos antigos podem exigir rebuild/migração explícita. Não há DB de produção fornecido nem migração de produção executada.
+- Não foi criado adaptador parser→reconciliador→EventStore nesta revisão. Não houve merge, alteração da `main`, assinatura, ordem ou submissão on-chain.

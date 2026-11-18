@@ -62,6 +62,10 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
         self.assertEqual([item.status for item in reconciliations], ["MATCHED"])
         self.assertEqual(reconciliations[0].input_amount_raw, 4484029903)
         self.assertEqual(reconciliations[0].output_amount_raw, 165074030)
+        self.assertEqual(reconciliations[0].input_token_account_delta_raw, 0)
+        self.assertEqual(reconciliations[0].output_token_account_delta_raw, 74030)
+        self.assertEqual(reconciliations[0].input_vault_delta_raw, 4484029903)
+        self.assertEqual(reconciliations[0].output_vault_delta_raw, -165074030)
         self.assertEqual(reconciliations[0].input_decimals, 6)
         self.assertEqual(reconciliations[0].output_decimals, 8)
 
@@ -75,6 +79,8 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
         self.assertEqual(bundles[0].observation.input_amount, Decimal("4484.029903"))
         self.assertEqual(bundles[0].observation.output_amount, Decimal("1.65074030"))
         self.assertEqual(bundles[0].classification.side, "UNKNOWN")
+        self.assertIn("input_token_account_delta_raw:0", bundles[0].evidence.evidence)
+        self.assertIn("output_token_account_delta_raw:74030", bundles[0].evidence.evidence)
 
         buy = build_swap_domain_bundles(reconciliations, reference_mints={swap.accounts.input_token_mint}, **common)
         sell = build_swap_domain_bundles(reconciliations, reference_mints={swap.accounts.output_token_mint}, **common)

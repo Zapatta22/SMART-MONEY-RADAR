@@ -33,6 +33,19 @@ class HeliusSettingsTests(unittest.TestCase):
             "wss://devnet.helius-rpc.com/?api-key=simulated-key",
         )
 
+    def test_rejects_non_finite_or_boolean_timeout(self) -> None:
+        for timeout in (True, float("nan"), float("inf"), 0, -1):
+            with self.subTest(timeout=timeout):
+                with self.assertRaisesRegex(SettingsError, "timeout RPC"):
+                    HeliusSettings(
+                        api_key="simulated-key",
+                        request_timeout_seconds=timeout,
+                    )
+
+    def test_rejects_non_string_api_key(self) -> None:
+        with self.assertRaisesRegex(SettingsError, "texto não vazio"):
+            HeliusSettings(api_key=None)  # type: ignore[arg-type]
+
     def test_rejects_invalid_cluster(self) -> None:
         with self.assertRaisesRegex(SettingsError, "SOLANA_CLUSTER"):
             HeliusSettings(api_key="simulated-key", cluster="unknown")

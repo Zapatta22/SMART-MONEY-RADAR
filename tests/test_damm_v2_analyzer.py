@@ -1,6 +1,7 @@
 import unittest
 
 from smart_money_radar.data_sources.damm_v2_analyzer import (
+    _decode_base58,
     analyze_damm_v2_swap_events,
 )
 from smart_money_radar.data_sources.damm_v2_decoder import (
@@ -78,6 +79,27 @@ def transaction(outer, inner):
 
 
 class DammV2AnalyzerTests(unittest.TestCase):
+    def test_base58_round_trip_preserves_leading_zero_bytes(self):
+        original = b"\\x00\\x00SMR"
+        self.assertEqual(_decode_base58(b58encode(original)), original)
+
+    def test_resolves_damm_program_from_loaded_addresses(self):
+        raw = transaction(
+            [{"programId": "aggregator", "accounts": [], "data": b58encode(b"route")}],
+            {0: [instruction(swap_data(), 2), instruction(event_data(), 3)]},
+        )
+        message = raw["result"]["transaction"]["message"]
+        message["accountKeys"] = ["payer"]
+        raw["result"]["meta"]["loadedAddresses"] = {
+            "writable": [],
+            "readonly": [METEORA_DAMM_V2_PROGRAM_ID],
+        }
+        for item in raw["result"]["meta"]["innerInstructions"][0]["instructions"]:
+            item.pop("programId")
+            item["programIdIndex"] = 1
+        result = analyze_damm_v2_swap_events(raw)
+        self.assertEqual([item.status for item in result], ["MATCHED"])
+
     def test_associates_event_cpi_with_outer_swap(self):
         raw = transaction(
             [instruction(swap_data())],

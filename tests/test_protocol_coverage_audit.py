@@ -76,7 +76,7 @@ class ProtocolCoverageTests(unittest.TestCase):
             (root / "one.manifest.json").write_text(json.dumps(manifest))
             (root / "one.raw.json").symlink_to(outside / "one.raw.json")
             report = build_report(root)
-        self.assertEqual(report["status_counts"], {"STRUCTURE_INVALID": 1})
+        self.assertEqual(report["status_counts"], {"FIXTURE_INVALID": 1})
 
 
 if __name__ == "__main__":

@@ -7,7 +7,10 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
-from smart_money_radar.domain.models import ActivityEvent, TokenBalanceDelta
+from smart_money_radar.domain.models import (
+    ActivityEvent, SwapClassification, SwapEvidence, SwapObservation, TokenBalanceDelta,
+    build_swap_operation_id,
+)
 from smart_money_radar.domain.normalization import NormalizedObservation
 
 
@@ -143,6 +146,34 @@ class SQLiteEventStore:
                         PRIMARY KEY (wallet_address, signature)
                     )
                     """
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS swap_observations (
+                        operation_id TEXT PRIMARY KEY, chain TEXT NOT NULL,
+                        wallet_address TEXT NOT NULL, signature TEXT NOT NULL,
+                        input_mint TEXT NOT NULL, output_mint TEXT NOT NULL,
+                        input_amount TEXT NOT NULL, output_amount TEXT NOT NULL,
+                        observed_at TEXT NOT NULL, parser_version TEXT NOT NULL)"""
+                )
+                connection.execute("""CREATE INDEX IF NOT EXISTS idx_swap_observations_wallet_time
+                    ON swap_observations(wallet_address, observed_at DESC)""")
+                connection.execute("""CREATE INDEX IF NOT EXISTS idx_swap_observations_signature
+                    ON swap_observations(signature)""")
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS swap_classifications (
+                        operation_id TEXT PRIMARY KEY,
+                        side TEXT NOT NULL CHECK(side IN ('BUY','SELL','UNKNOWN')),
+                        confidence TEXT NOT NULL, reason TEXT NOT NULL,
+                        FOREIGN KEY(operation_id) REFERENCES swap_observations(operation_id)
+                            ON DELETE CASCADE)"""
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS swap_evidence (
+                        operation_id TEXT PRIMARY KEY, program_id TEXT NOT NULL,
+                        venue TEXT, instruction_index INTEGER NOT NULL,
+                        cpi_path_json TEXT NOT NULL, evidence_json TEXT NOT NULL,
+                        FOREIGN KEY(operation_id) REFERENCES swap_observations(operation_id)
+                            ON DELETE CASCADE)"""
                 )
 
     def save_events(self, events: list[ActivityEvent]) -> int:
@@ -294,6 +325,101 @@ class SQLiteEventStore:
                     (wallet_address, signature),
                 )
                 return inserted
+
+    def save_swap_bundle(
+        self, observation: SwapObservation, classification: SwapClassification,
+        evidence: SwapEvidence,
+    ) -> bool:
+        """Grava os três contratos atomicamente; retorna True se for novo."""
+        operation_id = observation.operation_id
+        if not (classification.operation_id == evidence.operation_id == operation_id):
+            raise ValueError("Os três contratos devem compartilhar o mesmo operation_id.")
+        expected_id = build_swap_operation_id(
+            observation.chain, observation.signature, evidence.instruction_index, evidence.cpi_path
+        )
+        if operation_id != expected_id:
+            raise ValueError("operation_id não corresponde à identidade determinística da instrução/CPI.")
+        with self._connection_scope() as connection:
+            with connection:
+                parent = connection.execute(
+                    """SELECT 1 FROM observed_transactions
+                       WHERE wallet_address = ? AND signature = ?""",
+                    (observation.wallet_address, observation.signature),
+                ).fetchone()
+                if parent is None:
+                    raise KeyError("A transação observada deve existir antes do swap.")
+                existed = connection.execute(
+                    "SELECT 1 FROM swap_observations WHERE operation_id = ?", (operation_id,)
+                ).fetchone() is not None
+                connection.execute(
+                    """INSERT INTO swap_observations
+                       (operation_id, chain, wallet_address, signature, input_mint, output_mint,
+                        input_amount, output_amount, observed_at, parser_version)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(operation_id) DO UPDATE SET
+                        chain=excluded.chain, wallet_address=excluded.wallet_address,
+                        signature=excluded.signature, input_mint=excluded.input_mint,
+                        output_mint=excluded.output_mint, input_amount=excluded.input_amount,
+                        output_amount=excluded.output_amount, observed_at=excluded.observed_at,
+                        parser_version=excluded.parser_version""",
+                    (operation_id, observation.chain, observation.wallet_address,
+                     observation.signature, observation.input_mint, observation.output_mint,
+                     str(observation.input_amount), str(observation.output_amount),
+                     observation.observed_at.isoformat(), observation.parser_version),
+                )
+                connection.execute(
+                    """INSERT INTO swap_classifications(operation_id, side, confidence, reason)
+                       VALUES (?, ?, ?, ?) ON CONFLICT(operation_id) DO UPDATE SET
+                       side=excluded.side, confidence=excluded.confidence, reason=excluded.reason""",
+                    (operation_id, classification.side, str(classification.confidence), classification.reason),
+                )
+                connection.execute(
+                    """INSERT INTO swap_evidence
+                       (operation_id, program_id, venue, instruction_index, cpi_path_json, evidence_json)
+                       VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(operation_id) DO UPDATE SET
+                       program_id=excluded.program_id, venue=excluded.venue,
+                       instruction_index=excluded.instruction_index,
+                       cpi_path_json=excluded.cpi_path_json, evidence_json=excluded.evidence_json""",
+                    (operation_id, evidence.program_id, evidence.venue, evidence.instruction_index,
+                     json.dumps(list(evidence.cpi_path), separators=(",", ":")),
+                     json.dumps(list(evidence.evidence), separators=(",", ":"))),
+                )
+                return not existed
+
+    def get_swap_bundle(self, operation_id: str) -> dict | None:
+        """Recupera contratos persistidos sem perder precisão decimal."""
+        with self._connection_scope() as connection:
+            obs = connection.execute(
+                """SELECT chain, wallet_address, signature, input_mint, output_mint,
+                          input_amount, output_amount, observed_at, parser_version
+                   FROM swap_observations WHERE operation_id = ?""", (operation_id,)
+            ).fetchone()
+            if obs is None:
+                return None
+            cls = connection.execute(
+                "SELECT side, confidence, reason FROM swap_classifications WHERE operation_id = ?",
+                (operation_id,),
+            ).fetchone()
+            ev = connection.execute(
+                """SELECT program_id, venue, instruction_index, cpi_path_json, evidence_json
+                   FROM swap_evidence WHERE operation_id = ?""", (operation_id,)
+            ).fetchone()
+        return {
+            "observation": SwapObservation(
+                operation_id=operation_id, chain=obs[0], wallet_address=obs[1], signature=obs[2],
+                input_mint=obs[3], output_mint=obs[4], input_amount=Decimal(obs[5]),
+                output_amount=Decimal(obs[6]), observed_at=datetime.fromisoformat(obs[7]),
+                parser_version=obs[8],
+            ),
+            "classification": SwapClassification(
+                operation_id=operation_id, side=cls[0], confidence=Decimal(cls[1]), reason=cls[2]
+            ) if cls else None,
+            "evidence": SwapEvidence(
+                operation_id=operation_id, program_id=ev[0], venue=ev[1],
+                instruction_index=ev[2], cpi_path=tuple(json.loads(ev[3])),
+                evidence=tuple(json.loads(ev[4])),
+            ) if ev else None,
+        }
 
     def get_raw_transaction(self, wallet_address: str, signature: str) -> dict | None:
         """Recupera payload bruto para auditoria e replay do parser."""

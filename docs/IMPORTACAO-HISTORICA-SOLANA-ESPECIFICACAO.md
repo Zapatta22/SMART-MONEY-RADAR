@@ -382,3 +382,30 @@ Validação no Termux após fast-forward para o commit corrigido:
 O mapeador cobre a ordem das 14 contas base, remaining accounts, direção A→B/B→A, pool consistente com EvtSwap2, programas SPL/Token-2022 e resolução de índices compilados. Essa validação é de mapeamento estrutural; não demonstra transferências executadas nem valores econômicos por swap.
 
 Próxima etapa: atribuir transferências SPL/Token-2022 e deltas de token accounts/vaults a cada operação, preservando CPI ancestry e evitando dividir deltas compartilhados sem evidência. Token-2022 transfer-fee deve permanecer fail-closed até reconciliar bruto, líquido e taxa. Não criar `SwapObservation`, persistir SQLite ou integrar ao pipeline CPMM nesta fase.
+
+
+## 25. Atribuição estrutural de transferências DAMM v2 (18/11/2026)
+
+A primeira camada de atribuição foi implementada em `damm_v2_transfer_analyzer.py`. Ela recebe uma associação swap↔EvtSwap2 já marcada `MATCHED`, as contas resolvidas pelo mapeador e a lista de instruções SPL/Token-2022 decodificadas.
+
+Critérios obrigatórios:
+- mesma instrução externa/grupo CPI;
+- caminho CPI descendente e hierarquia marcada confiável;
+- stackHeight conhecido e maior que o do swap;
+- transferência ocorre antes do Event CPI EvtSwap2;
+- pares exatos de contas: input token account→input vault e output vault→output token account;
+- execução bem-sucedida, um único candidato por papel, sem reutilização da mesma transferência;
+- programa token, mint e decimals coerentes, quantidade bruta positiva.
+
+Estados emitidos: `ATTRIBUTED`, `TRANSFER_MISSING`, `AMBIGUOUS`, `INCOMPLETE`, `ASSOCIATION_UNRESOLVED`.
+
+**Limite semântico:** `ATTRIBUTED` significa somente que as instruções de transferência foram estruturalmente atribuídas à operação. Não é reconciliação econômica nem autorização para criar `SwapObservation`. A camada ainda não compara valores com `EvtSwap2`, nem verifica os deltas pre/post das quatro token accounts. Transfer simples sem mint/decimals fica incompleto. Token-2022 requer revisão de taxa; TransferCheckedWithFee/withheld fees ainda não são suportados.
+
+O decoder genérico de transferências passou a marcar `cpi_path_valid=false` quando a hierarquia do grupo não pode ser comprovada após stackHeight ausente/inconsistente. O atribuidor rejeita caminhos não confiáveis.
+
+CI dos commits funcionais:
+- run `44255914744` (#445): success.
+- run `44256010582`: success.
+- run `44256150190`: success; testes unitários e compileall aprovados.
+
+A validação local no Termux e a auditoria dos cinco RAW ainda são necessárias. Próxima etapa: decodificar deltas pre/post de token accounts com associação explícita por accountIndex e exigir consistência entre transferências brutas, deltas do usuário e vaults. Manter Token-2022 com taxa em estado incompleto até reconciliar bruto, líquido e withheld fee. Nenhuma persistência SQLite, checkpoint, RPC ou execução on-chain faz parte desta etapa.

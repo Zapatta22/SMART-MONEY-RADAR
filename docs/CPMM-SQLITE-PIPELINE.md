@@ -75,3 +75,8 @@ A auditoria não transforma resultados negativos em bundles, não reclassifica s
 - Aceita filtro opcional por carteira; não faz chamadas RPC/HTTP, não grava dados, não altera checkpoints e não executa transações.
 - `tests/test_dashboard_read_service.py` cobre composição, serialização, injeção do serviço de diagnóstico e superfície sem mutações.
 - Esta entrega é um serviço de consulta interno, não um servidor HTTP, endpoint REST, autenticação, nem interface gráfica. A escolha de framework HTTP fica para etapa própria após estabilizar o contrato de resposta.
+
+
+### Correção após CI do dashboard
+- O primeiro CI do `DashboardReadService` encontrou uma expectativa de mock incompleta no teste: o serviço delega corretamente todos os argumentos nomeados, inclusive `since=None`, `until=None` e `top_reasons_limit=10`.
+- O teste foi ajustado para validar o contrato completo; nenhuma regra de produção foi alterada. Novo CI necessário.

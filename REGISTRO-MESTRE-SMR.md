@@ -3017,3 +3017,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI push #44412971060 SUCCESS no commit `21a775a415fca2f75d98e6bb3bf2188c9dfafd80`: 497 testes aprovados em 4,233s; `compileall` concluído. Os testes de pipeline completo e replay idempotente continuam aprovados.
 - A mudança é exclusivamente de fixture/teste; não altera lógica de produção. PR #25 segue Draft e sem merge; `main` permanece intacta.
 - Próxima ação: confirmar o check PR no HEAD atualizado e concluir revisão de escopo/base da PR sem mudar seu estado nem reescrever a descrição sem autorização.
+
+
+## 209. Evento EvtSwap2 com pool divergente bloqueia o lote multi-swap — 18/11/2026
+
+- Adicionado `test_multi_swap_event_pool_mismatch_blocks_entire_batch` à integração ponta a ponta.
+- O teste parte do payload RPC determinístico de duas operações e altera exclusivamente os 32 bytes do campo `pool` do primeiro evento EvtSwap2, no offset correto do layout Borsh (bytes 16–48 após wrapper Event CPI + discriminator).
+- A associação estrutural swap/Event continua presente; a divergência só é detectada na resolução real das contas, que exige igualdade entre `event.pool` e a conta pool da instrução DAMM v2.
+- O pipeline rejeita o lote inteiro: 2 swaps decodificados, 0 reconciliados, 2 unresolved, 0 bundles persistidos e `ready_for_next_venue=False`. O teste confirma tentativas INCOMPLETE, ausência dos dois bundles, assinatura não processada e checkpoint inexistente.
+- Primeira execução do teste falhou porque o teste alterava bytes 8–40, que pertencem ao discriminator/wrapper, e não ao campo pool. A inspeção do decoder confirmou o offset correto 16–48; a fixture foi corrigida e a nova execução passou.
+- CI push #44413649563 SUCCESS no commit `943a18f2208d5fba123207c7012d83a53a227175`: 498 testes aprovados em 4,147s; `compileall` concluído. O novo teste aparece como `ok`.
+- PR #25 segue OPEN/DRAFT e sem merge; `main` intacta. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
+- Próxima ação: verificar o check de PR no HEAD atual e aprofundar auditoria de evidências Mainnet, especialmente a correspondência de pool e contas para operações múltiplas reais.

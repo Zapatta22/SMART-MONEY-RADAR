@@ -485,8 +485,15 @@ def reconcile_damm_v2_economic_batch(
             and id(transfer) not in claimed_ids
         ]
         if unclaimed:
+            details = "; ".join(
+                f"ix={transfer.instruction_index}/inner={transfer.inner_instruction_index} "
+                f"{transfer.source_account}->{transfer.destination_account} "
+                f"mint={transfer.mint} amount={transfer.amount_raw}"
+                for transfer in unclaimed
+            )
             raise ValueError(
-                "há transferências não atribuídas que afetam token accounts do swap"
+                "há transferências não atribuídas que afetam token accounts do swap: "
+                + details
             )
 
         actual: dict[str, object] = {}
@@ -518,6 +525,7 @@ def reconcile_damm_v2_economic_batch(
             return DammV2EconomicReconciliation(
                 "INCOMPLETE", len(contexts), tuple(expected_rows),
                 "; ".join(mismatches), tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
+                tuple(transfer_fee_absence_proofs),
             )
         return DammV2EconomicReconciliation(
             "RECONCILED", len(contexts), tuple(expected_rows),
@@ -530,9 +538,11 @@ def reconcile_damm_v2_economic_batch(
         return DammV2EconomicReconciliation(
             "AMBIGUOUS", len(contexts), (), str(exc),
             tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
+            tuple(transfer_fee_absence_proofs),
         )
     except (TypeError, ValueError) as exc:
         return DammV2EconomicReconciliation(
             "INCOMPLETE", len(contexts), (), str(exc),
             tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
+            tuple(transfer_fee_absence_proofs),
         )

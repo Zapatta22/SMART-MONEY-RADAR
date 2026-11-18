@@ -19,6 +19,15 @@ from typing import Callable
 
 _BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
+
+def _is_finite_number(value: object) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
 def _is_solana_signature(value: str) -> bool:
     """Valida alfabeto Base58 e tamanho decodificado de uma assinatura Ed25519."""
     if not isinstance(value, str) or not value:
@@ -58,13 +67,9 @@ class RpcFixtureCollector:
         if parsed_endpoint.scheme != "https" or not parsed_endpoint.hostname:
             raise ValueError("O endpoint RPC deve ser uma URL HTTPS válida.")
         if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            or not math.isfinite(timeout)
+            not _is_finite_number(timeout)
             or timeout <= 0
-            or isinstance(min_interval_seconds, bool)
-            or not isinstance(min_interval_seconds, (int, float))
-            or not math.isfinite(min_interval_seconds)
+            or not _is_finite_number(min_interval_seconds)
             or min_interval_seconds < 0
         ):
             raise ValueError(

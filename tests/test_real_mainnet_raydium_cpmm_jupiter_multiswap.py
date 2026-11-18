@@ -26,6 +26,10 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     decode_solana_token_transfers,
 )
 from smart_money_radar.domain.models import build_swap_operation_id
+from smart_money_radar.domain.raydium_cpmm_persistence_pipeline import (
+    process_raydium_cpmm_observation,
+)
+from smart_money_radar.storage.event_store import SQLiteEventStore
 from smart_money_radar.domain.swap_bundle_builder import build_swap_domain_bundles
 
 
@@ -152,6 +156,45 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         )
         self.assertEqual(len(sell_bundles), 1)
         self.assertEqual(sell_bundles[0].classification.side, "SELL")
+
+
+    def test_jupiter_multi_swap_persists_matched_hop_and_keeps_failed_hop_pending(self) -> None:
+        import tempfile
+
+        result = self.fixture["result"]
+        wallet = result["transaction"]["message"]["accountKeys"][0]
+        signature = result["transaction"]["signatures"][0]
+        swaps = decode_raydium_cpmm_swaps(self.fixture)
+        matched_operation_id = build_swap_operation_id(
+            "solana", signature, swaps[0].instruction_index, swaps[0].cpi_path
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "jupiter.sqlite3")
+            try:
+                first = process_raydium_cpmm_observation(
+                    store, self.fixture, wallet_address=wallet, signature=signature
+                )
+                self.assertEqual(first.status, "pending_reconciliation")
+                self.assertEqual(first.decoded_swaps, 2)
+                self.assertEqual(first.matched_swaps, 1)
+                self.assertEqual(first.unresolved_swaps, 1)
+                self.assertEqual(first.saved_bundles, 1)
+                self.assertFalse(first.checkpoint_advanced)
+                self.assertIsNotNone(store.get_swap_bundle(matched_operation_id))
+                self.assertFalse(store.has_processed_signature(wallet, signature))
+                self.assertEqual(store.get_pending_signatures(wallet), [signature])
+
+                replay = process_raydium_cpmm_observation(
+                    store, self.fixture, wallet_address=wallet, signature=signature
+                )
+                self.assertEqual(replay.status, "pending_reconciliation")
+                self.assertEqual(replay.saved_bundles, 0)
+                self.assertFalse(replay.checkpoint_advanced)
+                self.assertIsNotNone(store.get_swap_bundle(matched_operation_id))
+            finally:
+                store.close()
+
 
 
 if __name__ == "__main__":

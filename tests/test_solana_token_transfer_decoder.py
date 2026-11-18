@@ -44,6 +44,13 @@ def _tx(instructions, keys=None, meta=None):
 
 
 class TokenTransferDecoderTests(unittest.TestCase):
+    def test_rejects_mixed_account_key_formats(self):
+        with self.assertRaisesRegex(ValueError, "mistura formatos"):
+            decode_solana_token_transfers(_tx([], keys=[
+                {"pubkey": "parsed-key", "signer": True},
+                "compiled-key",
+            ]))
+
     def test_decodes_compiled_transfer(self):
         result = decode_solana_token_transfers(_tx([{
             "programId": SPL_TOKEN_PROGRAM_ID,

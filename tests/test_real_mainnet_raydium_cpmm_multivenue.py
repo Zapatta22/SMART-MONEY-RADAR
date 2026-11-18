@@ -1,6 +1,7 @@
 """Integration coverage for a finalized real-mainnet CPMM CPI in a multi-venue route."""
 from __future__ import annotations
 
+import copy
 import hashlib
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -24,6 +25,37 @@ MANIFEST_PATH = FIXTURE_PATH.with_suffix(".json.manifest.json")
 
 
 class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
+    @staticmethod
+    def _fixture_with_resolved_loaded_addresses(fixture):
+        """Normaliza a projeção legada que preserva loadedAddresses mas omite ALT lookups.
+
+        O fixture anonimizado contém os endereços já resolvidos pelo RPC, porém
+        não preserva addressTableLookups. Para os testes econômicos, expande a
+        ordem canônica static + writable + readonly e remove o campo separado.
+        A fixture original e seu hash/manifesto permanecem intactos.
+        """
+        projected = copy.deepcopy(fixture)
+        result = projected.get("result", {})
+        transaction = result.get("transaction", {})
+        message = transaction.get("message", {})
+        meta = result.get("meta", {})
+        loaded = meta.get("loadedAddresses") if isinstance(meta, dict) else None
+        lookups = message.get("addressTableLookups", [])
+        if loaded is not None and not lookups:
+            writable = loaded.get("writable") if isinstance(loaded, dict) else None
+            readonly = loaded.get("readonly") if isinstance(loaded, dict) else None
+            keys = message.get("accountKeys")
+            if (
+                not isinstance(keys, list)
+                or not isinstance(writable, list)
+                or not isinstance(readonly, list)
+                or any(not isinstance(key, str) or not key for key in writable + readonly)
+            ):
+                raise ValueError("Projeção ALT incompleta: não é possível resolver accountKeys.")
+            message["accountKeys"] = keys + writable + readonly
+            meta.pop("loadedAddresses", None)
+        return projected
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.fixture_bytes = FIXTURE_PATH.read_bytes()
@@ -45,17 +77,18 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
         self.assertIsNone(self.fixture["result"]["meta"]["err"])
 
     def test_reconciles_real_cpmm_cpi_with_zero_net_input_account_and_forwarded_output(self) -> None:
-        result = self.fixture["result"]
-        swaps = decode_raydium_cpmm_swaps(self.fixture)
+        fixture = self._fixture_with_resolved_loaded_addresses(self.fixture)
+        result = fixture["result"]
+        swaps = decode_raydium_cpmm_swaps(fixture)
         self.assertEqual(len(swaps), 1)
         swap = swaps[0]
         self.assertEqual((swap.instruction_index, swap.inner_instruction_index), (2, 14))
         self.assertEqual(swap.stack_height, 2)
         self.assertEqual(swap.cpi_path, (3,))
 
-        transfers = decode_solana_token_transfers(self.fixture)
+        transfers = decode_solana_token_transfers(fixture)
         self.assertEqual(len(transfers), 10)
-        deltas = decode_token_account_balance_deltas(self.fixture, include_unchanged=True)
+        deltas = decode_token_account_balance_deltas(fixture, include_unchanged=True)
         delta_by_account = {item.token_account: item for item in deltas}
         self.assertEqual(delta_by_account[swap.accounts.input_token_account].delta_raw, 0)
         self.assertEqual(delta_by_account[swap.accounts.output_token_account].delta_raw, 74030)
@@ -96,7 +129,8 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
     def test_real_mainnet_fixture_runs_end_to_end_through_sqlite_pipeline(self) -> None:
         import tempfile
 
-        result = self.fixture["result"]
+        fixture = self._fixture_with_resolved_loaded_addresses(self.fixture)
+        result = fixture["result"]
         wallet = result["transaction"]["message"]["accountKeys"][0]
         signature = result["transaction"]["signatures"][0]
         operation_id = build_swap_operation_id("solana", signature, 2, (3,))
@@ -106,7 +140,7 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
             try:
                 outcome = process_raydium_cpmm_observation(
                     store,
-                    self.fixture,
+                    fixture,
                     wallet_address=wallet,
                     signature=signature,
                 )

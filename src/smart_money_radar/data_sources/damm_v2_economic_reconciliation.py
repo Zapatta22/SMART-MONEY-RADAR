@@ -168,6 +168,7 @@ def reconcile_damm_v2_economic_batch(
 
     expected: dict[str, dict[str, int | str]] = {}
     claimed_transfers: set[SolanaTokenTransfer] = set()
+    claimed_operations: set[tuple[int, int | None, tuple[int, ...]]] = set()
     try:
         for context, item in zip(contexts, evidence):
             if not isinstance(context, DammV2SwapTransferContext):
@@ -211,6 +212,16 @@ def reconcile_damm_v2_economic_batch(
                 )
             ):
                 raise ValueError("metadados CPI da associação são inválidos")
+            operation_key = (
+                association.instruction_index,
+                association.inner_instruction_index,
+                association.cpi_path,
+            )
+            if operation_key in claimed_operations:
+                raise RuntimeError(
+                    "identidade de swap DAMM v2 duplicada no mesmo lote"
+                )
+            claimed_operations.add(operation_key)
             for transfer in transfers:
                 if (
                     transfer.cpi_path_valid is not True

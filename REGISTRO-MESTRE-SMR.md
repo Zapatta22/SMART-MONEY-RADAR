@@ -2578,3 +2578,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Ainda pendentes em runtime: `test_damm_v2_fixture_collector.py`, `test_raydium_cpmm_persistence_pipeline.py`, `test_wallet_monitor.py`, `test_rpc_fixture_collector.py`, `test_damm_v2_analyzer.py`, `test_damm_v2_persistence_pipeline.py`, `test_damm_v2_transaction_pipeline.py` e `python -m compileall -q src tests`. Antes de coletar fixture RAW mainnet, executar os testes restantes e revisar o resultado.
 - A causa específica do provisionamento continua não confirmada. O próximo avanço técnico confiável é executar os testes restantes em runtime no clone local do usuário ou restabelecer runner GitHub Actions. Não tornar o repositório público, não ativar pagamento e não fazer merge sem decisão expressa.
 - PR #25 segue Draft, aberto, sem merge; branch `feat/damm-v2-transaction-pipeline` continua baseada em `feat/damm-v2-swap-domain-adapter`.
+
+
+## 169. Primeiro ciclo de runtime dos testes restantes e ajuste de mensagem — PR #25 (18/11/2026)
+
+- O usuário atualizou o clone Termux até o commit `4be884d333f86d3449af3afe2ba48ba7123e38e9` (Registro Mestre seção 168) e iniciou a bateria pendente.
+- `test_damm_v2_fixture_collector.py`: 2 testes executados, OK.
+- `test_raydium_cpmm_persistence_pipeline.py`: 13 testes executados; 12 passaram e 1 falhou exclusivamente porque a asserção `assertRaisesRegex(ValueError, "não corresponde")` esperava uma expressão que não estava presente na mensagem emitida. A validação rejeitou a assinatura divergente antes da persistência, conforme esperado; não há evidência de defeito na regra de rejeição.
+- Correção aplicada diretamente na branch `feat/damm-v2-transaction-pipeline`, commit `c9a772a90a12539237899868f409f2f8f0a2836a`: mensagem agora declara explicitamente `A assinatura informada não corresponde à primeira assinatura única do payload RPC.` A regra de validação não foi enfraquecida. A presença do novo texto foi confirmada via leitura do arquivo no GitHub.
+- Como o loop do usuário foi interrompido no primeiro teste com falha, `test_wallet_monitor.py`, `test_rpc_fixture_collector.py`, `test_damm_v2_analyzer.py`, `test_damm_v2_persistence_pipeline.py`, `test_damm_v2_transaction_pipeline.py` e `compileall` ainda não foram executados nessa bateria. Reexecutar após sincronizar o novo commit; não repetir o teste já aprovado do fixture collector, salvo necessidade.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; não coletar fixture RAW mainnet antes da validação runtime completa.

@@ -2121,3 +2121,5 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Implementação: `f4c075ebb63efe658364b29a71c15f5fca0d8d2d`; remoção da checagem duplicada na persistência: `e419f4158a27e3177e492a63d72995bb468bb5ff`; testes do pipeline: `b5c0512ba4eb8f519b4d66ed72a7b867ded6b84a`; fixtures WalletMonitor: `ad9bc80c03f56f5e3b888838e35a1ae05ed69a1b`.
 - Revisão estática enviada ao PR #25. Testes runtime/compileall ainda não foram executados para esses commits; CI sem steps/logs não conta como validação.
 - PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.
+
+- CI do HEAD `50c64ead640aa2ae1be4eefb60dad32587114423`: run #717 (`44318265798`), job `134850068290`, falhou antes de iniciar steps (`steps=null`, `logs_url=null`). Não comprova falha nem aprovação dos testes; sem retry automático.

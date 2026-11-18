@@ -3217,3 +3217,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 
 - A adapter agora inclui em cada `SwapEvidence` todas as provas Token-2022 usadas na transação e todas as transferências cross-venue reconciliadas, não apenas a prova do referral daquele swap.
 - O validador Mainnet foi ampliado para reler cada bundle do SQLite em memória e comparar as quantidades de provas e transferências persistidas com a reconciliação em memória. Próximo run #86 valida esse requisito antes de avançar.
+
+
+### Persistência da evidência cross-venue confirmada — Mainnet #87 — 18/11/2026
+
+- Mainnet workflow #87 (run `44423115845`) SUCCESS no commit `ca3aa1c671092bd0126eada021e368d5e9fa6787`. Além de reconciliar e salvar 2/2 bundles em SQLite em memória, o validador recuperou ambos pelo `operation_id` e confirmou que cada bundle contém exatamente 6 evidências de transferência cross-venue e 3 proofs de taxa Token-2022; ambos mantêm classificação `UNKNOWN`.
+- Resultado comprovado: `reconciliation_status=RECONCILED`; `persistence_status=reconciled`; `persistence_saved_bundles=2`; `persistence_ready_for_next_venue=true`; `checkpoint_after_persistence=null`. Não houve avanço de checkpoint.
+- CI #1320 (run `44423124451`) SUCCESS no commit `ca3aa1c671092bd0126eada021e368d5e9fa6787`: 532 testes em 3,935s e `compileall` concluído.
+- O módulo de prova Token-2022 + contabilidade de transferências cross-venue está validado para a transação Mainnet alvo. Próximo módulo: transformar as pernas externas PumpSwap/Meteora DLMM em operações de swap independentes, com decoders/eventos próprios, em vez de registrá-las somente como transferências de rota anexadas aos bundles DAMM v2.

@@ -2052,3 +2052,16 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Criado `tests/test_damm_v2_fixture_collector.py` para confirmar seleção única e rejeitar catálogo ausente/ambíguo.
 - Documentado comando Termux com endpoint RPC somente leitura em `docs/DAMM-V2-TRANSACTION-PIPELINE.md`.
 - A fixture ainda não foi coletada nesta sessão; a transação candidata não foi tratada como evidência RAW até o retorno do RPC e validação de hash/estrutura.
+
+
+## 111. Bloqueio fail-closed quando metadados CPI estão ausentes — PR #25 (18/11/2026)
+
+- Auditoria estática identificou uma lacuna crítica: o pipeline podia interpretar meta.innerInstructions ausente ou nulo como lista vazia, pois o analyzer usa meta.get("innerInstructions") or [].
+- Em Solana, innerInstructions null/ausente não comprova que não houve CPI. Como DAMM v2 pode ser chamado por agregadores, esse cenário poderia produzir falsamente NO_DAMM_V2_SWAPS, liberar o pipeline CPMM e avançar checkpoint sem analisar o swap DAMM v2.
+- Corrigido process_damm_v2_transaction: agora exige meta.innerInstructions como lista explícita; lista vazia é aceita, campo ausente/nulo gera REJECTED e bloqueia a próxima venue/checkpoint.
+- Adicionados testes negativos para campo ausente e nulo em tests/test_damm_v2_transaction_pipeline.py.
+- Ajustados dois fixtures de tests/test_wallet_monitor.py para declarar explicitamente innerInstructions: [] nos cenários sem CPI.
+- Atualizada a documentação docs/DAMM-V2-TRANSACTION-PIPELINE.md.
+- Commits: implementação 3ca36505d11ec53bbd8dcc4f290db2db7962a5f4; testes do pipeline 455fd607e18550b39939fac60ae4a308830d1d7b; fixtures do monitor fc1541f974f932fa4f15654089e7941cc40ab270; documentação 73292b0fed108ca8a14e5cc8831abf5160b50043.
+- Esta é revisão estática/correção enviada à branch do PR #25. Ainda não há execução local ou CI confirmada para estes commits; não declarar testes aprovados até obter execução real.
+- PR #25 permanece Draft e sem merge. main, RAW persistente, SQLite persistente, checkpoints, RPC/Helius e estado on-chain não foram alterados.

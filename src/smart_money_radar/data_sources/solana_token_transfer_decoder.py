@@ -120,7 +120,7 @@ def _cpi_paths(instructions: list[Any]) -> list[tuple[tuple[int, ...], int | Non
 
 def _raw_transfer(
     item: Mapping[str, Any], keys: list[str]
-) -> tuple[str, str, str | None, str | None, int, int | None] | None:
+) -> tuple[str, str, str | None, str | None, int, int | None, str] | None:
     encoded = item.get("data")
     if not isinstance(encoded, str) or not encoded:
         return None
@@ -147,7 +147,7 @@ def _raw_transfer(
 
 def _parsed_transfer(
     parsed: Mapping[str, Any],
-) -> tuple[str, str, str | None, str | None, int, int | None] | None:
+) -> tuple[str, str, str | None, str | None, int, int | None, str] | None:
     kind = parsed.get("type")
     info = parsed.get("info")
     if not isinstance(kind, str) or not isinstance(info, dict):

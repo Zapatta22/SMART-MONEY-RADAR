@@ -2392,3 +2392,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Corrigido: quando há checkpoint inicial, o replay dessas observações usa `advance_checkpoint=False`; a consulta RPC subsequente determina a ordem e o avanço via CAS. Quando não existe checkpoint inicial, preserva-se o comportamento de bootstrap já coberto pelo teste de primeira execução, sem iniciar varredura histórica ampla.
 - Commit: `2084fec2ebd62722323295b2c0d88dc7dd0261f1`. Documentação atualizada.
 - Revisão estática; runtime ainda pendente.
+
+
+## 149. CI #902 repetido sem iniciar etapas — PR #25 (18/11/2026)
+
+- O push associado ao commit de código `2084fec2ebd62722323295b2c0d88dc7dd0261f1` disparou o workflow `SMR tests`, run #902 (`44329781440`).
+- O primeiro job terminou `failure` sem steps nem logs (`steps=null`, `logs_url=null`). Foi solicitado rerun específico do job; a nova tentativa também terminou `failure` sem iniciar steps e sem logs.
+- Isso não comprova falha de unittest/compileall nem aprovação. Runner/execução continua sem diagnóstico observável. Não repetir rerun em loop; manter runtime local Termux como validação executável.
+- HEAD atual do PR após atualização do Registro Mestre: `40e5db109803dce825ec2e55b35602b73894627c`.

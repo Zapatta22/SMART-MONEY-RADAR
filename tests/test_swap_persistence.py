@@ -104,6 +104,36 @@ class SwapPersistenceTests(unittest.TestCase):
             )
         self.assertIsNone(self.store.get_swap_bundle(self.observation.operation_id))
 
+    def test_parent_transaction_delete_cascades_swap_bundle(self):
+        self.store.save_swap_bundle(
+            self.observation, self.classification, self.evidence
+        )
+        with self.store._connection_scope() as connection:
+            connection.execute(
+                "DELETE FROM observed_transactions WHERE wallet_address = ? AND signature = ?",
+                ("wallet-a", "sig-a"),
+            )
+        self.assertIsNone(self.store.get_swap_bundle(self.observation.operation_id))
+
+    def test_rejects_non_solana_chain_in_v1(self):
+        operation_id = build_swap_operation_id("ethereum", "sig-a", 2, (0, 1))
+        observation = SwapObservation(
+            operation_id=operation_id, chain="ethereum", wallet_address="wallet-a",
+            signature="sig-a", input_mint="mint-a", output_mint="mint-b",
+            input_amount=Decimal("1"), output_amount=Decimal("2"),
+            observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc), parser_version="1",
+        )
+        classification = SwapClassification(
+            operation_id=operation_id, side="UNKNOWN", confidence=Decimal("0"),
+            reason="outside V1 scope",
+        )
+        evidence = SwapEvidence(
+            operation_id=operation_id, program_id="program", venue=None,
+            instruction_index=2, cpi_path=(0, 1),
+        )
+        with self.assertRaisesRegex(ValueError, "apenas da chain Solana"):
+            self.store.save_swap_bundle(observation, classification, evidence)
+
     def test_requires_parent_observation(self):
         # A different signature exercises the missing-parent guard.
         orphan = SwapObservation(

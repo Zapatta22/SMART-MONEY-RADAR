@@ -103,6 +103,15 @@ class RpcFixtureCollector:
             raise RuntimeError("RPC retornou conteúdo que não é JSON válido.") from exc
         if not isinstance(payload, dict):
             raise RuntimeError("RPC retornou JSON com estrutura inválida.")
+        if payload.get("jsonrpc") != "2.0":
+            raise RuntimeError("RPC retornou resposta sem JSON-RPC 2.0.")
+        response_id = payload.get("id")
+        if (
+            isinstance(response_id, bool)
+            or not isinstance(response_id, int)
+            or response_id != 1
+        ):
+            raise RuntimeError("RPC retornou ID de resposta divergente da requisição.")
         if payload.get("error"):
             raise RuntimeError(f"Erro RPC: {payload['error']}")
         result = payload.get("result")

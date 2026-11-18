@@ -2155,3 +2155,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits: WalletMonitor `5a689b522a47a4eca6402880c45b186be35ba536`, `3961a3f9d7db3ee14e41e8c289b125ec523171c1`, `252e34e7c1b5dba7fbd7f10e2e580b9f86631a9e`; testes `28383b0f737c75b67f316f6e20cf7ee5d664a693`, `ed5939f849d4e079b486e371e2591fd6d455aba2`.
 - Auditoria estática adicional de `_backfill_wallet`, `save_observation` e normalização: falhas on-chain no backfill são registradas como resultado conhecido e avançam checkpoint pelo padrão `advance_checkpoint=True`; observações pendentes são processadas antes do backfill histórico; ausência do checkpoint no limite configurado interrompe recuperação em vez de criar lacuna silenciosa. Não foi feita alteração nesses fluxos nesta rodada.
 - Sem execução runtime/compileall e sem conexão WebSocket/RPC real. PR #25 continua Draft; main, banco persistente, checkpoints e estado on-chain preservados.
+
+
+## 122. Validação fail-closed das páginas de assinaturas do backfill — PR #25 (18/11/2026)
+
+- Auditoria do caminho `getSignaturesForAddress` → `_backfill_wallet` encontrou risco de lacuna silenciosa: a fonte RPC aceitava itens sem `signature`, e o backfill ignorava esses itens intermediários enquanto podia continuar até o checkpoint e avançar.
+- `HeliusDataSource.get_signatures_for_address()` agora valida todos os itens da página antes de devolvê-la: cada item deve ser objeto com assinatura string não vazia e nenhuma assinatura pode se repetir na mesma página. Página malformada rejeita a chamada inteira; o backfill não recebe uma lista parcialmente válida.
+- Adicionados testes para item sem assinatura e duplicata na mesma página.
+- Commits: fonte `ccef35f7c217df62c7902b98be68aafa97e91885`; testes `98dc46b74ece2767451334cbc2253f407245634f`.
+- Revisão estática do backfill indica que falha de página interrompe antes do processamento/avanço subsequente; o checkpoint existente permanece como referência para nova tentativa. Sem runtime/compileall ou RPC real nesta rodada. PR #25 Draft; main e estado persistente preservados.

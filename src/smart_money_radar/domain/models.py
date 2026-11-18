@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from hashlib import sha256
+import json
 from typing import Literal
 
 
@@ -41,6 +43,7 @@ class ActivityEvent:
         if not self.amount.is_finite() or self.amount < 0:
             raise ValueError("O valor do evento não pode ser negativo.")
 
+
 @dataclass(frozen=True)
 class ObservedTransaction:
     """Envelope normalizado de uma transação observada na blockchain."""
@@ -64,9 +67,6 @@ class ObservedTransaction:
             raise ValueError("Estado de parsing inválido.")
         if self.slot is not None and (isinstance(self.slot, bool) or self.slot < 0):
             raise ValueError("Slot deve ser inteiro não negativo.")
-        if self.parse_status == "failed_on_chain" and self.raw_transaction is not None:
-            # O payload pode existir para uma transação falha; não há restrição.
-            pass
 
 
 @dataclass(frozen=True)
@@ -94,10 +94,28 @@ class TokenBalanceDelta:
             raise ValueError("Decimais devem ser um inteiro entre 0 e 255.")
 
 
+def build_swap_operation_id(
+    chain: str, signature: str, instruction_index: int, cpi_path: tuple[int, ...] = ()
+) -> str:
+    """Gera ID determinístico por transação, instrução e caminho CPI."""
+    if not chain.strip() or not signature.strip():
+        raise ValueError("Chain e assinatura são obrigatórias para gerar operation_id.")
+    if isinstance(instruction_index, bool) or not isinstance(instruction_index, int) or instruction_index < 0:
+        raise ValueError("Índice da instrução deve ser inteiro não negativo.")
+    if any(isinstance(index, bool) or not isinstance(index, int) or index < 0 for index in cpi_path):
+        raise ValueError("Caminho CPI deve conter apenas índices inteiros não negativos.")
+    identity = json.dumps(
+        [chain, signature, instruction_index, list(cpi_path)],
+        ensure_ascii=False, separators=(",", ":"),
+    )
+    return "swap:v1:" + sha256(identity.encode("utf-8")).hexdigest()
+
+
 @dataclass(frozen=True)
 class SwapObservation:
-    """Hipótese de swap derivada de evidências; não representa certeza semântica."""
+    """Operação econômica observada; não contém classificação nem evidências técnicas."""
 
+    operation_id: str
     chain: str
     wallet_address: str
     signature: str
@@ -105,26 +123,68 @@ class SwapObservation:
     output_mint: str
     input_amount: Decimal
     output_amount: Decimal
-    confidence: Decimal
-    evidence: tuple[str, ...]
     observed_at: datetime
     parser_version: str
 
     def __post_init__(self) -> None:
-        required = (self.chain, self.wallet_address, self.signature, self.input_mint,
-                    self.output_mint, self.parser_version)
+        required = (
+            self.operation_id, self.chain, self.wallet_address, self.signature,
+            self.input_mint, self.output_mint, self.parser_version,
+        )
         if not all(value.strip() for value in required):
-            raise ValueError("Campos de identificação do swap são obrigatórios.")
+            raise ValueError("Identificação da operação, chain, carteira, assinatura, ativos e parser são obrigatórios.")
         if self.input_mint == self.output_mint:
             raise ValueError("Mint de entrada e saída devem ser diferentes.")
         if not self.input_amount.is_finite() or self.input_amount <= 0:
             raise ValueError("Quantidade de entrada inválida.")
         if not self.output_amount.is_finite() or self.output_amount <= 0:
             raise ValueError("Quantidade de saída inválida.")
+
+
+@dataclass(frozen=True)
+class SwapClassification:
+    """Interpretação semântica independente da operação observada."""
+
+    operation_id: str
+    side: Literal["BUY", "SELL", "UNKNOWN"]
+    confidence: Decimal
+    reason: str
+
+    def __post_init__(self) -> None:
+        if not self.operation_id.strip():
+            raise ValueError("operation_id é obrigatório.")
+        if self.side not in {"BUY", "SELL", "UNKNOWN"}:
+            raise ValueError("Classificação deve ser BUY, SELL ou UNKNOWN.")
         if not self.confidence.is_finite() or not Decimal("0") <= self.confidence <= Decimal("1"):
             raise ValueError("Confiança deve estar entre 0 e 1.")
-        if not self.evidence or any(not item.strip() for item in self.evidence):
-            raise ValueError("A hipótese de swap precisa de evidências explícitas.")
+        if not self.reason.strip():
+            raise ValueError("A classificação exige motivo explícito.")
+        if self.side == "UNKNOWN" and self.confidence != Decimal("0"):
+            raise ValueError("UNKNOWN deve usar confiança zero até haver evidência classificável.")
+
+
+@dataclass(frozen=True)
+class SwapEvidence:
+    """Proveniência técnica que sustenta ou limita uma classificação de swap."""
+
+    operation_id: str
+    program_id: str
+    venue: str | None
+    instruction_index: int
+    cpi_path: tuple[int, ...] = ()
+    evidence: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.operation_id.strip() or not self.program_id.strip():
+            raise ValueError("operation_id e program_id são obrigatórios.")
+        if self.venue is not None and not self.venue.strip():
+            raise ValueError("Venue deve ser omitida ou conter texto.")
+        if isinstance(self.instruction_index, bool) or not isinstance(self.instruction_index, int) or self.instruction_index < 0:
+            raise ValueError("Índice da instrução deve ser inteiro não negativo.")
+        if any(isinstance(index, bool) or not isinstance(index, int) or index < 0 for index in self.cpi_path):
+            raise ValueError("Caminho CPI deve conter apenas índices inteiros não negativos.")
+        if any(not item.strip() for item in self.evidence):
+            raise ValueError("Evidências não podem conter itens vazios.")
 
 
 @dataclass(frozen=True)

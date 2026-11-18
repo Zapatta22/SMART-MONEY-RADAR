@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -211,6 +213,41 @@ class SQLiteEventStoreTests(unittest.TestCase):
         self.assertFalse(store.has_processed_signature("wallet-a", "sig-a"))
         self.assertIsNone(store.get_checkpoint("wallet-a"))
         store.close()
+
+    def test_concurrent_divergent_raw_writes_cannot_replace_archived_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "concurrent.sqlite3")
+            try:
+                wallet = "wallet-concurrent"
+                signature = "sig-concurrent"
+                payloads = (
+                    {"meta": {"err": None}, "transaction": {"signatures": ["first"]}},
+                    {"meta": {"err": None}, "transaction": {"signatures": ["second"]}},
+                )
+                barrier = Barrier(2)
+
+                def persist(payload):
+                    barrier.wait()
+                    try:
+                        store.save_observation(
+                            wallet, signature, payload, [],
+                            parse_status="no_events", parser_version="1",
+                            advance_checkpoint=False,
+                        )
+                        return "saved"
+                    except ValueError as exc:
+                        if "Payload RAW divergente" not in str(exc):
+                            raise
+                        return "rejected"
+
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    outcomes = list(executor.map(persist, payloads))
+
+                self.assertCountEqual(outcomes, ["saved", "rejected"])
+                self.assertIn(store.get_raw_transaction(wallet, signature), payloads)
+                self.assertFalse(store.has_processed_signature(wallet, signature))
+            finally:
+                store.close()
 
     def test_save_observation_allows_filling_missing_raw_payload(self) -> None:
         store = SQLiteEventStore(":memory:")

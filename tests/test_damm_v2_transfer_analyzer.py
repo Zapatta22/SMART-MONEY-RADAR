@@ -145,6 +145,15 @@ class DammV2TransferAnalyzerTests(unittest.TestCase):
         )
         self.assertEqual([item.status for item in result], ["AMBIGUOUS", "AMBIGUOUS"])
 
+    def test_rejects_transfer_with_untrusted_cpi_hierarchy(self):
+        untrusted = SolanaTokenTransfer(
+            **{**self.input.__dict__, "cpi_path_valid": False}
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [self.context], [untrusted, self.output]
+        )[0]
+        self.assertEqual(result.status, "TRANSFER_MISSING")
+
     def test_failed_transfer_is_not_attributed(self):
         failed = _transfer(
             "user-a", "vault-a", SPL_TOKEN_PROGRAM_ID, "mint-a", 6,

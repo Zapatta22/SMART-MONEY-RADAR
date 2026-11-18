@@ -74,10 +74,11 @@ def _context(outer=0, path=(0,), event=None):
 
 
 def _transfer(source, destination, mint, amount, fee=None, decimals=6,
-              outer=0, inner=2, path=(0, 0)):
+              outer=0, inner=2, path=(0, 0), program_id=TOKEN_2022_PROGRAM_ID,
+              cpi_program_path=()):
     return SolanaTokenTransfer(
-        program_id=TOKEN_2022_PROGRAM_ID,
-        program_name="Token-2022",
+        program_id=program_id,
+        program_name="Token-2022" if program_id == TOKEN_2022_PROGRAM_ID else "SPL Token",
         instruction_type="TRANSFER_CHECKED_WITH_FEE" if fee is not None else "TRANSFER_CHECKED",
         instruction_index=outer, inner_instruction_index=inner,
         stack_height=4, cpi_path=path,
@@ -85,6 +86,7 @@ def _transfer(source, destination, mint, amount, fee=None, decimals=6,
         authority="authority", mint=mint, amount_raw=amount,
         decimals=decimals, execution_status="EXECUTED",
         source_format="compiled", fee_amount_raw=fee,
+        cpi_program_path=cpi_program_path,
     )
 
 
@@ -627,6 +629,56 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("não está explícita", result.reason)
+
+    def test_reconciles_supported_scopes_router_upstream_and_downstream_transfers(self):
+        context = _context(event=_event(
+            input_amount=100, output_amount=90, referral_fee=0, has_referral=False
+        ))
+        input_transfer = _transfer(
+            "user-a", "vault-a", "mint-a", 100,
+            program_id=SPL_TOKEN_PROGRAM_ID, outer=2, inner=1,
+        )
+        output_transfer = _transfer(
+            "vault-b", "user-b", "mint-b", 90,
+            program_id=SPL_TOKEN_PROGRAM_ID, outer=3, inner=1,
+        )
+        upstream = _transfer(
+            "pool-in", "user-a", "mint-a", 100,
+            program_id=SPL_TOKEN_PROGRAM_ID, outer=5, inner=2,
+            cpi_program_path=(
+                "4X3dGCFh63SyE2bNZdGUV7Rj5ukK1XgrxesoxyKQNiRN",
+                "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+            ),
+        )
+        downstream = _transfer(
+            "user-b", "pool-out", "mint-b", 90,
+            program_id=SPL_TOKEN_PROGRAM_ID, outer=4, inner=2,
+            cpi_program_path=(
+                "4X3dGCFh63SyE2bNZdGUV7Rj5ukK1XgrxesoxyKQNiRN",
+                "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
+                "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
+            ),
+        )
+        evidence = _evidence(context, input_transfer, output_transfer)
+        result = _reconcile(
+            [context], [evidence], _deltas([
+                ("user-a", "mint-a", 0, 6),
+                ("vault-a", "mint-a", 100, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 0, 6),
+                ("pool-in", "mint-a", -100, 6),
+                ("pool-out", "mint-b", 90, 6),
+            ]),
+            all_transfers=[
+                input_transfer, output_transfer, upstream, downstream,
+            ],
+        )
+        self.assertEqual(result.status, "RECONCILED", result.reason)
+        self.assertEqual(len(result.cross_venue_transfers), 2)
+        self.assertEqual(
+            {item.outer_instruction_index for item in result.cross_venue_transfers},
+            {4, 5},
+        )
 
     def test_reconciles_referral_when_mint_initialization_proves_zero_fee(self):
         context = _context(event=_event(referral_fee=5, has_referral=True))

@@ -56,6 +56,20 @@ class SolanaTokenBalanceDeltaDecoderTests(unittest.TestCase):
         result = decode_solana_token_account_balance_deltas(tx)
         self.assertEqual(result.deltas[0].token_account, "loaded-token-account")
 
+    def test_failed_transaction_has_no_deltas(self):
+        tx = _tx([_entry(1)], [_entry(1, amount="90")])
+        tx["meta"]["err"] = {"InstructionError": [0, "Custom"]}
+        result = decode_solana_token_account_balance_deltas(tx)
+        self.assertEqual(result.deltas, ())
+        self.assertIn("TRANSACTION_FAILED", [x.code for x in result.issues])
+
+    def test_missing_execution_status_is_not_assumed_success(self):
+        tx = _tx([_entry(1)], [_entry(1, amount="90")])
+        del tx["meta"]["err"]
+        result = decode_solana_token_account_balance_deltas(tx)
+        self.assertEqual(result.deltas, ())
+        self.assertIn("EXECUTION_STATUS_UNKNOWN", [x.code for x in result.issues])
+
     def test_missing_snapshot_side_is_not_assumed_zero(self):
         result = decode_solana_token_account_balance_deltas(_tx(
             [_entry(1)], []

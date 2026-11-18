@@ -63,6 +63,26 @@ class HeliusRpcTests(unittest.TestCase):
             },
         )
 
+    def test_rejects_mismatched_json_rpc_response_id(self) -> None:
+        source = HeliusDataSource(
+            self.settings,
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                {"jsonrpc": "2.0", "id": 999, "result": {"solana-core": "wrong-request"}}
+            ),
+        )
+        with self.assertRaisesRegex(HeliusRpcError, "ID incompatível"):
+            source.get_version()
+
+    def test_rejects_missing_json_rpc_version(self) -> None:
+        source = HeliusDataSource(
+            self.settings,
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                {"id": 1, "result": {"solana-core": "missing-version"}}
+            ),
+        )
+        with self.assertRaisesRegex(HeliusRpcError, "versão JSON-RPC"):
+            source.get_version()
+
     def test_rpc_error_does_not_include_api_key_in_error_text(self) -> None:
         def fake_opener(request: Request, timeout: float) -> FakeResponse:
             return FakeResponse(

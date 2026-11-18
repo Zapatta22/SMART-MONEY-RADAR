@@ -219,7 +219,7 @@ def reconcile_damm_v2_economic_batch(
             )
             if operation_key in claimed_operations:
                 raise RuntimeError(
-                    "identidade de swap DAMM v2 duplicada no mesmo lote"
+                    "identidade de swap DAMM v2 duplicada/reutilizada no mesmo lote"
                 )
             claimed_operations.add(operation_key)
             for transfer in transfers:

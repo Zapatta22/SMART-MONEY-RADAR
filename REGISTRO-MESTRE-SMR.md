@@ -3055,3 +3055,16 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - As classificações de domínio permanecem `UNKNOWN`; essa validação não gera BUY/SELL nem ordens.
 - Evidência é Mainnet real e distinta das fixtures sintéticas da seção 203. PR #25 continua OPEN/DRAFT e sem merge; execução financeira desabilitada.
 - Próxima ação: aguardar e validar o CI da PR #25 no HEAD documental atualizado, depois revisar o próximo modo de transação real (multi-swap sem round-trip wSOL ou CPI aninhado) sem relaxar os critérios fail-closed.
+
+
+## 212. Cadeia empilhada #21–#25 com checks verdes — 18/11/2026
+
+- Revisados os checks dos cinco PRs abertos que formam a cadeia de transferências/fees → atribuição referral → reconciliação econômica → contratos de domínio → pipeline transacional.
+- PR #21, HEAD `62b3f54b717cf0e6675610b8b88bdfd8c542581d`: check `test` SUCCESS.
+- PR #22, HEAD `b350dca26a5bf0729f58b0770f07b85f5375b9e4`: check `test` SUCCESS.
+- PR #23, HEAD `947c056e01bfc7b22037e19e3600a5248a29e281`: reexecução de CI, run `44308645725`, tentativa 2 SUCCESS, 374 testes e compileall.
+- PR #24, HEAD `58a19750672851a79e59d4cdfc953a37870e7769`: CI push `44413972426` e CI PR `44413981201` SUCCESS, 380 testes e compileall. Os dois defeitos de import identificados na auditoria foram corrigidos.
+- PR #25, HEAD `558006c778d290d73463398a726e037e8535adcc`: CI PR `44414226876` SUCCESS, 498 testes em 3,916s e compileall; o novo teste de divergência do pool está aprovado.
+- Todas as cinco PRs permanecem OPEN/DRAFT e com mergeability disponível na última leitura. A cadeia ainda não foi integrada; nenhuma alteração foi feita na `main`.
+- A PR #25 contém os dois imports corrigidos do arquivo de teste da PR #24; foi verificado diretamente nos arquivos das duas branches.
+- Próxima ação: mapear o próximo nível de dependência da PR #21 e verificar se a branch-base Token-2022 está coberta por PR aberto/fechado e CI verde, para definir a sequência integral de integração sem saltar dependências.

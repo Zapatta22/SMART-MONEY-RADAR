@@ -1099,3 +1099,12 @@ Correções aplicadas na branch:
 - CI para esse head: run `44248529109`, em andamento no momento do registro; o sucesso do run anterior não valida as correções.
 - PR #16 permanece Draft, aberto, não merged.
 - Nenhum dado RAW foi enviado; nenhuma execução local, RPC, banco, migração, checkpoint ou operação on-chain ocorreu.
+
+
+## 59. Correção de teste de redação e CI — 2026-11-18
+
+- CI do head `92aeae7b392ee4329932f5e9d442b42164c2e953`: run `44248529109` falhou em um único teste novo; 247 outros testes passaram (total 248).
+- Falha não era no redator: o JSON de teste escapava o caractere acentuado como `\\u00ed`, enquanto a asserção procurava o texto Unicode literal.
+- Corrigido o teste para serializar com `ensure_ascii=False`, preservando a verificação de que caminho sensível não é exibido.
+- Commit corretivo: `5e02581090366a46fca6c5fe49cccaaed2099ee7`.
+- Aguardando CI para o novo head. Nenhuma alteração funcional adicional, nenhum dado local enviado, nenhuma execução de DB/RPC/on-chain.

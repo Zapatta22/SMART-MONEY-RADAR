@@ -2089,8 +2089,9 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 ## 114. Formato homogêneo obrigatório para accountKeys — PR #25 (18/11/2026)
 
 - Auditoria estática identificou que os helpers de resolução usavam `any(dict)` para decidir se `accountKeys` estava em formato `jsonParsed`. Uma lista mista (objetos e strings) podia ser aceita parcialmente e produzir índices/chaves inconsistentes.
-- O pipeline DAMM v2, o decodificador SPL/Token-2022 e o decodificador de deltas agora rejeitam listas que misturam objetos `jsonParsed` e strings `compiled`. A validação ocorre antes de resolver endereços/índices.
-- Testes negativos adicionados nos três níveis: pipeline DAMM v2 retorna `REJECTED`; decodificador de transferências levanta `ValueError`; decodificador de deltas retorna `ACCOUNT_KEYS_INVALID`.
+- O pipeline DAMM v2, o analyzer DAMM v2, o decodificador SPL/Token-2022 e o decodificador de deltas agora rejeitam listas que misturam objetos `jsonParsed` e strings `compiled`. A validação ocorre antes de resolver endereços/índices.
+- Testes negativos adicionados nos quatro níveis: pipeline DAMM v2 retorna `REJECTED`; analyzer e decodificador de transferências levantam `ValueError`; decodificador de deltas retorna `ACCOUNT_KEYS_INVALID`.
+- Hardening adicional do analyzer: `f8769c377b0ae533a3a68659312bbe24245958fd`; teste `e816e6be973982639691f3bb2181454d5e9992d3`.
 - Commits de implementação: `45c1372bd535c1608b348569ea8e7db53bb228b9`, `d8fa7b8c41809b9c0c701057577b58ff30e09750`, `93853ccf8e28a1e60d0b4165327aae9d1b061cea`.
 - Commits de testes: `fc40f28931eec6d247f5203ff5391c5f602c1d77`, `8a4bac2cdb57fcdeff390bd750feb7b8363ce479`, `f6b9f818a3d14941eded6b779444711fd2daabf1`.
 - Documentação atualizada. Esta alteração é revisão estática enviada à branch; nenhum teste runtime/compileall foi executado por esta ação. A CI continua sujeita à indisponibilidade pré-etapas já registrada.

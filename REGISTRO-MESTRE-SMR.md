@@ -1043,3 +1043,35 @@ Três projeções pseudonimizadas versionadas foram lidas sem reproduzir valores
 - Nenhum payload RAW foi lido remotamente porque não está versionado na branch.
 - Nenhum banco criado/migrado, nenhuma importação executada, nenhuma RPC/Helius iniciada e nenhuma operação on-chain.
 - Nenhuma alteração na `main`; PR #14 e #15 preservados como Draft.
+
+
+## 57. PR #16 — inspetor offline e privado de estrutura das fixtures — 2026-11-18
+
+### Branch e PR
+- Branch: `feat/offline-fixture-inspector`, derivada do head do PR #15.
+- PR #16: `[DRAFT] Add privacy-preserving offline fixture inspector`.
+- URL: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/16
+- Base: `feat/reconciliation-diagnostics`; head atual após criação inicial: `c8f9bb3d94d11541366a171d9d8edd5ea376c3ae`.
+- PR #16 está Draft, aberto, não merged. Não altera `main`, PR #14 ou PR #15.
+
+### Implementação
+Novo arquivo `tools/inspect_solana_fixture_structure.py`:
+- Faz inspeção offline dos pares `*.raw.json` / `*.manifest.json` com o auditor `audit_fixture()`.
+- Por fixture, informa integridade do par, erros estáticos, campos do envelope/transaction/message/meta, contagens de account keys, instruções, grupos/instruções internas, snapshots pre/post, snapshots com owner, contagem de assinaturas, presença de slot, tipo de versão e estado on-chain.
+- Não imprime nomes/caminhos de arquivo, endereços, assinaturas, mints, IDs de programas, blockhashes, valores de token ou URLs.
+- Declara explicitamente que o manifesto não declara wallet address; não infere carteira de accountKeys/signers.
+- Não acessa RPC/Helius, não inicializa SQLite, não grava arquivos e não avança checkpoints.
+- Código de saída: 0 para todos os pares íntegros/estruturalmente válidos; 1 para qualquer par inválido; 2 quando não há manifestos.
+- Uso local documentado no PR: `PYTHONPATH=src python tools/inspect_solana_fixture_structure.py data/fixtures/raw`.
+
+Novo teste `tests/test_offline_fixture_structure_inspector.py`:
+- Fixture sintética com valores sentinela de endereço, assinatura, mint e programa.
+- Confere contagens estruturais e que nenhum valor sensível aparece na saída.
+- Confere que erro de SHA-256 é reportado sem imprimir identidade do arquivo.
+- Os testes ainda aguardam execução CI no head do PR #16; não declarar aprovação até resultado concluído.
+
+### Limitações e próximo passo
+- Não foi possível inspecionar os cinco RAW locais diretamente pelo GitHub porque eles não estão versionados na branch; nenhum RAW foi enviado ao repositório.
+- A ferramenta é código pronto para executar localmente, mas ainda não foi executada no Termux.
+- Nenhuma importação SQLite, associação de carteira, migração, criação de DB, RPC/Helius ou operação on-chain foi realizada.
+- Após CI aprovado, a próxima ação operacional será o usuário executar o inspetor no Termux para obter contagens/estrutura sem revelar identificadores. Só então será definida a política de associação carteira↔transação e a ingestão histórica segura.

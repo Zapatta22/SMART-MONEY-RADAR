@@ -427,3 +427,16 @@ Regras:
 O decoder não atribui deltas a swaps. Deltas pre/post são agregados à transação: quando um vault ou token account participa de mais de uma operação, não se pode dividir o delta por heurística. Uma futura camada de reconciliação deverá provar exclusividade/atribuição das quatro contas por swap e contabilizar quaisquer transferências adicionais. Token-2022 transfer-fee e withheld fees continuam sem suporte econômico.
 
 CI `SMR tests`, run `44256509698`: success; testes unitários e compileall aprovados. A validação local no Termux e a inspeção dos cinco RAW reais ainda estão pendentes. Nenhum banco, importação, RPC, checkpoint ou operação on-chain foi executado.
+
+
+## 27. Auditoria redigida da cobertura dos quatro deltas DAMM v2 (18/11/2026)
+
+Foi adicionada a ferramenta offline `tools/audit_damm_v2_delta_coverage.py`, com testes em `tests/test_damm_v2_delta_coverage_audit.py`.
+
+A ferramenta combina associação estrutural swap↔EvtSwap2, mapeamento das contas, atribuição estrutural de transferências e deltas pre/post. O relatório não expõe identificadores, valores ou caminhos.
+
+Para cada operação, verifica se os quatro papéis possuem deltas distintos: token account de entrada, vault de entrada, vault de saída e token account de saída. Também verifica integridade global dos snapshots, mint esperado e sinais compatíveis com entrada/saída. Qualquer ausência, colisão, issue de snapshot ou divergência permanece em estado negativo/incompleto.
+
+`FOUR_ACCOUNT_DELTAS_PRESENT` não significa reconciliação econômica: ainda é necessário comparar os valores brutos transferidos com deltas líquidos, EvtSwap2 e taxas. Deltas pre/post são agregados à transação e não podem ser repartidos por heurística entre swaps. Transfer fee Token-2022 permanece sem suporte completo.
+
+A ferramenta não acessa rede, SQLite, não grava arquivos, não altera checkpoints e não cria SwapObservation. CI do commit do auditor está em andamento (run `44256966076`); CI do head com os testes ainda não confirmado. Validação local e execução sobre os cinco RAW pendentes.

@@ -2326,3 +2326,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Teste adicionado para duas assinaturas processadas em ordem no mesmo slot, confirmando que o checkpoint termina na segunda assinatura.
 - Commits: EventStore `bba78356d91d07bb881a0f7d8205111f37442533`; WalletMonitor `b9213855505da9ea3b8850d51121464b8cebf7a2`; teste `cfbd48b4068cd1c7e9a475af8f14fe24351a2203`; guarda slot ausente `e0e50e81ae563675428c0d13f501d2ab4326c776`.
 - Revisão estática e re-leitura GitHub pendentes de fechamento; runtime unittest/compileall ainda não executados.
+
+## 141. Idempotência imutável de bundles de swap — PR #25 (18/11/2026)
+
+- Auditoria de replay/crash parcial encontrou que `save_swap_bundle()` usava `ON CONFLICT(operation_id) DO UPDATE` nos três contratos. Uma repetição com mesma identidade determinística e conteúdo divergente poderia substituir observação/classificação/evidência silenciosamente.
+- Agora, replay idêntico retorna `False` sem regravar. Replay divergente para `operation_id` existente é rejeitado por padrão e preserva os três registros. Bundle parcialmente existente também é rejeitado, sem reparo silencioso.
+- Substituição continua tecnicamente possível somente com `replace_existing=True` explícito, reservado a reprocessamento deliberado. Os pipelines normais DAMM v2/CPMM não passam esse argumento e, portanto, permanecem fail-closed.
+- Testes atualizados/adicionados: replay idêntico, conflito sem sobrescrita, substituição explícita e bundle incompleto sem reparo automático.
+- Commits: EventStore `1656aa6626fde43cea3e67e6c931edad7642cf34`; testes `000d0123d57a340f06a9a45f8fd2a2114bfbb06c` e `9f9a49cba684c288637f3f1e24573c4eca643fb6`.
+- Releitura GitHub confirmou o guard e os testes; runtime unittest/compileall ainda não executados.

@@ -146,6 +146,33 @@ class TestRaydiumCpmmAnalyzer(unittest.TestCase):
         self.assertEqual(result[0].cpi_path, (0,))
         self.assertEqual(result[0].stack_height, 2)
 
+    def test_cpi_group_is_attached_to_its_own_outer_instruction(self):
+        meta = {
+            "err": None,
+            "innerInstructions": [
+                {
+                    "index": 1,
+                    "instructions": [
+                        {
+                            **_instruction(SWAP_BASE_INPUT_DISCRIMINATOR),
+                            "stackHeight": 2,
+                        }
+                    ],
+                }
+            ],
+        }
+        result = decode_raydium_cpmm_swaps(_transaction(
+            [
+                {"programId": "RouterA", "accounts": [], "data": "1"},
+                {"programId": "RouterB", "accounts": [], "data": "1"},
+            ],
+            meta=meta,
+        ))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].instruction_index, 1)
+        self.assertEqual(result[0].inner_instruction_index, 0)
+        self.assertEqual(result[0].cpi_path, (0,))
+
     def test_derives_nested_cpi_path_from_stack_height(self):
         inner = [
             {"programId": "OtherProgram", "accounts": [], "data": "1", "stackHeight": 2},

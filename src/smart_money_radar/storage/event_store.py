@@ -146,6 +146,21 @@ class SQLiteEventStore:
                             f"ALTER TABLE observed_transactions ADD COLUMN {column} {definition}"
                         )
                 connection.execute(
+                    """UPDATE wallet_checkpoints
+                       SET slot = (
+                           SELECT observed.slot FROM observed_transactions AS observed
+                           WHERE observed.wallet_address = wallet_checkpoints.wallet_address
+                             AND observed.signature = wallet_checkpoints.signature
+                       )
+                       WHERE slot IS NULL
+                         AND EXISTS (
+                           SELECT 1 FROM observed_transactions AS observed
+                           WHERE observed.wallet_address = wallet_checkpoints.wallet_address
+                             AND observed.signature = wallet_checkpoints.signature
+                             AND observed.slot IS NOT NULL
+                         )"""
+                )
+                connection.execute(
                     """
                     CREATE TABLE IF NOT EXISTS token_balance_deltas (
                         wallet_address TEXT NOT NULL,

@@ -180,5 +180,21 @@ class DammV2SwapDomainAdapterTests(unittest.TestCase):
             store.close()
 
 
+    def test_rejects_event_cpi_path_not_descending_from_swap(self):
+        context, evidence, deltas, reconciliation = _inputs()
+        invalid_association = replace(
+            context.association, event_cpi_path=(9, 9)
+        )
+        invalid_context = replace(context, association=invalid_association)
+        with self.assertRaisesRegex(ValueError, "identidade CPI"):
+            build_damm_v2_swap_domain_bundles(
+                contexts=[invalid_context], transfer_evidence=[evidence],
+                balance_deltas=deltas, reconciliation=reconciliation,
+                monitored_wallet="wallet-1", signature="signature-1",
+                observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc),
+                parser_version="smr-test",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

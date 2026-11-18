@@ -1827,3 +1827,16 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - A taxa declarada em TransferCheckedWithFee é validada pelo próprio programa Token-2022 contra o epoch corrente; em transação executada com sucesso, o destino recebe amount-fee em saldo spendable e o withheld fica na extensão TransferFeeAmount. O decoder não infere epoch nem consulta estado de mint.
 - Limites: TransferChecked padrão com taxa implícita continua sem fee explícita e deve falhar fechado se os deltas não reconciliarem. A atribuição DAMM v2 permanece ATTRIBUTED, não MATCHED; reconciliação econômica DAMM v2 ainda não foi implementada.
 - Sem RPC/Helius, RAW fixtures, SQLite, checkpoints ou operações on-chain. PR #17, #18 e #21 permanecem Draft e não integrados; PR #20 foi fechado sem merge por duplicar decoder já existente. `main` intacta.
+
+
+## 93. Atribuição de referral DAMM v2 — PR #22 e CI #544 aprovados (18/11/2026)
+
+- Criado PR #22, Draft, branch `feat/damm-v2-referral-transfer-attribution`, empilhado sobre PR #21.
+- `DammV2TransferEvidence` agora inclui `referral_transfer`.
+- A atribuição deriva o vault/mint/programa de referral pela matriz oficial `FeeMode::get_fee_mode`, espelhada por `resolve_damm_fee_mode`.
+- Para `has_referral=True` e `referral_fee>0`, exige exatamente uma transferência descendente do vault de cobrança correto para `referral_token_account`, com amount bruto igual ao `EvtSwap2.swap_result.referral_fee`.
+- Valida programa, mint, decimals, taxa de `TRANSFER_CHECKED_WITH_FEE`, hierarquia CPI, ordem anterior ao evento e não reutilização da transferência entre operações/papéis.
+- Casos ausentes, duplicados, CPI não confiável, divergência de mint/programa/amount e `referral_fee` incompatível com `has_referral` não são promovidos indevidamente.
+- CI #544 (`44270156613`) no HEAD `90da41436022b2875f76b88a5c999b1328fade01`: **completed/success**; 359 testes aprovados e compileall aprovado.
+- PR #22 permanece Draft, aberto e não integrado. PR #21 permanece Draft. PR #17 e #18 também permanecem Draft. PR #20 foi fechado sem merge por duplicação de decoder. `main` intacta.
+- Limite atual: a evidência DAMM v2 permanece `ATTRIBUTED`; ainda não há reconciliação econômica por operação usando deltas de contas/vaults, fees input/output/referral e estado withheld. Sem RPC/Helius, RAW fixtures, SQLite, checkpoints ou operações on-chain.

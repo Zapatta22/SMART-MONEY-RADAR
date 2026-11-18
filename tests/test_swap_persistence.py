@@ -315,5 +315,21 @@ class SwapPersistenceTests(unittest.TestCase):
 
 
 
+    def test_reconciliation_attempt_rejects_non_deterministic_operation_id(self):
+        record = SwapReconciliationRecord(
+            operation_id="not-the-derived-operation-id",
+            instruction_index=2,
+            inner_instruction_index=4,
+            cpi_path=(0, 1),
+            status="INCOMPLETE",
+            reason="Evidence is incomplete.",
+        )
+        with self.assertRaisesRegex(ValueError, "operation_id"):
+            self.store.save_swap_reconciliation_attempt(
+                "wallet-a", "sig-a", [record]
+            )
+
+
+
 if __name__ == "__main__":
     unittest.main()

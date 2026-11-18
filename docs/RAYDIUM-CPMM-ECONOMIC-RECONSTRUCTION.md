@@ -115,3 +115,26 @@ Foi adicionado `solana_token_balance_deltas.py`, que calcula `post - pre` por `a
 Os arrays `preTokenBalances` e `postTokenBalances` são obrigatórios. Se um índice aparece em apenas um lado, o outro saldo é zero (caso de conta criada/fechada), desde que ambos os arrays estejam presentes. Duplicidade de índice, mint/decimals/owner divergentes, amount bruto inválido ou índice fora da lista de contas causa falha explícita.
 
 Este resultado é evidência por conta, não por swap. Não atribuir automaticamente um delta a uma instrução CPMM, não assumir que payer é owner e não criar `SwapObservation` com base apenas nesse módulo.
+
+
+## Primeiro correlator de evidências por operação
+
+O módulo `raydium_cpmm_transfer_reconciliation.py` correlaciona cada swap CPMM decodificado às transferências SPL/Token-2022 que movimentam exatamente as contas indicadas no layout CPMM:
+
+- Entrada: `input_token_account → input_vault`.
+- Saída: `output_vault → output_token_account`.
+
+Para swaps CPI, exige descendência demonstrável por `stackHeight` e prefixo de `cpi_path`. Para swap externo, limita a busca ao grupo `innerInstructions` daquela instrução externa. Exige uma única transferência por lado, programa token correto, mint/decimals compatíveis, proprietário igual nas duas token accounts e igual à carteira monitorada.
+
+Além disso, soma todas as transferências decodificadas que afetam cada token account do usuário e compara o resultado com o delta `post - pre` daquela conta. Isso permite reconciliar várias operações sequenciais que reutilizam a mesma token account sem dividir artificialmente um delta líquido por swap. Uma transferência não pode ser reivindicada por duas operações.
+
+O resultado atual é um diagnóstico `MATCHED`, `AMBIGUOUS` ou `INCOMPLETE`, com quantidades brutas somente no estado MATCHED. **Ainda não cria `SwapObservation`, `SwapClassification` ou `SwapEvidence`, nem persiste dados.**
+
+Limites conservadores:
+- Não aceita transferência sem execução confirmada ou variante fora de `TRANSFER` / `TRANSFER_CHECKED`.
+- Qualquer taxa/transferência não decodificada que faça o agregado por token account divergir do saldo pre/post impede MATCHED.
+- Swaps CPI sem stackHeight/caminho hierárquico demonstrável não recebem transferências por proximidade linear.
+- Se um swap externo e outro CPMM aninhado coexistirem no mesmo grupo, o externo fica AMBIGUOUS.
+- Testes sintéticos não substituem fixtures reais mainnet.
+
+A estrutura de contas CPMM usada para essa correlação segue o layout oficial de 13 contas, no qual as token accounts do usuário e os vaults são ordenados pela direção efetiva input → output, não pela ordem canônica do pool. Referências: documentação CPMM e implementação on-chain oficial.

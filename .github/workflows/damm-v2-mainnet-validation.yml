@@ -8,6 +8,7 @@ on:
       - ".github/workflows/damm-v2-mainnet-validation.yml"
       - "src/smart_money_radar/data_sources/damm_v2_*.py"
       - "src/smart_money_radar/data_sources/solana_token_*.py"
+      - "src/smart_money_radar/data_sources/solana_wrapped_sol_funding.py"
   workflow_dispatch:
     inputs:
       signature:

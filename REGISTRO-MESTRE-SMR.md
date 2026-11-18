@@ -2529,3 +2529,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #954 (`44333690855`) e #955 (`44333692330`) repetiram falha sem runner: jobs `134904496188` e `134904503144`, ambos `runner_id=0`, nomes vazios, steps vazias, ~3 s. As alterações subsequentes do analyzer/testes ocorreram depois desses runs e ainda não tiveram execução runtime.
 - Revisão estática no GitHub confirmou as novas condições e testes. Runtime unittest/compileall segue bloqueado pela ausência de runner; não declarar testes aprovados e não coletar fixture mainnet.
 - PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 164. Metadados obrigatórios do analyzer e CI #962 — PR #25 (18/11/2026)
+
+- O endurecimento do analyzer independente foi completado: ausência/invalidez de `transaction/meta`, ausência de `meta.err`, `transaction.message` inválido, `message.instructions` ausente/não-lista e `meta.innerInstructions` ausente/nulo são erros explícitos. Somente uma transação com falha on-chain comprovada (`meta.err` não nulo) retorna lista vazia de operações.
+- Testes negativos para `meta.err` e `message.instructions` ausentes foram adicionados; os testes anteriores cobrem `innerInstructions` ausente/nulo. Commits `e18445672e752a88e6e89a78cf1b71180072f505` e `4ff8360c908f614f9c07396c058862b7547ebd2c`.
+- Documentação atualizada para refletir os metadados obrigatórios do analyzer independente. Commit `e13d6f2ed68b56436e090d3f49a6aac5c6524984`.
+- CI #962 (`44333898967`), HEAD `f1b5e50ae442a49cd6fffb79c9d22b07902be7dc`, job `134905241316`: `runner_id=0`, nome vazio, `steps=[]`, ~3 s. Falha antes da execução. As alterações finais do analyzer/documentação foram posteriores e não foram executadas em runtime.
+- Revisão estática GitHub confirmada. Runtime unittest/compileall continua bloqueado por ausência de runner; não declarar testes aprovados nem coletar fixture mainnet.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.

@@ -633,8 +633,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
     def test_reconciles_supported_scopes_router_upstream_and_downstream_transfers(self):
         context = _context(outer=2, event=_event(referral_fee=0, has_referral=False))
         input_transfer = _transfer(
-            "user-a", "vault-a", "mint-a", 100,
-            program_id=SPL_TOKEN_PROGRAM_ID, outer=2, inner=1,
+            "user-a", "vault-a", "mint-a", 100, fee=5,
+            program_id=TOKEN_2022_PROGRAM_ID, outer=2, inner=1,
         )
         output_transfer = _transfer(
             "vault-b", "user-b", "mint-b", 90,
@@ -661,7 +661,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         result = _reconcile(
             [context], [evidence], _deltas([
                 ("user-a", "mint-a", 0, 6),
-                ("vault-a", "mint-a", 100, 6),
+                ("vault-a", "mint-a", 95, 6),
                 ("vault-b", "mint-b", -90, 6),
                 ("user-b", "mint-b", 0, 6),
                 ("pool-in", "mint-a", -100, 6),

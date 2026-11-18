@@ -2254,6 +2254,6 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 
 - Configuração aceitava timeout booleano (`True`) e valores não finitos como NaN/Infinity porque comparações `<= 0` não os rejeitam corretamente; também assumia que API key e cluster eram strings.
 - `HeliusSettings` agora exige API key string não vazia, cluster string em `mainnet/devnet` e timeout numérico finito positivo, rejeitando booleanos.
-- Testes adicionados para timeout booleano, NaN, Infinity, zero, negativo e API key de tipo inválido.
-- Commits: settings `db819ced08e3dbf9f4851405b83129d0615f6b40`; testes `41ca7f2af36174e829b2c4237d83774bc569cd26`.
+- Testes adicionados para timeout booleano, NaN, Infinity, inteiro excessivamente grande, zero, negativo e API key de tipo inválido. Overflow ao avaliar finitude de inteiros gigantes é convertido em `SettingsError`.
+- Commits: settings `db819ced08e3dbf9f4851405b83129d0615f6b40` e `d27d604c251881750c473f820833aa03044f5330`; testes `41ca7f2af36174e829b2c4237d83774bc569cd26` e `87fc209218ed46730e5920c81ec8a5ec3750ec29`.
 - Revisão estática; unittest/compileall pendentes. Nenhuma autorização de rede ou chamada externa foi ativada.

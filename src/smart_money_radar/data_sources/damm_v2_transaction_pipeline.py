@@ -168,6 +168,12 @@ def process_damm_v2_transaction(
     if not isinstance(parser_version, str) or not parser_version.strip():
         raise ValueError("parser_version obrigatório")
 
+    associations: tuple[DammV2SwapEventAssociation, ...] = ()
+    contexts_tuple: tuple[DammV2SwapTransferContext, ...] = ()
+    transfers: tuple[SolanaTokenTransfer, ...] = ()
+    evidence: tuple[DammV2TransferEvidence, ...] = ()
+    balance_deltas: SolanaTokenBalanceDeltaResult | None = None
+    reconciliation: DammV2EconomicReconciliation | None = None
     try:
         payload, message, meta = _payload_and_message(raw_transaction)
         transaction = payload.get("transaction")
@@ -274,5 +280,12 @@ def process_damm_v2_transaction(
         )
     except (TypeError, ValueError, KeyError, IndexError) as exc:
         return DammV2TransactionPipelineResult(
-            "REJECTED", f"{type(exc).__name__}: {exc}"
+            "REJECTED",
+            f"{type(exc).__name__}: {exc}",
+            associations=associations,
+            contexts=contexts_tuple,
+            transfers=transfers,
+            transfer_evidence=evidence,
+            balance_deltas=balance_deltas,
+            reconciliation=reconciliation,
         )

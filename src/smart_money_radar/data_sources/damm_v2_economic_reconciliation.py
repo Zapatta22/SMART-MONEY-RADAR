@@ -15,6 +15,7 @@ from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
     DammV2SwapTransferContext,
     DammV2TransferEvidence,
 )
+from smart_money_radar.data_sources.damm_v2_fee_math import resolve_damm_fee_mode
 from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
     SolanaTokenBalanceDeltaResult,
 )
@@ -72,6 +73,18 @@ def _net_received(
 ) -> int:
     if transfer.execution_status != "EXECUTED":
         raise ValueError(f"transferência {label} não executada")
+    if (
+        isinstance(transfer.amount_raw, bool)
+        or not isinstance(transfer.amount_raw, int)
+        or not 0 <= transfer.amount_raw <= (1 << 64) - 1
+    ):
+        raise ValueError(f"amount bruto inválido em {label}")
+    if (
+        isinstance(transfer.decimals, bool)
+        or not isinstance(transfer.decimals, int)
+        or not 0 <= transfer.decimals <= 255
+    ):
+        raise ValueError(f"decimals inválidos em {label}")
     if transfer.amount_raw != expected_gross:
         raise ValueError(f"amount bruto de {label} diverge do EvtSwap2")
     if transfer.instruction_type not in {
@@ -83,6 +96,8 @@ def _net_received(
     if transfer.mint is None or transfer.decimals is None:
         raise ValueError(f"mint/decimals ausentes em {label}")
     if transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE":
+        if transfer.program_id != TOKEN_2022_PROGRAM_ID:
+            raise ValueError(f"TransferCheckedWithFee fora de Token-2022 em {label}")
         fee = transfer.fee_amount_raw
         if (
             isinstance(fee, bool)
@@ -166,6 +181,21 @@ def reconcile_damm_v2_economic_batch(
             transfers = [item.input_transfer, item.output_transfer]
             if item.referral_transfer is not None:
                 transfers.append(item.referral_transfer)
+            for transfer in transfers:
+                if (
+                    not transfer.cpi_path_valid
+                    or transfer.instruction_index != association.instruction_index
+                    or transfer.inner_instruction_index is None
+                    or association.event_inner_instruction_index is None
+                    or transfer.inner_instruction_index >= association.event_inner_instruction_index
+                    or transfer.stack_height is None
+                    or association.stack_height is None
+                    or transfer.stack_height <= association.stack_height
+                    or association.cpi_path is None
+                    or len(transfer.cpi_path) <= len(association.cpi_path)
+                    or transfer.cpi_path[:len(association.cpi_path)] != association.cpi_path
+                ):
+                    raise ValueError("proveniência CPI da transferência não é confiável")
             if len(set(transfers)) != len(transfers) or any(
                 transfer in claimed_transfers for transfer in transfers
             ):
@@ -230,17 +260,26 @@ def reconcile_damm_v2_economic_batch(
                     raise ValueError("transferência referral sem referral válido no evento")
                 if referral.amount_raw != referral_fee:
                     raise ValueError("amount bruto referral diverge do EvtSwap2")
+                fee_mode = resolve_damm_fee_mode(
+                    event.collect_fee_mode, event.trade_direction, event.has_referral
+                )
+                if fee_mode.fees_on_token_a:
+                    referral_vault = accounts.token_a_vault
+                    referral_mint = accounts.token_a_mint
+                    referral_program = accounts.token_a_program
+                else:
+                    referral_vault = accounts.token_b_vault
+                    referral_mint = accounts.token_b_mint
+                    referral_program = accounts.token_b_program
                 if (
                     referral.destination_account != accounts.referral_token_account
-                    or referral.source_account not in {
-                        accounts.token_a_vault, accounts.token_b_vault
-                    }
+                    or referral.source_account != referral_vault
                 ):
-                    raise ValueError("contas da transferência referral divergem")
-                if referral.program_id not in {accounts.token_a_program, accounts.token_b_program}:
-                    raise ValueError("Token Program referral diverge dos tokens do pool")
-                if referral.mint not in {accounts.token_a_mint, accounts.token_b_mint}:
-                    raise ValueError("mint referral diverge dos tokens do pool")
+                    raise ValueError("contas da transferência referral divergem do FeeMode")
+                if referral.program_id != referral_program:
+                    raise ValueError("Token Program referral diverge do FeeMode")
+                if referral.mint != referral_mint:
+                    raise ValueError("mint referral diverge do FeeMode")
                 referral_net = _net_received(
                     referral, referral_fee,
                     None if referral.program_id == TOKEN_2022_PROGRAM_ID

@@ -229,6 +229,97 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         row = next(x for x in result.expected_account_deltas if x.token_account == "user-a")
         self.assertEqual(row.expected_delta_raw, 0)
 
+    def test_rejects_shared_wsol_account_with_multiple_funding_transfers_as_ambiguous(self):
+        accounts = replace(
+            self.context.accounts,
+            input_mint=NATIVE_MINT,
+            input_token_program=SPL_TOKEN_PROGRAM_ID,
+        )
+        event = replace(
+            self.context.association.event,
+            included_transfer_fee_amount_in=100,
+            swap_result=replace(
+                self.context.association.event.swap_result,
+                included_fee_input_amount=100,
+            ),
+        )
+        first_association = replace(
+            self.context.association, instruction_index=4, event=event
+        )
+        first = replace(
+            self.context, association=first_association, accounts=accounts
+        )
+        second_association = replace(
+            self.context.association,
+            instruction_index=5,
+            cpi_path=(1,),
+            event=event,
+        )
+        second = replace(
+            self.context, association=second_association, accounts=accounts
+        )
+
+        def wsol_input(outer, path):
+            return SolanaTokenTransfer(
+                program_id=SPL_TOKEN_PROGRAM_ID, program_name="SPL Token",
+                instruction_type="TRANSFER_CHECKED", instruction_index=outer,
+                inner_instruction_index=2, stack_height=4, cpi_path=path,
+                source_account="user-a", destination_account="vault-a",
+                authority="authority", mint=NATIVE_MINT, amount_raw=100,
+                decimals=9, execution_status="EXECUTED", source_format="compiled",
+            )
+
+        first_input = wsol_input(4, (0, 0))
+        second_input = wsol_input(5, (1, 0))
+        first_output = _transfer(
+            "vault-b", "user-b", "mint-b", 90, fee=0, outer=4, path=(0, 0)
+        )
+        second_output = _transfer(
+            "vault-b", "user-b", "mint-b", 90, fee=0, outer=5, path=(1, 0)
+        )
+        first_evidence = _evidence(first, first_input, first_output)
+        second_evidence = _evidence(second, second_input, second_output)
+
+        raw = {
+            "result": {
+                "transaction": {
+                    "message": {
+                        "accountKeys": [
+                            "wallet", "user-a",
+                            "11111111111111111111111111111111",
+                            SPL_TOKEN_PROGRAM_ID, "damm",
+                        ],
+                        "instructions": [
+                            {"programIdIndex": 2, "accounts": [0, 1], "data": "3Bxs4HanWsHUZCbH"},
+                            {"programIdIndex": 3, "accounts": [1], "data": "J"},
+                            {"programIdIndex": 2, "accounts": [0, 1], "data": "3Bxs4HanWsHUZCbH"},
+                            {"programIdIndex": 3, "accounts": [1], "data": "J"},
+                            {"programIdIndex": 4, "accounts": [0, 1], "data": "swap"},
+                            {"programIdIndex": 4, "accounts": [0, 1], "data": "swap"},
+                        ],
+                    }
+                },
+                "meta": {
+                    "preBalances": [10_000_000, 2_000_000, 1, 1, 1],
+                    "postBalances": [9_999_800, 2_000_000, 1, 1, 1],
+                },
+            }
+        }
+        result = reconcile_damm_v2_economic_batch(
+            [first, second], [first_evidence, second_evidence],
+            _deltas([
+                ("user-a", NATIVE_MINT, 0, 9),
+                ("vault-a", NATIVE_MINT, 200, 9),
+                ("vault-b", "mint-b", -180, 6),
+                ("user-b", "mint-b", 180, 6),
+            ]),
+            [first_input, first_output, second_input, second_output],
+            raw_transaction=raw, monitored_wallet="wallet",
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("ambíguas", result.reason)
+        self.assertEqual(result.wrapped_sol_fundings, ())
+
     def test_rejects_fee_amount_outside_transfer_amount(self):
         invalid_input = _transfer(
             "user-a", "vault-a", "mint-a", 100, fee=101

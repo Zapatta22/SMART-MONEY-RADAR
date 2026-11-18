@@ -109,3 +109,8 @@ A API continua restrita ao próprio dispositivo. Este comando não configura ace
 ### Correção do empacotamento do comando smr-api
 
 A primeira execução do CI após registrar o entry point falhou durante `pip install -e .`, antes dos testes, por `TOMLDecodeError` na linha `[project.scripts]`: a edição havia gravado os caracteres literais `\\n` entre as duas entradas, em vez de uma quebra de linha. O arquivo foi corrigido para duas linhas TOML válidas no commit `ec8445224ca88070f83cac9fb12862348fc876f1`. O conteúdo foi relido e confirma `smr` e `smr-api` em linhas separadas. Nova execução do CI é necessária; ainda não se declara validação dos testes do launcher.
+
+
+### Limite de consulta HTTP
+
+O endpoint `GET /api/v1/reconciliation/attempts` aceita `limit` entre 1 e 500 (padrão 100). Valores fora da faixa são rejeitados com HTTP 400 antes de consultar o EventStore. O limite superior reduz consultas excessivas e evita que o adaptador HTTP exponha o limite interno não limitado do EventStore.

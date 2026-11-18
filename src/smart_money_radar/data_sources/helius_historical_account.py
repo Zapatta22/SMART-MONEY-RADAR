@@ -32,7 +32,7 @@ def _position(slot: int, transaction_index: int | None) -> tuple[int, int]:
     if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
         raise ValueError("slot deve ser inteiro não negativo")
     if transaction_index is None:
-        return slot, -1
+        return slot, (1 << 63) - 1
     if (
         isinstance(transaction_index, bool)
         or not isinstance(transaction_index, int)

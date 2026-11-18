@@ -3041,3 +3041,17 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - PR #25 permanece OPEN/DRAFT, sem merge. Check PR no HEAD `7010960b0461bdf4d282df5c625ea6bf88b70717` passou com 498 testes em 4,179s e `compileall`. O teste novo de divergência de pool também aparece como `ok`.
 - As três PRs continuam Draft e nenhuma foi integrada à `main`. A PR #25 depende da atualização/integração ordenada das PRs anteriores; não executar merge fora da sequência aprovada.
 - Próxima ação: revisar se o head da PR #25 já contém integralmente os dois reparos da PR #24 e validar novamente o estado de mergeability/checks após a atualização da cadeia, sem alterar o estado Draft.
+
+
+## 211. Mainnet: scanner encontra lote DAMM v2 de dois swaps com wSOL compartilhado — 18/11/2026
+
+- Reauditado o workflow Mainnet #43, run `44386973078`, SUCCESS, commit executado `62952962818ebcbcb6c7ca36de3905c21a505d95`.
+- As três validações explícitas do workflow foram concluídas: transação conhecida, primeiro candidato real de round-trip wSOL e segundo candidato real de round-trip wSOL. Os dois candidatos de round-trip produziram duas associações `MATCHED`, status `RECONCILED` e 2 bundles cada.
+- O scanner consultou até 100 transações recentes, inspecionou 8 candidatas e reportou `failures: {}`. Encontrou `FOUND_SHARED_WSOL_MULTI_SWAP` na assinatura `3mJobQ63JnNPcHDXmrKypgZLJwXzNNQW1h9Ly7uP5wqkHMKb29BTMEGDq6w4nMe1GH32ZhhQdi9aEbzm5ktXFSNS`, slot 471061330.
+- Resultado Mainnet do scanner: `matched_swap2_count=2`, `pipeline_status=RECONCILED`; a operação 0 consome wSOL e produz o outro mint; a operação 1 consome esse mint e retorna wSOL.
+- A mesma token account wSOL `GYNxJEfFcqCz7t17b7fvJbcKbj1aBpka2LaqwNBguXaS` é usada como input da operação 0 e output da operação 1. O scanner a identifica como `reconciled_shared_wsol_accounts`, comprovando o round-trip compartilhado na mesma transação.
+- Essa validação percorre a resolução de contas por instrução/evento; a rotina `decode_damm_v2_swap_accounts` exige que o pool codificado em cada EvtSwap2 seja idêntico à conta pool da instrução correspondente. Portanto o status RECONCILED inclui a checagem de identidade de pool por operação, além da atribuição e reconciliação econômica.
+- O scanner Mainnet não encontrou input wSOL com funding externo nessa transação (`funded_shared_wsol_input_accounts=0`); trata-se de uma conta compartilhada no ciclo de duas operações, não de prova de um novo funding nativo.
+- As classificações de domínio permanecem `UNKNOWN`; essa validação não gera BUY/SELL nem ordens.
+- Evidência é Mainnet real e distinta das fixtures sintéticas da seção 203. PR #25 continua OPEN/DRAFT e sem merge; execução financeira desabilitada.
+- Próxima ação: aguardar e validar o CI da PR #25 no HEAD documental atualizado, depois revisar o próximo modo de transação real (multi-swap sem round-trip wSOL ou CPI aninhado) sem relaxar os critérios fail-closed.

@@ -329,6 +329,7 @@ class SQLiteEventStore:
             for event in events
         ]
         with self._connection_scope() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             with connection:
                 existing = connection.execute(
                     """SELECT payload_json FROM observed_transactions
@@ -463,6 +464,7 @@ class SQLiteEventStore:
         if observation.chain.strip().lower() != "solana":
             raise ValueError("Esta versão do EventStore aceita swaps apenas da chain Solana.")
         with self._connection_scope() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             with connection:
                 parent = connection.execute(
                     """SELECT 1 FROM observed_transactions
@@ -1033,7 +1035,12 @@ class SQLiteEventStore:
         return row is not None
 
     def advance_checkpoint_in_order(
-        self, wallet_address: str, signature: str, slot: int
+        self,
+        wallet_address: str,
+        signature: str,
+        slot: int,
+        *,
+        expected_previous_signature: str,
     ) -> None:
         """Avança checkpoint seguindo a ordem autoritativa do RPC getSignaturesForAddress."""
         if not isinstance(wallet_address, str) or not wallet_address.strip():
@@ -1042,7 +1049,10 @@ class SQLiteEventStore:
             raise ValueError("Assinatura do checkpoint é obrigatória.")
         if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
             raise ValueError("slot deve ser inteiro não negativo.")
+        if not isinstance(expected_previous_signature, str) or not expected_previous_signature.strip():
+            raise ValueError("A assinatura anterior esperada do checkpoint é obrigatória.")
         with self._connection_scope() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             with connection:
                 processed = connection.execute(
                     """SELECT 1 FROM processed_signatures
@@ -1063,10 +1073,16 @@ class SQLiteEventStore:
                         "Slot informado deve corresponder à observação persistida."
                     )
                 current = connection.execute(
-                    "SELECT slot FROM wallet_checkpoints WHERE wallet_address = ?",
+                    "SELECT signature, slot FROM wallet_checkpoints WHERE wallet_address = ?",
                     (wallet_address,),
                 ).fetchone()
-                if current is not None and current[0] is not None and slot < current[0]:
+                if current is not None and current[0] == signature:
+                    return
+                if current is None or current[0] != expected_previous_signature:
+                    raise ValueError(
+                        "Checkpoint mudou durante o backfill; avanço recusado para preservar a ordem."
+                    )
+                if current[1] is not None and slot < current[1]:
                     raise ValueError(
                         "Checkpoint ordenado não pode retroceder para slot anterior."
                     )

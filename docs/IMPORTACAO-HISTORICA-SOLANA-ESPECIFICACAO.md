@@ -440,3 +440,7 @@ Para cada operação, verifica se os quatro papéis possuem deltas distintos: to
 `FOUR_ACCOUNT_DELTAS_PRESENT` não significa reconciliação econômica: ainda é necessário comparar os valores brutos transferidos com deltas líquidos, EvtSwap2 e taxas. Deltas pre/post são agregados à transação e não podem ser repartidos por heurística entre swaps. Transfer fee Token-2022 permanece sem suporte completo.
 
 A ferramenta não acessa rede, SQLite, não grava arquivos, não altera checkpoints e não cria SwapObservation. CI do commit do auditor está em andamento (run `44256966076`); CI do head com os testes ainda não confirmado. Validação local e execução sobre os cinco RAW pendentes.
+
+
+### Correção do primeiro CI
+O primeiro CI com o novo teste falhou por importação de módulo de apoio ausente no pacote. A função foi extraída para src/smart_money_radar/data_sources/damm_v2_delta_coverage_audit.py, e a CLI passou a importar a função compartilhada. A correção está no head a3034ad69da208d2f33fa306a733ad72ee603e25; CI run 44257098656 (#469) ainda estava em andamento na última consulta.

@@ -18,7 +18,7 @@ def fixture(root: Path):
         "slot": 123,
         "transaction": {"signatures": [SIGNATURE], "message": {
             "accountKeys": keys,
-            "instructions": [{"programIdIndex": 1}, {"programIdIndex": 4}],
+            "instructions": [{"programIdIndex": 1, "data": b58encode(bytes.fromhex("0102030405060708") + bytes(16)), "accounts": list(range(13))}, {"programIdIndex": 4}],
         }},
         "meta": {"err": None, "innerInstructions": [
             {"index": 0, "instructions": [{"programIdIndex": 2}, {"programIdIndex": 3}]}
@@ -48,6 +48,15 @@ class ProtocolCoverageTests(unittest.TestCase):
         self.assertEqual(item["decoder_scope_counts"], {
             "Raydium CPMM": 1, "SPL Token": 1, "Token-2022": 1
         })
+        self.assertEqual(item["venue_instruction_profiles"], [{
+            "program": "Raydium CPMM",
+            "location": "top_level",
+            "data_prefix_hex": "0102030405060708",
+            "data_length": 24,
+            "account_count": 13,
+            "stack_height": None,
+            "count": 1,
+        }])
         self.assertEqual(item["unregistered_program_instruction_count"], 1)
         self.assertEqual(item["unresolved_program_instruction_count"], 0)
 
@@ -64,6 +73,7 @@ class ProtocolCoverageTests(unittest.TestCase):
         self.assertFalse(report["database_access"])
         self.assertFalse(report["writes_files"])
         self.assertFalse(report["checkpoint_changes"])
+        self.assertIn("venue_instruction_profiles", report["reports"][0])
 
     def test_rejects_symlinked_raw_payload(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -93,6 +93,15 @@ class OfflineFixtureStructureInspectorTests(unittest.TestCase):
         self.assertTrue(report["structure_valid"])
         self.assertIn("SHA-256", report["audit_errors"][0])
 
+    def test_missing_manifest_does_not_echo_sensitive_path(self):
+        secret_path = Path("/tmp/WalletSignatureMustNotLeak-5" + "5" * 64 + ".manifest.json")
+        report = inspect_manifest(secret_path, 1)
+        rendered = json.dumps(report)
+        self.assertFalse(report["integrity_valid"])
+        self.assertIn("manifesto inacessível", rendered)
+        self.assertNotIn(str(secret_path), rendered)
+        self.assertNotIn("WalletSignatureMustNotLeak", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

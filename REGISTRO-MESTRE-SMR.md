@@ -2519,3 +2519,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #951 (`44333240301`) associado ao commit documental acima terminou failure; job `134902924895` tem `runner_id=0`, nome vazio e `steps=[]`, com duração aproximada de 3 s. Confirma que o job não chegou a executar steps. Causa operacional exata (por exemplo, disponibilidade/limite de runner) não foi exposta pela API consultável; não atribuir a quota/billing sem evidência.
 - O HEAD atual do PR foi confirmado com a implementação e testes RPC atualizados; runtime ainda não foi executado devido à ausência de runner. A revisão estática não substitui unittest/compileall.
 - PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 163. Analyzer DAMM v2 independente em fail-closed e CI #954/#955 — PR #25 (18/11/2026)
+
+- Auditoria encontrou que chamadas diretas a `analyze_damm_v2_swap_events()` podiam interpretar `innerInstructions` ausente/nulo como lista vazia e, em outros casos, retornar `[]` para transaction/meta/message/instructions ausentes ou quando `meta.err` não existia. Isso poderia confundir metadado insuficiente com ausência comprovada de swap se o analyzer fosse usado fora do pipeline transacional.
+- Analyzer agora exige `transaction` e `meta` objetos, campo explícito `meta.err`, `transaction.message` objeto, `message.instructions` lista e `meta.innerInstructions` lista. Transação com `meta.err` não nulo continua retornando lista vazia porque a falha on-chain é conhecida; metadados ausentes/nulos levantam `ValueError`.
+- Testes negativos adicionados para `meta.err` ausente, `message.instructions` ausente e `innerInstructions` ausente/nulo. Commits: implementação CPI `13e0d9b784d9106c0ca7d0e0e378bce38e3eed03`, testes CPI `ebc9018d0c6278a2471c0bf05ba4d9c8af85399f`; validação de execução/mensagem `e18445672e752a88e6e89a78cf1b71180072f505`, testes `4ff8360c908f614f9c07396c058862b7547ebd2c`; documentação `c891fe2c33af850516025f3591d76cb9f99e575e`.
+- CI #954 (`44333690855`) e #955 (`44333692330`) repetiram falha sem runner: jobs `134904496188` e `134904503144`, ambos `runner_id=0`, nomes vazios, steps vazias, ~3 s. As alterações subsequentes do analyzer/testes ocorreram depois desses runs e ainda não tiveram execução runtime.
+- Revisão estática no GitHub confirmou as novas condições e testes. Runtime unittest/compileall segue bloqueado pela ausência de runner; não declarar testes aprovados e não coletar fixture mainnet.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.

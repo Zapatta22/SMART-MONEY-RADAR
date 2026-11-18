@@ -92,6 +92,18 @@ class DammV2AnalyzerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mistura formatos"):
             analyze_damm_v2_swap_events(raw)
 
+    def test_missing_execution_status_fails_closed(self):
+        raw = transaction([], {})
+        del raw["result"]["meta"]["err"]
+        with self.assertRaisesRegex(ValueError, "meta.err ausente"):
+            analyze_damm_v2_swap_events(raw)
+
+    def test_missing_outer_instruction_list_fails_closed(self):
+        raw = transaction([], {})
+        del raw["result"]["transaction"]["message"]["instructions"]
+        with self.assertRaisesRegex(ValueError, "message.instructions ausente"):
+            analyze_damm_v2_swap_events(raw)
+
     def test_missing_inner_instruction_metadata_fails_closed(self):
         raw = transaction([], {})
         del raw["result"]["meta"]["innerInstructions"]

@@ -170,6 +170,14 @@ def process_damm_v2_transaction(
 
     try:
         payload, message, meta = _payload_and_message(raw_transaction)
+        transaction = payload.get("transaction")
+        signatures = transaction.get("signatures") if isinstance(transaction, dict) else None
+        if signatures is not None and (
+            not isinstance(signatures, list)
+            or any(not isinstance(item, str) or not item for item in signatures)
+            or signature not in signatures
+        ):
+            raise ValueError("signature não corresponde às assinaturas do payload")
         associations = tuple(analyze_damm_v2_swap_events(raw_transaction))
         if not associations:
             return DammV2TransactionPipelineResult(
@@ -249,6 +257,10 @@ def process_damm_v2_transaction(
             observed_at=observed_at,
             parser_version=parser_version,
         )
+        if len(bundles) != len(contexts_tuple):
+            raise ValueError(
+                "quantidade de bundles de domínio diverge do conjunto de swaps reconciliados"
+            )
         return DammV2TransactionPipelineResult(
             "RECONCILED",
             "lote DAMM v2 reconciliado e convertido em bundles de domínio",

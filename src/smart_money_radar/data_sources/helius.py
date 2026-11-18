@@ -61,7 +61,13 @@ class HeliusDataSource:
 
         if not isinstance(response_payload, dict):
             raise HeliusRpcError("Helius RPC retornou um formato inválido.")
-        if response_payload.get("jsonrpc") != "2.0" or response_payload.get("id") != request_id:
+        response_id = response_payload.get("id")
+        if (
+            response_payload.get("jsonrpc") != "2.0"
+            or isinstance(response_id, bool)
+            or not isinstance(response_id, int)
+            or response_id != request_id
+        ):
             raise HeliusRpcError(
                 "Helius RPC retornou resposta com versão JSON-RPC ou ID incompatível."
             )

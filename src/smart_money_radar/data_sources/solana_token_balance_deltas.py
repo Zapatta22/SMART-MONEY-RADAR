@@ -79,12 +79,19 @@ def _parse_side(entries: Any, side: str) -> dict[int, tuple[str, str | None, int
 
 def decode_token_account_balance_deltas(
     raw_transaction: dict[str, Any],
+    *,
+    include_unchanged: bool = False,
 ) -> list[TokenAccountBalanceDelta]:
     """Calcula deltas exatos por token account em transação bem-sucedida.
 
     Ambos os arrays pre/post precisam estar presentes. Se um accountIndex aparece
     somente em um lado, o outro saldo é zero (conta criada/fechada na transação).
+    Por padrão, omite contas sem variação. Com include_unchanged=True, também
+    preserva snapshots cujo delta líquido é zero, úteis para reconciliar contas
+    intermediárias que recebem e enviam tokens dentro da mesma rota.
     """
+    if not isinstance(include_unchanged, bool):
+        raise TypeError("include_unchanged deve ser bool")
     if not isinstance(raw_transaction, dict):
         raise TypeError("transação precisa ser um objeto")
     payload = raw_transaction.get("result", raw_transaction)
@@ -124,7 +131,7 @@ def decode_token_account_balance_deltas(
         if index >= len(keys):
             raise ValueError("accountIndex fora da lista de accountKeys")
         delta = post_amount - pre_amount
-        if delta == 0:
+        if delta == 0 and not include_unchanged:
             continue
         results.append(TokenAccountBalanceDelta(
             account_index=index,

@@ -588,6 +588,30 @@ class SQLiteEventStore:
             for row in rows
         ]
 
+    def get_pending_signatures(
+        self, wallet_address: str, *, limit: int = 100
+    ) -> list[str]:
+        """Lista observações arquivadas que ainda não concluíram o pipeline."""
+        if not wallet_address.strip():
+            raise ValueError("O endereço da carteira é obrigatório.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("O limite de pendências deve ser inteiro positivo.")
+        with self._connection_scope() as connection:
+            rows = connection.execute(
+                """SELECT observed.signature
+                   FROM observed_transactions AS observed
+                   LEFT JOIN processed_signatures AS processed
+                     ON processed.wallet_address = observed.wallet_address
+                    AND processed.signature = observed.signature
+                   WHERE observed.wallet_address = ?
+                     AND observed.payload_json IS NOT NULL
+                     AND processed.signature IS NULL
+                   ORDER BY observed.rowid ASC
+                   LIMIT ?""",
+                (wallet_address, limit),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
     def get_checkpoint(self, wallet_address: str) -> str | None:
         """Retorna a última assinatura processada com sucesso para a carteira."""
         with self._connection_scope() as connection:

@@ -208,6 +208,32 @@ class DammV2TransferAnalyzerTests(unittest.TestCase):
         self.assertTrue(result.transfer_fee_review_required)
         self.assertIn("referral", result.reason)
 
+    def test_referral_transfer_to_output_account_is_not_double_counted_as_output(self):
+        event = _event(has_referral=True, referral_fee=5)
+        base = _accounts()
+        accounts = DammV2SwapAccounts(
+            **{**base.__dict__, "referral_token_account": "user-b"}
+        )
+        context = DammV2SwapTransferContext(_association(event=event), accounts)
+        referral = SolanaTokenTransfer(
+            **{
+                **self.output.__dict__,
+                "inner_instruction_index": 3,
+                "amount_raw": 5,
+            }
+        )
+
+        result = analyze_damm_v2_transfer_evidence(
+            [context], [self.input, self.output, referral]
+        )[0]
+
+        self.assertEqual(result.status, "ATTRIBUTED")
+        self.assertIs(result.input_transfer, self.input)
+        self.assertIs(result.output_transfer, self.output)
+        self.assertIs(result.referral_transfer, referral)
+        self.assertTrue(result.transfer_fee_review_required)
+
+
     def test_attributes_referral_from_token_a_vault_when_fee_mode_requires_token_a(self):
         event = _event(
             has_referral=True,

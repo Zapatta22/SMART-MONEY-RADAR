@@ -48,7 +48,7 @@ class DammV2SwapAccounts:
 
 
 def _base58_encode(data: bytes) -> str:
-    zeros = len(data) - len(data.lstrip(b"\\x00"))
+    zeros = len(data) - len(data.lstrip(b"\x00"))
     number = int.from_bytes(data, "big")
     encoded = ""
     while number:

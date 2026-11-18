@@ -17,7 +17,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   collect:
@@ -61,6 +61,20 @@ jobs:
             --protect "47hEzz83VFR23rLTEeVm9A7eFzjJwjvdupPPmX3cePqF" \
             --anonymize "Bqf4XHmhMjeVscQCm6MvceujcLVQgNHD9PNEVbQWrdUa" \
             --anonymize "6xNMoXM3p7s4AWLvujFFcw3rPBw65qTTcdGQVjAwakat"
+      - name: Commit anonymized projection on the CPMM fixture branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin feat/swap-domain-bundle-builder
+          git switch --create feat/real-mainnet-cpmm-fixture FETCH_HEAD
+          mkdir -p data/fixtures/mainnet/anonymized
+          cp "data/fixtures/anonymized/$SIGNATURE.json" "data/fixtures/mainnet/anonymized/raydium-cpmm-transient-output.json"
+          cp "data/fixtures/anonymized/$SIGNATURE.json.manifest.json" "data/fixtures/mainnet/anonymized/raydium-cpmm-transient-output.json.manifest.json"
+          git add data/fixtures/mainnet/anonymized/
+          git commit -m "Add anonymized finalized Raydium CPMM mainnet fixture"
+          git push origin HEAD:feat/real-mainnet-cpmm-fixture
       - name: Upload raw payload and provenance manifest
         uses: actions/upload-artifact@v4
         with:

@@ -129,17 +129,40 @@ def scan(endpoints: tuple[str, ...], limit: int, pages: int) -> dict:
                 for (account, mint), count in input_counts.items()
                 if mint == NATIVE_MINT and count >= 2
             ]
+            wsol_roles = {}
+            for operation_index, context in enumerate(result.contexts):
+                if context.accounts.input_mint == NATIVE_MINT:
+                    wsol_roles.setdefault(context.accounts.input_token_account, []).append(
+                        {"operation": operation_index, "role": "input"}
+                    )
+                if context.accounts.output_mint == NATIVE_MINT:
+                    wsol_roles.setdefault(context.accounts.output_token_account, []).append(
+                        {"operation": operation_index, "role": "output"}
+                    )
+            shared_wsol_accounts = [
+                {"token_account": account, "uses": uses}
+                for account, uses in wsol_roles.items()
+                if len({use["operation"] for use in uses}) >= 2
+            ]
             funding_accounts = set()
+            lifecycle_accounts = set()
             if result.reconciliation is not None:
                 funding_accounts = {
                     funding.token_account
                     for funding in result.reconciliation.wrapped_sol_fundings
                 }
+                lifecycle_accounts = {
+                    lifecycle.token_account
+                    for lifecycle in result.reconciliation.wrapped_sol_lifecycles
+                }
             funded_shared_wsol_inputs = [
                 item["token_account"] for item in shared_wsol_inputs
                 if item["token_account"] in funding_accounts
             ]
-
+            reconciled_shared_wsol_accounts = [
+                item["token_account"] for item in shared_wsol_accounts
+                if item["token_account"] in funding_accounts | lifecycle_accounts
+            ]
             candidate = {
                 "signature": signature,
                 "slot": raw.get("slot"),
@@ -160,7 +183,7 @@ def scan(endpoints: tuple[str, ...], limit: int, pages: int) -> dict:
                 "funded_shared_wsol_input_accounts": len(funded_shared_wsol_inputs),
             }
             candidates.append(candidate)
-            if result.status == "RECONCILED" and funded_shared_wsol_inputs:
+            if result.status == "RECONCILED" and (funded_shared_wsol_inputs or reconciled_shared_wsol_accounts):
                 return {
                     "status": "FOUND_SHARED_WSOL_MULTI_SWAP",
                     "inspected": inspected,

@@ -11,7 +11,7 @@ on:
       signature:
         description: "Solana transaction signature (Base58)"
         required: true
-        default: "5fcjpgHWWCMPsE8z568LCk4aJsRKVQmM4T4B5fPmVefjN9LPdj7Szb3bvZXST3q7xLbWTfmpq63jCmfkzDTx6L2f"
+        default: "39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6"
         type: string
 
 permissions:
@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 5
     env:
       SMR_SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
-      SIGNATURE: ${{ inputs.signature || '5fcjpgHWWCMPsE8z568LCk4aJsRKVQmM4T4B5fPmVefjN9LPdj7Szb3bvZXST3q7xLbWTfmpq63jCmfkzDTx6L2f' }}
+      SIGNATURE: ${{ inputs.signature || '39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

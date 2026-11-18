@@ -187,8 +187,10 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
         messages = [
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 42}),
-            json.dumps({"jsonrpc": "2.0",
-"method": "logsNotification", "params": {"subscription": 42,
+            json.dumps({
+                "jsonrpc": "2.0",
+                "method": "logsNotification",
+                "params": {"subscription": 42,
                 "result": {"value": {"signature": "retry-signature", "err": None}}}}),
         ]
         websocket = FakeWebSocket(messages, stop_event)
@@ -438,8 +440,10 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
         messages = [
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 42}),
-            json.dumps({"jsonrpc": "2.0",
-"method": "logsNotification", "params": {"subscription": 42,
+            json.dumps({
+                "jsonrpc": "2.0",
+                "method": "logsNotification",
+                "params": {"subscription": 42,
                 "result": {"value": {"signature": "unclassified-signature", "err": None}}}}),
         ]
         websocket = FakeWebSocket(messages, stop_event)

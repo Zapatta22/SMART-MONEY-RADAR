@@ -31,6 +31,8 @@ class Token2022FeeProofResolverTests(unittest.TestCase):
             program_id=TOKEN_2022_PROGRAM_ID,
             instruction_type="TRANSFER_CHECKED",
             mint="mint",
+            cpi_path_valid=True,
+            cpi_program_path=(),
         )
         self.preflight = SimpleNamespace(
             transfer_evidence=[

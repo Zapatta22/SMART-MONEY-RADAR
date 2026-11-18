@@ -2400,3 +2400,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O primeiro job terminou `failure` sem steps nem logs (`steps=null`, `logs_url=null`). Foi solicitado rerun específico do job; a nova tentativa também terminou `failure` sem iniciar steps e sem logs.
 - Isso não comprova falha de unittest/compileall nem aprovação. Runner/execução continua sem diagnóstico observável. Não repetir rerun em loop; manter runtime local Termux como validação executável.
 - HEAD atual do PR após atualização do Registro Mestre: `40e5db109803dce825ec2e55b35602b73894627c`.
+
+
+## 150. Verificação final de integridade do PR #25 após hardening de backfill — 18/11/2026
+
+- HEAD atual: `0781ac8c360097b8e191317363517303b99f9ac7`; PR #25 permanece aberto, Draft e sem merge.
+- GitHub confirma `mergeable=true`, `mergeable_state=unstable`; branch base é `feat/damm-v2-swap-domain-adapter`, não `main`. O PR permanece empilhado sobre essa branch-base; não fazer merge isolado sem revisar a sequência de PRs.
+- PR: 194 commits, 31 arquivos, 3.247 inserções e 87 remoções.
+- Verificação estática pós-alterações confirmou: EventStore tem bloqueios `BEGIN IMMEDIATE`; `mark_processed` aceita modo de deferimento; CPMM encaminha a opção aos três caminhos de conclusão; WalletMonitor usa deferimento no backfill, valida slot e só então chama CAS; testes e Registro Mestre estão presentes.
+- Run #902 e seu rerun falharam sem steps/logs. Nenhuma execução de unittest/compileall pode ser declarada.
+- Próxima ação operacional: atualizar clone Termux para o HEAD acima e executar primeiro os testes focais; depois suíte completa e compileall. A coleta da fixture mainnet continua bloqueada até essa validação.

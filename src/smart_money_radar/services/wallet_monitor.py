@@ -402,9 +402,11 @@ class WalletMonitor:
                     parser_version=PARSER_VERSION,
                     slot=item.get("slot"),
                 )
-                self.event_store.advance_checkpoint_in_order(
-                    wallet_address, signature, item.get("slot")
-                )
+                failed_slot = item.get("slot")
+                if isinstance(failed_slot, int) and not isinstance(failed_slot, bool):
+                    self.event_store.advance_checkpoint_in_order(
+                        wallet_address, signature, failed_slot
+                    )
                 continue
             if not await self._collect_transaction(wallet_address, signature, stop_event):
                 raise RuntimeError(

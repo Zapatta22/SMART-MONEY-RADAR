@@ -304,7 +304,13 @@ class WalletMonitor:
                         type(exc).__name__,
                     )
                     return False
-                if not result.checkpoint_advanced:
+                # Em backfill ordenado, advance_checkpoint=False é intencional:
+                # a conclusão do processamento deve ser separada do avanço do cursor,
+                # que será feito depois pelo CAS com o slot/assinatura da página RPC.
+                if (
+                    result.status not in {"processed", "failed_on_chain", "no_cpmm_swaps"}
+                    or result.unresolved_swaps != 0
+                ):
                     self._logger.warning(
                         "Transação permanece pendente: %d/%d swap(s) sem reconciliação completa; checkpoint preservado.",
                         result.unresolved_swaps,

@@ -1627,7 +1627,7 @@ PR #16 permanece Draft, aberto e não integrado; `main` intacta.
 - Confirmada sincronização local PR16: `HEAD=0d951fc`, branch `feat/offline-fixture-inspector`, acompanhando `origin`, árvore limpa.
 - Criada branch `feat/damm-v2-economic-fee-math` a partir do head PR16 `0d951fc5413d0f83a328c71e76055e1f1f58c05b`; PR #17 aberto como Draft, base PR16, não integrado.
 - Novo módulo `src/smart_money_radar/data_sources/damm_v2_fee_math.py`: aritmética pura para TransferFee Token-2022 (gross/net, ceil, maximum_fee, taxa 100%, overflow), taxas AMM DAMM (included/excluded, denominador 1e9, rounding up), split claiming/compounding/protocol/referral (rounding down) e matriz de seis FeeMode.
-- Novo teste `tests/test_damm_v2_fee_math.py`: 17 casos sintéticos determinísticos, sem rede, DB, relógio ou RAW.
+- Novo teste `tests/test_damm_v2_fee_math.py`: 18 métodos de teste sintéticos determinísticos, sem rede, DB, relógio ou RAW.
 - Nova documentação `docs/DAMM-V2-ARITMETICA-TAXAS.md` descreve fontes oficiais, regras reproduzidas e limites.
 - Fontes Meteora fixadas em `18936b18c26708f6e9b52cacc01ea2f99868ba8e`; Token-2022 TransferFee interface consultada para ceil/cap/inversão.
 - Importante: isto valida primitivas aritméticas, não a reconciliação de uma operação. Não decodifica bytes/configuração histórica de mint ou epoch, não modela a curva/amount_left de PartialFill, não atribui transferências/deltas, não verifica referral on-chain e não produz MATCHED nem SwapObservation.

@@ -26,12 +26,17 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
         cls.manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
     def test_projection_manifest_and_hash_are_valid(self) -> None:
-        self.assertTrue(self.manifest["anonymized"])
+        self.assertTrue(self.manifest["pseudonymized"])
+        self.assertFalse(self.manifest["anonymized"])
+        self.assertNotIn("signature", self.manifest)
+        self.assertNotIn("raw_sha256", self.manifest)
+        self.assertEqual(self.manifest["fixture_id"], "smr-fixture-raydium-cpmm-multivenue-v1")
+        self.assertEqual(self.fixture["result"]["transaction"]["signatures"][0], "1" * 64)
+        self.assertEqual(self.fixture["result"]["transaction"]["message"]["recentBlockhash"], "1" * 32)
         self.assertEqual(self.manifest["commitment"], "finalized")
         self.assertEqual(self.manifest["slot"], 388739013)
-        self.assertEqual(self.manifest["raw_sha256"], "89dbe2cb81c8995206c541b410660c81f493a571141e61e1b3074c6c90e9e082")
         self.assertEqual(hashlib.sha256(self.fixture_bytes).hexdigest(), self.manifest["projection_sha256"])
-        self.assertEqual(self.fixture["result"]["transaction"]["signatures"][0], self.manifest["signature"])
+        self.assertEqual(self.fixture["result"]["transaction"]["signatures"][0], "1" * 64)
         self.assertIsNone(self.fixture["result"]["meta"]["err"])
 
     def test_reconciles_real_cpmm_cpi_with_zero_net_input_account_and_forwarded_output(self) -> None:
@@ -61,7 +66,7 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
         self.assertEqual(reconciliations[0].output_decimals, 8)
 
         common = dict(
-            chain="solana", signature=self.manifest["signature"], monitored_wallet=wallet,
+            chain="solana", signature=self.manifest["fixture_id"], monitored_wallet=wallet,
             observed_at=datetime.fromtimestamp(result["blockTime"], tz=timezone.utc),
             parser_version="smr-real-mainnet-multivenue-cpmm-v1",
         )

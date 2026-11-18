@@ -2228,3 +2228,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Fixtures de teste atualizadas para envelopes JSON-RPC válidos; o teste de integração inclui uma mensagem de método desconhecido com assinatura forjada antes da notificação legítima e confirma que ela é ignorada.
 - Commits: dispatcher `8ad9bfd7f8bdcfe1fd539c381098f03f0501dbc1`; fixtures `a376f6a9d4024586a710ab1bafa1945a769852f9`; teste `9ed84a5083ccd4516e8eab2db824c24798ae24b8`.
 - Revisão estática; runtime/compileall pendentes. Nenhuma conexão WebSocket real foi aberta.
+
+
+## 130. Consolidação da auditoria de identidade multi-venue e WebSocket — PR #25 (18/11/2026)
+
+- CPMM: reconciliação agora exige cobertura um-para-um por identidade completa; bundles precisam corresponder exatamente ao conjunto MATCHED, sem IDs repetidos, e à carteira/assinatura da observação.
+- DAMM v2: reconciliação econômica e adaptador rejeitam identidades de swap duplicadas; a orquestração transacional verifica operation IDs únicos e conjunto exato dos contextos reconciliados antes de retornar RECONCILED.
+- WebSocket: dispatcher aceita somente `jsonrpc == "2.0"` + `method == "logsNotification"`; resposta de subscription também valida versão e IDs inteiros não booleanos. Fixtures foram atualizadas e um teste inclui mensagem de método desconhecido com assinatura forjada.
+- Commit adicional de formatação das fixtures: `b5bc5ed431ffe89f80fb1a9eb063eac171698601`.
+- Revisão estática das rotas DAMM persistence → WalletMonitor → CPMM: DAMM não avança checkpoint; pendência DAMM impede CPMM; CPMM é o único coordenador final de checkpoint; falhas/exceções deixam observação replayável. Falhas on-chain são resultado terminal conhecido e podem avançar checkpoint após validação no CPMM.
+- Nenhum teste runtime/compileall foi executado nesta rodada; nenhum RPC/WebSocket real foi acessado. PR #25 continua Draft, main e estado persistente preservados.

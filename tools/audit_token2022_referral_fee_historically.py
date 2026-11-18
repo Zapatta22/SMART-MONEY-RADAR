@@ -73,7 +73,7 @@ def audit(
     slot: int,
     mint: str,
     referral_account: str,
-    gross_amount_raw: int,
+    gross_amounts_raw: list[int],
 ) -> dict:
     index = get_transaction_index(standard_rpc, slot, signature)
     epoch = epoch_for_slot(standard_rpc, slot)
@@ -90,9 +90,16 @@ def audit(
     if config_before != config_after:
         raise RuntimeError("TransferFeeConfig mudou durante a transação; revisão manual necessária")
     rate = config_before.fee_for_epoch(epoch)
-    expected_fee = calculate_transfer_fee(
-        gross_amount_raw, rate.basis_points, rate.maximum_fee
-    )
+    if not gross_amounts_raw or any(
+        isinstance(amount, bool) or not isinstance(amount, int) or amount < 0
+        for amount in gross_amounts_raw
+    ):
+        raise ValueError("gross_amounts_raw deve conter valores inteiros não negativos")
+    expected_fees = [
+        calculate_transfer_fee(amount, rate.basis_points, rate.maximum_fee)
+        for amount in gross_amounts_raw
+    ]
+    expected_fee = sum(expected_fees)
     referral_before = get_historical_account_info_before_transaction(
         historical_rpc, referral_account, slot, index
     )
@@ -114,7 +121,8 @@ def audit(
         "epoch": epoch,
         "mint": mint,
         "referral_account": referral_account,
-        "gross_amount_raw": gross_amount_raw,
+        "gross_amounts_raw": gross_amounts_raw,
+        "expected_fee_per_transfer_raw": expected_fees,
         "transfer_fee_config": {
             "older_transfer_fee": {
                 "epoch": config_before.older_transfer_fee.epoch,
@@ -153,7 +161,7 @@ def audit(
             "transaction_index": referral_after.last_updated_transaction_index,
         },
         "reconciliation_released": False,
-        "note": "Auditoria somente leitura; resultado não persiste bundle nem avança checkpoint.",
+        "note": "withheld_delta é agregado por conta; informe todas as transferências da mesma conta/mint nesta transação. Auditoria somente leitura; não persiste bundle nem avança checkpoint.",
     }
 
 
@@ -163,7 +171,10 @@ def main() -> int:
     parser.add_argument("--slot", required=True, type=int)
     parser.add_argument("--mint", required=True)
     parser.add_argument("--referral-account", required=True)
-    parser.add_argument("--gross-amount-raw", required=True, type=int)
+    parser.add_argument(
+        "--gross-amount-raw", required=True, action="append", type=int,
+        help="valor bruto de cada transferência para a conta referral na transação; repetir para cada perna",
+    )
     parser.add_argument(
         "--rpc-url",
         default=os.environ.get("SMR_SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com"),
@@ -175,7 +186,7 @@ def main() -> int:
     args = parser.parse_args()
     if not args.historical_rpc_url:
         parser.error("defina SMR_HELIUS_HISTORICAL_RPC_URL ou --historical-rpc-url")
-    if args.slot < 0 or args.gross_amount_raw < 0:
+    if args.slot < 0 or any(amount < 0 for amount in args.gross_amount_raw):
         parser.error("slot e gross amount devem ser não negativos")
     try:
         result = audit(

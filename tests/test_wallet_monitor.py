@@ -373,13 +373,15 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
             async def get_signatures_for_address_async(self, wallet_address: str, **kwargs):
                 return [
-                    {"signature": "overlap-signature", "err": None},
-                    {"signature": "old-checkpoint", "err": None},
+                    {"signature": "overlap-signature", "slot": 901, "err": None},
+                    {"signature": "old-checkpoint", "slot": 900, "err": None},
                 ]
 
             async def get_transaction_async(self, signature: str):
                 self.transaction_calls.append(signature)
-                return simulated_transaction(signature)
+                transaction = simulated_transaction(signature)
+                transaction["slot"] = 901
+                return transaction
 
         import tempfile
         from pathlib import Path

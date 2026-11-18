@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 DeltaIssueCode = Literal[
     "META_MISSING",
+    "TRANSACTION_FAILED",
+    "EXECUTION_STATUS_UNKNOWN",
     "ACCOUNT_KEYS_INVALID",
     "SNAPSHOTS_MISSING",
     "SNAPSHOT_ENTRY_INVALID",
@@ -156,6 +158,14 @@ def decode_solana_token_account_balance_deltas(
     if not isinstance(meta, dict) or not isinstance(message, dict):
         return SolanaTokenBalanceDeltaResult(
             (), (SolanaTokenBalanceDeltaIssue(None, "META_MISSING"),)
+        )
+    if "err" not in meta:
+        return SolanaTokenBalanceDeltaResult(
+            (), (SolanaTokenBalanceDeltaIssue(None, "EXECUTION_STATUS_UNKNOWN"),)
+        )
+    if meta.get("err") is not None:
+        return SolanaTokenBalanceDeltaResult(
+            (), (SolanaTokenBalanceDeltaIssue(None, "TRANSACTION_FAILED"),)
         )
     try:
         keys = _account_keys(message, meta)

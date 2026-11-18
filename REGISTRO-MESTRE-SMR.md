@@ -2456,3 +2456,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits: implementação `db7a6ade8e1ec61640a703e662a4cd64b9b9fbff`; testes `81a70ec413af112090e835c931239cfd90e0a5c6` e ajuste de cobertura `e9bdd7d2c90024267842d9f99e99e82533135401`.
 - Releitura GitHub confirmou a implementação e os testes adicionados. Runtime unittest/compileall ainda não executados para esta alteração. A consulta de runs associadas ao commit final ainda não retornou workflow; não declarar CI executado.
 - PR #25 permanece Draft, aberto e sem merge; base empilhada `feat/damm-v2-swap-domain-adapter`. A fixture RAW mainnet segue bloqueada até validação runtime focada e suíte completa.
+
+
+## 156. CI #922 sem steps após hardening do coletor RPC — PR #25 (18/11/2026)
+
+- O push de alterações no coletor e seus testes disparou o workflow `SMR tests`, run #922 (`44331723476`), associado ao PR #25 e ao commit de teste `e9bdd7d2c90024267842d9f99e99e82533135401`.
+- A consulta do job `134897601983` retornou `steps=null` e `logs_url=null`, embora o run tenha concluído como `failure`. Não há evidência de checkout, instalação, unittest ou compileall. Não classificar como falha dos testes nem aprovação.
+- Não foi disparado rerun: o padrão de falha pré-etapas permanece sem diagnóstico observável e retries repetidos não acrescentam evidência.
+- Os commits de código/teste permanecem na branch do PR; validação runtime do novo hardening JSON-RPC ainda pendente. PR #25 segue Draft, sem merge e empilhado sobre `feat/damm-v2-swap-domain-adapter`; `main` preservada.

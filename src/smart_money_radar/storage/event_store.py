@@ -445,6 +445,7 @@ class SQLiteEventStore:
         if not wallet_address.strip() or not signature.strip():
             raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
         with self._connection_scope() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             with connection:
                 parent = connection.execute(
                     "SELECT 1 FROM observed_transactions WHERE wallet_address = ? AND signature = ?",

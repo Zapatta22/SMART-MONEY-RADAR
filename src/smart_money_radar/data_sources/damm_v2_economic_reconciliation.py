@@ -35,6 +35,16 @@ from smart_money_radar.data_sources.solana_wrapped_sol_funding import (
 
 EconomicStatus = Literal["RECONCILED", "INCOMPLETE", "AMBIGUOUS"]
 
+SCOPES_ROUTER_PROGRAM_ID = "4X3dGCFh63SyE2bNZdGUV7Rj5ukK1XgrxesoxyKQNiRN"
+PUMP_SWAP_PROGRAM_ID = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
+PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+METEORA_DLMM_PROGRAM_ID = "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+ROUTED_VENUE_PROGRAM_IDS = {
+    PUMP_SWAP_PROGRAM_ID,
+    PUMP_PROGRAM_ID,
+    METEORA_DLMM_PROGRAM_ID,
+}
+
 
 @dataclass(frozen=True)
 class DammV2ExpectedAccountDelta:
@@ -42,6 +52,19 @@ class DammV2ExpectedAccountDelta:
     mint: str
     decimals: int
     expected_delta_raw: int
+
+
+@dataclass(frozen=True)
+class CrossVenueTransferEvidence:
+    outer_instruction_index: int
+    inner_instruction_index: int
+    cpi_program_path: tuple[str, ...]
+    source_account: str
+    destination_account: str
+    mint: str
+    amount_raw: int
+    net_amount_raw: int
+    fee_amount_raw: int
 
 
 @dataclass(frozen=True)
@@ -53,6 +76,7 @@ class DammV2EconomicReconciliation:
     wrapped_sol_fundings: tuple[WrappedSolFundingEvidence, ...] = ()
     wrapped_sol_lifecycles: tuple[WrappedSolLifecycleEvidence, ...] = ()
     transfer_fee_absence_proofs: tuple[Token2022NoTransferFeeProof, ...] = ()
+    cross_venue_transfers: tuple[CrossVenueTransferEvidence, ...] = ()
 
 
 def _add_expected(
@@ -73,6 +97,81 @@ def _add_expected(
     if current["mint"] != mint or current["decimals"] != decimals:
         raise ValueError("token account reutilizada com mint/decimals divergentes")
     current["delta"] = int(current["delta"]) + delta
+
+
+def _is_supported_routed_venue_transfer(transfer: SolanaTokenTransfer) -> bool:
+    path = transfer.cpi_program_path
+    return (
+        transfer.inner_instruction_index is not None
+        and transfer.cpi_path_valid is True
+        and bool(path)
+        and path[0] == SCOPES_ROUTER_PROGRAM_ID
+        and any(program in ROUTED_VENUE_PROGRAM_IDS for program in path[1:])
+    )
+
+
+def _apply_routed_venue_transfer(
+    expected: dict[str, dict[str, int | str]],
+    transfer: SolanaTokenTransfer,
+    proof_by_mint: dict[str, Token2022NoTransferFeeProof],
+    consumed_fee_proof_mints: set[str],
+) -> CrossVenueTransferEvidence:
+    if transfer.execution_status != "EXECUTED":
+        raise ValueError("transferência cross-venue não executada")
+    if (
+        transfer.inner_instruction_index is None
+        or transfer.mint is None
+        or transfer.decimals is None
+        or not transfer.source_account
+        or not transfer.destination_account
+    ):
+        raise ValueError("transferência cross-venue sem identidade econômica completa")
+    if (
+        isinstance(transfer.amount_raw, bool)
+        or not isinstance(transfer.amount_raw, int)
+        or transfer.amount_raw <= 0
+        or transfer.amount_raw > (1 << 64) - 1
+    ):
+        raise ValueError("amount inválido em transferência cross-venue")
+    fee = 0
+    if transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE":
+        if (
+            transfer.program_id != TOKEN_2022_PROGRAM_ID
+            or isinstance(transfer.fee_amount_raw, bool)
+            or not isinstance(transfer.fee_amount_raw, int)
+            or not 0 <= transfer.fee_amount_raw <= transfer.amount_raw
+        ):
+            raise ValueError("fee explícita inválida em transferência cross-venue")
+        fee = transfer.fee_amount_raw
+    elif transfer.program_id == TOKEN_2022_PROGRAM_ID:
+        proof = proof_by_mint.get(transfer.mint)
+        if proof is None:
+            raise ValueError(
+                f"transferência cross-venue Token-2022 sem prova de taxa para {transfer.mint}"
+            )
+        consumed_fee_proof_mints.add(transfer.mint)
+    elif transfer.program_id != SPL_TOKEN_PROGRAM_ID:
+        raise ValueError("programa de token não suportado em transferência cross-venue")
+    net = transfer.amount_raw - fee
+    _add_expected(
+        expected, transfer.source_account, transfer.mint,
+        transfer.decimals, -transfer.amount_raw,
+    )
+    _add_expected(
+        expected, transfer.destination_account, transfer.mint,
+        transfer.decimals, net,
+    )
+    return CrossVenueTransferEvidence(
+        outer_instruction_index=transfer.instruction_index,
+        inner_instruction_index=transfer.inner_instruction_index,
+        cpi_program_path=transfer.cpi_program_path,
+        source_account=transfer.source_account,
+        destination_account=transfer.destination_account,
+        mint=transfer.mint,
+        amount_raw=transfer.amount_raw,
+        net_amount_raw=net,
+        fee_amount_raw=fee,
+    )
 
 
 def _net_received(
@@ -461,13 +560,6 @@ def reconcile_damm_v2_economic_batch(
                     )
                     wrapped_sol_fundings.append(funding)
 
-        unused_fee_proofs = set(proof_by_mint) - consumed_fee_proof_mints
-        if unused_fee_proofs:
-            raise ValueError(
-                "prova de ausência de taxa não foi consumida por referral Token-2022: "
-                + ", ".join(sorted(unused_fee_proofs))
-            )
-
         expected_accounts = set(expected)
         claimed_ids = {id(transfer) for transfer in claimed_transfers}
         inventory_ids = {id(transfer) for transfer in all_transfers}
@@ -484,16 +576,52 @@ def reconcile_damm_v2_economic_batch(
             )
             and id(transfer) not in claimed_ids
         ]
+        routed_outer_indexes = {
+            transfer.instruction_index
+            for transfer in unclaimed
+            if _is_supported_routed_venue_transfer(transfer)
+        }
+        cross_venue_transfers = []
+        if routed_outer_indexes:
+            for transfer in all_transfers:
+                if (
+                    transfer.instruction_index in routed_outer_indexes
+                    and id(transfer) not in claimed_ids
+                    and _is_supported_routed_venue_transfer(transfer)
+                ):
+                    cross_venue_transfers.append(
+                        _apply_routed_venue_transfer(
+                            expected, transfer, proof_by_mint,
+                            consumed_fee_proof_mints,
+                        )
+                    )
+                    claimed_ids.add(id(transfer))
+        expected_accounts = set(expected)
+        unclaimed = [
+            transfer for transfer in all_transfers
+            if (
+                transfer.source_account in expected_accounts
+                or transfer.destination_account in expected_accounts
+            )
+            and id(transfer) not in claimed_ids
+        ]
         if unclaimed:
             details = "; ".join(
                 f"ix={transfer.instruction_index}/inner={transfer.inner_instruction_index} "
                 f"{transfer.source_account}->{transfer.destination_account} "
-                f"mint={transfer.mint} amount={transfer.amount_raw}"
+                f"mint={transfer.mint} amount={transfer.amount_raw} "
+                f"cpi={transfer.cpi_program_path}"
                 for transfer in unclaimed
             )
             raise ValueError(
                 "há transferências não atribuídas que afetam token accounts do swap: "
                 + details
+            )
+        unused_fee_proofs = set(proof_by_mint) - consumed_fee_proof_mints
+        if unused_fee_proofs:
+            raise ValueError(
+                "prova de ausência de taxa não foi consumida por transferência Token-2022: "
+                + ", ".join(sorted(unused_fee_proofs))
             )
 
         actual: dict[str, object] = {}
@@ -525,14 +653,14 @@ def reconcile_damm_v2_economic_batch(
             return DammV2EconomicReconciliation(
                 "INCOMPLETE", len(contexts), tuple(expected_rows),
                 "; ".join(mismatches), tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
-                tuple(transfer_fee_absence_proofs),
+                tuple(transfer_fee_absence_proofs), tuple(cross_venue_transfers),
             )
         return DammV2EconomicReconciliation(
             "RECONCILED", len(contexts), tuple(expected_rows),
             "transferências input/output/referral, funding ou lifecycle wSOL quando aplicável, "
             "e deltas agregados por token account conferem com EvtSwap2",
             tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
-            tuple(transfer_fee_absence_proofs),
+            tuple(transfer_fee_absence_proofs), tuple(cross_venue_transfers),
         )
     except RuntimeError as exc:
         return DammV2EconomicReconciliation(

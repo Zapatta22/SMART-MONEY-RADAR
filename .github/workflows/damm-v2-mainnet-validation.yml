@@ -44,7 +44,7 @@ jobs:
       - name: Inspect discovered real two-swap Mainnet candidate
         continue-on-error: true
         env:
-          SMR_DAMM_V2_SIGNATURE: 78AuFWUBHsF6P8XgdzFsrz7XRuErsdcMzysRxq845zjTqQ9b7jeVcLd9obwJyL8MSJMTkV9WcRrnTPfPtgTq5UK
+          SMR_DAMM_V2_SIGNATURE: 4cm2yJUSTzevqYAh5N9vknk2jCmocwgbrJR2s7CiPp8DPCuBBgyMqxKU6qk7F5YSdtLDTJpneRrz4TTn7odqDy6k
         run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
       - name: Scan recent Mainnet transactions for shared-wSOL multi-swap
         run: PYTHONPATH=src:tools python tools/scan_damm_v2_multi_swap_mainnet.py --limit 100

@@ -48,11 +48,11 @@ class TransferFeeStateDecoderTests(unittest.TestCase):
         self.assertEqual(decode_transfer_fee_config(mint_data([tlv(1, config())]) + bytes(12)).withheld_amount, 7)
 
     def test_accepts_single_trailing_byte_during_reallocation(self):
-        data = mint_data([tlv(1, config())]) + b"\\x7f"
+        data = mint_data([tlv(1, config())]) + b"\x7f"
         self.assertEqual(decode_transfer_fee_config(data).withheld_amount, 7)
 
     def test_uninitialized_tlv_type_terminates_extension_list(self):
-        data = mint_data([tlv(1, config())]) + b"\\x00\\x00\\xff\\xff"
+        data = mint_data([tlv(1, config())]) + b"\x00\x00\xff\xff"
         self.assertEqual(decode_transfer_fee_config(data).withheld_amount, 7)
 
     def test_rejects_nonzero_mint_padding(self):

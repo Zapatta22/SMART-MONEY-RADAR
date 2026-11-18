@@ -30,6 +30,7 @@ class SolanaTokenTransfer:
     decimals: int | None
     execution_status: str
     source_format: str
+    cpi_path_valid: bool = True
 
 
 def _decode_base58(value: str) -> bytes:
@@ -118,6 +119,37 @@ def _cpi_paths(instructions: list[Any]) -> list[tuple[tuple[int, ...], int | Non
     return result
 
 
+def _strict_cpi_path_validity(instructions: list[Any]) -> list[bool]:
+    """Marca inválida toda hierarquia após stackHeight ausente/inconsistente."""
+    stack_paths: dict[int, tuple[int, ...]] = {1: ()}
+    valid = True
+    results: list[bool] = []
+    for item in instructions:
+        height = item.get("stackHeight") if isinstance(item, dict) else None
+        if (
+            not valid
+            or isinstance(height, bool)
+            or not isinstance(height, int)
+            or height < 2
+        ):
+            valid = False
+            stack_paths.clear()
+            results.append(False)
+            continue
+        parent = stack_paths.get(height - 1)
+        if parent is None:
+            valid = False
+            stack_paths.clear()
+            results.append(False)
+            continue
+        for known in tuple(stack_paths):
+            if known >= height:
+                del stack_paths[known]
+        stack_paths[height] = parent + (0,)
+        results.append(True)
+    return results
+
+
 def _raw_transfer(
     item: Mapping[str, Any], keys: list[str]
 ) -> tuple[str, str, str | None, str | None, int, int | None, str] | None:
@@ -199,6 +231,7 @@ def _decode_one(
     stack_height: int | None,
     cpi_path: tuple[int, ...],
     execution_status: str,
+    cpi_path_valid: bool = True,
 ) -> SolanaTokenTransfer | None:
     program_id = _resolve_program_id(item, keys)
     if program_id not in TOKEN_PROGRAM_IDS:
@@ -230,6 +263,7 @@ def _decode_one(
         decimals=decimals,
         execution_status=execution_status,
         source_format=source_format,
+        cpi_path_valid=cpi_path_valid,
     )
 
 
@@ -291,12 +325,16 @@ def decode_solana_token_transfers(
             raise ValueError("grupo innerInstructions inconsistente")
         seen.add(outer_index)
         paths = _cpi_paths(nested)
-        for inner_index, (item, path_info) in enumerate(zip(nested, paths)):
+        path_validity = _strict_cpi_path_validity(nested)
+        for inner_index, (item, path_info, path_valid) in enumerate(
+            zip(nested, paths, path_validity)
+        ):
             if not isinstance(item, dict):
                 continue
             path, height = path_info
             decoded = _decode_one(
-                item, keys, outer_index, inner_index, height, path, status
+                item, keys, outer_index, inner_index, height, path, status,
+                cpi_path_valid=path_valid,
             )
             if decoded is not None:
                 results.append(decoded)

@@ -225,24 +225,23 @@ def reconcile_raydium_cpmm_swaps(
         # the full transaction delta. This catches unrelated transfers, omitted
         # transfer variants, transfer fees, and netted activity not explained by
         # the decoded transfer evidence.
-        for account, delta in (
-            (accounts.input_token_account, input_delta),
-            (accounts.output_token_account, output_delta),
+        for account, delta, expected_program in (
+            (accounts.input_token_account, input_delta, accounts.input_token_program),
+            (accounts.output_token_account, output_delta, accounts.output_token_program),
         ):
             account_transfers = [
                 item for item in transfers
                 if item.source_account == account or item.destination_account == account
             ]
             if any(
-                item.program_id not in {
-                    accounts.input_token_program,
-                    accounts.output_token_program,
-                }
+                item.program_id != expected_program
+                or (item.mint is not None and item.mint != delta.mint)
+                or (item.decimals is not None and item.decimals != delta.decimals)
                 for item in account_transfers
             ):
                 provisional.append(_failure(
                     swap, "INCOMPLETE",
-                    "Programa de uma transferência adicional na token account não foi validado."
+                    "Programa, mint ou decimals de uma transferência na token account diverge da evidência de saldo."
                 ))
                 break
             if _account_net_from_transfers(account, account_transfers) != delta.delta_raw:

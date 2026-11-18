@@ -6,7 +6,6 @@ Isso evita repartir arbitrariamente deltas líquidos entre swaps sequenciais.
 
 Não cria SwapObservation, BUY/SELL, sinal ou autorização de execução.
 """
-from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -156,7 +155,10 @@ def reconcile_damm_v2_economic_batch(
     if any(not isinstance(transfer, SolanaTokenTransfer) for transfer in all_transfers):
         raise TypeError("all_transfers contém transferência inválida")
     if len({id(transfer) for transfer in all_transfers}) != len(all_transfers):
-        raise ValueError("inventário de transferências contém referência duplicada")
+        return DammV2EconomicReconciliation(
+            "INCOMPLETE", len(contexts), (),
+            "inventário de transferências contém referência duplicada",
+        )
     if not balance_deltas.complete:
         return DammV2EconomicReconciliation(
             "INCOMPLETE", len(contexts), (),

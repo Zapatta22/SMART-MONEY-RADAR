@@ -36,6 +36,7 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SolanaTokenTransfer,
     decode_solana_token_transfers,
 )
+from smart_money_radar.domain.models import build_swap_operation_id
 
 
 PipelineStatus = Literal["NO_DAMM_V2_SWAPS", "REJECTED", "RECONCILED"]
@@ -309,9 +310,30 @@ def process_damm_v2_transaction(
             observed_at=observed_at,
             parser_version=parser_version,
         )
-        if len(bundles) != len(contexts_tuple):
+        expected_bundle_ids = {
+            build_swap_operation_id(
+                "solana", signature, context.association.instruction_index,
+                context.association.cpi_path,
+            )
+            for context in contexts_tuple
+        }
+        actual_bundle_ids = [
+            bundle.observation.operation_id for bundle in bundles
+        ]
+        if (
+            len(bundles) != len(contexts_tuple)
+            or len(actual_bundle_ids) != len(set(actual_bundle_ids))
+            or set(actual_bundle_ids) != expected_bundle_ids
+            or any(
+                bundle.observation.wallet_address != monitored_wallet
+                or bundle.observation.signature != signature
+                or bundle.classification.operation_id != bundle.observation.operation_id
+                or bundle.evidence.operation_id != bundle.observation.operation_id
+                for bundle in bundles
+            )
+        ):
             raise ValueError(
-                "quantidade de bundles de domínio diverge do conjunto de swaps reconciliados"
+                "bundles não correspondem univocamente aos swaps DAMM v2 reconciliados"
             )
         return DammV2TransactionPipelineResult(
             "RECONCILED",

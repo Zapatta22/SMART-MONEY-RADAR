@@ -9,7 +9,7 @@ from smart_money_radar.settings import HeliusSettings
 from smart_money_radar.storage.event_store import SQLiteEventStore
 
 
-def simulated_transaction() -> dict[str, object]:
+def simulated_transaction(signature: str = "simulated-signature") -> dict[str, object]:
     return {
         "blockTime": 1_730_000_000,
         "meta": {
@@ -25,6 +25,7 @@ def simulated_transaction() -> dict[str, object]:
             "innerInstructions": [],
         },
         "transaction": {
+            "signatures": [signature],
             "message": {
                 "accountKeys": [],
                 "instructions": [],
@@ -63,7 +64,7 @@ class FakeDataSource:
     async def get_transaction_async(self, signature: str) -> dict[str, object]:
         self.signatures.append(signature)
         self.stop_event.set()
-        return simulated_transaction()
+        return simulated_transaction(signature)
 
 
 class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
@@ -176,7 +177,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_backfills_signatures_since_persisted_checkpoint(self) -> None:
         stop_event = asyncio.Event()
-        transaction = simulated_transaction()
+        transaction = simulated_transaction("new-signature")
 
         class BackfillDataSource:
             def __init__(self) -> None:
@@ -388,7 +389,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_transaction_without_recognized_events_is_archived_before_checkpoint(self) -> None:
         stop_event = asyncio.Event()
-        raw_transaction = {"meta": {"err": None, "innerInstructions": []}, "transaction": {"message": {"accountKeys": [], "instructions": []}}}
+        raw_transaction = {"meta": {"err": None, "innerInstructions": []}, "transaction": {"signatures": ["unclassified-signature"], "message": {"accountKeys": [], "instructions": []}}}
 
         class NoEventSource:
             async def get_transaction_async(self, signature: str):
@@ -425,7 +426,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
         import tempfile
         stop_event = asyncio.Event()
-        raw_transaction = {"meta": {"err": None, "innerInstructions": []}, "transaction": {"message": {"accountKeys": [], "instructions": []}}}
+        raw_transaction = {"meta": {"err": None, "innerInstructions": []}, "transaction": {"signatures": ["parser-error-signature"], "message": {"accountKeys": [], "instructions": []}}}
 
         class ErrorSource:
             async def get_transaction_async(self, signature: str):

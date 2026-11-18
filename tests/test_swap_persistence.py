@@ -5,7 +5,10 @@ from decimal import Decimal
 from smart_money_radar.domain.models import (
     SwapClassification, SwapEvidence, SwapObservation, build_swap_operation_id,
 )
-from smart_money_radar.storage.event_store import SQLiteEventStore
+from smart_money_radar.storage.event_store import (
+    SQLiteEventStore,
+    SwapReconciliationRecord,
+)
 
 
 class SwapPersistenceTests(unittest.TestCase):
@@ -251,6 +254,65 @@ class SwapPersistenceTests(unittest.TestCase):
             with self.subTest(limit=invalid):
                 with self.assertRaises(ValueError):
                     self.store.get_pending_signatures("wallet-a", limit=invalid)
+
+
+    def test_reconciliation_attempts_are_append_only_and_keep_negative_reasons(self):
+        record = SwapReconciliationRecord(
+            operation_id=self.observation.operation_id,
+            instruction_index=2,
+            inner_instruction_index=4,
+            cpi_path=(0, 1),
+            status="INCOMPLETE",
+            reason="Net token-account delta does not match gross transfer.",
+        )
+        first_attempt = self.store.save_swap_reconciliation_attempt(
+            "wallet-a", "sig-a", [record]
+        )
+        second_attempt = self.store.save_swap_reconciliation_attempt(
+            "wallet-a", "sig-a", [record]
+        )
+
+        history = self.store.get_swap_reconciliation_attempts("wallet-a", "sig-a")
+        self.assertEqual(len(history), 2)
+        self.assertNotEqual(first_attempt, second_attempt)
+        self.assertEqual([item["attempt_id"] for item in history],
+                         [first_attempt, second_attempt])
+        self.assertEqual(history[0]["status"], "INCOMPLETE")
+        self.assertEqual(history[0]["reason"], record.reason)
+        self.assertEqual(history[0]["operation_id"], record.operation_id)
+        self.assertEqual(history[0]["cpi_path"], (0, 1))
+        self.assertEqual(
+            self.store.storage_stats()["swap_reconciliation_attempts"], 2
+        )
+
+    def test_reconciliation_attempt_requires_parent_observation(self):
+        record = SwapReconciliationRecord(
+            operation_id="operation-missing",
+            instruction_index=0,
+            inner_instruction_index=None,
+            cpi_path=(0,),
+            status="UNRESOLVED",
+            reason="No reconciliation result was returned.",
+        )
+        with self.assertRaises(KeyError):
+            self.store.save_swap_reconciliation_attempt(
+                "wallet-a", "sig-missing", [record]
+            )
+
+    def test_reconciliation_attempt_rejects_unknown_status(self):
+        record = SwapReconciliationRecord(
+            operation_id=self.observation.operation_id,
+            instruction_index=2,
+            inner_instruction_index=None,
+            cpi_path=(0, 1),
+            status="ACCEPTED",
+            reason="Invalid status.",
+        )
+        with self.assertRaises(ValueError):
+            self.store.save_swap_reconciliation_attempt(
+                "wallet-a", "sig-a", [record]
+            )
+
 
 
 if __name__ == "__main__":

@@ -499,7 +499,6 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
         monitor = WalletMonitor(
             HeliusSettings(api_key="simulated-key"), Source(), self.store
         )
-        observed_at = datetime(2026, 11, 18, tzinfo=timezone.utc)
         persisted_before_cpmm = []
 
         def cpmm_after_damm_persistence(*args, **kwargs):

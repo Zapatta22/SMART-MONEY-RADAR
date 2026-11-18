@@ -472,3 +472,9 @@ Nenhum caso comprovou reconciliação econômica. A classificação operacional 
 7. Só depois emitir resultado econômico `MATCHED`; somente então considerar um adaptador DAMM v2 separado para contratos de domínio. Não reutilizar automaticamente o pipeline CPMM.
 
 O relatório local não compartilha RAW, endereços, mints, assinaturas, quantidades ou mapa de carteira. Nenhuma importação, SQLite, RPC/Helius, checkpoint ou operação on-chain foi executada.
+
+
+## 29. Especificação de reconciliação econômica DAMM v2 (18/11/2026)
+A especificação detalhada está em docs/DAMM-V2-RECONCILIACAO-ECONOMICA.md. Ela define os parâmetros por modo (ExactIn, PartialFill e ExactOut), o livro de quantidades brutas/líquidas, o tratamento de Token-2022 transfer fees/withheld, exclusividade por operação e os critérios fail-closed para MATCHED econômico.
+
+A auditoria dos cinco RAW não comprovou reconciliação econômica: fixture 1 apresentou DELTA_SIGN_MISMATCH e requer revisão de transfer fee; fixture 3 apresentou SNAPSHOT_SET_INCOMPLETE. ATTRIBUTED e FOUR_ACCOUNT_DELTAS_PRESENT continuam sendo estados estruturais, não confirmação econômica. As equações finais dependem da auditoria do código Meteora fixado; não implementar SwapObservation antes dessa prova.

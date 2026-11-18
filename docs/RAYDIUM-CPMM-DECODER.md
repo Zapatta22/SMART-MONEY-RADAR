@@ -39,3 +39,21 @@ A documentação oficial consultada confirma que SwapBaseInput e SwapBaseOutput 
 ## Formatos de contas aceitos pelo analyzer
 
 O analyzer aceita contas compiladas como índices numéricos em `message.accountKeys` (incluindo endereços carregados por Address Lookup Tables em `meta.loadedAddresses`) e contas já resolvidas como strings de endereço. Isso não significa que todo formato de resposta RPC foi validado: a entrada deve continuar contendo instruções com `data` codificada em Base58 e a lista de contas no formato esperado pelo analyzer. Instruções internas em `meta.innerInstructions` são deliberadamente ignoradas nesta versão.
+
+
+## Instruções internas (CPI)
+
+O analyzer também percorre `meta.innerInstructions`, associando cada grupo ao índice da instrução externa que iniciou a cadeia de CPI. Para instruções compiladas, resolve `programIdIndex` e índices de contas usando a lista combinada de contas estáticas e endereços carregados. Para instruções parcialmente decodificadas, aceita `programId` e endereços de contas já resolvidos.
+
+Quando `stackHeight` está presente, o analyzer deriva um `cpi_path` hierárquico de índices de irmãos e preserva o nível em `stack_height`. Quando o RPC não fornece `stackHeight`, preserva somente a posição linear da instrução interna como caminho, com `stack_height=None`; não afirma uma hierarquia desconhecida. O índice da instrução externa continua em `instruction_index`, e a posição linear do item no grupo fica em `inner_instruction_index`.
+
+Limites importantes:
+
+- `meta.innerInstructions=null` significa que o RPC não forneceu a trilha CPI; ausência de dados não é prova de ausência de CPI.
+- Instruções totalmente parseadas sem bytes de instrução são ignoradas; o analyzer não infere o discriminator a partir de texto.
+- A decodificação de CPI identifica instruções CPMM e suas contas/argumentos, mas ainda não associa transferências SPL nem deltas de saldo à operação.
+- Este módulo ainda não gera `SwapObservation`, `SwapClassification` ou `SwapEvidence`, e não persiste operações.
+
+Referência de formato RPC: https://solana.com/docs/rpc/json-structures (seções Transactions, Inner Instructions e Loaded Addresses).
+
+Quando um item intermediário não traz `stackHeight`, o cálculo descarta a pilha de ancestrais previamente conhecida. Assim, uma instrução posterior com altura maior não será ligada a um pai possivelmente obsoleto; seu caminho fica em fallback linear até que a hierarquia volte a ser demonstrável.

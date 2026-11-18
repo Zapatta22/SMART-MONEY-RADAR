@@ -224,7 +224,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             [input_transfer, output_transfer],
             raw_transaction=raw, monitored_wallet="wallet",
         )
-        self.assertEqual(result.status, "RECONCILED")
+        self.assertEqual(result.status, "RECONCILED", result.reason)
         self.assertEqual(len(result.wrapped_sol_fundings), 1)
         row = next(x for x in result.expected_account_deltas if x.token_account == "user-a")
         self.assertEqual(row.expected_delta_raw, 0)

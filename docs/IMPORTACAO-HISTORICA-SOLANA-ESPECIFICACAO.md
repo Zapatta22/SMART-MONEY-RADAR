@@ -444,3 +444,31 @@ A ferramenta não acessa rede, SQLite, não grava arquivos, não altera checkpoi
 
 ### Correção do primeiro CI
 O primeiro CI com o novo teste falhou por importação de módulo de apoio ausente no pacote. A função foi extraída para src/smart_money_radar/data_sources/damm_v2_delta_coverage_audit.py, e a CLI passou a importar a função compartilhada. A correção está no head a3034ad69da208d2f33fa306a733ad72ee603e25; CI run 44257098656 (#469) ainda estava em andamento na última consulta.
+
+
+## 28. Resultado da auditoria local de cobertura DAMM v2 (18/11/2026)
+
+A validação local no Termux, no clone PR16 em `1e85540), concluiu:
+- teste focal `test_damm_v2_delta_coverage_audit.py`: 6/6 OK;
+- suíte completa: 309 testes OK;
+- cinco pares manifesto/RAW processados pelo auditor, todos com status operacional `AUDITED`.
+
+Resultados redigidos por índice:
+- Fixture 1: um swap e uma transferência atribuída estruturalmente; cobertura dos quatro deltas bloqueada por sinal incompatível; revisão de taxa Token-2022 requerida.
+- Fixture 2: nenhum swap DAMM v2 reconhecido; uma issue de delta no conjunto global.
+- Fixture 3: um swap e uma transferência atribuída estruturalmente; snapshots globais incompletos e uma issue de delta.
+- Fixtures 4 e 5: nenhum swap DAMM v2 reconhecido no escopo atual.
+
+Nenhum caso comprovou reconciliação econômica. A classificação operacional `AUDITED` não significa `MATCHED`; a atribuição `ATTRIBUTED` de transferências não prova valores líquidos executados. O relatório confirmou ausência de rede, banco, gravação, alteração de checkpoint e autorização de execução.
+
+### Requisitos antes de um reconciliador DAMM v2
+
+1. Formalizar a semântica dos modos `ExactIn`, `PartialFill` e `ExactOut`, distinguindo parâmetros solicitados de valores efetivamente executados.
+2. Identificar quais campos de `EvtSwap2` representam quantidades executadas e como se relacionam com transferências e reservas; não presumir equivalência por nome de campo.
+3. Reconciliar separadamente input bruto do usuário, crédito líquido no vault, débito bruto do vault, crédito líquido do usuário e taxas/withheld fees, conforme o token program e extensões aplicáveis.
+4. Decodificar explicitamente instruções/efeitos de Token-2022 com taxa, incluindo a taxa efetivamente retida; até então, manter esses casos fail-closed.
+5. Provar que cada transferência e cada delta são exclusivos da operação. Deltas pre/post são agregados à transação; operações sequenciais, contas compartilhadas, transferências externas, criação/fechamento de contas ou snapshots ausentes impedem repartir valores por heurística.
+6. Validar com fixtures sintéticas positivas e negativas para cada modo, direção A→B/B→A, taxas, snapshots incompletos, operações múltiplas e efeitos não atribuíveis.
+7. Só depois emitir resultado econômico `MATCHED`; somente então considerar um adaptador DAMM v2 separado para contratos de domínio. Não reutilizar automaticamente o pipeline CPMM.
+
+O relatório local não compartilha RAW, endereços, mints, assinaturas, quantidades ou mapa de carteira. Nenhuma importação, SQLite, RPC/Helius, checkpoint ou operação on-chain foi executada.

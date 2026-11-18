@@ -92,6 +92,10 @@ def _matched():
         output_decimals=6,
         input_transfer=input_transfer,
         output_transfer=output_transfer,
+        input_token_account_delta_raw=-1250000,
+        output_token_account_delta_raw=900000,
+        input_vault_delta_raw=1250000,
+        output_vault_delta_raw=-900000,
     )
 
 
@@ -144,6 +148,8 @@ class SwapDomainBundleBuilderTests(unittest.TestCase):
         self.assertEqual(bundle.evidence.cpi_path, (2, 1))
         self.assertTrue(any(item.startswith("input_transfer:4:8") for item in bundle.evidence.evidence))
         self.assertTrue(any(item.startswith("output_transfer:4:9") for item in bundle.evidence.evidence))
+        self.assertIn("input_token_account_delta_raw:-1250000", bundle.evidence.evidence)
+        self.assertIn("input_vault_delta_raw:1250000", bundle.evidence.evidence)
 
     def test_ignores_ambiguous_and_incomplete_reconciliations(self):
         matched = _matched()
@@ -206,6 +212,12 @@ class SwapDomainBundleBuilderTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "descendente do CPI"):
             self._build(matched=wrong_cpi)
+
+    def test_rejects_matched_result_missing_balance_delta_evidence(self):
+        matched = _matched()
+        missing_delta = replace(matched, input_vault_delta_raw=None)
+        with self.assertRaisesRegex(ValueError, "deltas completos"):
+            self._build(matched=missing_delta)
 
     def test_rejects_duplicate_operation_ids(self):
         with self.assertRaisesRegex(ValueError, "operation_id duplicado"):

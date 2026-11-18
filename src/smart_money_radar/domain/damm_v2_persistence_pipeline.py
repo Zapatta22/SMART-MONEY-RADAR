@@ -61,15 +61,6 @@ def process_damm_v2_observation(
             "failed_on_chain", signature, 0, 0, 0, 0, True
         )
 
-    transaction = payload.get("transaction")
-    signatures = transaction.get("signatures") if isinstance(transaction, dict) else None
-    if signatures is not None and (
-        not isinstance(signatures, list)
-        or any(not isinstance(item, str) or not item for item in signatures)
-        or signature not in signatures
-    ):
-        raise ValueError("A assinatura informada não corresponde ao payload RPC.")
-
     try:
         normalized = normalize_transaction(
             payload, wallet_address, signature, observed_at=timestamp

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from smart_money_radar.data_sources.damm_v2_accounts import decode_damm_v2_swap_accounts
+from smart_money_radar.data_sources.damm_v2_delta_coverage_audit import summarize_four_account_delta_coverage
 from smart_money_radar.data_sources.damm_v2_analyzer import analyze_damm_v2_swap_events
 from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
     DammV2SwapTransferContext,
@@ -48,42 +49,6 @@ def _resolved_keys(message: dict[str, Any], meta: dict[str, Any]) -> list[str]:
                 raise ValueError("loaded addresses inválidos")
             keys.extend(values)
     return keys
-
-
-def summarize_four_account_delta_coverage(accounts: Any, delta_result: Any) -> str:
-    """Classifica somente cobertura/sinais; nunca promove a reconciliação econômica."""
-    required = (
-        accounts.input_token_account,
-        accounts.input_vault,
-        accounts.output_vault,
-        accounts.output_token_account,
-    )
-    if len(set(required)) != 4:
-        return "ACCOUNT_ROLE_COLLISION"
-    if not delta_result.complete:
-        return "SNAPSHOT_SET_INCOMPLETE"
-    by_account = {item.token_account: item for item in delta_result.deltas}
-    if any(key not in by_account for key in required):
-        return "FOUR_ACCOUNT_DELTA_MISSING"
-    input_user = by_account[accounts.input_token_account]
-    input_vault = by_account[accounts.input_vault]
-    output_vault = by_account[accounts.output_vault]
-    output_user = by_account[accounts.output_token_account]
-    if (
-        input_user.mint != accounts.input_mint
-        or input_vault.mint != accounts.input_mint
-        or output_vault.mint != accounts.output_mint
-        or output_user.mint != accounts.output_mint
-    ):
-        return "MINT_ROLE_MISMATCH"
-    if (
-        input_user.delta_raw >= 0
-        or input_vault.delta_raw <= 0
-        or output_vault.delta_raw >= 0
-        or output_user.delta_raw <= 0
-    ):
-        return "DELTA_SIGN_MISMATCH"
-    return "FOUR_ACCOUNT_DELTAS_PRESENT"
 
 
 def inspect_payload(payload: dict[str, Any]) -> dict[str, Any]:

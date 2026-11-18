@@ -162,7 +162,7 @@ def _damm_two_swap2_reconciled_raw():
             + _u64(100) + _u64(90) + bytes((0,))
             + _u64(100) + _u64(0) + _u64(0) + _u64(90) + bytes(16)
             + _u64(0) + _u64(0) + _u64(0) + _u64(0)
-            + _u64(0) + _u64(0) + _u64(0)
+            + _u64(100) + _u64(90) + _u64(90)
             + _u64(1) + _u64(2) + _u64(3)
         )
         event_data = EVENT_CPI_TAG + EVT_SWAP2_DISCRIMINATOR + event_body

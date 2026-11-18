@@ -159,3 +159,16 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - A `main` contém dois commits corretivos de criação/remoção do arquivo de teste; a comparação da árvore antes/depois confirmou que não há diferença de arquivos. O PR #3 parte do HEAD atual da `main`, sem divergência de commits.
 - Persistência dos três contratos está implementada e validada em CI. Ela ainda não está ligada a um reconstrutor real de swaps; Raydium continua aguardando a transferência/revisão dos módulos locais.
 - Próxima ação técnica: revisar os módulos Raydium CPMM/AMM v4 e seus testes, então conectar a saída do reconciliador a `save_swap_bundle()`. Não mesclar PR #3 até concluir revisão.
+
+## 18. Atualização 2026-11-18 — reforço de integridade da persistência
+
+- Revisão adicional do EventStore identificou que SQLite não ativa chaves estrangeiras por padrão. A conexão agora executa `PRAGMA foreign_keys = ON`, inclusive no banco em memória usado pelos testes.
+- `swap_observations` agora declara chave estrangeira composta para a transação pai (`wallet_address, signature`) com `ON DELETE CASCADE`; classificação e evidência referenciam a observação.
+- `save_swap_bundle()` rejeita chains diferentes de Solana, mantendo o escopo V1.
+- `get_swap_bundle()` sinaliza bundle incompleto se observação existir sem classificação ou evidência, em vez de retornar dados parciais.
+- Novos testes adicionados: exclusão da transação pai remove o bundle por cascata; chain fora do escopo é rejeitada.
+- Documento `docs/RAYDIUM-SWAP-INTEGRATION-PLAN.md` atualizado para refletir a persistência já implementada em branch, distinguindo-a da reconciliação Raydium ainda pendente.
+- Commits de código/testes/documentação técnica mais recentes: `a4127815528a1b648da2b85046f43bb06255b169`, `942e2f3a2fd8f09b22fd34554d9ef15e79801aa2` e `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- **Validação:** 104 testes passaram antes desses reforços. A CI para o HEAD atualizado ainda precisa ser consultada; não declarar os novos testes aprovados até confirmação.
+- PR #3 continua draft e não deve ser mesclado antes da CI atualizada e revisão de compatibilidade/migração.
+- Próxima ação: confirmar CI no HEAD mais recente; depois revisar migração de tabelas caso alguma base de desenvolvimento já tenha criado a versão anterior sem FK. Em seguida, avançar para a transferência dos módulos Raydium locais.

@@ -253,6 +253,23 @@ def main() -> int:
         "reconciliation_status": (
             output.reconciliation.status if output.reconciliation else None
         ),
+        "cross_venue_transfers": [
+            {
+                "outer_instruction_index": transfer.outer_instruction_index,
+                "inner_instruction_index": transfer.inner_instruction_index,
+                "cpi_program_path": list(transfer.cpi_program_path),
+                "source_account": transfer.source_account,
+                "destination_account": transfer.destination_account,
+                "mint": transfer.mint,
+                "amount_raw": transfer.amount_raw,
+                "net_amount_raw": transfer.net_amount_raw,
+                "fee_amount_raw": transfer.fee_amount_raw,
+            }
+            for transfer in (
+                output.reconciliation.cross_venue_transfers
+                if output.reconciliation else ()
+            )
+        ],
         "transfer_fee_absence_proofs": [
             {
                 "mint": proof.mint,

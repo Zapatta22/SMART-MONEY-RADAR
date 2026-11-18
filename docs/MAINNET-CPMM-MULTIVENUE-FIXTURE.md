@@ -35,3 +35,8 @@ O saldo líquido zero da conta de entrada não é tratado como ausência de ativ
 - Um bundle de domínio, com classificação `UNKNOWN` quando nenhum mint de referência é configurado.
 - A classificação passa a `BUY` ou `SELL` somente quando o respectivo mint de entrada ou saída é explicitamente configurado como referência. Isso não prova que qualquer um desses mints seja stablecoin.
 - Esta fixture é evidência de reconciliação econômica do swap CPMM dentro de uma rota multi-venue. Não é uma avaliação de segurança/qualidade do token nem autorização para execução financeira.
+
+
+## Histórico Git e limite da correção
+
+A substituição dos identificadores foi aplicada ao estado atual da branch. Os commits anteriores do PR ainda preservam versões históricas dos arquivos que continham a assinatura original e o fingerprint do payload bruto. Nenhuma reescrita de histórico foi executada. O repositório está configurado como privado; antes de ampliar o acesso ou tornar os artefatos públicos, avaliar se é necessário reescrever o histórico do branch e invalidar referências antigas. Mesmo após eventual limpeza do histórico, slot, horário, mints e quantidades preservados podem permitir correlação on-chain.

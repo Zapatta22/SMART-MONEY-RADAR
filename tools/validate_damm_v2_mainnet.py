@@ -122,6 +122,46 @@ def main() -> int:
         ),
         "bundles": len(output.bundles),
         "classification_sides": [item.classification.side for item in output.bundles],
+        "expected_account_deltas": [
+            {
+                "token_account": item.token_account,
+                "mint": item.mint,
+                "decimals": item.decimals,
+                "expected_delta_raw": item.expected_delta_raw,
+            }
+            for item in (
+                output.reconciliation.expected_account_deltas
+                if output.reconciliation else ()
+            )
+        ],
+        "observed_account_deltas": [
+            {
+                "token_account": item.token_account,
+                "mint": item.mint,
+                "decimals": item.decimals,
+                "delta_raw": item.delta_raw,
+                "owner": item.owner,
+            }
+            for item in (output.balance_deltas.deltas if output.balance_deltas else ())
+            if output.reconciliation and any(
+                expected.token_account == item.token_account
+                for expected in output.reconciliation.expected_account_deltas
+            )
+        ],
+        "decoded_transfers": [
+            {
+                "type": item.instruction_type,
+                "outer_index": item.instruction_index,
+                "inner_index": item.inner_instruction_index,
+                "cpi_path": item.cpi_path,
+                "source": item.source_account,
+                "destination": item.destination_account,
+                "mint": item.mint,
+                "amount_raw": item.amount_raw,
+                "fee_raw": item.fee_amount_raw,
+            }
+            for item in output.transfers
+        ],
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if output.status == "RECONCILED" else 1

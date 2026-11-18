@@ -80,3 +80,13 @@ A auditoria não transforma resultados negativos em bundles, não reclassifica s
 ### Correção após CI do dashboard
 - O primeiro CI do `DashboardReadService` encontrou uma expectativa de mock incompleta no teste: o serviço delega corretamente todos os argumentos nomeados, inclusive `since=None`, `until=None` e `top_reasons_limit=10`.
 - O teste foi ajustado para validar o contrato completo; nenhuma regra de produção foi alterada. Novo CI necessário.
+
+
+## Adaptador HTTP local de leitura (PR #15)
+
+- `src/smart_money_radar/services/dashboard_http.py` adiciona `create_read_only_server()` com endpoints GET `/health`, `/api/v1/dashboard` e `/api/v1/reconciliation/attempts`.
+- Exige Bearer token com pelo menos 32 caracteres, comparação em tempo constante, bind exclusivamente em IP loopback, respostas `Cache-Control: no-store` e `X-Content-Type-Options: nosniff`.
+- Métodos POST, PUT e DELETE são recusados com HTTP 405. Não há CORS, acesso externo, gravação, RPC ou execução de ordens.
+- O servidor é criado sem iniciar automaticamente; o chamador controla explicitamente o ciclo de vida.
+- `tests/test_dashboard_http.py` cobre autenticação, dashboard, rota desconhecida, método de mutação, host não-loopback e token curto.
+- A implementação ainda depende de CI e revisão de segurança; não deve ser exposta em rede nem usada como serviço de produção nesta fase.

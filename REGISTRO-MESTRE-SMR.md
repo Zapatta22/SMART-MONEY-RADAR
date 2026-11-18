@@ -2836,3 +2836,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Foi incluído diagnóstico `pipeline_reason` no scanner e uma etapa de inspeção dedicada para a primeira candidata `78AuFWUBHsF6P8XgdzFsrz7XRuErsdcMzysRxq845zjTqQ9b7jeVcLd9obwJyL8MSJMTkV9WcRrnTPfPtgTq5UK` (slot 471052586); workflow #22 (run `44381696357`) ainda em execução no momento deste registro.
 - Scanner aceita transaction version 1, usa RPC PublicNode como endpoint primário configurado e Solana Labs como fallback; limite atual 100 assinaturas. O fluxo de validação conhecida single-swap segue aprovado.
 - CI #1068 (run `44380902804`) SUCCESS: 483 testes e compileall aprovados. PR #25 continua OPEN/DRAFT, sem merge; BUY/SELL e execução financeira permanecem desabilitados.
+
+
+## 194. Inspeção da candidata Mainnet e filtro de reutilização wSOL — 18/11/2026
+
+- Workflow Mainnet #22 (run `44381696357`) executou a inspeção detalhada da assinatura `78AuFWUBHsF6P8XgdzFsrz7XRuErsdcMzysRxq845zjTqQ9b7jeVcLd9obwJyL8MSJMTkV9WcRrnTPfPtgTq5UK`, slot 471052586. O pipeline encontrou 2 associações MATCHED e 2 transfer evidences ATTRIBUTED, mas a reconciliação permaneceu INCOMPLETE.
+- Causa observada: o primeiro swap usa a conta wSOL `GBiDcPGFHF461LfDVEDn2yX5yPVEFCi59mXdppBSME7z` como input; o segundo swap usa a conta do outro token como input e devolve wSOL à conta `GBiDc...`. Portanto, é um round-trip em sentidos opostos, não duas operações com a mesma conta wSOL como input.
+- A instrução SystemProgram observada no índice 5 transfere SOL de `GEUDKx63wXKrn7ognB2gkmy8YRNkVF1hgS4sBEg9nZVm` para `FDA2o2DWbFhRHsETEzuty7M87JRLQ9XSfMowByyJr3eX`, seguida de SyncNative no índice 6. Isso não demonstra funding da conta wSOL input `GBiDc...` pela carteira monitorada `HFvU7JH5GbWSASkdjrjhtbKKyG2bpx9Rh8ZfNH8PiciX`. A divergência de funding é corretamente rejeitada; não alterar a regra econômica para aceitar esse padrão.
+- Scanner atualizado no commit `56ef7d4a827c11b843a36bd633994deb01026283` para distinguir: (a) mesma conta wSOL reutilizada como input em duas ou mais operações; (b) conta wSOL com funding identificado. Só reportará FOUND quando ambas as condições estiverem comprovadas e o pipeline estiver RECONCILED.
+- Workflow #22 manteve a validação conhecida single-swap e o scanner de 100 assinaturas com sucesso; a etapa dedicada de inspeção da candidata retornou REJECTED como esperado (continue-on-error).
+- Próximo passo: executar a nova varredura e identificar se alguma transação Mainnet recente realmente reutiliza a mesma conta wSOL como input em múltiplos `swap2`. Não há ainda validação Mainnet desse padrão específico.

@@ -228,18 +228,43 @@ def reconcile_raydium_cpmm_swaps(
             ))
             continue
 
-        # Reconcile every decoded transfer affecting either user account against
-        # the full transaction delta. This catches unrelated transfers, omitted
-        # transfer variants, transfer fees, and netted activity not explained by
-        # the decoded transfer evidence.
-        for account, delta, expected_program in (
-            (accounts.input_token_account, input_delta, accounts.input_token_program),
-            (accounts.output_token_account, output_delta, accounts.output_token_program),
+        input_vault_delta = delta_by_account.get(accounts.input_vault)
+        output_vault_delta = delta_by_account.get(accounts.output_vault)
+        if input_vault_delta is None or output_vault_delta is None:
+            provisional.append(_failure(
+                swap, "INCOMPLETE", "Falta delta pre/post de um vault do pool."
+            ))
+            continue
+        if (
+            input_vault_delta.mint != accounts.input_token_mint
+            or output_vault_delta.mint != accounts.output_token_mint
+            or input_vault_delta.decimals != input_delta.decimals
+            or output_vault_delta.decimals != output_delta.decimals
+        ):
+            provisional.append(_failure(
+                swap, "INCOMPLETE", "Mint ou decimals do delta do vault diverge da instrução CPMM."
+            ))
+            continue
+
+        # Reconcile every decoded transfer affecting both user token accounts
+        # and pool vaults against the complete transaction deltas. This detects
+        # Token-2022 transfer fees and other unexplained net/gross differences.
+        for account, delta, expected_program, label in (
+            (accounts.input_token_account, input_delta, accounts.input_token_program, "token account de entrada"),
+            (accounts.output_token_account, output_delta, accounts.output_token_program, "token account de saída"),
+            (accounts.input_vault, input_vault_delta, accounts.input_token_program, "vault de entrada"),
+            (accounts.output_vault, output_vault_delta, accounts.output_token_program, "vault de saída"),
         ):
             account_transfers = [
                 item for item in transfers
                 if item.source_account == account or item.destination_account == account
             ]
+            if not account_transfers:
+                provisional.append(_failure(
+                    swap, "INCOMPLETE",
+                    f"Não há transferência decodificada para reconciliar o {label}."
+                ))
+                break
             if any(
                 item.program_id != expected_program
                 or (item.mint is not None and item.mint != delta.mint)
@@ -248,13 +273,13 @@ def reconcile_raydium_cpmm_swaps(
             ):
                 provisional.append(_failure(
                     swap, "INCOMPLETE",
-                    "Programa, mint ou decimals de uma transferência na token account diverge da evidência de saldo."
+                    f"Programa, mint ou decimals de uma transferência no {label} diverge da evidência de saldo."
                 ))
                 break
             if _account_net_from_transfers(account, account_transfers) != delta.delta_raw:
                 provisional.append(_failure(
                     swap, "INCOMPLETE",
-                    "Soma das transferências decodificadas não reconcilia com o delta pre/post da token account."
+                    f"Soma das transferências decodificadas não reconcilia com o delta pre/post do {label}."
                 ))
                 break
         else:

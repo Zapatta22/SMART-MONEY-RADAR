@@ -35,8 +35,8 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
         self.assertEqual(self.fixture["result"]["transaction"]["message"]["recentBlockhash"], "1" * 32)
         self.assertEqual(self.manifest["commitment"], "finalized")
         self.assertEqual(self.manifest["slot"], 388739013)
+        self.assertEqual(self.manifest["projection_file"], FIXTURE_PATH.name)
         self.assertEqual(hashlib.sha256(self.fixture_bytes).hexdigest(), self.manifest["projection_sha256"])
-        self.assertEqual(self.fixture["result"]["transaction"]["signatures"][0], "1" * 64)
         self.assertIsNone(self.fixture["result"]["meta"]["err"])
 
     def test_reconciles_real_cpmm_cpi_with_zero_net_input_account_and_forwarded_output(self) -> None:

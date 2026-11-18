@@ -339,3 +339,19 @@ Limites:
 Testes sintéticos cobrem swap top-level com evento filho, swap aninhado sob agregador, múltiplos swaps/eventos sequenciais, stackHeight ausente, evento antes do swap, transação falha, loaded addresses e round-trip Base58 com bytes zero iniciais.
 
 CI run `44253659374` (#421), commit `708cc57d492fe8f784e9fbcbf641904b5829d913`: **274 testes OK e compileall aprovado**. A execução local desses novos testes ainda deve ser feita no Termux.
+
+## 22. Validação local do analisador DAMM v2 e próxima fronteira de reconciliação (18/11/2026)
+
+No clone Termux da branch PR16, atualizado por fast-forward até `5e34958e1726f209020f3fe41a61b2ff76f3176a`:
+
+- `test_damm_v2_analyzer.py`: 8/8 testes aprovados.
+- `test_damm_v2_decoder.py`: 6/6 testes aprovados.
+- Suíte completa: 274 testes OK.
+- `compileall -q src tests`: sem erro.
+- CI do mesmo head: run `44253820850` (#422), success.
+
+Os avisos ResourceWarning observados em testes HTTP não causaram falha. Esta validação confirma os testes sintéticos do parser e da associação estrutural, mas não comprova reconciliação econômica nos RAW locais.
+
+Próximo passo: analisar localmente os cinco RAW com o analisador DAMM v2 em modo redigido e sem efeitos colaterais. Em seguida, especificar a associação por operação entre instrução/evento, transferências SPL/Token-2022 e deltas por token account/vault. Exigir papéis de contas demonstráveis, preservar operações sequenciais, não dividir deltas líquidos compartilhados sem evidência e tratar explicitamente Token-2022 transfer fees. Resultados insuficientes devem permanecer incompletos/ambíguos; não criar SwapObservation nem persistir no SQLite nesta fase.
+
+Nenhum RAW foi enviado ao GitHub. Nenhuma importação, criação/migração SQLite, RPC/Helius, checkpoint ou operação on-chain foi executada.

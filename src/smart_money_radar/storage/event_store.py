@@ -606,7 +606,8 @@ class SQLiteEventStore:
                    WHERE observed.wallet_address = ?
                      AND observed.payload_json IS NOT NULL
                      AND processed.signature IS NULL
-                   ORDER BY observed.rowid ASC
+                   ORDER BY COALESCE(observed.slot, 0) ASC,
+                            observed.observed_at ASC, observed.rowid ASC
                    LIMIT ?""",
                 (wallet_address, limit),
             ).fetchall()

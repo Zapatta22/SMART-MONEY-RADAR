@@ -2317,3 +2317,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Teste de migração cria esquema legado com checkpoint e observação slot 1200 e confirma a recuperação do slot após inicialização.
 - Commits: fonte `d632a07d28af9613c6729ef4218bd9bbd19b8ed4`; teste `4ddcf30387afb10ed3a3f39b43c0f657459177f8`.
 - Runtime unittest/compileall ainda pendentes.
+
+## 140. Checkpoint ordenado para múltiplas transações no mesmo slot — PR #25 (18/11/2026)
+
+- A comparação estrita por slot impede regressão, mas não distingue transações diferentes no mesmo slot. Como `getSignaturesForAddress` retorna a lista em ordem cronológica reversa, o backfill já percorre `reversed(collected)` em ordem cronológica crescente.
+- Adicionado `SQLiteEventStore.advance_checkpoint_in_order()`: exige assinatura já processada, observação persistida, slot inteiro não negativo idêntico ao slot arquivado e proíbe retrocesso para slot menor; permite avançar a assinatura dentro do mesmo slot somente quando chamado pelo caminho de backfill que conhece a ordem RPC.
+- O backfill chama esse método após processar com sucesso cada assinatura e após arquivar falhas on-chain com slot válido. Slots ausentes não acionam avanço ordenado. Notificações live continuam sujeitas à regra conservadora de slot estritamente maior.
+- Teste adicionado para duas assinaturas processadas em ordem no mesmo slot, confirmando que o checkpoint termina na segunda assinatura.
+- Commits: EventStore `bba78356d91d07bb881a0f7d8205111f37442533`; WalletMonitor `b9213855505da9ea3b8850d51121464b8cebf7a2`; teste `cfbd48b4068cd1c7e9a475af8f14fe24351a2203`; guarda slot ausente `e0e50e81ae563675428c0d13f501d2ab4326c776`.
+- Revisão estática e re-leitura GitHub pendentes de fechamento; runtime unittest/compileall ainda não executados.

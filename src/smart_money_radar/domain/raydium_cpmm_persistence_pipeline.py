@@ -209,13 +209,6 @@ def process_raydium_cpmm_observation(
         store.save_swap_reconciliation_attempt(
             wallet_address, signature, audit_records
         )
-        unresolved = max(
-            0,
-            len(swaps) - len(matched),
-            len(reconciliations) - len(matched),
-            1 if reconciliation_identity_mismatch else 0,
-            1 if bundle_identity_mismatch else 0,
-        )
         reconciliation_count_mismatch = (
             len(reconciliations) != len(swaps)
             or reconciliation_identity_mismatch
@@ -252,6 +245,13 @@ def process_raydium_cpmm_observation(
                 or bundle.evidence.operation_id != bundle.observation.operation_id
                 for bundle in bundles
             )
+        )
+        unresolved = max(
+            0,
+            len(swaps) - len(matched),
+            len(reconciliations) - len(matched),
+            1 if reconciliation_identity_mismatch else 0,
+            1 if bundle_identity_mismatch else 0,
         )
         saved = 0
         for bundle in bundles:

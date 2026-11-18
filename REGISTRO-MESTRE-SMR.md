@@ -3007,3 +3007,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI push #44412697052 SUCCESS e CI PR #44412708214 SUCCESS no commit `e0957323fcd3c22aef94d7ead1e1e1c03676caed`: 497 testes aprovados em 4,421s e `compileall` concluído. O novo teste aparece como `ok`.
 - PR #25 permanece OPEN/DRAFT e sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
 - Próxima ação: verificar os checks exigidos e a descrição da PR sem alterar seu estado, depois avançar para a próxima venue/integração somente após revisão de eventuais lacunas remanescentes.
+
+
+## 208. Coerência estrutural da fixture multi-swap: pools distintos — 18/11/2026
+
+- Durante a revisão crítica da fixture de sucesso multi-swap, foi identificado que as duas operações usavam a mesma chave de pool, embora tivessem vaults e mints diferentes. Isso era estruturalmente incoerente para duas instruções de pool.
+- A fixture `_damm_two_swap2_reconciled_raw` foi corrigida para gerar duas chaves de pool distintas a partir de bytes determinísticos e codificar exatamente os mesmos bytes no campo `pool` de cada evento `EvtSwap2`.
+- As contas de cada swap continuam independentes; agora cada conjunto de vaults/mints está associado ao seu próprio pool e a associação evento/conta é validada pelo decoder real.
+- CI push #44412971060 SUCCESS no commit `21a775a415fca2f75d98e6bb3bf2188c9dfafd80`: 497 testes aprovados em 4,233s; `compileall` concluído. Os testes de pipeline completo e replay idempotente continuam aprovados.
+- A mudança é exclusivamente de fixture/teste; não altera lógica de produção. PR #25 segue Draft e sem merge; `main` permanece intacta.
+- Próxima ação: confirmar o check PR no HEAD atualizado e concluir revisão de escopo/base da PR sem mudar seu estado nem reescrever a descrição sem autorização.

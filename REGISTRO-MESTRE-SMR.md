@@ -2731,3 +2731,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Busca de código público por padrões comuns encontrou no HEAD pesquisável apenas nomes de variáveis, placeholders documentados e chaves simuladas de teste; nenhum valor de credencial real foi identificado nesses resultados. Isso NÃO equivale a auditoria de todo o histórico Git, nem à confirmação do GitHub Secret Scanning. A conexão disponível não expõe API de alertas de segredo nem administração de segurança. Como o repositório é público, histórico completo e segredos eventualmente commitados ainda exigem auditoria dedicada; qualquer credencial real exposta deve ser revogada/rotacionada.
 - PR #25 permanece Draft e aberto; nenhuma alteração em main, nenhum merge e nenhuma execução financeira.
 - Próxima ação: confirmar CI do novo teste; depois priorizar integração multi-swap com funding wSOL e cobertura mainnet adicional. Não relaxar fail-closed para acelerar.
+
+
+## 184. CI dos testes de lote parcial e revisão do limite atual de funding — 18/11/2026
+
+- CI #1037 (run `44377493009`) e CI #1038 (run `44377534348`) concluíram SUCCESS. Ambas executaram checkout, setup Python, instalação, testes unitários e compileall sem falhas. #1038 validou o HEAD documental `7add283db9a0e92e66b9aee77f2987fa4cd3b9ca`, que contém o teste adicionado no commit `860a8fdebe415f944c29fbf45a78dc4b8bca5525`.
+- PR #25 segue OPEN/DRAFT, sem merge. HEAD verificado: `7add283db9a0e92e66b9aee77f2987fa4cd3b9ca`.
+- Revisão direta de `solana_wrapped_sol_funding.py`: decoder deliberadamente aceita exatamente um SystemProgram::Transfer de source_wallet para token_account, exatamente um SyncNative, ambos antes do swap, funded_amount igual ao amount_raw e delta de lamports da conta wSOL igual a zero. Outros transfers SystemProgram envolvendo a conta, duplicidade ou ambiguidade são rejeitados.
+- Decisão de segurança: não generalizar agora para vários funding transfers por conta. A relação entre funding e cada swap precisa ser inequívoca, principalmente se houver múltiplos swaps que reutilizem a mesma conta wSOL. Manter fail-closed até existir modelo de associação e fixture mainnet que demonstre essa sequência.
+- O novo teste de lote parcial comprova que uma associação MATCHED misturada com EVENT_MISSING rejeita o lote inteiro e não emite contexts/bundles. Isto é regressão sintética; não equivale a fixture mainnet multi-swap.
+- Próxima frente: cobrir a associação funding↔swap para múltiplas operações sem relaxar as condições; depois adicionar fixture mainnet multi-swap obtida localmente e auditada sem enviar RAW/manifesto ao repositório público. Auditoria de histórico Git/segredos permanece pendente; buscas no código atual não substituem secret scanning do histórico completo.
+- Nenhuma ordem, BUY/SELL, checkpoint ou merge foi habilitado.

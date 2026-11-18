@@ -110,3 +110,12 @@ O mapeamento deve permanecer local e não deve ser enviado ao GitHub. O planejad
 - Não há comparação com duplicatas já persistidas, pois não existe acesso ao banco neste dry-run.
 - Não existe classificação automática de venue/protocolo neste planejador; essa revisão permanece pendente.
 - O script não é autorização para importar os dados.
+
+
+## 10. Validação CI do planejador (18/11/2026)
+
+- Head funcional/documental validado: `0c493b51fc98f5453f5b3763b0aeee48631464a6`.
+- Workflow `SMR tests`, run `44249986290`, concluído com sucesso.
+- 255 testes unitários aprovados; compileall de `src` e `tests` aprovado.
+- CI valida os testes do planejador, mas não substitui a execução local sobre os cinco RAW do usuário.
+- Próxima validação: dry-run local sem mapa de carteiras; resultado esperado pela evidência atual é `WALLET_UNASSIGNED` para os cinco registros.

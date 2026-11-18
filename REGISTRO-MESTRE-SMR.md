@@ -374,7 +374,7 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Novos candidatos coletados por RPC (somente artefatos privados)
 - **5fcjpg…** — run `44225543633`, artifact `14393200660`, slot `469869799`, version `0`, raw SHA-256 `70d21083c123baedcf2f2ea3757c213a6c00299123cc38b5645f8eb1761bb010`. Jupiter v6 com Raydium CPMM em CPI. O token account de entrada do usuário tem delta; a conta de saída WSOL não aparece nos deltas pre/post. Não é fixture positiva; manter INCOMPLETE.
-- **39Btokf…** — run `44225638797`, artifact `14391914482`, slot `469955314`, version `1`, raw SHA-256 `b0088af96188b178ade106476b831f7ccd85fea3b8b26abb7fb39ab6d4cee96b`. Uma instrução externa agregadora contém dois swaps CPMM CPI no mesmo grupo, com múltiplas token accounts, vaults e owners. Candidato para análise posterior de múltiplas operações; não foi anonimizado nem commitado e não deve ser tratado como fixture aprovada.
+- **Candidato multi-swap Jupiter** — run `44225638797`, artifact `14391914482`, slot `469955314`, version `1`; fingerprint bruto omitido do registro versionado. Uma instrução externa agregadora contém dois swaps CPMM CPI no mesmo grupo, com múltiplas token accounts, vaults e owners. Candidato para análise posterior de múltiplas operações; não foi anonimizado nem commitado e não deve ser tratado como fixture aprovada.
 - **Zai2u…** — run `44225724731`, artifact `14393250687`, slot `469895550`, version `legacy`, raw SHA-256 `1bad458bd1252288b16083f52327d91659ed2d663a570e061601bc39a1d5a033`. CPMM externo no índice 4; a conta de entrada do usuário aparece apenas em `preTokenBalances`, sem par completo em `postTokenBalances`; não é fixture positiva.
 - Todos os artefatos acima são privados, somente leitura, com retenção de 7 dias. Nenhum raw adicional ou mapa de anonimização foi commitado.
 
@@ -385,7 +385,7 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Estado e próxima ação
 - Ainda não há fixture mainnet que passe MATCHED. Isso é uma lacuna real de validação, não motivo para enfraquecer as regras.
-- Próximo passo: localizar swap token-token com contas de usuário persistentes e deltas de ambos os lados, ou analisar cuidadosamente o candidato multi-swap `39Btokf…` sem presumir atribuição de owner/transferências.
+- Próximo passo: localizar swap token-token com contas de usuário persistentes e deltas de ambos os lados, ou analisar cuidadosamente o candidato multi-swap descrito acima sem presumir atribuição de owner/transferências.
 - Não integrar persistência nem ativar execução financeira até existir caminho positivo comprovado por fixture real.
 
 
@@ -394,7 +394,7 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Coleta e anonimização
 - Transação finalized, slot `469955314`, version `1`, `meta.err=null`.
 - Assinatura e payload bruto permanecem documentados em manifesto privado/artefato de coleta; raw artifact run `44226316427`, retenção 7 dias. O bruto e o mapa reversível não foram commitados.
-- Projeção anonimizada commitada: `data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json`; manifesto adjacente. Raw SHA-256 `b0088af96188b178ade106476b831f7ccd85fea3b8b26abb7fb39ab6d4cee96b`; projeção SHA-256 `dd00ef311cf9d18d2bf249eb6e287e22dade132c6c586abb69bd5cda16a2408d`; 10 endereços substituídos, 16 endereços protegidos. Program IDs e mints foram preservados; contas pessoais foram pseudonimizadas.
+- Projeção pseudonimizada commitada: `data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json`; manifesto adjacente. Fingerprint do payload bruto omitido do registro versionado; hash atual da projeção: `d56a291093983c9ea2c2c5e92f66b2282d68504fb036188c404e2a8b9a214684`; 10 endereços substituídos, 16 endereços protegidos. Program IDs e mints foram preservados; contas pessoais foram pseudonimizadas.
 
 ### Resultado da inspeção
 - Uma instrução externa Jupiter contém **dois swaps Raydium CPMM em CPI**, no mesmo grupo `innerInstructions`, índices internos 0 e 6, com caminhos CPI distintos.
@@ -475,10 +475,10 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ## 27. Atualização 2026-11-18 — segunda fixture mainnet positiva MATCHED em rota multi-venue
 
 ### Coleta e artefato
-- O workflow de coleta foi atualizado para o candidato `3DNxx…DK4t`; a coleta executou automaticamente após o commit, sem ação manual do usuário.
+- O workflow de coleta foi atualizado para o candidato da rota multi-venue; a coleta executou automaticamente após o commit, sem ação manual do usuário. A assinatura não é repetida neste registro.
 - Run de coleta `44228609083`: sucesso. Job de RPC e upload de artefato concluídos.
 - Artefato bruto privado `14394540849`, ZIP `smr-mainnet-candidate-raw-44228609083.zip`; expira em 7 dias. Contém payload RPC e manifesto.
-- Slot `388739013`, versão `0`, commitment `finalized`, `meta.err=null`; raw SHA-256 `89dbe2cb81c8995206c541b410660c81f493a571141e61e1b3074c6c90e9e082`.
+- Slot `388739013`, versão `0`, commitment `finalized`, `meta.err=null`; fingerprint do payload bruto omitido do registro versionado.
 - Projeção mínima anonimizada adicionada em `data/fixtures/mainnet/anonymized/raydium-cpmm-route-multivenue.json`, manifesto adjacente. Projection SHA-256 validado pelo CI: `7cb198239b5f1c7e83e9b80d3191c8f402db91da87930471349349d32b4e8233`. Vinte endereços foram pseudonimizados; mapa reversível permanece fora do repositório.
 - A projeção mantém todas as 21 posições internas e stackHeight, transferências relevantes, CPMM CPI, loaded addresses e quatro snapshots pre/post necessários. Instruções não relevantes foram reduzidas a programa/stackHeight, sem alterar a ordem dos CPIs. Documentação: `docs/MAINNET-CPMM-MULTIVENUE-FIXTURE.md`.
 

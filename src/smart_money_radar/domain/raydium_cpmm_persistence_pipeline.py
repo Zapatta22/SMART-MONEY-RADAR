@@ -135,7 +135,12 @@ def process_raydium_cpmm_observation(
         matched = [
             item for item in reconciliations if item.status == "MATCHED"
         ]
-        unresolved = len(reconciliations) - len(matched)
+        unresolved = max(
+            0,
+            len(swaps) - len(matched),
+            len(reconciliations) - len(matched),
+        )
+        reconciliation_count_mismatch = len(reconciliations) != len(swaps)
 
         bundles: list[SwapDomainBundle] = build_swap_domain_bundles(
             matched,
@@ -156,7 +161,7 @@ def process_raydium_cpmm_observation(
 
         # Fail closed: if a decoder result was not represented by a bundle,
         # or any reconciliation was unresolved, leave the observation replayable.
-        if unresolved or len(bundles) != len(matched):
+        if unresolved or reconciliation_count_mismatch or len(bundles) != len(matched):
             return RaydiumCpmmPipelineResult(
                 "pending_reconciliation",
                 signature,

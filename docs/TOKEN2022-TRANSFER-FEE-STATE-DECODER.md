@@ -27,3 +27,6 @@ Com epoch explicitamente fornecido: selecionar newer se epoch >= newer_transfer_
 Rejeita tipo de conta incorreto, dados base truncados, TLV truncado, extensão alvo ausente/duplicada, tamanho inesperado e basis points acima de 10.000. Extensões desconhecidas válidas são ignoradas pelo comprimento TLV. Padding zero é aceito.
 
 Authorities são mantidas opacas. O withheld_amount lido isoladamente não prova a taxa de uma transferência. Saldos pre/post representam spendable, não withheld. Transferência bruta, crédito líquido, delta spendable e withheld precisam ser reconciliados por operação sem movimentos concorrentes desconhecidos.
+
+
+- Validação adicional: o decoder agora rejeita bytes não zero no padding do Mint entre o byte 82 e o AccountType no offset 165. Teste negativo dedicado adicionado. Isso fecha uma lacuna do parser TLV sem alterar o formato de contas Token-2022.

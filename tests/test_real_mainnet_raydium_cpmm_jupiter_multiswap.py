@@ -1,6 +1,6 @@
 """Integration coverage for a finalized Jupiter route with two Raydium CPMM CPIs.
 
-The fixture is anonymized. Both swaps are decoded independently, but temporary
+The fixture is pseudonymized, not anonymous. Both swaps are decoded independently, but temporary
 intermediate token accounts have no non-zero pre/post delta and therefore must
 not produce economic observations.
 """
@@ -57,13 +57,10 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         self.assertEqual(self.fixture["result"]["transaction"]["message"]["recentBlockhash"], "1" * 32)
         self.assertEqual(self.manifest["commitment"], "finalized")
         self.assertEqual(self.manifest["slot"], 469955314)
+        self.assertEqual(self.manifest["projection_file"], FIXTURE_PATH.name)
         self.assertEqual(
             hashlib.sha256(self.fixture_bytes).hexdigest(),
             self.manifest["projection_sha256"],
-        )
-        self.assertEqual(
-            self.fixture["result"]["transaction"]["signatures"][0],
-            "1" * 64,
         )
         self.assertIsNone(self.fixture["result"]["meta"]["err"])
 

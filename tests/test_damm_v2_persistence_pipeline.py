@@ -5,6 +5,61 @@ from smart_money_radar.domain.damm_v2_persistence_pipeline import (
 )
 from smart_money_radar.storage.event_store import SQLiteEventStore
 
+from smart_money_radar.data_sources.damm_v2_decoder import (
+    EVENT_CPI_TAG,
+    EVT_SWAP2_DISCRIMINATOR,
+    METEORA_DAMM_V2_PROGRAM_ID,
+    SWAP_DISCRIMINATOR,
+)
+
+ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def _b58encode(data):
+    zeros = len(data) - len(data.lstrip(b"\\x00"))
+    number = int.from_bytes(data, "big")
+    encoded = ""
+    while number:
+        number, remainder = divmod(number, 58)
+        encoded = ALPHABET[remainder] + encoded
+    return "1" * zeros + (encoded or ("" if zeros else "1"))
+
+
+def _u64(value):
+    return value.to_bytes(8, "little")
+
+
+def _damm_swap_event_raw():
+    swap_data = SWAP_DISCRIMINATOR + _u64(100) + _u64(90)
+    event_body = (
+        bytes(32) + bytes((0, 0, 0))
+        + _u64(100) + _u64(90) + bytes((0,))
+        + _u64(100) + _u64(0) + _u64(0) + _u64(90) + bytes(16)
+        + _u64(0) + _u64(0) + _u64(0) + _u64(0)
+        + _u64(0) + _u64(0) + _u64(0)
+        + _u64(1) + _u64(2) + _u64(3)
+    )
+    event_data = EVENT_CPI_TAG + EVT_SWAP2_DISCRIMINATOR + event_body
+    def instruction(data, height):
+        return {
+            "programId": METEORA_DAMM_V2_PROGRAM_ID,
+            "accounts": [0],
+            "data": _b58encode(data),
+            "stackHeight": height,
+        }
+    raw = _raw()
+    raw["transaction"]["message"] = {
+        "accountKeys": ["payer"],
+        "instructions": [{
+            "programId": "aggregator", "accounts": [], "data": _b58encode(b"route")
+        }],
+    }
+    raw["meta"]["innerInstructions"] = [{
+        "index": 0,
+        "instructions": [instruction(swap_data, 2), instruction(event_data, 3)],
+    }]
+    return raw
+
 
 def _raw(meta=None):
     return {

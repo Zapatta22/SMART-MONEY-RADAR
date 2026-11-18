@@ -1157,3 +1157,40 @@ CI da alteração adicional aprovado. O PR #16 permanece Draft. Próxima ação 
 - Implementar apenas o planejador/dry-run offline, sem SQLite e sem gravações, com relatório redigido.
 - A ausência de associação explícita deve produzir `WALLET_UNASSIGNED`; não presumir que os cinco RAW pertencem a uma única carteira.
 - Antes de persistir qualquer coisa, revisar o mapeamento carteira↔transação e obter autorização específica.
+
+
+## 62. Planejador offline de importação histórica — primeira implementação — 2026-11-18
+
+### Código adicionado
+- `tools/plan_solana_historical_import.py`: planejador offline, somente leitura, sem EventStore.
+- `tests/test_historical_import_planner.py`: testes de carteira ausente, associação explícita, hash divergente, transação on-chain falha, manifesto via symlink e mapeamento inválido.
+- Documento atualizado: `docs/IMPORTACAO-HISTORICA-SOLANA-ESPECIFICACAO.md`, seção 9.
+
+### Contrato funcional implementado
+- Descoberta determinística de manifestos no diretório fornecido.
+- Reutiliza `audit_fixture()` para integridade/proveniência (hash, assinatura, slot, finalized, encoding e `anonymized=false`).
+- Rejeita manifestos/payloads via symlink e caminhos resolvidos fora do diretório autorizado.
+- Mapeamento explícito local opcional `{signature: monitored_wallet}`; nenhum valor é exibido.
+- Sem associação: `WALLET_UNASSIGNED`.
+- Divergência entre mapa e declaração explícita no manifesto: `WALLET_MAPPING_CONFLICT`.
+- `meta.err` não nulo: `ON_CHAIN_FAILED`.
+- Associação explícita: `READY_FOR_REVIEW`, não significa autorização de gravação.
+- Saída só contém índice e estado; sem caminhos, endereços ou assinaturas.
+- Reporta `network_access=false`, `database_access=false`, `writes_files=false`, `checkpoint_changes=false`, `execution_authorized=false`.
+
+### Limites e segurança
+- Não classifica automaticamente protocolo/venue; cobertura DEX precisa de revisão posterior.
+- Não compara duplicatas com SQLite porque não abre banco.
+- Não cria arquivos, banco, migração, checkpoint, RPC/Helius ou operações on-chain.
+- O mapa privado não deve ser enviado ao GitHub.
+- Nenhum dos cinco RAW locais foi enviado ao repositório.
+- Os arquivos criados no GitHub estão na branch `feat/offline-fixture-inspector`; PR #16 continua Draft, não merged; `main` e PRs #14/#15 preservados.
+
+### Validação
+- Testes adicionados ao repositório, aguardando CI do head atualizado. Não declarar aprovação até workflow concluído.
+- A execução local dos cinco RAW com o novo planejador ainda não ocorreu; não pedir para rodar até CI passar.
+
+### Próxima ação
+- Acompanhar CI; corrigir falhas se existirem.
+- Após CI aprovado, orientar execução local no clone PR16 apontando para os RAW originais, sem fornecer/compartilhar mapeamento de carteira.
+- Analisar o relatório redigido. Associação e cobertura de protocolo permanecem decisões humanas; nenhuma persistência está autorizada.

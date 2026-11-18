@@ -1375,3 +1375,35 @@ Definir decoder DAMM v2 em camadas: (1) discriminadores e parser estrito de inst
 
 - PR #16 permanece Draft, aberto e não merged; `main` intacta.
 - Nenhum SQLite, importação histórica, RPC/Helius, checkpoint, trade ou operação on-chain foi executado.
+
+## 72. Primeiro decoder estrutural DAMM v2 — implementação aguardando validação
+
+### Código adicionado ao PR #16
+- Novo módulo `src/smart_money_radar/data_sources/damm_v2_decoder.py`.
+- Novo conjunto `tests/test_damm_v2_decoder.py`.
+- Fonte oficial fixada: `MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f99868ba8e`.
+- Commits funcionais: decoder `9bd940d86209bfe89a03dd66e5bfa23593ae3ba9`; testes `8562da8c2d8d87228b706aff2012fa36b2d16ef0`.
+
+### Escopo do parser
+- Reconhece somente o Program ID DAMM v2 e discriminadores Anchor exatos para `swap` legacy (`f8c69e91e17587c8`) e `swap2` (`414b3f4ceb5b5b88`).
+- `swap` decodifica `amount_in` e `minimum_amount_out`, fixando modo `EXACT_IN`.
+- `swap2` decodifica `amount_0`, `amount_1` e modo 0/1/2; em `EXACT_OUT`, preserva sem inverter os campos: amount_0 = output desejado, amount_1 = input máximo.
+- Reconhece Event CPI com wrapper Anchor + discriminador `EvtSwap2` e comprimento exato 196 bytes.
+- Decodifica pool (bytes), direção A→B/B→A, collect-fee mode, referral bool, parâmetros, SwapResult2 (incluindo u128 next_sqrt_price), transfer fees, timestamp e reservas.
+- Valida tamanhos exatos, modos/direções/enum, booleano Borsh e amount_0 positivo; eventos/descriminadores desconhecidos não são forçados para EvtSwap2.
+- Não interpreta dados como BUY/SELL, não gera `SwapObservation`, não liga evento a instrução e não reconcilia transfers/deltas. É parser estrutural isolado, não pipeline operacional.
+
+### Testes adicionados (ainda aguardando execução)
+- Swap legacy ExactIn.
+- swap2 ExactOut com semântica amount_0/amount_1 preservada.
+- Modos inválidos e tamanhos de instrução inválidos.
+- EvtSwap2 com campos de evento/resultados, fees e reservas.
+- Evento desconhecido/programa incorreto.
+- Payload truncado, direção inválida e booleano inválido.
+- O head atual do PR #16 é `8562da8c2d8d87228b706aff2012fa36b2d16ef0`; na consulta inicial ainda não havia workflow run nem status checks para esse head. Não declarar CI aprovado até consulta posterior.
+
+### Próxima validação
+Fast-forward do clone PR16, executar `test_damm_v2_decoder.py` e a suíte completa. Corrigir qualquer falha antes de ampliar o auditor ou criar adaptador de reconciliação. Nenhuma alteração ao pipeline CPMM existente.
+
+- PR #16 segue Draft, aberto, não merged; `main` intacta.
+- Nenhum RAW enviado; nenhuma importação, SQLite, RPC/Helius, checkpoint, trade ou operação on-chain executada.

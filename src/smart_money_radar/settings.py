@@ -25,12 +25,14 @@ class HeliusSettings:
             raise SettingsError("HELIUS_API_KEY deve ser texto não vazio.")
         if not isinstance(self.cluster, str) or self.cluster not in {"mainnet", "devnet"}:
             raise SettingsError("SOLANA_CLUSTER deve ser 'mainnet' ou 'devnet'.")
-        if (
-            isinstance(self.request_timeout_seconds, bool)
-            or not isinstance(self.request_timeout_seconds, (int, float))
-            or not math.isfinite(self.request_timeout_seconds)
-            or self.request_timeout_seconds <= 0
-        ):
+        timeout = self.request_timeout_seconds
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+            raise SettingsError("O timeout RPC deve ser um número finito positivo.")
+        try:
+            timeout_is_finite = math.isfinite(timeout)
+        except OverflowError:
+            timeout_is_finite = False
+        if not timeout_is_finite or timeout <= 0:
             raise SettingsError("O timeout RPC deve ser um número finito positivo.")
 
     @property

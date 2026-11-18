@@ -169,10 +169,10 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
     def test_aggregates_sequential_swaps_sharing_the_same_token_accounts(self):
         second = _context(path=(1,))
         second_input = _transfer(
-            "user-a", "vault-a", "mint-a", 100, fee=5, inner=7, path=(1, 0)
+            "user-a", "vault-a", "mint-a", 100, fee=5, inner=3, path=(1, 0)
         )
         second_output = _transfer(
-            "vault-b", "user-b", "mint-b", 90, fee=0, inner=8, path=(1, 0)
+            "vault-b", "user-b", "mint-b", 90, fee=0, inner=4, path=(1, 0)
         )
         results = reconcile_damm_v2_economic_batch(
             [self.context, second],

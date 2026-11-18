@@ -23,6 +23,11 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     TOKEN_2022_PROGRAM_ID,
     SolanaTokenTransfer,
 )
+from smart_money_radar.data_sources.solana_wrapped_sol_funding import (
+    NATIVE_MINT,
+    WrappedSolFundingEvidence,
+    decode_wrapped_sol_funding,
+)
 
 
 EconomicStatus = Literal["RECONCILED", "INCOMPLETE", "AMBIGUOUS"]
@@ -42,6 +47,7 @@ class DammV2EconomicReconciliation:
     operation_count: int
     expected_account_deltas: tuple[DammV2ExpectedAccountDelta, ...]
     reason: str
+    wrapped_sol_fundings: tuple[WrappedSolFundingEvidence, ...] = ()
 
 
 def _add_expected(
@@ -134,6 +140,9 @@ def reconcile_damm_v2_economic_batch(
     evidence: Sequence[DammV2TransferEvidence],
     balance_deltas: SolanaTokenBalanceDeltaResult,
     all_transfers: Sequence[SolanaTokenTransfer],
+    *,
+    raw_transaction: dict | None = None,
+    monitored_wallet: str | None = None,
 ) -> DammV2EconomicReconciliation:
     """Reconcilia todas as operações DAMM v2 do mesmo payload de transação.
 
@@ -167,6 +176,7 @@ def reconcile_damm_v2_economic_batch(
         )
 
     expected: dict[str, dict[str, int | str]] = {}
+    wrapped_sol_fundings: list[WrappedSolFundingEvidence] = []
     claimed_transfers: set[SolanaTokenTransfer] = set()
     claimed_operations: set[tuple[int, int | None, tuple[int, ...]]] = set()
     try:
@@ -292,6 +302,24 @@ def reconcile_damm_v2_economic_batch(
                 expected, input_transfer.source_account, input_transfer.mint,
                 input_transfer.decimals, -input_transfer.amount_raw,
             )
+            if input_transfer.mint == NATIVE_MINT:
+                if raw_transaction is not None and monitored_wallet:
+                    funding = decode_wrapped_sol_funding(
+                        raw_transaction,
+                        token_account=input_transfer.source_account,
+                        source_wallet=monitored_wallet,
+                        amount_raw=input_transfer.amount_raw,
+                        before_instruction_index=association.instruction_index,
+                    )
+                    if funding is not None:
+                        if input_transfer.program_id != SPL_TOKEN_PROGRAM_ID:
+                            raise ValueError("wSOL deve usar o SPL Token Program clássico")
+                        _add_expected(
+                            expected, input_transfer.source_account,
+                            input_transfer.mint, input_transfer.decimals,
+                            funding.amount_raw,
+                        )
+                        wrapped_sol_fundings.append(funding)
             _add_expected(
                 expected, input_transfer.destination_account, input_transfer.mint,
                 input_transfer.decimals, input_net,
@@ -403,18 +431,21 @@ def reconcile_damm_v2_economic_batch(
         if mismatches:
             return DammV2EconomicReconciliation(
                 "INCOMPLETE", len(contexts), tuple(expected_rows),
-                "; ".join(mismatches),
+                "; ".join(mismatches), tuple(wrapped_sol_fundings),
             )
         return DammV2EconomicReconciliation(
             "RECONCILED", len(contexts), tuple(expected_rows),
-            "transferências input/output/referral e deltas agregados por token account "
-            "conferem com EvtSwap2 para o lote completo de operações",
+            "transferências input/output/referral, funding wSOL quando aplicável, "
+            "e deltas agregados por token account conferem com EvtSwap2",
+            tuple(wrapped_sol_fundings),
         )
     except RuntimeError as exc:
         return DammV2EconomicReconciliation(
-            "AMBIGUOUS", len(contexts), (), str(exc)
+            "AMBIGUOUS", len(contexts), (), str(exc),
+            tuple(wrapped_sol_fundings),
         )
     except (TypeError, ValueError) as exc:
         return DammV2EconomicReconciliation(
-            "INCOMPLETE", len(contexts), (), str(exc)
+            "INCOMPLETE", len(contexts), (), str(exc),
+            tuple(wrapped_sol_fundings),
         )

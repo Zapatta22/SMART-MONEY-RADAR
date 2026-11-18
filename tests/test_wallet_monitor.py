@@ -513,5 +513,45 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_damm_v2_unresolved_swap_blocks_cpmm_and_checkpoint(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import tempfile
+        from pathlib import Path
+
+        stop_event = asyncio.Event()
+
+        class Source:
+            async def get_transaction_async(self, signature: str):
+                stop_event.set()
+                return simulated_transaction()
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "history.sqlite3")
+            monitor = WalletMonitor(
+                HeliusSettings(api_key="simulated-key"), Source(), store,  # type: ignore[arg-type]
+            )
+            damm_pending = SimpleNamespace(
+                ready_for_next_venue=False,
+                reconciled_swaps=0,
+                decoded_swaps=1,
+            )
+            with patch(
+                "smart_money_radar.services.wallet_monitor.process_damm_v2_observation",
+                return_value=damm_pending,
+            ), patch(
+                "smart_money_radar.services.wallet_monitor.process_raydium_cpmm_observation"
+            ) as cpmm:
+                result = await monitor._collect_transaction(
+                    "public-wallet", "pending-damm-signature", stop_event
+                )
+            self.assertFalse(result)
+            cpmm.assert_not_called()
+            self.assertFalse(
+                store.has_processed_signature("public-wallet", "pending-damm-signature")
+            )
+            self.assertIsNone(store.get_checkpoint("public-wallet"))
+
+
 if __name__ == "__main__":
     unittest.main()

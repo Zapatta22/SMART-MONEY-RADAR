@@ -32,6 +32,7 @@ from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
     SolanaTokenBalanceDeltaResult,
     decode_solana_token_account_balance_deltas,
 )
+from smart_money_radar.data_sources.token2022_fee_absence_proof import Token2022NoTransferFeeProof
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SolanaTokenTransfer,
     decode_solana_token_transfers,
@@ -193,6 +194,7 @@ def process_damm_v2_transaction(
     signature: str,
     observed_at: datetime,
     parser_version: str,
+    transfer_fee_absence_proofs: tuple[Token2022NoTransferFeeProof, ...] = (),
 ) -> DammV2TransactionPipelineResult:
     """Processa um payload getTransaction inteiro em modo fail-closed.
 
@@ -288,6 +290,7 @@ def process_damm_v2_transaction(
             contexts_tuple, evidence, balance_deltas, transfers,
             raw_transaction=raw_transaction,
             monitored_wallet=monitored_wallet,
+            transfer_fee_absence_proofs=transfer_fee_absence_proofs,
         )
         if reconciliation.status != "RECONCILED":
             return DammV2TransactionPipelineResult(

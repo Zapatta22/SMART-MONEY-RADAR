@@ -113,6 +113,45 @@ class RpcFixtureCollectorTests(unittest.TestCase):
             ):
                 collector.collect(SIG)
 
+    def test_rejects_boolean_or_negative_slot(self):
+        for slot in (True, -1):
+            payload = json.loads(rpc_bytes())
+            payload["result"]["slot"] = slot
+            collector = RpcFixtureCollector(
+                "https://rpc.example", tempfile.mkdtemp(),
+                opener=Mock(return_value=FakeResponse(json.dumps(payload).encode())),
+            )
+            with self.subTest(slot=slot), self.assertRaisesRegex(RuntimeError, "slot inteiro"):
+                collector.collect(SIG)
+
+    def test_rejects_invalid_transaction_version(self):
+        for version in (True, -1, {"unexpected": "object"}):
+            payload = json.loads(rpc_bytes())
+            payload["result"]["version"] = version
+            collector = RpcFixtureCollector(
+                "https://rpc.example", tempfile.mkdtemp(),
+                opener=Mock(return_value=FakeResponse(json.dumps(payload).encode())),
+            )
+            with self.subTest(version=version), self.assertRaisesRegex(RuntimeError, "versão"):
+                collector.collect(SIG)
+
+    def test_requires_signature_list_with_requested_signature_first_and_unique(self):
+        cases = (
+            SIG,
+            ["another-signature", SIG],
+            [SIG, SIG],
+            [SIG, 123],
+        )
+        for signatures in cases:
+            payload = json.loads(rpc_bytes())
+            payload["result"]["transaction"]["signatures"] = signatures
+            collector = RpcFixtureCollector(
+                "https://rpc.example", tempfile.mkdtemp(),
+                opener=Mock(return_value=FakeResponse(json.dumps(payload).encode())),
+            )
+            with self.subTest(signatures=signatures), self.assertRaisesRegex(RuntimeError, "primeira posição"):
+                collector.collect(SIG)
+
     def test_rejects_non_object_json_response(self):
         collector = RpcFixtureCollector(
             "https://rpc.example", tempfile.mkdtemp(),

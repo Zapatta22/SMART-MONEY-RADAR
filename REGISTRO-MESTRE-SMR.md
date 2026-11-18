@@ -1840,3 +1840,21 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #544 (`44270156613`) no HEAD `90da41436022b2875f76b88a5c999b1328fade01`: **completed/success**; 359 testes aprovados e compileall aprovado.
 - PR #22 permanece Draft, aberto e não integrado. PR #21 permanece Draft. PR #17 e #18 também permanecem Draft. PR #20 foi fechado sem merge por duplicação de decoder. `main` intacta.
 - Limite atual: a evidência DAMM v2 permanece `ATTRIBUTED`; ainda não há reconciliação econômica por operação usando deltas de contas/vaults, fees input/output/referral e estado withheld. Sem RPC/Helius, RAW fixtures, SQLite, checkpoints ou operações on-chain.
+
+
+## 94. Reconciliação econômica DAMM v2 por transação — PR #23 em validação (18/11/2026)
+
+- Criado PR #23, Draft, branch `feat/damm-v2-economic-reconciliation`, empilhado sobre PR #22.
+- Novo módulo `src/smart_money_radar/data_sources/damm_v2_economic_reconciliation.py` agrega os deltas esperados por token account para o conjunto completo de swaps DAMM v2 da transação.
+- Invariantes:
+  - input: débito bruto do usuário = `EvtSwap2.included_transfer_fee_amount_in`; crédito spendable do input vault = `swap_result.included_fee_input_amount`;
+  - output: débito bruto do output vault = `included_transfer_fee_amount_out`; crédito spendable da carteira = `excluded_transfer_fee_amount_out`;
+  - referral: débito bruto = `swap_result.referral_fee`; vault/mint/programa revalidados pela matriz FeeMode; crédito Token-2022 exige taxa explícita em `TransferCheckedWithFee`.
+- Revalida proveniência CPI, execução, identidade de instrução, contas, mint/programa, fee explícita e não reutilização de transferências.
+- Exige o inventário completo de transferências decodificadas; qualquer transferência não atribuída que toque contas do swap faz o lote falhar fechado.
+- Agrega múltiplos swaps sequenciais por token account antes de comparar com os deltas pre/post, evitando repartir delta líquido arbitrariamente.
+- Testes adicionados para gross/net, taxa explícita e implícita, fee inválida, referral, snapshots incompletos, delta divergente, transferências não atribuídas e dois swaps compartilhando contas.
+- CI #549 (`44295269270`) e #551 (`44295445153`) apareceram como failure, mas os jobs retornaram sem steps e os logs da execução não estavam disponíveis (BlobNotFound); não há evidência de que os testes tenham iniciado. Não classificar como falha de teste nem como aprovação.
+- O código ainda precisa de CI executado com logs/steps verificáveis e revisão estática final do diff.
+- Limites: não cria `SwapObservation`, BUY/SELL ou sinal; não consulta mint/epoch, RPC/Helius, RAW fixtures, SQLite ou checkpoints; não executa operações on-chain. `RECONCILED` valida apenas o lote com os inventários completos fornecidos e não é, sozinho, autorização para trading.
+- PR #23 permanece aberto, Draft e não integrado. PRs #17, #18, #21 e #22 permanecem Draft. PR #20 fechado sem merge. `main` intacta.

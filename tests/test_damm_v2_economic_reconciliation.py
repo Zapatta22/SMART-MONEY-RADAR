@@ -777,6 +777,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("não atribuídas", result.reason)
+        self.assertIn("third-party->user-a", result.reason)
+        self.assertIn("amount=1", result.reason)
 
     def test_rejects_duplicate_swap_identity_even_with_distinct_transfers(self):
         second_input = _transfer(

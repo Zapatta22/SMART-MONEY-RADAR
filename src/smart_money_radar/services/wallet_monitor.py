@@ -400,6 +400,7 @@ class WalletMonitor:
                     [],
                     parse_status="failed_on_chain",
                     parser_version=PARSER_VERSION,
+                    slot=item.get("slot"),
                 )
                 continue
             if not await self._collect_transaction(wallet_address, signature, stop_event):

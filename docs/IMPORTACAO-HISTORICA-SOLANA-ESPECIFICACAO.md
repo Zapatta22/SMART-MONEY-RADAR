@@ -209,7 +209,7 @@ A execução local no clone PR16 atualizado até `65c03c8c423302a89c09ea6a4de29b
 
 O prefixo top-level é igual aos primeiros oito bytes de SHA-256 de `global:swap`, discriminador Anchor da instrução `swap`. A documentação Meteora lista `swap` como caminho legacy exact-in e `swap2` como caminho atual que aceita ExactIn, PartialFill e ExactOut. O discriminador Anchor de `global:swap2` é `414b3f4ceb5b5b88`, não observado nos perfis top-level recebidos.
 
-A documentação de eventos Meteora informa que a maioria dos eventos é emitida por event CPI e que `EvtSwap2` é emitido por `swap` e `swap2`. Contudo, o prefixo inner observado `e445a52e51cb9a1d` não corresponde ao discriminador Anchor calculado para `event:EvtSwap2` (`bd4233a826507599`). Portanto, a instrução inner permanece sem identificação; não a interpretar como EvtSwap2 nem como swap.
+A documentação e o código-fonte oficiais esclarecem a estrutura: p_emit_cpi() prefixa Event::data(&EvtSwap2 { ... }) com EVENT_IX_TAG_LE. Assim, e445a52e51cb9a1d é o wrapper Event CPI; o discriminador Anchor do evento EvtSwap2 (bd4233a826507599) deve estar nos bytes 8–15. O tamanho observado de 196 bytes corresponde a 8 bytes de wrapper + 8 bytes de discriminador + 180 bytes de payload. A confirmação nos RAW depende da leitura redigida dos bytes 8–15.
 
 O prefixo `e445...` também aparece sob programas Jupiter v6 e Meteora DLMM e com outros comprimentos. A coincidência não demonstra semântica comum, porque o programa, o contexto CPI e a estrutura completa são parte da identidade da instrução.
 
@@ -224,3 +224,28 @@ O prefixo `e445...` também aparece sob programas Jupiter v6 e Meteora DLMM e co
 7. Só produzir `SwapObservation` após reconciliação econômica; manter dados insuficientes como `INCOMPLETE` e direção sem mint de referência como `UNKNOWN`.
 
 A evidência atual confirma chamada top-level compatível com `swap` legacy, mas não prova por si só a operação econômica completa nem direção BUY/SELL. Não há decoder DAMM v2 implementado nesta etapa. Nenhum RAW foi enviado ao GitHub; não houve acesso a SQLite, importação, RPC, Helius, checkpoint ou execução on-chain.
+
+## 16. Event CPI e EvtSwap2 DAMM v2: especificação e auditor redigido (18/11/2026)
+
+Fonte oficial fixada para esta análise: MeteoraAg/damm-v2 commit 18936b18c26708f6e9b52cacc01ea2f99868ba8e.
+
+O código oficial em programs/cp-amm/src/instructions/swap/ix_p_swap.rs executa a lógica do swap e emite EvtSwap2 por p_emit_cpi(Event::data(&EvtSwap2 { ... }), event_authority). A função p_emit_cpi prefixa o conteúdo com EVENT_IX_TAG_LE, depois faz CPI ao próprio programa. O wrapper é e445a52e51cb9a1d; os oito bytes seguintes são o discriminador Anchor do evento. Para EvtSwap2, o discriminador é bd4233a826507599.
+
+O layout do evento tem 188 bytes (8 do discriminador + 180 do payload). O CPI completo tem 196 bytes (8 wrapper + 188 evento). Isso coincide com o perfil inner DAMM v2 observado localmente: 196 bytes, uma conta de autoridade, stack height 2 ou 3. A coincidência é estruturalmente forte, mas a confirmação transacional exige verificar o discriminador no offset 8 do payload RAW.
+
+O evento contém direção e parâmetros, SwapResult2, fees, timestamp e reservas. SwapParameters2 usa amount_0, amount_1 e swap_mode (0 ExactIn, 1 PartialFill, 2 ExactOut). Para ExactOut, amount_0 é output desejado e amount_1 é input máximo; não interpretar os campos como sempre input/minimum output.
+
+### Extensão implementada no auditor
+
+O auditor passa a emitir event_cpi_profiles para instruções internas de venues/agregadores registradas cujo payload começa pelo wrapper Event CPI. Exibe apenas nome do programa, discriminador de evento, tamanho, quantidade de contas, stack height, nome allowlisted quando conhecido e contagem. Reconhece EvtSwap2 somente para Meteora DAMM v2 + discriminador exato; outros eventos são UNKNOWN. Nenhum payload, endereço, mint, valor, carteira, assinatura, ID de programa ou caminho é exibido.
+
+Teste sintético valida wrapper, discriminador, 196 bytes, uma conta, stack height e redação. O código continua sem rede, SQLite, gravação ou checkpoint. O novo head ainda não tem CI/status check confirmado.
+
+### Critérios de validação local
+
+- Atualizar clone PR16 por fast-forward e executar tools/audit_solana_protocol_coverage.py nos cinco RAW originais.
+- Confirmar se DAMM v2 inner aparece com discriminador bd4233a826507599, event_name=EvtSwap2, comprimento 196 e uma conta.
+- Se confirmado, associar o Event CPI à instrução swap correspondente por stack height/ordem/contexto CPI; nunca contabilizar evento e instrução como dois swaps.
+- Decodificar campos do evento somente após fixar a versão de IDL/estrutura; reconciliar transferências SPL/Token-2022 e deltas de token accounts/vaults. Não criar SwapObservation apenas a partir do evento.
+
+Nenhum RAW foi enviado ao GitHub; nenhuma importação, banco, RPC/Helius, checkpoint ou operação on-chain foi realizada.

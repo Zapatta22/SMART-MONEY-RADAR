@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 
+from smart_money_radar.data_sources.damm_v2_analyzer import DammV2SwapEventAssociation
 from smart_money_radar.data_sources.damm_v2_transaction_pipeline import (
     process_damm_v2_transaction,
 )
@@ -39,6 +41,43 @@ class DammV2TransactionPipelineTests(unittest.TestCase):
     def test_valid_transaction_without_damm_v2_swaps_is_noop(self):
         result = self._process(_raw_transaction())
         self.assertEqual(result.status, "NO_DAMM_V2_SWAPS")
+        self.assertEqual(result.bundles, ())
+
+    def test_mixed_matched_and_unresolved_swaps_rejects_entire_batch(self):
+        matched = DammV2SwapEventAssociation(
+            status="MATCHED",
+            instruction_index=0,
+            inner_instruction_index=0,
+            cpi_path=(0,),
+            stack_height=2,
+            instruction=object(),
+            event_inner_instruction_index=1,
+            event_cpi_path=(0, 0),
+            event_stack_height=3,
+            event=object(),
+        )
+        unresolved = DammV2SwapEventAssociation(
+            status="EVENT_MISSING",
+            instruction_index=1,
+            inner_instruction_index=0,
+            cpi_path=(1,),
+            stack_height=2,
+            instruction=object(),
+            event_inner_instruction_index=None,
+            event_cpi_path=None,
+            event_stack_height=None,
+            event=None,
+        )
+        with patch(
+            "smart_money_radar.data_sources.damm_v2_transaction_pipeline.analyze_damm_v2_swap_events",
+            return_value=[matched, unresolved],
+        ):
+            result = self._process(_raw_transaction())
+
+        self.assertEqual(result.status, "REJECTED")
+        self.assertIn("associação DAMM v2 incompleta/ambígua", result.reason)
+        self.assertEqual(len(result.associations), 2)
+        self.assertEqual(result.contexts, ())
         self.assertEqual(result.bundles, ())
 
     def test_missing_execution_status_fails_closed(self):

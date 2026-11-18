@@ -2667,3 +2667,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI associado ao HEAD anterior: run #995 (`44351173108`) terminou failure; job `134966891758` retornou `logs_url=null` e `steps=null`. Não há evidência de execução remota dos testes.
 - As duas correções foram gravadas diretamente na branch `feat/damm-v2-transaction-pipeline`; ainda não há validação runtime posterior aos commits. PR #25 permanece aberto, Draft, sem merge; nenhuma alteração em `main`.
 - Próxima ação: sincronizar a branch e executar novamente a validação consolidada uma única vez. Não repetir testes isolados já aprovados nem coletar fixture RAW mainnet antes do resultado completo.
+
+
+## 178. Correções adicionais e CI completo aprovado no PR #25 — 18/11/2026
+
+- CI #998 (44372325999) executou 466 testes e revelou 2 erros nos testes da fixture CPMM real e 1 falha de mensagem no coletor RPC. O log completo foi consultado diretamente no GitHub.
+- Causa dos dois erros CPMM: a projeção anonimizada legada preserva meta.loadedAddresses, mas não contém message.addressTableLookups. A validação fail-closed estava correta; não foi afrouxada. O teste agora cria uma cópia em memória da projeção, expande a ordem canônica accountKeys estáticas + loaded writable + loaded readonly e remove meta.loadedAddresses dessa cópia. A fixture original, seu hash e manifesto permanecem intactos. Commit 077e17e4bc10f47581c7a86d6e49dbf316ffc6bc.
+- Causa da falha do coletor: a assinatura divergente já era rejeitada, mas a mensagem não continha a expressão esperada pelo teste. Texto ajustado para explicitar “não confere”, sem mudar a regra de validação. Commit 7c002eeec37d73bcce929aa61ca36a585edc9bc6.
+- CI #1001 (44372720945), evento pull_request, job 135043570248: checkout, instalação, 466/466 testes e compileall concluídos com sucesso. Esta é a validação integrada do PR e a evidência principal de aprovação do HEAD atual.
+- CI #1002 (44372728943), evento push, job 135043598061, reportou uma falha de mensagem no teste do coletor, embora o CI do PR #1001 tenha passado com a branch integrada. Manter a observação para reconciliação; não substituir o resultado verde do evento pull_request por esse evento push divergente.
+- Correções de assinatura e import SQLite já registradas na seção 177. Registro Mestre atualizado neste commit documental.
+- PR #25 permanece aberto, Draft, sem merge; main preservada. A fixture RAW mainnet DAMM v2 ainda não foi coletada; aprovação da suíte não equivale à validação de fixture DAMM v2 real nem autoriza execução de ordens.

@@ -219,6 +219,8 @@ class DammV2TransferAnalyzerTests(unittest.TestCase):
         accounts = DammV2SwapAccounts(
             **{
                 **base.__dict__,
+                "input_token_account": "user-b",
+                "output_token_account": "user-a",
                 "input_vault": "vault-b",
                 "output_vault": "vault-a",
                 "input_mint": "mint-b",

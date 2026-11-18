@@ -97,10 +97,6 @@ def resolve_token2022_no_fee_proofs(
     payload = raw_transaction.get("result", raw_transaction) if isinstance(raw_transaction, dict) else None
     if not isinstance(payload, dict):
         raise ValueError("payload RPC inválido")
-    slot = payload.get("slot")
-    if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
-        raise ValueError("slot da transação inválido")
-
     preflight = process_damm_v2_transaction(
         raw_transaction,
         monitored_wallet=monitored_wallet,
@@ -121,6 +117,9 @@ def resolve_token2022_no_fee_proofs(
     })
     if not referral_mints:
         return Token2022FeeProofResolution((), (), ())
+    slot = payload.get("slot")
+    if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+        raise ValueError("slot da transação inválido")
 
     transaction = payload.get("transaction")
     signatures = transaction.get("signatures") if isinstance(transaction, dict) else None

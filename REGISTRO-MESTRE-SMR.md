@@ -2076,3 +2076,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits: validação dcad62896dde85a244fa975daaeb72416b6d3f77; testes 1fa5c91e0378a96b5c9c81c8aaa5f9c71b476dc0; documentação e355ac5f8cff1d119ed2810635debb383cb0754f.
 - Revisão estática enviada ao PR #25. Testes runtime e compileall continuam sem execução comprovada; CI segue sem steps/logs. Não afirmar aprovação.
 - PR #25 Draft, sem merge; main, RAW persistente, SQLite persistente, checkpoints, RPC/Helius e estado on-chain preservados.
+
+
+## 113. Teste de integração da proteção CPI até a fila de replay — PR #25 (18/11/2026)
+
+- Adicionado teste no adaptador de persistência que remove meta.innerInstructions do payload e executa o caminho real de persistência com SQLite :memory:.
+- O teste exige pending_reconciliation, ready_for_next_venue=False, RAW arquivado, assinatura na fila de replay e ausência de assinatura processada/checkpoint. Assim, cobre a propagação do novo bloqueio até a fronteira que impede o WalletMonitor de liberar CPMM.
+- Teste ainda não executado em runtime; CI segue sem steps/logs. Commit do teste: ceb008d1a980290204cf4d4224c05cac4a9b98b0.
+- PR #25 Draft, sem merge; main e estado persistente preservados.

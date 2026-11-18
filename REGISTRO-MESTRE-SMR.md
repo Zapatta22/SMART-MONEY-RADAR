@@ -2890,3 +2890,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Teste end-to-end sintético novo confirma que duas operações round-trip com a ATA wSOL fechada/recriada reconciliam, excluindo apenas a conta efêmera do delta pre/post depois de reconstruir ambos os ciclos. Testes diretos também rejeitam saldo negativo, CloseAccount para outra carteira e transferências não atribuídas.
 - CI #1113 (run `44386188482`) SUCCESS: 488 testes e compileall. CI #1116 (commit `5fadcd54807699f798f0ef930b8069eb0e7a7cc9`) está validando o teste adicional de ownership lifecycle; o run #1115 teve apenas uma falha de texto na asserção do teste, corrigida no commit #1116.
 - PR #25 permanece OPEN/DRAFT e sem merge. Nenhuma ordem financeira é executada; BUY/SELL continua `UNKNOWN`.
+
+
+## 198. Duas validações Mainnet dedicadas + terceira candidata reconciliada — 18/11/2026
+
+- CI #1116 (run `44386374012`) SUCCESS: 489 testes aprovados em 4,181s e compileall aprovado. CI #1118 (run `44386493363`) SUCCESS: 489 testes e compileall novamente aprovados.
+- Mainnet workflow #41 (run `44386586818`, commit workflow `5076bf42f52d6d8ce6dc126945ff88674b46a5f0`) SUCCESS em todas as quatro etapas: transação conhecida single-swap, primeira candidata multi-swap, segunda candidata multi-swap e scanner paginado.
+- A etapa dedicada para a primeira candidata `4cm2yJUSTzevqYAh5N9vknk2jCmocwgbrJR2s7CiPp8DPCuBBgyMqxKU6qk7F5YSdtLDTJpneRrz4TTn7odqDy6k` (slot 471054827) retornou `RECONCILED`, 2 bundles, classificação `UNKNOWN` para ambas.
+- A etapa dedicada para a segunda candidata `634xz2RekctQ8hSoe7h3YF5jugtNy9ADeR7c5xJCZjKNvkwoBcBKX2euswtzVLo2hzpcmPEFsRyD5NQuKw1huiPk` (slot 471060124) também retornou `RECONCILED`, 2 swaps e 2 bundles; carteira monitorada `EpKbgf77ZKP44uxhFe8t3PiMDAmY1ap7qSaigRjWyW8k`.
+- O scanner da mesma execução encontrou terceira transação `4WpBm6HHVpUv6hXGZgf4meZ2HrAu4pUBC9ufREVvqf2y4X6eiGGdKT9gu8uZaNUPwVdVPX3AHBxaeJ23bftpGMGq`, slot 471060788, após 6 transações inspecionadas e zero falhas RPC. Resultado: 2 `swap2` MATCHED, pipeline `RECONCILED`, mesma ATA wSOL `9v94Hevy89f57EY4LEPWVE843mvgkMbRTgZxhhJ5SFqo` usada como input na operação 0 e output na operação 1, lifecycle reconhecido.
+- O scanner interrompe a busca após encontrar uma candidata totalmente reconciliada; por isso `inspected=6` não representa varredura integral de 300 nesse run.
+- Conclusão técnica: lifecycle wSOL create/fund/SyncNative/swap/CloseAccount/recreate/swap/CloseAccount agora tem (a) teste unitário direto, (b) teste de reconciliação econômica em lote, (c) teste do adaptador de domínio com prova de propriedade lifecycle e (d) validação real Mainnet em duas transações dedicadas, além de terceira candidata confirmada pelo scanner.
+- PR #25 continua OPEN/DRAFT, sem merge. Classificação BUY/SELL segue `UNKNOWN`; nenhum sinal, ordem ou execução financeira foi habilitado.

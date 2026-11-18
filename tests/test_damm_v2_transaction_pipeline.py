@@ -87,6 +87,16 @@ class DammV2TransactionPipelineTests(unittest.TestCase):
         self.assertEqual(result.status, "REJECTED")
         self.assertIn("não corresponde à quantidade", result.reason)
 
+    def test_loaded_addresses_without_lookup_tables_fail_closed(self):
+        raw = _raw_transaction()
+        raw["result"]["meta"]["loadedAddresses"] = {
+            "writable": ["unexpected-address"],
+            "readonly": [],
+        }
+        result = self._process(raw)
+        self.assertEqual(result.status, "REJECTED")
+        self.assertIn("sem addressTableLookups", result.reason)
+
     def test_mixed_account_key_formats_fail_closed(self):
         raw = _raw_transaction()
         raw["result"]["transaction"]["message"]["accountKeys"] = [

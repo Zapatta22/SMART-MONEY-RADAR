@@ -18,7 +18,7 @@ def b58encode(raw: bytes) -> str:
     while number:
         number, remainder = divmod(number, 58)
         encoded = alphabet[remainder] + encoded
-    return "1" * (len(raw) - len(raw.lstrip(b"\\x00"))) + encoded
+    return "1" * (len(raw) - len(raw.lstrip(bytes([0])))) + encoded
 
 
 def fixture(root: Path):

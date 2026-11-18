@@ -117,7 +117,41 @@ def main() -> int:
         "monitored_wallet": wallet,
         "associations": len(output.associations),
         "association_statuses": [item.status for item in output.associations],
+        "association_details": [
+            {
+                "instruction_index": item.instruction_index,
+                "event_inner_instruction_index": item.event_inner_instruction_index,
+                "stack_height": item.stack_height,
+                "cpi_path": item.cpi_path,
+                "status": item.status,
+                "reason": item.reason,
+            }
+            for item in output.associations
+        ],
         "transfer_evidence_statuses": [item.status for item in output.transfer_evidence],
+        "transfer_evidence": [
+            {
+                "status": item.status,
+                "instruction_index": item.instruction_index,
+                "inner_instruction_index": item.inner_instruction_index,
+                "cpi_path": item.cpi_path,
+                "input_transfer_index": (
+                    item.input_transfer.instruction_index
+                    if item.input_transfer else None
+                ),
+                "output_transfer_index": (
+                    item.output_transfer.instruction_index
+                    if item.output_transfer else None
+                ),
+                "referral_transfer_index": (
+                    item.referral_transfer.instruction_index
+                    if item.referral_transfer else None
+                ),
+                "reason": item.reason,
+                "transfer_fee_review_required": item.transfer_fee_review_required,
+            }
+            for item in output.transfer_evidence
+        ],
         "reconciliation_status": (
             output.reconciliation.status if output.reconciliation else None
         ),

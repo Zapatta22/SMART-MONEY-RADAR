@@ -101,6 +101,43 @@ class Token2022FeeProofResolverTests(unittest.TestCase):
         self.assertEqual(result.unresolved_mints, ("mint",))
         self.assertIn("TransferFeeConfig está presente", result.reasons[0])
 
+    def test_resolves_token2022_mints_used_by_supported_routed_venues(self):
+        routed_transfer = SimpleNamespace(
+            execution_status="EXECUTED",
+            program_id=TOKEN_2022_PROGRAM_ID,
+            instruction_type="TRANSFER_CHECKED",
+            mint="routed-mint",
+            cpi_path_valid=True,
+            cpi_program_path=(
+                "4X3dGCFh63SyE2bNZdGUV7Rj5ukK1XgrxesoxyKQNiRN",
+                "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+            ),
+        )
+        preflight = SimpleNamespace(transfer_evidence=[], transfers=[routed_transfer])
+        with (
+            patch(
+                "smart_money_radar.data_sources.token2022_fee_proof_resolver.process_damm_v2_transaction",
+                return_value=preflight,
+            ),
+            patch(
+                "smart_money_radar.data_sources.token2022_fee_proof_resolver.get_transaction_index",
+                return_value=144,
+            ),
+            patch(
+                "smart_money_radar.data_sources.token2022_fee_proof_resolver._fetch_current_mint",
+                return_value=(
+                    TOKEN_2022_OWNER, mint_without_transfer_fee_config(), 471116391
+                ),
+            ),
+        ):
+            result = resolve_token2022_no_fee_proofs(
+                self.raw,
+                monitored_wallet="wallet",
+                signature="signature",
+                rpc_endpoint="https://mainnet.helius-rpc.com",
+            )
+        self.assertEqual([proof.mint for proof in result.proofs], ["routed-mint"])
+
     def test_skips_transactions_without_attributed_token_2022_referral(self):
         preflight = SimpleNamespace(transfer_evidence=[], transfers=[])
         with (

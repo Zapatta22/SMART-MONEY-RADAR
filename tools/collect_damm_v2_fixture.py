@@ -16,33 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CANDIDATES = ROOT / "data/fixtures/candidates/solana_mainnet_candidates.json"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--candidate-file", type=Path, default=DEFAULT_CANDIDATES)
-    parser.add_argument("--output", type=Path, default=ROOT / "data/fixtures/raw/damm-v2")
-    args = parser.parse_args()
 
+def find_damm_v2_signature(candidates: object) -> str:
     try:
-        candidates = json.loads(args.candidate_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        parser.error(f"Não foi possível ler candidatos: {type(exc).__name__}")
-    if not isinstance(candidates, list):
-        parser.error("O catálogo de candidatos deve ser uma lista JSON.")
+        signature = find_damm_v2_signature(candidates)
+    except ValueError as exc:
+        parser.error(str(exc))
 
-    matches = [
-        item for item in candidates
-        if isinstance(item, dict) and item.get("protocol") == "Meteora DAMM v2"
-    ]
-    signatures = {
-        item.get("signature") for item in matches
-        if isinstance(item.get("signature"), str) and item["signature"]
-    }
-    if len(signatures) != 1:
-        parser.error(
-            "Era esperado exatamente um candidato Meteora DAMM v2 no catálogo."
-        )
-
-    signature = next(iter(signatures))
     collector = RpcFixtureCollector(
         endpoint_from_environment(),
         args.output,

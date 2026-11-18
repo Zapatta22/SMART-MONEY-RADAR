@@ -2770,3 +2770,6 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Commits de produção/testes: `95c16acd2ccf43213c43f6aead192690109c8b09`, `9a555c17d708402adf705da0c7fbece9731f58dd`, `ffc82421dec327dbcec634effc11fbb261bd2f1d`, `6dbb8c51ee95388e4ac2b82efe12d51870f05d25`.
 - Estado: CI para os novos commits ainda não foi confirmada. A cobertura é sintética; não substitui fixture mainnet real de transação multi-swap wSOL. A regra deliberadamente suporta apenas um SyncNative único após todos os funding transfers e antes do primeiro swap; padrões diferentes permanecem rejeitados.
 - Nenhuma ordem, BUY/SELL, checkpoint ou merge habilitado.
+
+- Validação final da implementação: CI #1051 (run `44378721507`) SUCCESS no commit de código `6dbb8c51ee95388e4ac2b82efe12d51870f05d25`: 480 testes passaram e compileall passou. Os runs intermediários #1045/#1047/#1049 falharam enquanto a alteração estava incompleta (teste antigo ainda esperava rejeição de transferências duplicadas); o commit de teste #1051 atualizou a expectativa e confirmou a implementação integrada.
+- HEAD atual do PR após atualização documental: `83f2db22e17df2aedb39ace867957c495d3cfc47`; o commit adicional é apenas registro. PR #25 permanece OPEN/DRAFT, sem merge.

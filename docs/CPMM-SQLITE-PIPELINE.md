@@ -57,3 +57,12 @@ A gravação de todos os resultados de uma tentativa é atômica. Cada replay ge
 A tabela possui FK para a observação pai e índice por carteira/assinatura. Não possui FK para `swap_observations`, pois uma tentativa negativa deve existir mesmo quando nenhum bundle positivo foi produzido. O armazenamento expõe `save_swap_reconciliation_attempt()` e `get_swap_reconciliation_attempts()`; `storage_stats()` inclui a contagem da tabela.
 
 A auditoria não transforma resultados negativos em bundles, não reclassifica swaps e não altera as regras de checkpoint. Ela apenas preserva evidência explicável de cada tentativa.
+
+
+## Serviço de aplicação para diagnósticos (PR #15)
+
+- `src/smart_money_radar/services/reconciliation_diagnostics.py` adiciona `ReconciliationDiagnosticsService`, uma fachada somente leitura sobre as consultas do EventStore.
+- `get_report()` expõe métricas, motivos recorrentes e pendências; `list_attempts()` expõe o histórico com filtros de carteira, assinatura, operação, status e período.
+- A camada de serviço não implementa SQL nem oferece métodos de escrita/checkpoint; validações e limites permanecem centralizados no EventStore.
+- `tests/test_reconciliation_diagnostics_service.py` verifica delegação dos filtros, preservação do resultado e ausência de operações de mutação na interface pública do serviço.
+- Esta camada prepara a futura API/interface, mas não cria endpoints HTTP, dashboard ou painel visual.

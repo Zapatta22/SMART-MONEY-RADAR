@@ -347,7 +347,10 @@ class WalletMonitor:
             if stop_event.is_set():
                 return
             if not await self._collect_transaction(
-                wallet_address, pending_signature, stop_event
+                wallet_address,
+                pending_signature,
+                stop_event,
+                advance_checkpoint=initial_checkpoint is None,
             ):
                 raise RuntimeError(
                     "Recuperação de observação pendente interrompida; checkpoint preservado."

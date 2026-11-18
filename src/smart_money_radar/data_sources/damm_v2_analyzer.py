@@ -208,15 +208,17 @@ def analyze_damm_v2_swap_events(
     tx = payload.get("transaction")
     meta = payload.get("meta")
     if not isinstance(tx, dict) or not isinstance(meta, dict):
-        return []
+        raise ValueError("transaction/meta ausentes ou inválidos")
+    if "err" not in meta:
+        raise ValueError("meta.err ausente: execução da transação não comprovada")
     if meta.get("err") is not None:
         return []
     message = tx.get("message")
     if not isinstance(message, dict):
-        return []
-    outer = message.get("instructions", [])
+        raise ValueError("transaction.message ausente ou inválido")
+    outer = message.get("instructions")
     if not isinstance(outer, list):
-        raise ValueError("message.instructions inválido")
+        raise ValueError("message.instructions ausente ou inválido")
     keys = _account_keys(message, meta)
 
     groups = meta.get("innerInstructions")

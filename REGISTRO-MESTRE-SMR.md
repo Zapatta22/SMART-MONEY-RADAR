@@ -126,3 +126,15 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - **Estado desta entrega:** documentação de planejamento criada; nenhum módulo Raydium local foi transferido ou integrado; nenhum runtime, parser ou esquema SQLite foi alterado; nenhum teste foi executado por causa deste documento.
 - Próxima ação permanece: transferir os módulos e testes locais para revisão controlada. Após isso, implementar adaptadores e reconciliação em etapas pequenas, sem substituir arquivos remotos inteiros.
 - Limites preservados: branch isolada, `main` intacta, V1 somente leitura, sem RPC pago ou execução financeira.
+
+## 15. Atualização 2026-11-18 — persistência dos três contratos (em revisão)
+
+- Implementada na branch a migração incremental de três tabelas: `swap_observations`, `swap_classifications` e `swap_evidence`.
+- Adicionados `SQLiteEventStore.save_swap_bundle()` e `get_swap_bundle()`: gravam/recuperam os três contratos em uma transação SQLite, mantêm quantidades/confiança como Decimal textual, serializam caminho CPI/evidências em JSON e fazem upsert idempotente por `operation_id`.
+- A gravação exige que a transação pai já exista em `observed_transactions`, que os três contratos compartilhem o mesmo ID e que o ID corresponda ao helper determinístico `build_swap_operation_id(chain, signature, instruction_index, cpi_path)`.
+- Criado `tests/test_swap_persistence.py` com cobertura de round-trip, precisão decimal, idempotência, divergência de IDs e ausência da transação pai.
+- CI do commit `d090b9d973e297834b8edb3a29d1132b9e603811`: workflow `SMR tests` passou; 102 testes aprovados e `compileall` aprovado. Essa execução ocorreu antes da validação adicional de identidade determinística; os commits posteriores estão aguardando a execução de CI atualizada.
+- PR #2 aberto como draft: [Draft: persist separated swap contracts in SQLite](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/2). Não foi mesclado; `main` permanece intacta.
+- Commits posteriores adicionaram validação determinística do `operation_id` e ajustaram os testes para usar o helper real. A validação dessa revisão ainda depende do próximo resultado CI.
+- Limite importante: a persistência está implementada como API do EventStore, mas ainda não está conectada ao pipeline de reconstrução de swaps; não há decodificação Raydium integrada nem fixture mainnet real aprovada.
+- Próxima tarefa: confirmar CI do commit mais recente e revisar eventuais falhas; em seguida, trazer os módulos locais Raydium e testes para integrar o produtor dos contratos.

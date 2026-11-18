@@ -36,20 +36,46 @@ def rpc_call(endpoint: str, method: str, params: list) -> object:
     return payload.get("result")
 
 
-def _fetch_signatures(endpoints: tuple[str, ...], limit: int) -> tuple[list, str]:
-    errors = []
-    for endpoint in endpoints:
-        try:
-            result = rpc_call(endpoint, "getSignaturesForAddress", [
-                METEORA_DAMM_V2_PROGRAM_ID, {"limit": limit, "commitment": "finalized"}
-            ])
-            if not isinstance(result, list):
-                raise RuntimeError("RPC não retornou lista de assinaturas")
-            return result, endpoint
-        except Exception as exc:
-            errors.append(f"{type(exc).__name__}: {str(exc)[:100]}")
-    raise RuntimeError("Falha ao obter assinaturas nos RPCs: " + " | ".join(errors))
-
+def _fetch_signatures(
+    endpoints: tuple[str, ...], limit: int, pages: int
+) -> tuple[list, str]:
+    collected = []
+    before = None
+    first_endpoint = None
+    for _ in range(pages):
+        options = {"limit": limit, "commitment": "finalized"}
+        if before is not None:
+            options["before"] = before
+        page_result = None
+        page_endpoint = None
+        errors = []
+        for endpoint in endpoints:
+            try:
+                result = rpc_call(
+                    endpoint, "getSignaturesForAddress",
+                    [METEORA_DAMM_V2_PROGRAM_ID, options],
+                )
+                if not isinstance(result, list):
+                    raise RuntimeError("RPC não retornou lista de assinaturas")
+                page_result = result
+                page_endpoint = endpoint
+                break
+            except Exception as exc:
+                errors.append(f"{type(exc).__name__}: {str(exc)[:100]}")
+        if page_result is None:
+            raise RuntimeError(
+                "Falha ao obter página de assinaturas nos RPCs: " + " | ".join(errors)
+            )
+        if first_endpoint is None:
+            first_endpoint = page_endpoint
+        if not page_result:
+            break
+        collected.extend(page_result)
+        last_signature = page_result[-1].get("signature")
+        if not isinstance(last_signature, str) or not last_signature:
+            raise RuntimeError("última assinatura da página é inválida")
+        before = last_signature
+    return collected, first_endpoint or endpoints[0]
 
 def scan(endpoints: tuple[str, ...], limit: int) -> dict:
     signatures, signature_rpc = _fetch_signatures(endpoints, limit)
@@ -156,7 +182,7 @@ def scan(endpoints: tuple[str, ...], limit: int) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, default=30)
+    parser.add_argument("--limit", type=int, default=100)\n    parser.add_argument("--pages", type=int, default=3)
     parser.add_argument("--rpc-url", default=os.environ.get(
         "SMR_DAMM_V2_SCAN_RPC_URL", os.environ.get("SMR_SOLANA_RPC_URL", DEFAULT_RPC)
     ))
@@ -168,7 +194,7 @@ def main() -> int:
         parser.error("RPCs devem usar HTTPS")
     endpoints = tuple(dict.fromkeys((args.rpc_url, args.fallback_rpc_url)))
     try:
-        report = scan(endpoints, args.limit)
+        report = scan(endpoints, args.limit, args.pages)
     except Exception as exc:
         report = {"status": "SCAN_ERROR", "reason": f"{type(exc).__name__}: {exc}"}
     print(json.dumps(report, ensure_ascii=False, indent=2))

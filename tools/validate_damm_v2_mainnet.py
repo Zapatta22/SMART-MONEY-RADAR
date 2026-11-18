@@ -430,6 +430,35 @@ def main() -> int:
                 )
             })
         ],
+        "inner_instruction_programs": [
+            {
+                "outer_index": group.get("index"),
+                "instructions": [
+                    {
+                        "inner_index": inner_index,
+                        "program": (
+                            instruction.get("programId")
+                            or (
+                                keys[instruction["programIdIndex"]]
+                                if isinstance(instruction.get("programIdIndex"), int)
+                                and 0 <= instruction["programIdIndex"] < len(keys)
+                                else "?"
+                            )
+                        ),
+                        "stack_height": instruction.get("stackHeight"),
+                        "accounts": [
+                            keys[value] if isinstance(value, int) and 0 <= value < len(keys) else value
+                            for value in instruction.get("accounts", [])
+                        ],
+                        "data": instruction.get("data"),
+                    }
+                    for inner_index, instruction in enumerate(group.get("instructions", []))
+                    if isinstance(instruction, dict)
+                ],
+            }
+            for group in raw.get("meta", {}).get("innerInstructions", [])
+            if isinstance(group, dict)
+        ],
         "outer_instruction_accounts": [
             {
                 "index": index,

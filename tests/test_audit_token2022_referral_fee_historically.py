@@ -77,7 +77,7 @@ class HistoricalReferralFeeAuditTests(unittest.TestCase):
         ):
             result = audit(
                 "https://rpc.example", "https://helius.example",
-                "signature", 471107341, "mint", "referral-account", 1000,
+                "signature", 471107341, "mint", "referral-account", [1000],
             )
         self.assertEqual(result["status"], "HISTORICAL_FEE_MATCH")
         self.assertEqual(result["transaction_index"], 6)
@@ -120,7 +120,7 @@ class HistoricalReferralFeeAuditTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "mudou durante"):
                 audit(
                     "https://rpc.example", "https://helius.example",
-                    "signature", 471107341, "mint", "referral", 1000,
+                    "signature", 471107341, "mint", "referral", [1000],
                 )
 
 

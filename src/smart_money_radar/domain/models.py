@@ -159,8 +159,6 @@ class SwapClassification:
             raise ValueError("Confiança deve estar entre 0 e 1.")
         if not self.reason.strip():
             raise ValueError("A classificação exige motivo explícito.")
-        if self.side == "UNKNOWN" and self.confidence != Decimal("0"):
-            raise ValueError("UNKNOWN deve usar confiança zero até haver evidência classificável.")
 
 
 @dataclass(frozen=True)

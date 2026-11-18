@@ -3081,3 +3081,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - PR #11 é uma linha independente baseada diretamente em `main`; não integra a cadeia de dependências da PR #25 e deve ser auditada separadamente.
 - As PRs #21–#25 permanecem como documentado na seção 212. Nenhuma integração foi realizada na `main`.
 - Próxima ação: consolidar uma tabela de prontidão por PR e apontar o único elo sem check direto (#9), sem disparar mudanças em branches antigas quando a validação downstream já cobre o código.
+
+
+## 214. Validação final da revisão de dependências e CI do HEAD atual — 18/11/2026
+
+- A cadeia da PR #25 foi mapeada até a raiz na `main`: #5 → #6 → #7 → #8 → #9 → #10 → #12 → #13 → #14 → #15 → #16 → #17 → #18 → #21 → #22 → #23 → #24 → #25. PR #11 é independente; PR #20 foi encerrada sem merge por duplicação do decoder.
+- Os checks dos HEADs #5–#8 e #10, #12–#18 e #21–#25 estão SUCCESS na última leitura. PR #9 não possui check-run próprio; o código está incluído na base da PR #10, cujo check está SUCCESS. Nenhuma dessas informações autoriza merge automático.
+- PR #23 recuperou o check com rerun (374 testes); PR #24 teve os dois defeitos de import corrigidos e agora passa (380 testes). PR #25 confirma diretamente os mesmos imports corrigidos em sua própria branch.
+- HEAD atual PR #25: `2457846846e37a77b6a4dcae3bed8d8187e7643c`. CI PR #44414530825 SUCCESS: 498 testes em 4,247s; `compileall` concluído.
+- PR #25 permanece OPEN/DRAFT, mergeable e sem merge. PRs anteriores continuam abertas conforme o estado individual; `main` permanece intacta.
+- O scanner Mainnet #43 identificou uma transação real de duas instruções `swap2` reconciliadas com uma conta wSOL compartilhada entre input da operação 0 e output da operação 1 (seção 211).
+- Próxima ação de engenharia: iniciar a cobertura de multi-swap DAMM v2 sem round-trip wSOL, separando o critério de descoberta do critério específico de wSOL; preservar a validação atual como regressão e não alterar o estado das PRs.

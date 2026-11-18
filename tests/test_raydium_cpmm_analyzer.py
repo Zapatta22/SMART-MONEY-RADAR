@@ -113,6 +113,14 @@ class TestRaydiumCpmmAnalyzer(unittest.TestCase):
             ("LoadedExtra",),
         )
 
+    def test_accepts_already_resolved_account_pubkeys(self):
+        instruction = _instruction(SWAP_BASE_OUTPUT_DISCRIMINATOR)
+        instruction["accounts"] = [f"Resolved{i}" for i in range(13)]
+        result = decode_raydium_cpmm_swaps(_transaction([instruction]))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].accounts.payer, "Resolved0")
+        self.assertEqual(result[0].accounts.observation_state, "Resolved12")
+
     def test_does_not_treat_inner_instruction_as_top_level_swap(self):
         meta = {
             "err": None,

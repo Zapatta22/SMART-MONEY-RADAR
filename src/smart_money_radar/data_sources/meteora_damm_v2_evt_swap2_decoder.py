@@ -64,7 +64,7 @@ def _encode_base58(value: bytes) -> str:
     while number:
         number, remainder = divmod(number, 58)
         encoded = _BASE58_ALPHABET[remainder] + encoded
-    leading_zeroes = len(value) - len(value.lstrip(b"\\x00"))
+    leading_zeroes = len(value) - len(value.lstrip(b"\x00"))
     return ("1" * leading_zeroes) + (encoded or ("" if leading_zeroes else "1"))
 
 

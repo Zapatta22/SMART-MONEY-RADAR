@@ -416,13 +416,16 @@ class WalletMonitor:
                     wallet_address, signature, advance_checkpoint=False
                 )
                 failed_slot = item.get("slot")
-                if isinstance(failed_slot, int) and not isinstance(failed_slot, bool):
-                    self.event_store.advance_checkpoint_in_order(
-                        wallet_address,
-                        signature,
-                        failed_slot,
-                        expected_previous_signature=expected_previous_signature,
+                if isinstance(failed_slot, bool) or not isinstance(failed_slot, int) or failed_slot < 0:
+                    raise RuntimeError(
+                        "Backfill recebeu slot inválido para transação falhada; checkpoint preservado."
                     )
+                self.event_store.advance_checkpoint_in_order(
+                    wallet_address,
+                    signature,
+                    failed_slot,
+                    expected_previous_signature=expected_previous_signature,
+                )
                 continue
             if not await self._collect_transaction(
                 wallet_address,
@@ -434,13 +437,16 @@ class WalletMonitor:
                     "Backfill pausado: uma transação ainda não pôde ser processada; cursor não avançado."
                 )
             transaction_slot = item.get("slot")
-            if isinstance(transaction_slot, int) and not isinstance(transaction_slot, bool):
-                self.event_store.advance_checkpoint_in_order(
-                    wallet_address,
-                    signature,
-                    transaction_slot,
-                    expected_previous_signature=expected_previous_signature,
+            if isinstance(transaction_slot, bool) or not isinstance(transaction_slot, int) or transaction_slot < 0:
+                raise RuntimeError(
+                    "Backfill recebeu slot inválido após processar transação; checkpoint preservado."
                 )
+            self.event_store.advance_checkpoint_in_order(
+                wallet_address,
+                signature,
+                transaction_slot,
+                expected_previous_signature=expected_previous_signature,
+            )
 
     async def _receive_or_stop(self, websocket: Any, stop_event: asyncio.Event) -> Any:
         receive_task = asyncio.create_task(websocket.recv())

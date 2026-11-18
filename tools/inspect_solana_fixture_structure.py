@@ -87,6 +87,16 @@ def inspect_manifest(manifest_path: Path, index: int) -> dict[str, Any]:
         "meta_fields": {"err", "innerInstructions", "preTokenBalances", "postTokenBalances",
                         "loadedAddresses", "fee", "computeUnitsConsumed", "logMessages"},
     }
+    try:
+        manifest_data = json.loads(audit.manifest_path.read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        manifest_data = {}
+    wallet_fields = {"wallet_address", "monitored_wallet_address"}
+    manifest_declares_wallet_address = (
+        isinstance(manifest_data, dict)
+        and bool(wallet_fields.intersection(manifest_data))
+    )
+
     report.update({
         "structure_valid": True,
         "result_fields": sorted(result.keys() & safe_fields["result_fields"]),
@@ -122,7 +132,7 @@ def inspect_manifest(manifest_path: Path, index: int) -> dict[str, Any]:
             else "success" if "err" in meta
             else "unknown"
         ),
-        "manifest_declares_wallet_address": False,
+        "manifest_declares_wallet_address": manifest_declares_wallet_address,
     })
     return report
 

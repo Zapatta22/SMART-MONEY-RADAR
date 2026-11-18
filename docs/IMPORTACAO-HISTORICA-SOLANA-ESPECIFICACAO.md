@@ -145,3 +145,31 @@ A execução local nos cinco RAW ainda está pendente. Não confundir os cinco c
 - Workflow `SMR tests`, run `44250502846` (#381), concluído com sucesso.
 - 259 testes unitários aprovados; compileall aprovado.
 - CI valida a lógica em fixtures sintéticas. A análise dos cinco arquivos RAW reais depende da execução local pelo usuário.
+
+
+## 13. Resultado da auditoria de cobertura nos cinco RAW (18/11/2026)
+
+A execução local de `tools/audit_solana_protocol_coverage.py` reportou cinco manifestos auditados, 60 instruções no total e nenhum program ID não resolvido. Foram reconhecidas 46 instruções de programas registrados e 14 de programas fora do registro atual.
+
+| Programa registrado | Contagem de instruções |
+|---|---:|
+| SPL Token | 22 |
+| System Program | 9 |
+| Associated Token Account | 4 |
+| Meteora DAMM v2 | 4 |
+| Jupiter Aggregator v6 | 2 |
+| Meteora DLMM | 2 |
+| Token-2022 | 1 |
+| Raydium AMM v4 | 1 |
+| Raydium CPMM | 1 |
+
+Ocorrência por payload:
+- Índice 1: Meteora DAMM v2, Token-2022, SPL Token, System Program e Associated Token Account.
+- Índice 2: Raydium AMM v4 e SPL Token.
+- Índice 3: Jupiter v6, Meteora DAMM v2, SPL Token, System Program e Associated Token Account.
+- Índice 4: Meteora DLMM e SPL Token.
+- Índice 5: Raydium CPMM, SPL Token e System Program.
+
+O decoder contabilizado nesta branch cobre somente 22 instruções SPL Token, uma Token-2022 e uma Raydium CPMM. Registro de programa não implica decoder. Contagens de instruções não são contagens de swaps: agregadores, CPI e transferências auxiliares exigem reconstrução econômica por operação.
+
+A auditoria não acessou rede ou banco, não escreveu arquivos e não alterou checkpoints. Os RAW continuam apenas no dispositivo local. A sequência de desenvolvimento proposta é DAMM v2, AMM v4, DLMM e, separadamente, Jupiter como roteador; a ordem é uma priorização de engenharia, não inferência de volume ou relevância financeira.

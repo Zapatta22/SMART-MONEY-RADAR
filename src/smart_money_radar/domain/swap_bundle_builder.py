@@ -11,6 +11,7 @@ from smart_money_radar.data_sources.raydium_cpmm_analyzer import (
 from smart_money_radar.data_sources.raydium_cpmm_decoder import (
     RAYDIUM_CPMM_PROGRAM_ID,
 )
+from smart_money_radar.data_sources.solana_token_transfer_decoder import SolanaTokenTransfer
 from smart_money_radar.data_sources.raydium_cpmm_transfer_reconciliation import (
     RaydiumCpmmSwapReconciliation,
 )
@@ -68,10 +69,9 @@ def _classify(
     )
 
 
-
 def _validate_transfer_evidence(
     *,
-    transfer,
+    transfer: SolanaTokenTransfer,
     swap: RaydiumCpmmDecodedSwap,
     source_account: str,
     destination_account: str,

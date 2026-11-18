@@ -77,7 +77,12 @@ def _fetch_signatures(
         before = last_signature
     return collected, first_endpoint or endpoints[0]
 
-def scan(endpoints: tuple[str, ...], limit: int, pages: int) -> dict:
+def scan(
+    endpoints: tuple[str, ...], limit: int, pages: int,
+    target: str = "shared-wsol",
+) -> dict:
+    if target not in {"shared-wsol", "non-shared-wsol"}:
+        raise ValueError("target deve ser shared-wsol ou non-shared-wsol")
     signatures, signature_rpc = _fetch_signatures(endpoints, limit, pages)
     inspected = 0
     candidates = []
@@ -185,19 +190,35 @@ def scan(endpoints: tuple[str, ...], limit: int, pages: int) -> dict:
                 "funded_shared_wsol_input_accounts": len(funded_shared_wsol_inputs),
             }
             candidates.append(candidate)
-            if result.status == "RECONCILED" and (funded_shared_wsol_inputs or reconciled_shared_wsol_accounts):
-                return {
-                    "status": "FOUND_SHARED_WSOL_MULTI_SWAP",
-                    "inspected": inspected,
-                    "failures": dict(failures),
-                    "signature_rpc": "primary" if signature_rpc == endpoints[0] else "fallback",
-                    "candidate": candidate,
-                }
+            has_reconciled_shared_wsol = bool(
+                funded_shared_wsol_inputs or reconciled_shared_wsol_accounts
+            )
+            if result.status == "RECONCILED":
+                if target == "shared-wsol" and has_reconciled_shared_wsol:
+                    return {
+                        "status": "FOUND_SHARED_WSOL_MULTI_SWAP",
+                        "inspected": inspected,
+                        "failures": dict(failures),
+                        "signature_rpc": "primary" if signature_rpc == endpoints[0] else "fallback",
+                        "candidate": candidate,
+                    }
+                if target == "non-shared-wsol" and not has_reconciled_shared_wsol:
+                    return {
+                        "status": "FOUND_NON_SHARED_WSOL_MULTI_SWAP",
+                        "inspected": inspected,
+                        "failures": dict(failures),
+                        "signature_rpc": "primary" if signature_rpc == endpoints[0] else "fallback",
+                        "candidate": candidate,
+                    }
         except Exception as exc:
             failures[f"análise {type(exc).__name__}: {str(exc)[:100]}"] += 1
 
     return {
-        "status": "NO_SHARED_WSOL_MULTI_SWAP_FOUND",
+        "status": (
+            "NO_NON_SHARED_WSOL_MULTI_SWAP_FOUND"
+            if target == "non-shared-wsol"
+            else "NO_SHARED_WSOL_MULTI_SWAP_FOUND"
+        ),
         "inspected": inspected,
         "failures": dict(failures),
         "signature_rpc": "primary" if signature_rpc == endpoints[0] else "fallback",
@@ -209,6 +230,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--pages", type=int, default=3)
+    parser.add_argument(
+        "--target", choices=("shared-wsol", "non-shared-wsol"),
+        default="shared-wsol",
+        help="tipo de multi-swap reconciliado que deve ser localizado",
+    )
     parser.add_argument("--rpc-url", default=os.environ.get(
         "SMR_DAMM_V2_SCAN_RPC_URL", os.environ.get("SMR_SOLANA_RPC_URL", DEFAULT_RPC)
     ))
@@ -222,12 +248,13 @@ def main() -> int:
         parser.error("RPCs devem usar HTTPS")
     endpoints = tuple(dict.fromkeys((args.rpc_url, args.fallback_rpc_url)))
     try:
-        report = scan(endpoints, args.limit, args.pages)
+        report = scan(endpoints, args.limit, args.pages, target=args.target)
     except Exception as exc:
         report = {"status": "SCAN_ERROR", "reason": f"{type(exc).__name__}: {exc}"}
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["status"] in {
-        "FOUND_SHARED_WSOL_MULTI_SWAP", "NO_SHARED_WSOL_MULTI_SWAP_FOUND"
+        "FOUND_SHARED_WSOL_MULTI_SWAP", "NO_SHARED_WSOL_MULTI_SWAP_FOUND",
+        "FOUND_NON_SHARED_WSOL_MULTI_SWAP", "NO_NON_SHARED_WSOL_MULTI_SWAP_FOUND",
     } else 2
 
 

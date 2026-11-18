@@ -584,6 +584,54 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_existing_checkpoint_pending_replay_waits_for_rpc_ordered_cas(self) -> None:
+        stop_event = asyncio.Event()
+
+        class OrderedPendingSource:
+            def __init__(self, store):
+                self.store = store
+                self.transaction_calls = 0
+                self.checkpoint_when_rpc_started = None
+
+            async def get_transaction_async(self, signature: str):
+                self.transaction_calls += 1
+                return simulated_transaction(signature)
+
+            async def get_signatures_for_address_async(self, wallet_address: str, **kwargs):
+                self.checkpoint_when_rpc_started = self.store.get_checkpoint(wallet_address)
+                return [
+                    {"signature": "pending-after-checkpoint", "slot": 901, "err": None},
+                    {"signature": "old-checkpoint", "slot": 900, "err": None},
+                ]
+
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "history.sqlite3")
+            store.save_checkpoint("public-wallet", "old-checkpoint")
+            store.save_observation(
+                "public-wallet",
+                "pending-after-checkpoint",
+                simulated_transaction("pending-after-checkpoint"),
+                [],
+                parse_status="no_events",
+                parser_version="1",
+                advance_checkpoint=False,
+                slot=901,
+            )
+            source = OrderedPendingSource(store)
+            monitor = WalletMonitor(
+                HeliusSettings(api_key="simulated-key"), source, store,  # type: ignore[arg-type]
+            )
+
+            await monitor._backfill_wallet("public-wallet", stop_event)
+
+            self.assertEqual(source.checkpoint_when_rpc_started, "old-checkpoint")
+            self.assertEqual(store.get_checkpoint("public-wallet"), "pending-after-checkpoint")
+            self.assertTrue(store.has_processed_signature("public-wallet", "pending-after-checkpoint"))
+            self.assertEqual(store.get_pending_signatures("public-wallet"), [])
+            store.close()
+
     async def test_damm_v2_unresolved_swap_blocks_cpmm_and_checkpoint(self) -> None:
         from types import SimpleNamespace
         from unittest.mock import patch

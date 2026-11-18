@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from smart_money_radar.data_sources.damm_v2_accounts import DammV2SwapAccounts
 from smart_money_radar.data_sources.damm_v2_analyzer import DammV2SwapEventAssociation
-from smart_money_radar.data_sources.damm_v2_decoder import DammV2EvtSwap2, DammV2SwapResult
+from smart_money_radar.data_sources.damm_v2_decoder import (\n    METEORA_DAMM_V2_PROGRAM_ID, DammV2EvtSwap2, DammV2SwapResult,\n)
 from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
     DammV2EconomicReconciliation,
 )
@@ -32,7 +32,7 @@ def _context():
         token_a_program=TOKEN_2022_PROGRAM_ID,
         token_b_program=TOKEN_2022_PROGRAM_ID,
         referral_token_account="referral", event_authority="event",
-        program="damm", remaining_accounts=(),
+        program=METEORA_DAMM_V2_PROGRAM_ID, remaining_accounts=(),
         input_vault="vault-a", output_vault="vault-b",
         input_mint="mint-a", output_mint="mint-b",
         input_token_program=TOKEN_2022_PROGRAM_ID,

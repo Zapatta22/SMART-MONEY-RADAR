@@ -11,6 +11,7 @@ from smart_money_radar.data_sources.solana_token_balance_deltas import (
 )
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SPL_TOKEN_PROGRAM_ID,
+    TOKEN_2022_PROGRAM_ID,
     SolanaTokenTransfer,
 )
 
@@ -24,7 +25,7 @@ INPUT_MINT = "mint-input"
 OUTPUT_MINT = "mint-output"
 
 
-def _accounts(input_account=INPUT_ACCOUNT, output_account=OUTPUT_ACCOUNT):
+def _accounts(input_account=INPUT_ACCOUNT, output_account=OUTPUT_ACCOUNT, input_program=SPL_TOKEN_PROGRAM_ID, output_program=SPL_TOKEN_PROGRAM_ID):
     return RaydiumCpmmAccounts(
         payer="fee-payer",
         authority="pool-authority",
@@ -34,31 +35,31 @@ def _accounts(input_account=INPUT_ACCOUNT, output_account=OUTPUT_ACCOUNT):
         output_token_account=output_account,
         input_vault=INPUT_VAULT,
         output_vault=OUTPUT_VAULT,
-        input_token_program=SPL_TOKEN_PROGRAM_ID,
-        output_token_program=SPL_TOKEN_PROGRAM_ID,
+        input_token_program=input_program,
+        output_token_program=output_program,
         input_token_mint=INPUT_MINT,
         output_token_mint=OUTPUT_MINT,
         observation_state="observation",
     )
 
 
-def _swap(path=(), inner_index=None, stack_height=1, input_account=INPUT_ACCOUNT, output_account=OUTPUT_ACCOUNT):
+def _swap(path=(), inner_index=None, stack_height=1, input_account=INPUT_ACCOUNT, output_account=OUTPUT_ACCOUNT, input_program=SPL_TOKEN_PROGRAM_ID, output_program=SPL_TOKEN_PROGRAM_ID):
     return RaydiumCpmmDecodedSwap(
         instruction_index=0,
         instruction=RaydiumCpmmSwapBaseInput(
             amount_in=999999, minimum_amount_out=1
         ),
-        accounts=_accounts(input_account, output_account),
+        accounts=_accounts(input_account, output_account, input_program, output_program),
         cpi_path=path,
         stack_height=stack_height,
         inner_instruction_index=inner_index,
     )
 
 
-def _transfer(source, destination, amount, inner_index, path, stack_height):
+def _transfer(source, destination, amount, inner_index, path, stack_height, program_id=SPL_TOKEN_PROGRAM_ID):
     return SolanaTokenTransfer(
-        program_id=SPL_TOKEN_PROGRAM_ID,
-        program_name="SPL Token",
+        program_id=program_id,
+        program_name="Token-2022" if program_id == TOKEN_2022_PROGRAM_ID else "SPL Token",
         instruction_type="TRANSFER_CHECKED",
         instruction_index=0,
         inner_instruction_index=inner_index,
@@ -75,7 +76,7 @@ def _transfer(source, destination, amount, inner_index, path, stack_height):
     )
 
 
-def _deltas(input_delta=-100, output_delta=90, input_owner=WALLET, output_owner=WALLET):
+def _deltas(input_delta=-100, output_delta=90, input_owner=WALLET, output_owner=WALLET, input_vault_delta=100, output_vault_delta=-90):
     return [
         TokenAccountBalanceDelta(
             account_index=0,
@@ -97,13 +98,33 @@ def _deltas(input_delta=-100, output_delta=90, input_owner=WALLET, output_owner=
             delta_raw=output_delta,
             decimals=6,
         ),
+        TokenAccountBalanceDelta(
+            account_index=2,
+            token_account=INPUT_VAULT,
+            mint=INPUT_MINT,
+            owner="pool-authority",
+            pre_amount_raw=10000,
+            post_amount_raw=10000 + input_vault_delta,
+            delta_raw=input_vault_delta,
+            decimals=6,
+        ),
+        TokenAccountBalanceDelta(
+            account_index=3,
+            token_account=OUTPUT_VAULT,
+            mint=OUTPUT_MINT,
+            owner="pool-authority",
+            pre_amount_raw=20000,
+            post_amount_raw=20000 + output_vault_delta,
+            delta_raw=output_vault_delta,
+            decimals=6,
+        ),
     ]
 
 
-def _pair(input_amount=100, output_amount=90, path=(), first_index=0, height=2):
+def _pair(input_amount=100, output_amount=90, path=(), first_index=0, height=2, input_program=SPL_TOKEN_PROGRAM_ID, output_program=SPL_TOKEN_PROGRAM_ID):
     return [
-        _transfer(INPUT_ACCOUNT, INPUT_VAULT, input_amount, first_index, path, height),
-        _transfer(OUTPUT_VAULT, OUTPUT_ACCOUNT, output_amount, first_index + 1, path, height),
+        _transfer(INPUT_ACCOUNT, INPUT_VAULT, input_amount, first_index, path, height, input_program),
+        _transfer(OUTPUT_VAULT, OUTPUT_ACCOUNT, output_amount, first_index + 1, path, height, output_program),
     ]
 
 
@@ -197,6 +218,25 @@ class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("não reconcilia", result.reason)
 
+    def test_rejects_token2022_transfer_fee_between_user_debit_and_vault_credit(self):
+        result = reconcile_raydium_cpmm_swaps(
+            [_swap(input_program=TOKEN_2022_PROGRAM_ID)],
+            _pair(input_program=TOKEN_2022_PROGRAM_ID),
+            _deltas(input_vault_delta=90),
+            monitored_wallet=WALLET,
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("vault de entrada", result.reason)
+        self.assertIn("não reconcilia", result.reason)
+
+    def test_requires_pool_vault_deltas(self):
+        deltas = [item for item in _deltas() if item.token_account != INPUT_VAULT]
+        result = reconcile_raydium_cpmm_swaps(
+            [_swap()], _pair(), deltas, monitored_wallet=WALLET
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("Falta delta pre/post de um vault", result.reason)
+
     def test_requires_both_user_token_accounts_to_belong_to_monitored_wallet(self):
         result = reconcile_raydium_cpmm_swaps(
             [_swap()], _pair(), _deltas(output_owner="other-wallet"),
@@ -222,7 +262,7 @@ class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
         results = reconcile_raydium_cpmm_swaps(
             [first, second],
             transfers,
-            _deltas(input_delta=-150, output_delta=140),
+            _deltas(input_delta=-150, output_delta=140, input_vault_delta=150, output_vault_delta=-140),
             monitored_wallet=WALLET,
         )
         self.assertEqual([item.status for item in results], ["MATCHED", "MATCHED"])

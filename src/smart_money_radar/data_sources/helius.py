@@ -89,6 +89,8 @@ class HeliusDataSource:
 
     def get_transaction(self, signature: str) -> JsonObject | None:
         """Consulta os detalhes JSON parsed de uma assinatura confirmada."""
+        if not isinstance(signature, str) or not signature.strip():
+            raise ValueError("Informe uma assinatura Solana não vazia.")
         result = self.call(
             "getTransaction",
             [
@@ -113,10 +115,15 @@ class HeliusDataSource:
         until: str | None = None,
     ) -> list[JsonObject]:
         """Obtém uma página de assinaturas confirmadas para recuperação incremental."""
-        if not wallet_address.strip():
+        if not isinstance(wallet_address, str) or not wallet_address.strip():
             raise ValueError("Informe um endereço público de carteira.")
-        if not 1 <= limit <= 1000:
-            raise ValueError("O limite de assinaturas deve estar entre 1 e 1000.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise ValueError("O limite de assinaturas deve ser inteiro entre 1 e 1000.")
+        for name, cursor in (("before", before), ("until", until)):
+            if cursor is not None and (
+                not isinstance(cursor, str) or not cursor.strip()
+            ):
+                raise ValueError(f"{name} deve ser uma assinatura string não vazia.")
         options: dict[str, Any] = {"limit": limit, "commitment": "confirmed"}
         if before:
             options["before"] = before
@@ -141,8 +148,8 @@ class HeliusDataSource:
 
     def get_activity(self, wallet_address: str, *, limit: int = 25) -> list[ActivityEvent]:
         """Consulta uma janela limitada de assinaturas e seus detalhes."""
-        if not 1 <= limit <= 100:
-            raise ValueError("O limite de histórico deve estar entre 1 e 100.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("O limite de histórico deve ser inteiro entre 1 e 100.")
         signatures = self.get_signatures_for_address(wallet_address, limit=limit)
         events: list[ActivityEvent] = []
         for item in signatures:

@@ -1997,3 +1997,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - **Validação runtime destes novos arquivos e integração ainda pendente**; os testes sintéticos foram adicionados, mas não foram executados nesta sessão.
 - PR #25 permanece Draft e sem merge. `main` intacta; sem alteração de RAW persistente, SQLite persistente, checkpoints locais, RPC/Helius ou estado on-chain.
 - Próxima etapa: validar a nova integração em ambiente executável; depois ampliar testes para erro de persistência e recuperação idempotente, antes de promover integração adicional a outros venues.
+
+
+## 106. Endurecimento do pipeline e verificação de assinatura — PR #25 (18/11/2026)
+
+- `process_damm_v2_transaction` agora valida, quando presente no payload RPC, que a assinatura informada consta em `transaction.signatures`; payload divergente é `REJECTED`.
+- O pipeline exige cardinalidade exata entre swaps reconciliados e bundles de domínio; divergência não pode retornar `RECONCILED`.
+- Adicionado teste negativo para assinatura divergente.
+- O adaptador de persistência conta rejeições estruturais sem swap decodificado como pendência não resolvida, evitando mensagem enganosa de 0/0 swaps concluídos.
+- Logs do `WalletMonitor` agora expõem total de pendências DAMM v2 além da contagem de swaps reconciliados.
+- Runs CI #627–#633 permanecem sem steps executados; #633 (`44313351764`) também terminou failure com `steps=[]`. Não há evidência de execução de testes ou compileall. Não repetir retries.
+- Nenhuma validação runtime do PR #25 foi comprovada ainda; alterações de persistência e coordenação do monitor precisam de execução no Termux antes de qualquer merge.
+- PR #25 permanece Draft, sem merge; `main` intacta.

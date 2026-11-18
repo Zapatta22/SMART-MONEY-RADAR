@@ -64,35 +64,7 @@ def scan(endpoints: tuple[str, ...], limit: int) -> dict:
         fetch_errors = []
         for endpoint in endpoints:
             try:
-                raw = fetch_transaction(\n                    endpoint, signature, max_supported_transaction_version=1\n                )
-                break
-            except Exception as exc:
-                fetch_errors.append(f"{type(exc).__name__}: {str(exc)[:100]}")
-        if raw is None:
-            failures["; ".join(fetch_errors) or "transação indisponível"] += 1
-            continue
-        inspected += 1
-        try:
-            associations = analyze_damm_v2_swap_events({"result": raw})
-            swaps = [
-                association for association in associations
-                if association.status == "MATCHED"
-                and association.instruction is not None
-                and association.instruction.instruction_name == "swap2"
-            ]
-            if len(swaps) < 2:
-                continue
-            wallet = infer_monitored_wallet(raw)
-            result = process_damm_v2_transaction(
-                {"result": raw}, monitored_wallet=wallet, signature=signature,
-                observed_at=datetime.now(timezone.utc),
-                parser_version="smr-damm-v2-multi-swap-mainnet-scan",
-            )
-            shared_funding_accounts = []
-            if result.status == "RECONCILED" and result.reconciliation is not None:
-                input_counts = Counter(
-                    context.accounts.input_token_account for context in result.contexts
-                )
+                raw = fetch_transaction(endpoint, signature, max_supported_transaction_version=1)
                 shared_funding_accounts = [
                     funding.token_account
                     for funding in result.reconciliation.wrapped_sol_fundings

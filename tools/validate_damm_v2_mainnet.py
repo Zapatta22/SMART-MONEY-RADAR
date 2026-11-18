@@ -217,6 +217,31 @@ def main() -> int:
                 transfer_fee_absence_proofs=tuple(fee_absence_proofs),
             )
             checkpoint_after_persistence = memory_store.get_checkpoint(wallet)
+            persisted_bundle_evidence = []
+            for bundle in output.bundles:
+                stored = memory_store.get_swap_bundle(bundle.observation.operation_id)
+                if stored is None:
+                    raise RuntimeError("Bundle reconciliado não foi recuperado do SQLite.")
+                evidence_items = stored["evidence"].evidence
+                cross_count = sum(
+                    "cross-venue CPI transfer outer=" in item
+                    for item in evidence_items
+                )
+                fee_proof_count = sum(
+                    "Token-2022 transfer fee comprovadamente zero para mint " in item
+                    for item in evidence_items
+                )
+                if output.reconciliation is not None:
+                    if cross_count != len(output.reconciliation.cross_venue_transfers):
+                        raise RuntimeError("Evidência cross-venue não foi persistida integralmente.")
+                    if fee_proof_count != len(output.reconciliation.transfer_fee_absence_proofs):
+                        raise RuntimeError("Provas Token-2022 não foram persistidas integralmente.")
+                persisted_bundle_evidence.append({
+                    "operation_id": bundle.observation.operation_id,
+                    "cross_venue_evidence_count": cross_count,
+                    "fee_proof_count": fee_proof_count,
+                    "classification_side": stored["classification"].side,
+                })
         finally:
             memory_store.close()
     except (KeyError, TypeError, ValueError, RuntimeError) as exc:
@@ -290,6 +315,7 @@ def main() -> int:
         "persistence_saved_bundles": persistence_result.saved_bundles,
         "persistence_ready_for_next_venue": persistence_result.ready_for_next_venue,
         "checkpoint_after_persistence": checkpoint_after_persistence,
+        "persistence_verified_bundles": persisted_bundle_evidence,
         "cross_venue_transfers": [
             {
                 "outer_instruction_index": transfer.outer_instruction_index,

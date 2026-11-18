@@ -180,7 +180,8 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
         messages = [
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 42}),
-            json.dumps({"method": "logsNotification", "params": {"subscription": 42,
+            json.dumps({"jsonrpc": "2.0",
+"method": "logsNotification", "params": {"subscription": 42,
                 "result": {"value": {"signature": "retry-signature", "err": None}}}}),
         ]
         websocket = FakeWebSocket(messages, stop_event)
@@ -318,6 +319,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
     async def test_websocket_notification_overlapping_backfill_is_deduplicated(self) -> None:
         stop_event = asyncio.Event()
         notification = json.dumps({
+            "jsonrpc": "2.0",
             "method": "logsNotification",
             "params": {"subscription": 42, "result": {"value": {
                 "signature": "overlap-signature", "err": None,
@@ -370,6 +372,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 7}),
             json.dumps(
                 {
+                    "jsonrpc": "2.0",
                     "method": "logsNotification",
                     "params": {
                         "subscription": 7,
@@ -428,7 +431,8 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
         messages = [
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 42}),
-            json.dumps({"method": "logsNotification", "params": {"subscription": 42,
+            json.dumps({"jsonrpc": "2.0",
+"method": "logsNotification", "params": {"subscription": 42,
                 "result": {"value": {"signature": "unclassified-signature", "err": None}}}}),
         ]
         websocket = FakeWebSocket(messages, stop_event)

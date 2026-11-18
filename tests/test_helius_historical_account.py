@@ -67,6 +67,17 @@ class HeliusHistoricalAccountTests(unittest.TestCase):
         })
         self.assertEqual(captured["body"]["params"][2]["commitment"], "finalized")
 
+    def test_rejects_non_transaction_write_at_end_of_same_slot(self):
+        payload = json.loads(json.dumps(self.payload))
+        payload["result"]["value"]["lastUpdatedAt"] = {
+            "slot": 471107341, "transactionIndex": None,
+        }
+        with self.assertRaisesRegex(ValueError, "posterior"):
+            get_historical_account_info(
+                "https://mainnet.helius-rpc.com", self.address, 471107341, 13,
+                opener=self.opener_for(payload, {}),
+            )
+
     def test_reads_state_before_nonzero_transaction_index(self):
         captured = {}
         snapshot = get_historical_account_info_before_transaction(

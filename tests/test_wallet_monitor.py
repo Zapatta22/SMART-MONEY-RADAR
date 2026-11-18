@@ -388,7 +388,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_transaction_without_recognized_events_is_archived_before_checkpoint(self) -> None:
         stop_event = asyncio.Event()
-        raw_transaction = {"meta": {"err": None}, "transaction": {"message": {"instructions": []}}}
+        raw_transaction = {"meta": {"err": None}, "transaction": {"message": {"accountKeys": [], "instructions": []}}}
 
         class NoEventSource:
             async def get_transaction_async(self, signature: str):
@@ -425,7 +425,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
         import tempfile
         stop_event = asyncio.Event()
-        raw_transaction = {"meta": {"err": None}, "transaction": {"message": {}}}
+        raw_transaction = {"meta": {"err": None}, "transaction": {"message": {"accountKeys": [], "instructions": []}}}
 
         class ErrorSource:
             async def get_transaction_async(self, signature: str):
@@ -436,9 +436,9 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
             from pathlib import Path
             store = SQLiteEventStore(Path(directory) / "history.sqlite3")
             monitor = WalletMonitor(HeliusSettings(api_key="simulated-key"), ErrorSource(), store)  # type: ignore[arg-type]
-            with patch("smart_money_radar.services.wallet_monitor.normalize_transaction", side_effect=ValueError("bad parser fixture")):
+            with patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction", side_effect=ValueError("bad parser fixture")):
                 success = await monitor._collect_transaction("public-wallet", "parser-error-signature", stop_event)
-            self.assertTrue(success)
+            self.assertFalse(success)
             self.assertEqual(
                 store.get_raw_transaction("public-wallet", "parser-error-signature"),
                 raw_transaction,
@@ -446,7 +446,11 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
             metadata = store.get_observation_metadata("public-wallet", "parser-error-signature")
             self.assertEqual(metadata["parse_status"], "parse_error")
             self.assertEqual(metadata["parse_error"], "ValueError")
-            self.assertEqual(store.get_checkpoint("public-wallet"), "parser-error-signature")
+            self.assertIsNone(store.get_checkpoint("public-wallet"))
+            self.assertEqual(
+                store.get_pending_signatures("public-wallet"),
+                ["parser-error-signature"],
+            )
 
     async def test_backfill_records_failed_on_chain_signature_explicitly(self) -> None:
         stop_event = asyncio.Event()

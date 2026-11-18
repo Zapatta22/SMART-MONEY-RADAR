@@ -31,6 +31,7 @@ class SolanaTokenTransfer:
     execution_status: str
     source_format: str
     cpi_path_valid: bool = True
+    fee_amount_raw: int | None = None
 
 
 def _decode_base58(value: str) -> bytes:
@@ -151,8 +152,8 @@ def _strict_cpi_path_validity(instructions: list[Any]) -> list[bool]:
 
 
 def _raw_transfer(
-    item: Mapping[str, Any], keys: list[str]
-) -> tuple[str, str, str | None, str | None, int, int | None, str] | None:
+    item: Mapping[str, Any], keys: list[str], program_id: str
+) -> tuple[str, str, str | None, str | None, int, int | None, str, int | None] | None:
     encoded = item.get("data")
     if not isinstance(encoded, str) or not encoded:
         return None
@@ -160,8 +161,29 @@ def _raw_transfer(
     if not data:
         return None
     opcode = data[0]
-    if opcode not in (3, 12):
+    if opcode not in (3, 12, 26):
         return None
+    if opcode == 26:
+        # TokenInstruction::TransferFeeExtension + TransferCheckedWithFee.
+        # Other transfer-fee extension instructions are outside this decoder.
+        if program_id != TOKEN_2022_PROGRAM_ID or len(data) < 2 or data[1] != 1:
+            return None
+        if len(data) != 19:
+            raise ValueError("TransferCheckedWithFee exige 19 bytes")
+        accounts = item.get("accounts")
+        if not isinstance(accounts, list):
+            raise ValueError("instrução token sem lista de contas")
+        if len(accounts) < 4:
+            raise ValueError("TransferCheckedWithFee exige pelo menos 4 contas")
+        resolved = [_resolve_key(value, keys, "índice de conta") for value in accounts]
+        amount = int.from_bytes(data[2:10], "little")
+        decimals = data[10]
+        fee_amount = int.from_bytes(data[11:19], "little")
+        return (
+            resolved[0], resolved[2], resolved[3], resolved[1],
+            amount, decimals, "TRANSFER_CHECKED_WITH_FEE", fee_amount,
+        )
+
     accounts = item.get("accounts")
     if not isinstance(accounts, list):
         raise ValueError("instrução token sem lista de contas")
@@ -170,22 +192,24 @@ def _raw_transfer(
         if len(data) != 9 or len(resolved) < 3:
             raise ValueError("Transfer exige 9 bytes e pelo menos 3 contas")
         amount = int.from_bytes(data[1:9], "little")
-        return resolved[0], resolved[1], resolved[2], None, amount, None, "TRANSFER"
+        return resolved[0], resolved[1], resolved[2], None, amount, None, "TRANSFER", None
     if len(data) != 10 or len(resolved) < 4:
         raise ValueError("TransferChecked exige 10 bytes e pelo menos 4 contas")
     amount = int.from_bytes(data[1:9], "little")
-    return resolved[0], resolved[2], resolved[3], resolved[1], amount, data[9], "TRANSFER_CHECKED"
-
+    return (
+        resolved[0], resolved[2], resolved[3], resolved[1],
+        amount, data[9], "TRANSFER_CHECKED", None,
+    )
 
 def _parsed_transfer(
     parsed: Mapping[str, Any],
-) -> tuple[str, str, str | None, str | None, int, int | None, str] | None:
+) -> tuple[str, str, str | None, str | None, int, int | None, str, int | None] | None:
     kind = parsed.get("type")
     info = parsed.get("info")
     if not isinstance(kind, str) or not isinstance(info, dict):
         return None
     normalized = kind.lower().replace("_", "")
-    if normalized not in {"transfer", "transferchecked"}:
+    if normalized not in {"transfer", "transferchecked", "transfercheckedwithfee"}:
         return None
 
     source = info.get("source")
@@ -193,11 +217,22 @@ def _parsed_transfer(
     authority = info.get("authority")
     mint = info.get("mint")
     token_amount = info.get("tokenAmount")
-    if normalized == "transferchecked":
+    fee_amount = None
+    if normalized in {"transferchecked", "transfercheckedwithfee"}:
         if not isinstance(token_amount, dict):
             return None
         raw_amount = token_amount.get("amount")
         decimals = token_amount.get("decimals")
+        if normalized == "transfercheckedwithfee":
+            raw_fee = info.get("feeAmount", info.get("fee"))
+            if isinstance(raw_fee, bool) or not isinstance(raw_fee, (str, int)):
+                return None
+            try:
+                fee_amount = int(raw_fee)
+            except (TypeError, ValueError):
+                return None
+            if fee_amount < 0:
+                return None
     else:
         raw_amount = info.get("amount")
         decimals = None
@@ -219,9 +254,11 @@ def _parsed_transfer(
         return None
     if mint is not None and not isinstance(mint, str):
         return None
-    instruction_type = "TRANSFER_CHECKED" if normalized == "transferchecked" else "TRANSFER"
-    return source, destination, authority, mint, amount, decimals, instruction_type
-
+    if normalized == "transfercheckedwithfee":
+        instruction_type = "TRANSFER_CHECKED_WITH_FEE"
+    else:
+        instruction_type = "TRANSFER_CHECKED" if normalized == "transferchecked" else "TRANSFER"
+    return source, destination, authority, mint, amount, decimals, instruction_type, fee_amount
 
 def _decode_one(
     item: Mapping[str, Any],
@@ -241,12 +278,12 @@ def _decode_one(
     values = _parsed_transfer(parsed) if isinstance(parsed, dict) else None
     source_format = "jsonParsed"
     if values is None:
-        values = _raw_transfer(item, keys)
+        values = _raw_transfer(item, keys, program_id)
         source_format = "compiled"
     if values is None:
         return None
 
-    source, destination, authority, mint, amount, decimals, instruction_type = values
+    source, destination, authority, mint, amount, decimals, instruction_type, fee_amount = values
     return SolanaTokenTransfer(
         program_id=program_id,
         program_name="SPL Token" if program_id == SPL_TOKEN_PROGRAM_ID else "Token-2022",
@@ -264,15 +301,16 @@ def _decode_one(
         execution_status=execution_status,
         source_format=source_format,
         cpi_path_valid=cpi_path_valid,
+        fee_amount_raw=fee_amount,
     )
 
 
 def decode_solana_token_transfers(
     raw_transaction: dict[str, Any],
 ) -> list[SolanaTokenTransfer]:
-    """Decodifica Transfer/TransferChecked de SPL Token e Token-2022.
+    """Decodifica Transfer, TransferChecked e TransferCheckedWithFee.
 
-    Não interpreta TransferCheckedWithFee ou outras instruções de extensão.
+    Outras instruções de extensão Token-2022 permanecem fora do escopo.
     """
     if not isinstance(raw_transaction, dict):
         raise TypeError("transação precisa ser um objeto")

@@ -1463,3 +1463,32 @@ PR #16 permanece Draft, aberto, não merged; `main` intacta. Nenhum RAW foi envi
 
 ### Próxima etapa técnica
 Construir uma camada de reconciliação DAMM v2 por operação, começando pela inspeção local redigida dos cinco RAW com o analisador recém-validado e, depois, definindo vínculos conservadores entre instrução/evento, transferências SPL/Token-2022 e deltas de token accounts. Tratar transfer-fee de Token-2022 explicitamente; não reutilizar automaticamente o reconciliador CPMM nem produzir `SwapObservation` enquanto os papéis de contas e quantidades não estiverem comprovados.
+
+
+## 76. Validação do auditor de associação DAMM v2 nos cinco RAW e início do mapeamento de contas (18/11/2026)
+
+### Auditor local validado
+- Usuário atualizou o clone PR16 por fast-forward de `5e34958` para `1083862`.
+- `test_damm_v2_association_audit.py`: **3/3 testes aprovados**.
+- Auditor local `tools/audit_damm_v2_associations.py`: cinco manifestos auditados, cinco íntegros, zero inválidos.
+- Fixtures 1 e 3: cada uma contém uma instrução swap DAMM v2 e um EvtSwap2 associados, ambos `MATCHED`.
+- Fixtures 2, 4 e 5: nenhum swap DAMM v2 reconhecido pelo escopo atual.
+- Relatório redigido apenas por índice/contagens/estados. Sem rede, SQLite, escrita, checkpoint ou autorização de execução.
+- Os resultados confirmam associação estrutural nos RAW reais, não reconciliação econômica.
+
+### Mapeamento de contas iniciado no PR16
+- Novo módulo `src/smart_money_radar/data_sources/damm_v2_accounts.py`.
+- Novo teste `tests/test_damm_v2_accounts.py`.
+- Mapeia as 14 contas base do swap DAMM v2: autoridade do pool, pool, token accounts de input/output, vaults A/B, mints A/B, payer, token programs A/B, referral account, event authority e program; preserva contas adicionais.
+- Resolve índices compilados ou chaves já resolvidas.
+- Usa a direção A→B/B→A do EvtSwap2 para orientar vault, mint e token program de entrada/saída; verifica que o pool no evento coincide com a conta pool da instrução e que os programas token são SPL Token ou Token-2022.
+- Não presume payer como carteira monitorada. Não reconcilia transferências, não calcula quantidades, não cria SwapObservation e não integra o pipeline CPMM.
+- Referência de ordem de contas: IDL oficial `cp_amm.json` do SDK Meteora DAMM v2.
+- Commits: módulo `5ab5444`; testes `d6d664c`; correções do teste `c9f8aeb` e `e4351fa`.
+- CI #435 (run `44255075630`) foi iniciado para o commit anterior à última correção do teste; a validação do head atual ainda não está confirmada.
+- **Validação local do novo mapeador pendente**.
+
+### Próxima ação
+Executar no Termux o teste `test_damm_v2_accounts.py` e compileall após fast-forward. Só então avançar para correlacionar transferências executadas com input/output accounts e vaults. Token-2022 transfer-fee permanece fail-closed até suportar a extensão de transferência com taxa e reconciliar o líquido/bruto.
+
+PR #16 segue Draft, aberto e não merged; `main` intacta. Nenhum RAW foi enviado ao GitHub; nenhuma importação, SQLite, RPC/Helius, checkpoint, trade ou operação on-chain foi executada.

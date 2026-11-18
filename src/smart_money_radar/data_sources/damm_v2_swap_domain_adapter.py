@@ -252,11 +252,6 @@ def build_damm_v2_swap_domain_bundles(
                 f"snapshot_slot={proof.current_snapshot_slot}; {proof.basis}"
             )
             for proof in reconciliation.transfer_fee_absence_proofs
-            if (
-                item.referral_transfer is not None
-                and item.referral_transfer.mint == proof.mint
-                and event.has_referral
-            )
         )
         cross_venue_evidence = tuple(
             (

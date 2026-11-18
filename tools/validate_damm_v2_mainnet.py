@@ -130,6 +130,7 @@ def main() -> int:
                 "event": (
                     {
                         "trade_direction": item.event.trade_direction,
+                        "collect_fee_mode": item.event.collect_fee_mode,
                         "swap_mode": item.event.swap_mode,
                         "has_referral": item.event.has_referral,
                         "amount_0": item.event.amount_0,
@@ -269,6 +270,22 @@ def main() -> int:
                     and transfer.source_account == context.accounts.output_vault
                     and transfer.destination_account == context.accounts.output_token_account
                 ],
+                "referral_candidates": [
+                    {
+                        "transfer_index": index,
+                        "inner_instruction_index": transfer.inner_instruction_index,
+                        "cpi_path": transfer.cpi_path,
+                        "source": transfer.source_account,
+                        "destination": transfer.destination_account,
+                        "mint": transfer.mint,
+                        "amount_raw": transfer.amount_raw,
+                    }
+                    for index, transfer in enumerate(output.transfers)
+                    if transfer.execution_status == "EXECUTED"
+                    and _is_descendant_transfer(transfer, context.association)
+                    and context.accounts.referral_token_account
+                    and transfer.destination_account == context.accounts.referral_token_account
+                ],
             }
             for context in output.contexts
         ],
@@ -294,6 +311,8 @@ def main() -> int:
                 "output_vault": item.accounts.output_vault,
                 "input_mint": item.accounts.input_mint,
                 "output_mint": item.accounts.output_mint,
+                "token_a_vault": item.accounts.token_a_vault,
+                "token_b_vault": item.accounts.token_b_vault,
                 "referral_token_account": item.accounts.referral_token_account,
             }
             for item in output.contexts

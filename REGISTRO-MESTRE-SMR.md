@@ -2210,3 +2210,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Isso impede que uma implementação defeituosa/substituída do builder retorne bundles duplicados ou de outra transação mantendo apenas a cardinalidade esperada.
 - Commit: pipeline transacional `10a5836c2957ffc23555d1d2715bc6b5454522b3`.
 - A proteção é revisada estaticamente; testes runtime ainda não executados. O adaptador e reconciliador têm testes específicos de identidade duplicada registrados na seção 126.
+
+
+## 128. Colisão de accountIndex entre owners no parser SPL — PR #25 (18/11/2026)
+
+- Hardening do parser: a verificação inicial de duplicidade de `accountIndex` considerava apenas entradas cujo owner já era a carteira monitorada. Um índice duplicado em uma segunda entrada atribuída a outro owner poderia passar despercebido e deixar o primeiro saldo ser usado.
+- O parser agora acompanha identidade de accountIndex em todas as entradas do snapshot, mesmo de outros owners. Se um índice se repete, invalida a mint de qualquer entrada envolvida que pertença à carteira monitorada; também rejeita índice malformado na entrada monitorada.
+- Adicionado teste em que o mesmo accountIndex aparece para a carteira monitorada e outro owner; o delta da mint não é emitido.
+- Commits: parser `bbb5e58c34311bc3e4ee4ccbb48c7c5b75d3b768`; teste `a22fe36fffcf47719b96340b8df5adf63c2beb28`.
+- Revisão estática; runtime/compileall pendentes. Nenhum RPC real ou banco persistente alterado.

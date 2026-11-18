@@ -74,6 +74,24 @@ class WrappedSolFundingTests(unittest.TestCase):
             before_instruction_index=2,
         )
 
+    def test_rejects_boolean_or_out_of_range_amount(self):
+        raw = _transaction()
+        for amount in (True, -1, 1 << 64):
+            with self.subTest(amount=amount):
+                with self.assertRaisesRegex(ValueError, "unsigned 64-bit"):
+                    decode_wrapped_sol_funding(
+                        raw, token_account="wsol-account", source_wallet="wallet",
+                        amount_raw=amount, before_instruction_index=2,
+                    )
+
+    def test_rejects_boolean_instruction_boundary(self):
+        with self.assertRaisesRegex(ValueError, "inteiro não negativo"):
+            decode_wrapped_sol_funding(
+                _transaction(), token_account="wsol-account",
+                source_wallet="wallet", amount_raw=20700,
+                before_instruction_index=True,
+            )
+
     def test_recognizes_exact_system_transfer_then_sync_native(self):
         result = self._decode(_transaction())
         self.assertIsNotNone(result)

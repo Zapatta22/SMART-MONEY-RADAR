@@ -299,6 +299,21 @@ class SQLiteEventStore:
         ]
         with self._connection_scope() as connection:
             with connection:
+                existing = connection.execute(
+                    """SELECT payload_json FROM observed_transactions
+                       WHERE wallet_address = ? AND signature = ?""",
+                    (wallet_address, signature),
+                ).fetchone()
+                if (
+                    existing is not None
+                    and existing[0] is not None
+                    and payload_json is not None
+                    and existing[0] != payload_json
+                ):
+                    raise ValueError(
+                        "Payload RAW divergente para assinatura já arquivada; "
+                        "a evidência original é imutável."
+                    )
                 connection.execute(
                     """
                     INSERT INTO observed_transactions

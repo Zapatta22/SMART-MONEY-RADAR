@@ -2,6 +2,7 @@ import unittest
 
 from smart_money_radar.data_sources.damm_v2_accounts import DammV2SwapAccounts
 from smart_money_radar.data_sources.damm_v2_analyzer import DammV2SwapEventAssociation
+from smart_money_radar.data_sources.damm_v2_decoder import DammV2EvtSwap2, DammV2SwapResult
 from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
     DammV2SwapTransferContext,
     analyze_damm_v2_transfer_evidence,
@@ -30,12 +31,41 @@ def _accounts():
     )
 
 
-def _association(status="MATCHED", outer=0, path=(0,), height=3):
+def _event(has_referral=False, referral_fee=0, direction="A_TO_B", fee_mode="BOTH_TOKEN"):
+    return DammV2EvtSwap2(
+        pool=bytes(32),
+        trade_direction=direction,
+        collect_fee_mode=fee_mode,
+        has_referral=has_referral,
+        amount_0=100,
+        amount_1=90,
+        swap_mode="EXACT_IN",
+        swap_result=DammV2SwapResult(
+            included_fee_input_amount=100,
+            excluded_fee_input_amount=95,
+            amount_left=0,
+            output_amount=90,
+            next_sqrt_price=1 << 64,
+            claiming_fee=2,
+            protocol_fee=1,
+            compounding_fee=1,
+            referral_fee=referral_fee,
+        ),
+        included_transfer_fee_amount_in=100,
+        included_transfer_fee_amount_out=90,
+        excluded_transfer_fee_amount_out=90,
+        current_timestamp=1_700_000_000,
+        reserve_a_amount=1_000,
+        reserve_b_amount=2_000,
+    )
+
+
+def _association(status="MATCHED", outer=0, path=(0,), height=3, event=None):
     return DammV2SwapEventAssociation(
         status=status, instruction_index=outer, inner_instruction_index=1,
         cpi_path=path, stack_height=height, instruction=None,
         event_inner_instruction_index=4, event_cpi_path=(0, 1),
-        event_stack_height=4, event=None,
+        event_stack_height=4, event=_event() if event is None else event,
     )
 
 
@@ -163,6 +193,119 @@ class DammV2TransferAnalyzerTests(unittest.TestCase):
             [self.context], [failed, self.output]
         )[0]
         self.assertEqual(result.status, "TRANSFER_MISSING")
+
+    def test_attributes_referral_transfer_from_fee_mode_token_b_vault(self):
+        event = _event(has_referral=True, referral_fee=5)
+        context = DammV2SwapTransferContext(_association(event=event), _accounts())
+        referral = _transfer(
+            "vault-b", "referral", TOKEN_2022_PROGRAM_ID, "mint-b", 9, amount=5
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [context], [self.input, self.output, referral]
+        )[0]
+        self.assertEqual(result.status, "ATTRIBUTED")
+        self.assertIs(result.referral_transfer, referral)
+        self.assertTrue(result.transfer_fee_review_required)
+        self.assertIn("referral", result.reason)
+
+    def test_attributes_referral_from_token_a_vault_when_fee_mode_requires_token_a(self):
+        event = _event(
+            has_referral=True,
+            referral_fee=7,
+            direction="B_TO_A",
+            fee_mode="BOTH_TOKEN",
+        )
+        base = _accounts()
+        accounts = DammV2SwapAccounts(
+            **{
+                **base.__dict__,
+                "input_vault": "vault-b",
+                "output_vault": "vault-a",
+                "input_mint": "mint-b",
+                "output_mint": "mint-a",
+                "input_token_program": TOKEN_2022_PROGRAM_ID,
+                "output_token_program": SPL_TOKEN_PROGRAM_ID,
+            }
+        )
+        context = DammV2SwapTransferContext(_association(event=event), accounts)
+        input_transfer = _transfer(
+            "user-b", "vault-b", TOKEN_2022_PROGRAM_ID, "mint-b", 9
+        )
+        output_transfer = _transfer(
+            "vault-a", "user-a", SPL_TOKEN_PROGRAM_ID, "mint-a", 6
+        )
+        referral = _transfer(
+            "vault-a", "referral", SPL_TOKEN_PROGRAM_ID, "mint-a", 6, amount=7
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [context], [input_transfer, output_transfer, referral]
+        )[0]
+        self.assertEqual(result.status, "ATTRIBUTED")
+        self.assertIs(result.referral_transfer, referral)
+
+    def test_requires_referral_transfer_when_event_has_nonzero_referral_fee(self):
+        event = _event(has_referral=True, referral_fee=5)
+        context = DammV2SwapTransferContext(_association(event=event), _accounts())
+        result = analyze_damm_v2_transfer_evidence(
+            [context], [self.input, self.output]
+        )[0]
+        self.assertEqual(result.status, "TRANSFER_MISSING")
+        self.assertIn("referral", result.reason)
+
+    def test_rejects_referral_transfer_amount_mismatch(self):
+        event = _event(has_referral=True, referral_fee=5)
+        context = DammV2SwapTransferContext(_association(event=event), _accounts())
+        referral = _transfer(
+            "vault-b", "referral", TOKEN_2022_PROGRAM_ID, "mint-b", 9, amount=6
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [context], [self.input, self.output, referral]
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("diverge do EvtSwap2", result.reason)
+
+    def test_marks_duplicate_referral_transfers_ambiguous(self):
+        event = _event(has_referral=True, referral_fee=5)
+        context = DammV2SwapTransferContext(_association(event=event), _accounts())
+        first = _transfer(
+            "vault-b", "referral", TOKEN_2022_PROGRAM_ID, "mint-b", 9, amount=5
+        )
+        second = _transfer(
+            "vault-b", "referral", TOKEN_2022_PROGRAM_ID, "mint-b", 9, amount=5,
+            path=(0, 1),
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [context], [self.input, self.output, first, second]
+        )[0]
+        self.assertEqual(result.status, "AMBIGUOUS")
+
+    def test_referral_transfer_fee_checked_instruction_remains_attributed_not_matched(self):
+        event = _event(has_referral=True, referral_fee=5)
+        context = DammV2SwapTransferContext(_association(event=event), _accounts())
+        referral = _transfer(
+            "vault-b", "referral", TOKEN_2022_PROGRAM_ID, "mint-b", 9, amount=5
+        )
+        referral = SolanaTokenTransfer(
+            **{
+                **referral.__dict__,
+                "instruction_type": "TRANSFER_CHECKED_WITH_FEE",
+                "fee_amount_raw": 1,
+            }
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [context], [self.input, self.output, referral]
+        )[0]
+        self.assertEqual(result.status, "ATTRIBUTED")
+        self.assertIs(result.referral_transfer, referral)
+
+    def test_rejects_referral_fee_without_has_referral_flag(self):
+        event = _event(has_referral=False, referral_fee=5)
+        context = DammV2SwapTransferContext(_association(event=event), _accounts())
+        result = analyze_damm_v2_transfer_evidence(
+            [context], [self.input, self.output]
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("sem has_referral", result.reason)
 
     def test_unmatched_swap_event_stays_unresolved(self):
         context = DammV2SwapTransferContext(

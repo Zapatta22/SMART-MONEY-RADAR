@@ -116,4 +116,13 @@ SHA-256. Não envia o RAW ao GitHub, não anonimiza, não importa para SQLite e
 não avança checkpoint. O próximo passo é inspecionar e anonimizar a fixture
 localmente antes de qualquer proposta de versionamento.
 
+Antes de persistir, o coletor valida o envelope JSON-RPC 2.0 e a igualdade do
+ID de resposta com o ID enviado; qualquer campo `error` não nulo é rejeitado.
+Exige `result.transaction` como objeto, assinatura solicitada única e na
+posição primária, slot unsigned 64-bit e versão `legacy` ou `0` (coerente com
+`maxSupportedTransactionVersion: 0`). Os parâmetros de timeout e intervalo
+mínimo também precisam ser números finitos, não booleanos, com limites
+positivo e não negativo, respectivamente. RAW e manifesto são criados em modo
+exclusivo para preservar evidência preexistente.
+
 - O campo `checkpoint_advanced` do resultado CPMM reflete o argumento efetivo: no modo backfill/deferido retorna `False`, mesmo quando a assinatura foi registrada como processada, pois o cursor ainda depende do CAS posterior do WalletMonitor.

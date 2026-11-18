@@ -88,6 +88,48 @@ class TestRaydiumCpmmAnalyzer(unittest.TestCase):
         )
         self.assertEqual(len(result), 1)
 
+    def test_resolves_program_and_accounts_from_loaded_addresses(self):
+        static_keys = [f"Static{i}" for i in range(13)]
+        instruction = _instruction(
+            SWAP_BASE_OUTPUT_DISCRIMINATOR,
+            account_count=14,
+        )
+        instruction.pop("programId")
+        instruction["programIdIndex"] = 14
+        instruction["accounts"] = list(range(14))
+        meta = {
+            "err": None,
+            "loadedAddresses": {
+                "writable": ["LoadedExtra"],
+                "readonly": [RAYDIUM_CPMM_PROGRAM_ID],
+            },
+        }
+        result = decode_raydium_cpmm_swaps(
+            _transaction([instruction], static_keys, meta)
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(
+            result[0].accounts.remaining_accounts,
+            ("LoadedExtra",),
+        )
+
+    def test_does_not_treat_inner_instruction_as_top_level_swap(self):
+        meta = {
+            "err": None,
+            "innerInstructions": [
+                {
+                    "index": 0,
+                    "instructions": [
+                        _instruction(SWAP_BASE_OUTPUT_DISCRIMINATOR)
+                    ],
+                }
+            ],
+        }
+        result = decode_raydium_cpmm_swaps(
+            _transaction([], meta=meta)
+        )
+        self.assertEqual(result, [])
+
     def test_ignores_failed_transaction(self):
         result = decode_raydium_cpmm_swaps(
             _transaction(

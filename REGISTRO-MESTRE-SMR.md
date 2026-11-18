@@ -1094,7 +1094,8 @@ Correções aplicadas na branch:
 ### Commits e estado
 - Correção do inspetor: `6e6da41e78452aad5e00ccc85b7545c63ef560cb`.
 - Teste de redação de caminho: `366f38cbc68c196750a4341124fc3810c8f26c1a`.
-- Novo head do PR #16: `366f38cbc68c196750a4341124fc3810c8f26c1a`.
-- Aguardando novo CI para o head atualizado; o sucesso do run anterior não valida estes dois commits.
+- Commits de correção e teste: `6e6da41e78452aad5e00ccc85b7545c63ef560cb` e `366f38cbc68c196750a4341124fc3810c8f26c1a`.
+- Head funcional seguido da atualização documental: `92aeae7b392ee4329932f5e9d442b42164c2e953`.
+- CI para esse head: run `44248529109`, em andamento no momento do registro; o sucesso do run anterior não valida as correções.
 - PR #16 permanece Draft, aberto, não merged.
 - Nenhum dado RAW foi enviado; nenhuma execução local, RPC, banco, migração, checkpoint ou operação on-chain ocorreu.

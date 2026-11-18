@@ -2599,3 +2599,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Alinhamento dos testes, commit `dc300604e629c80fc36addcd041bd491d8536eb2`: fixtures do backfill agora incluem slots RPC explícitos para transação nova e falha on-chain; mock DAMM do teste de bloqueio inclui `unresolved_swaps=1`, conforme o contrato real do resultado.
 - Esses commits foram aplicados no GitHub e ainda não foram validados em runtime. Próxima ação: sincronizar o clone Termux e executar primeiro apenas `test_wallet_monitor.py` com `-v` e timeout; se passar, continuar os testes pendentes restantes e `compileall`. Não coletar fixture RAW mainnet antes de concluir a validação e revisar a fixture real.
 - PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 171. Diagnóstico da falha de checkpoint no teste de backfill — PR #25 (18/11/2026)
+
+- A execução runtime de `test_wallet_monitor.py` confirmou que a correção do processamento diferido funcionou para os casos de falha on-chain, replay pendente e bloqueio por swap DAMM v2. Restou uma falha em `test_backfills_signatures_since_persisted_checkpoint`.
+- Causa identificada por inspeção do teste e do contrato de persistência: a página simulada de `getSignaturesForAddress` informava slot 901, mas a transação simulada de `getTransaction` não continha o campo `slot`. O normalizador persistia a observação com slot `None`; o CAS ordenado corretamente rejeitava avançar para slot 901, pois exige igualdade entre o slot da página RPC e o slot persistido.
+- Correção de teste aplicada na branch do PR: a fixture de `new-signature` agora inclui `slot = 901`, reproduzindo o campo fornecido pela resposta real de `getTransaction`. Nenhuma validação de produção foi afrouxada.
+- Commit da correção de fixture: ba3ccd0e8b1292b6b47f1312be5f4d90346a85e7.
+- Próxima validação: executar isoladamente apenas `test_backfills_signatures_since_persisted_checkpoint`. Se passar, executar `test_wallet_monitor.py` uma vez com timeout curto; investigar separadamente o teste de sobreposição se não houver resumo final. Não repetir testes já aprovados.
+- PR #25 permanece aberto, Draft, sem merge; branch `feat/damm-v2-transaction-pipeline` baseada em `feat/damm-v2-swap-domain-adapter`; `main` preservada.

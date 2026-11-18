@@ -2483,3 +2483,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - A repetição confirma que o workflow está sendo disparado corretamente, mas nenhum runner `ubuntu-latest` chega a ser atribuído ao job. Portanto, a falha está na alocação/infraestrutura GitHub Actions ou na disponibilidade de runner para o repositório, antes de checkout e antes de qualquer teste. Não alterar código de produção para tentar corrigir esse sintoma e não repetir retries em loop.
 - A alteração RPC recente segue validada apenas por inspeção estática no GitHub; execução runtime ainda pendente. Para runtime sem Termux, é necessário restabelecer runner GitHub Actions ou usar outro executor autorizado e conectado ao repositório.
 - PR #25 segue Draft, aberto, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 159. Coletor RPC: configuração temporal estrita e CI #933 — PR #25 (18/11/2026)
+
+- Auditoria adicional encontrou que `timeout` e `min_interval_seconds` aceitavam booleanos e valores não finitos; inteiros gigantes podiam gerar `OverflowError` dentro de `math.isfinite`. Implementado helper `_is_finite_number`, que rejeita booleanos, tipos não numéricos, NaN, infinitos e inteiros que excedem a conversão numérica segura. Timeout deve ser finito e positivo; intervalo deve ser finito e não negativo.
+- Testes negativos adicionados para timeout/intervalo booleanos, zero/negativos, NaN, infinito, string e inteiro excessivamente grande. Também foi adicionado teste garantindo que qualquer campo `error` JSON-RPC não nulo seja rejeitado, mesmo quando objeto vazio.
+- Commits: helper/configuração `0b6fd719395cca7601931e24b4b7a3ca31acae14`, robustez contra inteiro excessivo `cf801cde448f51829b3d869372231100731bd97a`, testes temporais `be869a2bc5ee7e72a0b8fbb9312a9bf645513f1e`, teste de erro RPC `6b5944551e7ae6cf8df2081b73a4b28476ee34ba`.
+- CI #933 (`44332520139`), disparado no HEAD anterior `f2541b7`, repetiu falha de job sem steps/logs. A API confirmou `runner_id=0`, `runner_name=""`, `steps=[]`, duração aproximada de 2 s. Runner `ubuntu-latest` continua sem provisionamento; testes não foram executados.
+- Código e testes do coletor foram relidos no GitHub após as alterações; revisão estática apenas. Runtime unittest/compileall ainda pendente. Não coletar fixture RAW mainnet até validação runtime.
+- PR #25 continua Draft, aberto, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.

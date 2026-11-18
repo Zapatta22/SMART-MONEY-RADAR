@@ -2410,3 +2410,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Verificação estática pós-alterações confirmou: EventStore tem bloqueios `BEGIN IMMEDIATE`; `mark_processed` aceita modo de deferimento; CPMM encaminha a opção aos três caminhos de conclusão; WalletMonitor usa deferimento no backfill, valida slot e só então chama CAS; testes e Registro Mestre estão presentes.
 - Run #902 e seu rerun falharam sem steps/logs. Nenhuma execução de unittest/compileall pode ser declarada.
 - Próxima ação operacional: atualizar clone Termux para o HEAD acima e executar primeiro os testes focais; depois suíte completa e compileall. A coleta da fixture mainnet continua bloqueada até essa validação.
+
+
+## 151. Teste de regressão para pendência arquivada com checkpoint existente — 18/11/2026
+
+- Adicionado teste assíncrono em `tests/test_wallet_monitor.py` para cenário que não estava coberto: há checkpoint anterior e uma observação pendente arquivada posterior.
+- O teste verifica que o replay preliminar da pendência não altera o checkpoint antes da consulta `getSignaturesForAddress`; em seguida a assinatura aparece na sequência RPC, é processada e o cursor avança por CAS para ela. Também confirma que a assinatura termina processada e deixa de constar como pendente.
+- Commit: `839e873017a61f869515e30268379cd9cb2bad29`.
+- Teste ainda não executado em runtime. Próxima validação continua sendo Termux; CI #902 não forneceu steps/logs.

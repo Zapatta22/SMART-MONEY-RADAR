@@ -199,6 +199,12 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
                 self.assertEqual(replay.saved_bundles, 0)
                 self.assertFalse(replay.checkpoint_advanced)
                 self.assertIsNotNone(store.get_swap_bundle(matched_operation_id))
+                full_history = store.get_swap_reconciliation_attempts(wallet, signature)
+                self.assertEqual(len(full_history), 4)
+                self.assertEqual(
+                    [item["status"] for item in full_history],
+                    ["MATCHED", "INCOMPLETE", "MATCHED", "INCOMPLETE"],
+                )
             finally:
                 store.close()
 

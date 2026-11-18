@@ -138,11 +138,11 @@ def _raw_transfer(
         if len(data) != 9 or len(resolved) < 3:
             raise ValueError("Transfer exige 9 bytes e pelo menos 3 contas")
         amount = int.from_bytes(data[1:9], "little")
-        return resolved[0], resolved[1], resolved[2], None, amount, None
+        return resolved[0], resolved[1], resolved[2], None, amount, None, "TRANSFER"
     if len(data) != 10 or len(resolved) < 4:
         raise ValueError("TransferChecked exige 10 bytes e pelo menos 4 contas")
     amount = int.from_bytes(data[1:9], "little")
-    return resolved[0], resolved[2], resolved[3], resolved[1], amount, data[9]
+    return resolved[0], resolved[2], resolved[3], resolved[1], amount, data[9], "TRANSFER_CHECKED"
 
 
 def _parsed_transfer(
@@ -187,7 +187,8 @@ def _parsed_transfer(
         return None
     if mint is not None and not isinstance(mint, str):
         return None
-    return source, destination, authority, mint, amount, decimals
+    instruction_type = "TRANSFER_CHECKED" if normalized == "transferchecked" else "TRANSFER"
+    return source, destination, authority, mint, amount, decimals, instruction_type
 
 
 def _decode_one(
@@ -212,11 +213,11 @@ def _decode_one(
     if values is None:
         return None
 
-    source, destination, authority, mint, amount, decimals = values
+    source, destination, authority, mint, amount, decimals, instruction_type = values
     return SolanaTokenTransfer(
         program_id=program_id,
         program_name="SPL Token" if program_id == SPL_TOKEN_PROGRAM_ID else "Token-2022",
-        instruction_type="TRANSFER_CHECKED" if mint is not None or decimals is not None else "TRANSFER",
+        instruction_type=instruction_type,
         instruction_index=outer_index,
         inner_instruction_index=inner_index,
         stack_height=stack_height,

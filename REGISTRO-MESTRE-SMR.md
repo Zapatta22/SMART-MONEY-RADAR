@@ -3068,3 +3068,16 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Todas as cinco PRs permanecem OPEN/DRAFT e com mergeability disponível na última leitura. A cadeia ainda não foi integrada; nenhuma alteração foi feita na `main`.
 - A PR #25 contém os dois imports corrigidos do arquivo de teste da PR #24; foi verificado diretamente nos arquivos das duas branches.
 - Próxima ação: mapear o próximo nível de dependência da PR #21 e verificar se a branch-base Token-2022 está coberta por PR aberto/fechado e CI verde, para definir a sequência integral de integração sem saltar dependências.
+
+
+## 213. Mapeamento das dependências anteriores da cadeia CPMM → DAMM v2 — 18/11/2026
+
+- A auditoria foi estendida até as PRs que fornecem a base do pipeline atual. A cadeia de branches relevante é: #5 → #6 → #7 → #8 → #9 → #10 → #12 → #13 → #14 → #15 → #16 → #17 → #18 → #21 → #22 → #23 → #24 → #25.
+- PRs #5, #6, #7 e #8 estão abertas, não Draft, com mergeability limpa e checks SUCCESS nos respectivos HEADs.
+- PR #9 está aberta, não Draft e mergeable; não há check-run nem status associado ao HEAD `dfac8ce8734808f0a4cbe817b49c47ee7058bd80`. A PR #10, cuja base é exatamente a branch/HEAD da PR #9, possui CI SUCCESS; isso valida o conjunto integrado a jusante, mas não substitui um check direto registrado na PR #9.
+- PR #10 e #12 estão abertas, não Draft, mergeable e com checks SUCCESS.
+- PR #13 está aberta, não Draft, mergeable e com check SUCCESS. PRs #14–#18 estão abertas como Draft, mergeable e com checks SUCCESS.
+- PR #20 foi encerrada deliberadamente sem merge porque duplicava o decoder DAMM v2. A implementação canônica `damm_v2_decoder.py` já está presente na branch base da PR #18; o encerramento não removeu o decoder usado pelo pipeline atual.
+- PR #11 é uma linha independente baseada diretamente em `main`; não integra a cadeia de dependências da PR #25 e deve ser auditada separadamente.
+- As PRs #21–#25 permanecem como documentado na seção 212. Nenhuma integração foi realizada na `main`.
+- Próxima ação: consolidar uma tabela de prontidão por PR e apontar o único elo sem check direto (#9), sem disparar mudanças em branches antigas quando a validação downstream já cobre o código.

@@ -82,13 +82,23 @@ class RpcFixtureCollectorTests(unittest.TestCase):
             collector.collect(SIG)
 
     def test_rejects_invalid_timeout_values(self):
-        for timeout in (True, False, 0, -1, float("nan"), float("inf"), "20", 10**10000):
-            with self.subTest(timeout=repr(timeout)), self.assertRaises(ValueError):
+        cases = (
+            ("boolean-true", True), ("boolean-false", False), ("zero", 0),
+            ("negative", -1), ("nan", float("nan")), ("infinity", float("inf")),
+            ("string", "20"), ("oversized-integer", 10**10000),
+        )
+        for label, timeout in cases:
+            with self.subTest(case=label), self.assertRaises(ValueError):
                 RpcFixtureCollector("https://rpc.example", "unused", timeout=timeout)
 
     def test_rejects_invalid_minimum_interval_values(self):
-        for interval in (True, False, -1, float("nan"), float("inf"), "0.25", 10**10000):
-            with self.subTest(interval=repr(interval)), self.assertRaises(ValueError):
+        cases = (
+            ("boolean-true", True), ("boolean-false", False), ("negative", -1),
+            ("nan", float("nan")), ("infinity", float("inf")),
+            ("string", "0.25"), ("oversized-integer", 10**10000),
+        )
+        for label, interval in cases:
+            with self.subTest(case=label), self.assertRaises(ValueError):
                 RpcFixtureCollector(
                     "https://rpc.example", "unused", min_interval_seconds=interval
                 )

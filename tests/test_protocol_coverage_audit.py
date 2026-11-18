@@ -41,9 +41,8 @@ def fixture(root: Path, include_event: bool = False):
                 {"programIdIndex": 4},
             ],
         }},
-        "meta": {"err": None, "innerInstructions": [
-            {"index": 0, "instructions": [{"programIdIndex": 2}, {"programIdIndex": 3}]}
-        ], "preTokenBalances": [], "postTokenBalances": []},
+        "meta": {"err": None, "innerInstructions": [{"index": 0, "instructions": inner}],
+                 "preTokenBalances": [], "postTokenBalances": []},
     }}
     raw = json.dumps(payload).encode()
     (root / "one.raw.json").write_bytes(raw)

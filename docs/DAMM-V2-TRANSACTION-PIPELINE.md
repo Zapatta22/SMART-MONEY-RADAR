@@ -115,3 +115,5 @@ O script grava RAW e manifesto localmente em
 SHA-256. Não envia o RAW ao GitHub, não anonimiza, não importa para SQLite e
 não avança checkpoint. O próximo passo é inspecionar e anonimizar a fixture
 localmente antes de qualquer proposta de versionamento.
+
+- O campo `checkpoint_advanced` do resultado CPMM reflete o argumento efetivo: no modo backfill/deferido retorna `False`, mesmo quando a assinatura foi registrada como processada, pois o cursor ainda depende do CAS posterior do WalletMonitor.

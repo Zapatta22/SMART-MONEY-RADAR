@@ -217,7 +217,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             [context], [evidence],
             _deltas([
                 ("user-a", NATIVE_MINT, 0, 9),
-                ("vault-a", "mint-a", 100, 6),
+                ("vault-a", NATIVE_MINT, 100, 9),
                 ("vault-b", "mint-b", -90, 6),
                 ("user-b", "mint-b", 90, 6),
             ]),

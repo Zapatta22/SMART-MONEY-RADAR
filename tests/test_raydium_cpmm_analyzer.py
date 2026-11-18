@@ -121,7 +121,58 @@ class TestRaydiumCpmmAnalyzer(unittest.TestCase):
         self.assertEqual(result[0].accounts.payer, "Resolved0")
         self.assertEqual(result[0].accounts.observation_state, "Resolved12")
 
-    def test_does_not_treat_inner_instruction_as_top_level_swap(self):
+    def test_decodes_cpi_swap_and_records_outer_instruction_and_path(self):
+        meta = {
+            "err": None,
+            "innerInstructions": [
+                {
+                    "index": 0,
+                    "instructions": [
+                        {
+                            **_instruction(SWAP_BASE_OUTPUT_DISCRIMINATOR),
+                            "stackHeight": 2,
+                        }
+                    ],
+                }
+            ],
+        }
+        result = decode_raydium_cpmm_swaps(_transaction(
+            [{"programId": "JupiterOrRouter", "accounts": [], "data": "1"}],
+            meta=meta,
+        ))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].instruction_index, 0)
+        self.assertEqual(result[0].inner_instruction_index, 0)
+        self.assertEqual(result[0].cpi_path, (0,))
+        self.assertEqual(result[0].stack_height, 2)
+
+    def test_derives_nested_cpi_path_from_stack_height(self):
+        inner = [
+            {"programId": "OtherProgram", "accounts": [], "data": "1", "stackHeight": 2},
+            {
+                **_instruction(SWAP_BASE_INPUT_DISCRIMINATOR),
+                "stackHeight": 3,
+            },
+            {
+                **_instruction(SWAP_BASE_OUTPUT_DISCRIMINATOR),
+                "stackHeight": 2,
+            },
+        ]
+        meta = {
+            "err": None,
+            "innerInstructions": [{"index": 0, "instructions": inner}],
+        }
+        result = decode_raydium_cpmm_swaps(_transaction(
+            [{"programId": "Router", "accounts": [], "data": "1"}],
+            meta=meta,
+        ))
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0].cpi_path, (0, 0))
+        self.assertEqual(result[0].stack_height, 3)
+        self.assertEqual(result[1].cpi_path, (1,))
+        self.assertEqual(result[1].stack_height, 2)
+
+    def test_uses_flat_cpi_position_when_stack_height_is_missing(self):
         meta = {
             "err": None,
             "innerInstructions": [
@@ -133,10 +184,48 @@ class TestRaydiumCpmmAnalyzer(unittest.TestCase):
                 }
             ],
         }
-        result = decode_raydium_cpmm_swaps(
-            _transaction([], meta=meta)
-        )
+        result = decode_raydium_cpmm_swaps(_transaction(
+            [{"programId": "Router", "accounts": [], "data": "1"}],
+            meta=meta,
+        ))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].cpi_path, (0,))
+        self.assertIsNone(result[0].stack_height)
+
+    def test_ignores_cpi_when_rpc_did_not_record_inner_instructions(self):
+        result = decode_raydium_cpmm_swaps(_transaction(
+            [{"programId": "Router", "accounts": [], "data": "1"}],
+            meta={"err": None, "innerInstructions": None},
+        ))
         self.assertEqual(result, [])
+
+    def test_rejects_duplicate_inner_instruction_groups(self):
+        group = {"index": 0, "instructions": []}
+        with self.assertRaisesRegex(ValueError, "inconsistente"):
+            decode_raydium_cpmm_swaps(_transaction(
+                [{"programId": "Router", "accounts": [], "data": "1"}],
+                meta={"err": None, "innerInstructions": [group, group]},
+            ))
+
+    def test_accepts_json_parsed_account_key_objects_for_cpi(self):
+        keys = [{"pubkey": f"Parsed{i}"} for i in range(13)]
+        keys.append({"pubkey": RAYDIUM_CPMM_PROGRAM_ID})
+        instruction = _instruction(SWAP_BASE_OUTPUT_DISCRIMINATOR)
+        instruction.pop("programId")
+        instruction["programIdIndex"] = 13
+        instruction["accounts"] = list(range(13))
+        instruction["stackHeight"] = 2
+        meta = {
+            "err": None,
+            "innerInstructions": [{"index": 0, "instructions": [instruction]}],
+        }
+        result = decode_raydium_cpmm_swaps(_transaction(
+            [{"programId": "Router", "accounts": [], "data": "1"}],
+            keys,
+            meta,
+        ))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].accounts.payer, "Parsed0")
 
     def test_ignores_failed_transaction(self):
         result = decode_raydium_cpmm_swaps(

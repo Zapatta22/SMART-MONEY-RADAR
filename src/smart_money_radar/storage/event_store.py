@@ -155,7 +155,10 @@ class SQLiteEventStore:
                         wallet_address TEXT NOT NULL, signature TEXT NOT NULL,
                         input_mint TEXT NOT NULL, output_mint TEXT NOT NULL,
                         input_amount TEXT NOT NULL, output_amount TEXT NOT NULL,
-                        observed_at TEXT NOT NULL, parser_version TEXT NOT NULL)"""
+                        observed_at TEXT NOT NULL, parser_version TEXT NOT NULL,
+                        FOREIGN KEY(wallet_address, signature)
+                            REFERENCES observed_transactions(wallet_address, signature)
+                            ON DELETE CASCADE)"""
                 )
                 connection.execute("""CREATE INDEX IF NOT EXISTS idx_swap_observations_wallet_time
                     ON swap_observations(wallet_address, observed_at DESC)""")

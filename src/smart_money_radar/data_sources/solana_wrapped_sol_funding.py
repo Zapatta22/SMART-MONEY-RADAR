@@ -300,7 +300,7 @@ def decode_wrapped_sol_account_lifecycle(
                     raise ValueError("CloseAccount wSOL não devolve à carteira proprietária")
                 closes.append(index)
 
-    if not creates and not closes:
+    if not closes:
         return None
     if meta.get("err", "missing") is not None:
         raise ValueError("transação não comprovadamente executada")

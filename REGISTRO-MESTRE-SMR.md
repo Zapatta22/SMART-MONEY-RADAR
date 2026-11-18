@@ -2983,3 +2983,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI push #44412408828 SUCCESS no commit `1b97635b615753f32614deeeb7ccf4d132fdb776`: 495 testes aprovados em 3,905s e `compileall` concluído. Log registra a mensagem de bloqueio do monitor: 0/2 swaps reconciliados, 2 pendências, checkpoint preservado.
 - PR #25 permanece OPEN/DRAFT e sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
 - Próxima ação: validar também o fluxo positivo no WalletMonitor com dois swaps reconciliados, comprovando que CPMM só é chamado depois da persistência bem-sucedida de ambos os bundles; depois revisar os checks da PR no head atual.
+
+
+## 206. WalletMonitor libera CPMM somente após persistir os dois bundles DAMM v2 — 18/11/2026
+
+- Adicionado `test_wallet_monitor_calls_cpmm_only_after_both_damm_bundles_persist`, usando o payload RPC sintético completo de duas operações da seção 203 e SQLiteEventStore real.
+- O teste executa `WalletMonitor._collect_transaction` sem mockar o processamento DAMM v2. O CPMM é substituído por um spy com retorno controlado apenas para observar a fronteira e permitir concluir o fluxo.
+- Dentro do spy, o teste consulta o SQLite e exige duas tentativas de reconciliação e dois bundles já persistidos antes da chamada CPMM. A verificação passou.
+- Resultado: WalletMonitor retorna sucesso; CPMM chamado exatamente uma vez; ambos os bundles continuam recuperáveis no SQLite. O teste negativo da seção 205 continua provando que, diante de divergência econômica, CPMM não é chamado.
+- CI push #44412568453 SUCCESS no commit `8f32b2323f52a7c9c81c7e3d72a58df3d31c371f`: 496 testes aprovados em 5,487s; `compileall` concluído. O novo teste positivo aparece como `ok`.
+- O fluxo de CPMM neste teste é um spy, não uma execução real do parser CPMM; a prova cobre a ordem e a condição de entrada na próxima venue.
+- PR #25 permanece OPEN/DRAFT, sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
+- Próxima ação: auditar os checks associados ao head da PR, consolidar a documentação de continuidade e então avançar para cobertura de replay/idempotência do lote completo após falha transitória de persistência.

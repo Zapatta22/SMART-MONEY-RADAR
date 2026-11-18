@@ -2464,3 +2464,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - A consulta do job `134897601983` retornou `steps=null` e `logs_url=null`, embora o run tenha concluído como `failure`. Não há evidência de checkout, instalação, unittest ou compileall. Não classificar como falha dos testes nem aprovação.
 - Não foi disparado rerun: o padrão de falha pré-etapas permanece sem diagnóstico observável e retries repetidos não acrescentam evidência.
 - Os commits de código/teste permanecem na branch do PR; validação runtime do novo hardening JSON-RPC ainda pendente. PR #25 segue Draft, sem merge e empilhado sobre `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 157. Runner não provisionado e hardening adicional do coletor RPC — PR #25 (18/11/2026)
+
+- Consulta direta à API do GitHub para o run #922 (`44331723476`) detalhou o job `134897601983`: `runner_id=0`, `runner_name=""`, `steps=[]`, início em `15:06:18Z` e conclusão em `15:06:20Z`. A evidência é consistente com falha de alocação/inicialização do runner antes de qualquer step; não é falha demonstrada de unittest/compileall. O endpoint de logs também retornou 404 (blob inexistente). Não fazer retries em loop; a causa está fora do código de teste observável pelo repositório.
+- Auditoria do coletor `RpcFixtureCollector` encontrou que `bool` era aceito como slot por ser subtipo de `int`, versões de transação não eram validadas e a assinatura podia estar em posição secundária, repetida ou num campo `signatures` que nem fosse lista.
+- Corrigido para exigir slot inteiro não booleano e não negativo; versão `legacy` ou inteiro não booleano não negativo; objeto `transaction`; lista não vazia de assinaturas string não vazias, sem duplicatas e com a assinatura solicitada na posição primária (índice 0). Campo `error` não nulo agora é rejeitado mesmo se for um objeto vazio. O valor de versão validado é reutilizado no manifesto.
+- Testes negativos adicionados para slot booleano/negativo, versão nula/booleana/negativa/objeto e assinatura em formato incorreto, posição secundária, duplicata e item inválido.
+- Commits: implementação `6d0bd74de6b8c8c811cbe57f6273b9cd67c22bc1`; testes `14093a16d9396d4f2ef771e7ed9081b227636645`; limpeza `a0069e093c13024270d0d048387f5fa1a1aac1e8`; teste de versão nula `eb50a431163ef6c5cab4f14e125b5a605469e4db`.
+- Alterações revisadas estaticamente no GitHub. Runtime unittest/compileall ainda não executados para estes commits; CI depende de runner funcional. Fixture RAW mainnet segue bloqueada até execução runtime e revisão da fixture real.
+- PR #25 permanece aberto, Draft, sem merge, com base `feat/damm-v2-swap-domain-adapter`; `main` preservada.

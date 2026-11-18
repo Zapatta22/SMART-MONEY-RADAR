@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -185,6 +186,26 @@ class SwapDomainBundleBuilderTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "sem quantidades"):
             self._build(matched=incomplete)
+
+    def test_rejects_matched_result_when_amount_or_transfer_identity_disagrees(self):
+        matched = _matched()
+        wrong_amount = replace(matched, input_amount_raw=matched.input_amount_raw + 1)
+        with self.assertRaisesRegex(ValueError, "Quantidade de entrada"):
+            self._build(matched=wrong_amount)
+
+        wrong_accounts = replace(
+            matched,
+            input_transfer=replace(matched.input_transfer, destination_account="other-vault"),
+        )
+        with self.assertRaisesRegex(ValueError, "Contas da transferência de entrada"):
+            self._build(matched=wrong_accounts)
+
+        wrong_cpi = replace(
+            matched,
+            output_transfer=replace(matched.output_transfer, cpi_path=(9, 9)),
+        )
+        with self.assertRaisesRegex(ValueError, "descendente do CPI"):
+            self._build(matched=wrong_cpi)
 
     def test_rejects_duplicate_operation_ids(self):
         with self.assertRaisesRegex(ValueError, "operation_id duplicado"):

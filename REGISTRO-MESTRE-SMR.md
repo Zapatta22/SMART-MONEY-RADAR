@@ -2375,3 +2375,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Não há evidência de checkout, instalação, unittest, compileall ou execução de qualquer comando do projeto. Portanto, o resultado não prova falha de código nem aprovação dos novos testes concorrentes.
 - Não foi disparado retry automático, pois o runner não forneceu etapas/logs para diagnóstico.
 - Próxima validação executável: atualizar clone Termux da branch `feat/damm-v2-transaction-pipeline`, rodar testes focais de EventStore, bundles, coletor e WalletMonitor; em seguida executar `compileall` e suíte completa. A fixture RAW mainnet permanece pendente e não deve ser coletada até os testes locais passarem.
+
+
+## 147. Backfill não pode avançar checkpoint antes do compare-and-swap — PR #25 (18/11/2026)
+
+- Auditoria de fluxo ponta a ponta encontrou uma lacuna na proteção recém-adicionada: `process_raydium_cpmm_observation()` chamava `mark_processed()` com avanço automático. Em slots maiores, isso atualizava o checkpoint antes de `advance_checkpoint_in_order()`; o CAS então encontrava a assinatura já como cursor atual e retornava idempotentemente, sem validar o predecessor esperado. Para slots iguais, o teste anterior não expunha esse desvio.
+- Corrigido com `mark_processed(..., advance_checkpoint=False)` e parâmetro `advance_checkpoint` no pipeline CPMM. O WalletMonitor usa esse modo somente no backfill; o WebSocket preserva o comportamento anterior. Assim, o backfill primeiro persiste a conclusão em `processed_signatures`, sem mover cursor, e depois executa o CAS ordenado.
+- Transações do backfill com slot inválido agora interrompem a recuperação explicitamente; não são silenciosamente marcadas como avanço concluído.
+- Testes adicionados: EventStore confirma processamento sem mover checkpoint e posterior CAS; pipeline CPMM confirma que modo backfill deixa cursor anterior intacto até o CAS. Commits: `d13a163`, `db89d46`, `1feaa0f`, `efdc47d`, `a551ea7`, `e9b95b5`, `7a91dab`.
+- Revisão estática no GitHub. Execução runtime ainda pendente.

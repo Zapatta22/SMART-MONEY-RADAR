@@ -173,3 +173,19 @@ Ocorrência por payload:
 O decoder contabilizado nesta branch cobre somente 22 instruções SPL Token, uma Token-2022 e uma Raydium CPMM. Registro de programa não implica decoder. Contagens de instruções não são contagens de swaps: agregadores, CPI e transferências auxiliares exigem reconstrução econômica por operação.
 
 A auditoria não acessou rede ou banco, não escreveu arquivos e não alterou checkpoints. Os RAW continuam apenas no dispositivo local. A sequência de desenvolvimento proposta é DAMM v2, AMM v4, DLMM e, separadamente, Jupiter como roteador; a ordem é uma priorização de engenharia, não inferência de volume ou relevância financeira.
+
+
+## 14. Fingerprints redigidos para especificação de decoders
+
+A auditoria de cobertura também produz venue_instruction_profiles para programas registrados como venue e para Jupiter v6 como agregador. O perfil agrupa:
+- nome do programa (sem Program ID);
+- origem top_level ou inner;
+- primeiros oito bytes dos dados da instrução, em hexadecimal;
+- comprimento total dos dados;
+- quantidade de contas da instrução;
+- stack height quando presente;
+- número de ocorrências com o mesmo perfil.
+
+Os bytes após o prefixo, os índices e endereços das contas, valores, assinaturas e caminhos não são exibidos. O prefixo é uma impressão digital estrutural, não prova semântica de BUY/SELL nem substitui a validação contra IDL/documentação oficial. A quantidade de contas não identifica por si só o papel de cada conta.
+
+Após CI, executar novamente localmente nos RAW originais. Compartilhar somente o relatório redigido; não copiar payload bruto ou mapa de aliases para o chat/GitHub.

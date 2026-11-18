@@ -21,7 +21,15 @@ def inspect_manifest(manifest_path: Path, index: int) -> dict[str, Any]:
     """Retorna apenas metadados estruturais; nunca imprime endereços/assinaturas."""
     try:
         audit = audit_fixture(manifest_path)
-    except (OSError, ValueError) as exc:
+    except OSError:
+        return {
+            "index": index,
+            "integrity_valid": False,
+            "audit_errors": ["manifesto inacessível"],
+            "structure_valid": False,
+        }
+    except ValueError as exc:
+        # ValueError messages from audit_fixture are static validation messages.
         return {
             "index": index,
             "integrity_valid": False,
@@ -71,12 +79,20 @@ def inspect_manifest(manifest_path: Path, index: int) -> dict[str, Any]:
     post_balances = meta.get("postTokenBalances")
     signatures = transaction.get("signatures")
 
+    # Emit only known RPC field names; never echo arbitrary keys from input JSON.
+    safe_fields = {
+        "result_fields": {"slot", "version", "transaction", "meta", "blockTime"},
+        "transaction_fields": {"signatures", "message"},
+        "message_fields": {"accountKeys", "instructions", "addressTableLookups", "recentBlockhash"},
+        "meta_fields": {"err", "innerInstructions", "preTokenBalances", "postTokenBalances",
+                        "loadedAddresses", "fee", "computeUnitsConsumed", "logMessages"},
+    }
     report.update({
         "structure_valid": True,
-        "result_fields": sorted(result.keys()),
-        "transaction_fields": sorted(transaction.keys()),
-        "message_fields": sorted(message.keys()),
-        "meta_fields": sorted(meta.keys()),
+        "result_fields": sorted(result.keys() & safe_fields["result_fields"]),
+        "transaction_fields": sorted(transaction.keys() & safe_fields["transaction_fields"]),
+        "message_fields": sorted(message.keys() & safe_fields["message_fields"]),
+        "meta_fields": sorted(meta.keys() & safe_fields["meta_fields"]),
         "account_key_count": _count(account_keys),
         "top_level_instruction_count": _count(instructions),
         "inner_instruction_group_count": _count(inner_groups),

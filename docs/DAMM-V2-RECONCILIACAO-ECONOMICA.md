@@ -191,7 +191,7 @@ Auditoria direta do código MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f998
 
 ### 12.6 Limite probatório Token-2022
 
-O código Meteora calcula a transfer fee a partir da TransferFeeConfig do mint no epoch corrente e invoca TransferChecked. O crédito líquido do destinatário e o withheld amount pertencem a campos distintos do estado do token account. Os deltas padrão preTokenBalances/postTokenBalances mostram o saldo spendable, não bastam sozinhos para provar todos os campos withheld nem a configuração histórica do mint. Sem estado/configuração histórica válida no epoch da transação e evidência de withheld, manter o caso Token-2022 em estado não reconciliado.
+O código Meteora calcula a transfer fee a partir da TransferFeeConfig do mint no epoch corrente e invoca TransferChecked. O crédito líquido do destinatário e o withheld amount pertencem a campos distintos do estado do token account. Os deltas padrão preTokenBalances/postTokenBalances mostram o saldo spendable, não o campo withheld. Ainda assim, quando a transferência individual é atribuída univocamente, o valor bruto da instrução e o delta spendable completo da conta podem, em conjunto com os campos bruto/líquido do EvtSwap2, provar a taxa efetivamente retida sem ler diretamente a extensão withheld. Para isso, todos os demais movimentos que afetem a conta precisam estar identificados e reconciliados. A leitura do TransferFeeAmount e da configuração histórica do mint/epoch é uma corroboracão adicional forte; quando os deltas são agregados e não isolam os efeitos ou há movimentos desconhecidos, manter INCOMPLETE.
 
 ### 12.7 Equações mínimas a validar por operação
 
@@ -211,9 +211,13 @@ A documentação oficial Solana confirma que TransferChecked também aplica auto
 
 Consequências para o SMR:
 - O delta spendable do destinatário é o valor líquido; o withheld_amount é um campo separado da extensão da token account.
-- A diferença entre débito bruto e crédito spendable deve coincidir com a taxa calculada pela configuração de mint ativa no epoch da transação, e com a variação de withheld_amount atribuível àquela transferência.
-- Se houver mais de uma transferência para a mesma conta na transação, o withheld_amount final agregado não pode ser atribuído a uma transferência isolada sem estado anterior e sequência de instruções confiável.
-- O RPC getTransaction padrão não fornece snapshots arbitrários do estado bruto de mint/token accounts antes e depois da transação. Se os dados históricos necessários não estiverem disponíveis por uma fonte de estado indexada/confiável, o caso permanece INCOMPLETE; não reconstruir withheld por aproximação.
+- A diferença entre valor bruto da transferência e crédito spendable líquido pode provar a taxa retida quando a transferência é individualmente atribuída e todos os demais movimentos da conta estão reconciliados; conferir também os valores bruto/líquido de EvtSwap2.
+- A extensão TransferFeeAmount e a configuração histórica do mint/epoch são evidência adicional, mas não devem ser tratadas como requisito absoluto se a reconciliação bruta/líquida completa já prova o efeito.
+- Se houver múltiplas transferências para a mesma conta, ou movimentos desconhecidos, o delta pre/post agregado não isola a contribuição por operação; nesse caso, sem estado anterior da extensão e sequência de instruções confiável, manter INCOMPLETE.
 - Não inferir o epoch/configuração histórica a partir da configuração atual do mint.
 
 Fonte oficial: https://solana.com/docs/tokens/extensions/transfer-fees
+
+
+### 12.9 Refinamento do requisito de withheld
+A leitura direta da extensão TransferFeeAmount é evidência adicional, não requisito absoluto para toda operação. Uma reconciliação pode provar a taxa retida por meio da quantia bruta da instrução, dos campos bruto/líquido do EvtSwap2 e do delta spendable pre/post, desde que a transferência seja exclusiva e todos os outros movimentos da conta sejam identificados. Quando o delta é agregado e não pode ser atribuído com exclusividade, o caso continua INCOMPLETE sem estado adicional da extensão.

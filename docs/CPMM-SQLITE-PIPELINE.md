@@ -129,3 +129,8 @@ O adaptador HTTP também serve uma página HTML em `GET /` e `GET /dashboard`, s
 ### CI do primeiro painel visual local
 
 Run `44240284448` passou integralmente no head que contém a página HTML e seu teste: instalação do pacote aprovada, **242 testes unitários aprovados** e `python -m compileall -q src tests` aprovado. A página `/` e `/dashboard` e as chamadas autenticadas aos endpoints foram cobertas pela suíte.
+
+
+### Inicializador seguro do painel no Termux
+
+O script `tools/run_smr_dashboard_android.sh` prepara e inicia a API local no Android/Termux. Antes de iniciar, exige que o arquivo SQLite exista e valida o esquema esperado abrindo-o em modo `mode=ro`; não cria banco, não cria tabelas e não executa migrações. Gera token aleatório temporário com `secrets.token_hex(32)`, imprime o token para entrada manual no painel e inicia o servidor loopback. O token não é gravado em arquivo. O navegador deve abrir `http://127.0.0.1:8765/` no mesmo dispositivo; Ctrl+C encerra. `SMR_DB_PATH` pode apontar para outro banco existente. Não ativa RPC, Helius ou coleta de rede.

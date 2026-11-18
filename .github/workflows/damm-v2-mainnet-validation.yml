@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      SMR_SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
+      SMR_SOLANA_RPC_URL: https://solana-rpc.publicnode.com
       SMR_DAMM_V2_SCAN_RPC_URL: https://solana-rpc.publicnode.com
       SMR_DAMM_V2_SIGNATURE: ${{ inputs.signature || '1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT' }}
       SMR_HELIUS_HISTORICAL_RPC_URL: ${{ secrets.SMR_HELIUS_HISTORICAL_RPC_URL }}

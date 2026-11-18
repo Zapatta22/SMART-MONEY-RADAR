@@ -493,7 +493,10 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
             signature="signature", observed_at=observed_at,
         )
 
-        self.assertEqual(result.status, "reconciled")
+        self.assertEqual(
+            result.status, "reconciled",
+            str(self.store.get_swap_reconciliation_attempts("wallet", "signature")),
+        )
         self.assertEqual(result.decoded_swaps, 2)
         self.assertEqual(result.reconciled_swaps, 2)
         self.assertEqual(result.unresolved_swaps, 0)

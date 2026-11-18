@@ -30,3 +30,6 @@ Verificação realizada no pacote de código-base Etapa 16:
 - A aprovação semântica de fixtures reais exige revisão humana.
 
 O Registro Mestre versionado no repositório será a fonte de verdade para as próximas etapas.
+
+
+Importação controlada: o workflow utiliza exclusivamente `SMR-CODIGO-BASE-ETAPA16-2026-11-16.zip`, sem mesclar snapshots históricos.

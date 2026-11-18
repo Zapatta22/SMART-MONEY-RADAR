@@ -2811,3 +2811,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #1065 (run `44379857442`) SUCCESS no commit `49395fef9adb181b16c024837e04615b7efd93e8`: 483 testes passaram e compileall passou.
 - Esta evidência é sintética e cobre associação estrutural de duas instruções `swap2`; não é fixture Mainnet de dois swaps, nem valida por si só funding wSOL compartilhado em Mainnet. PR #25 permanece aberto/Draft; sem merge, BUY/SELL ou execução financeira.
 - Próximo passo: localizar e validar uma transação Mainnet que contenha pelo menos duas instruções DAMM v2 `swap2` e compartilhe a conta wSOL monitorada, caso exista dentro do conjunto de transações disponíveis.
+
+
+## 192. Scanner automatizado de Mainnet para múltiplos `swap2` com wSOL compartilhado — 18/11/2026
+
+- Criado `tools/scan_damm_v2_multi_swap_mainnet.py`: consulta até 30 assinaturas finalizadas recentes do programa DAMM v2 via RPC público, busca transações com pelo menos dois `swap2` associados a eventos e executa o pipeline completo nos candidatos. Só reporta `FOUND_SHARED_WSOL_MULTI_SWAP` quando o lote está RECONCILED e uma conta wSOL de entrada é compartilhada por pelo menos duas operações com funding identificado.
+- O scanner não persiste payload RAW, não envia ordens e não altera estado financeiro. Limite configurável de 1 a 100 transações; padrão 30.
+- Workflow `.github/workflows/damm-v2-mainnet-validation.yml` atualizado para executar a validação single-swap conhecida e, em seguida, a busca limitada; timeout aumentado para 10 minutos. Gatilho de push inclui o scanner.
+- Commits: scanner `9af21dad9644f4fd2138f9d3363737602ccbf5a7`; workflow `22dd1fb7971c6aaff378d721b6c817726163c50e`.
+- CI #1068 (run `44380902804`) e workflow Mainnet #10 (run `44380915218`) iniciados no momento do registro; resultados ainda não confirmados.
+- Critério de sucesso não é apenas encontrar múltiplos swaps: é necessário obter pipeline `RECONCILED` e evidência de funding wSOL compartilhado. Ausência de candidato no lote de 30 significa apenas que a busca limitada não encontrou exemplo, não que o padrão não exista.
+- PR #25 permanece OPEN/DRAFT, sem merge. Nenhuma classificação BUY/SELL ou execução financeira habilitada.

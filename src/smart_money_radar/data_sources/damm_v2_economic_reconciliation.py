@@ -26,7 +26,9 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
 from smart_money_radar.data_sources.solana_wrapped_sol_funding import (
     NATIVE_MINT,
     WrappedSolFundingEvidence,
+    WrappedSolLifecycleEvidence,
     decode_wrapped_sol_funding,
+    decode_wrapped_sol_account_lifecycle,
 )
 
 
@@ -48,6 +50,7 @@ class DammV2EconomicReconciliation:
     expected_account_deltas: tuple[DammV2ExpectedAccountDelta, ...]
     reason: str
     wrapped_sol_fundings: tuple[WrappedSolFundingEvidence, ...] = ()
+    wrapped_sol_lifecycles: tuple[WrappedSolLifecycleEvidence, ...] = ()
 
 
 def _add_expected(
@@ -177,9 +180,11 @@ def reconcile_damm_v2_economic_batch(
 
     expected: dict[str, dict[str, int | str]] = {}
     wrapped_sol_fundings: list[WrappedSolFundingEvidence] = []
+    wrapped_sol_lifecycles: list[WrappedSolLifecycleEvidence] = []
     claimed_transfers: set[SolanaTokenTransfer] = set()
     claimed_operations: set[tuple[int, int | None, tuple[int, ...]]] = set()
     native_inputs: dict[str, list[tuple[SolanaTokenTransfer, int]]] = {}
+    native_accounts: set[str] = set()
     try:
         for context, item in zip(contexts, evidence):
             if not isinstance(context, DammV2SwapTransferContext):
@@ -304,6 +309,7 @@ def reconcile_damm_v2_economic_batch(
                 input_transfer.decimals, -input_transfer.amount_raw,
             )
             if input_transfer.mint == NATIVE_MINT:
+                native_accounts.add(input_transfer.source_account)
                 if input_transfer.program_id != SPL_TOKEN_PROGRAM_ID:
                     raise ValueError("wSOL deve usar o SPL Token Program clássico")
                 native_inputs.setdefault(input_transfer.source_account, []).append(
@@ -321,6 +327,8 @@ def reconcile_damm_v2_economic_batch(
                 expected, output_transfer.destination_account, output_transfer.mint,
                 output_transfer.decimals, output_net,
             )
+            if output_transfer.mint == NATIVE_MINT:
+                native_accounts.add(output_transfer.destination_account)
 
             referral = item.referral_transfer
             referral_fee = event.swap_result.referral_fee
@@ -371,11 +379,28 @@ def reconcile_damm_v2_economic_batch(
                     referral.decimals, referral_net,
                 )
 
-        # Funding top-level pode ser agregado antes de vários swaps que
-        # reutilizam a mesma conta wSOL. Resolver uma vez por conta evita
-        # contar o mesmo funding integral em cada operação.
+        # Contas wSOL criadas e fechadas dentro da mesma transação não possuem
+        # snapshots pre/post utilizáveis. Reconstruir seus ciclos antes do caminho
+        # simples de funding e excluir do comparativo de delta apenas se todo o
+        # ciclo (criação, funding, SyncNative, transferências atribuídas e close)
+        # estiver comprovado.
         if raw_transaction is not None and monitored_wallet:
-            for token_account, inputs in native_inputs.items():
+            for token_account in sorted(native_accounts):
+                lifecycle = decode_wrapped_sol_account_lifecycle(
+                    raw_transaction,
+                    token_account=token_account,
+                    owner_wallet=monitored_wallet,
+                    all_transfers=all_transfers,
+                    claimed_transfers=claimed_transfers,
+                )
+                if lifecycle is not None:
+                    wrapped_sol_lifecycles.append(lifecycle)
+                    expected.pop(token_account, None)
+                    continue
+
+                inputs = native_inputs.get(token_account, [])
+                if not inputs:
+                    continue
                 total_input = sum(transfer.amount_raw for transfer, _ in inputs)
                 first_swap_index = min(index for _, index in inputs)
                 decimals = {transfer.decimals for transfer, _ in inputs}
@@ -451,7 +476,7 @@ def reconcile_damm_v2_economic_batch(
             "RECONCILED", len(contexts), tuple(expected_rows),
             "transferências input/output/referral, funding wSOL quando aplicável, "
             "e deltas agregados por token account conferem com EvtSwap2",
-            tuple(wrapped_sol_fundings),
+            tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
         )
     except RuntimeError as exc:
         return DammV2EconomicReconciliation(

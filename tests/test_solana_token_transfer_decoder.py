@@ -78,6 +78,24 @@ class TokenTransferDecoderTests(unittest.TestCase):
         self.assertEqual(result[0].amount_raw, 77)
         self.assertEqual(result[0].decimals, 2)
 
+    def test_decodes_json_parsed_transfer(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": SPL_TOKEN_PROGRAM_ID,
+            "parsed": {
+                "type": "transfer",
+                "info": {
+                    "source": "source",
+                    "destination": "destination",
+                    "authority": "authority",
+                    "amount": "123",
+                },
+            },
+        }]))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].instruction_type, "TRANSFER")
+        self.assertEqual(result[0].amount_raw, 123)
+        self.assertIsNone(result[0].decimals)
+
     def test_decodes_json_parsed_transfer_checked(self):
         result = decode_solana_token_transfers(_tx([{
             "programId": SPL_TOKEN_PROGRAM_ID,

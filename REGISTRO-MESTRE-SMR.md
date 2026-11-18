@@ -3209,5 +3209,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - A reconciliação inclui seis transferências cross-venue verificadas por CPI path e deltas de conta: DKfX→69z (GgGQ, 84,467,807,686); 5nK→CSR5 (GWKw, 752,182,085); 48pY→CLN4 (C5xph, 41,295,643); 48pY→DgWan (C5xph, 10,329); CLN4→6r (C5xph, 41,295,643); 99Ha→6mc (wSOL, 696,189). Cada transferência entra uma única vez no ledger esperado; evidências são anexadas ao `SwapEvidence` dos bundles DAMM.
 - Mainnet workflow #84 (run `44422687863`) SUCCESS no commit `16acabcd0d72ff12d0f43ea75ebc2b1cc799a2d8`: a transação mista passou a `RECONCILED`, com 2 bundles DAMM v2 e lados de classificação `UNKNOWN`. O caso deixou de ficar bloqueado por taxa Token-2022 ou transferências cross-venue não atribuídas.
 - CI #1315 (run `44422696901`) SUCCESS no commit `16acabcd0d72ff12d0f43ea75ebc2b1cc799a2d8`: 532 testes em 3,934s e `compileall` concluído.
-- Mainnet workflow #85 (run `44422939879`) está em execução para validar o mesmo resultado através da fronteira de persistência `process_damm_v2_observation` usando SQLite em memória: esperado 2 bundles salvos, `ready_for_next_venue=True` e checkpoint ainda `None`. Ainda não declarar persistência validada até o resultado.
+- Mainnet workflow #85 (run `44422939879`) SUCCESS no commit `2048b06a82538da2365d476b3c21c6481d9d016d`: a fronteira `process_damm_v2_observation` persistiu em SQLite em memória 2/2 bundles, `persistence_status=reconciled`, `ready_for_next_venue=True`, `checkpoint_after_persistence=None`; ambos os lados de classificação permanecem `UNKNOWN`. Isso valida a fronteira de persistência sem alterar checkpoint nem banco de produção.
 - PR #25 permanece OPEN/DRAFT e sem merge; `main` intacta. Próxima ação: fechar a validação de persistência em #85 e, depois, executar o mesmo caminho pelo `WalletMonitor` com resolver injetado.
+
+
+### Verificação adicional de evidência persistida — 18/11/2026
+
+- A adapter agora inclui em cada `SwapEvidence` todas as provas Token-2022 usadas na transação e todas as transferências cross-venue reconciliadas, não apenas a prova do referral daquele swap.
+- O validador Mainnet foi ampliado para reler cada bundle do SQLite em memória e comparar as quantidades de provas e transferências persistidas com a reconciliação em memória. Próximo run #86 valida esse requisito antes de avançar.

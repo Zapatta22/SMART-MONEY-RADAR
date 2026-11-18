@@ -182,7 +182,11 @@ class WalletMonitor:
         subscription_to_wallet: dict[int, str],
     ) -> None:
         request_id = message.get("id")
-        if not isinstance(request_id, int) or request_id not in request_to_wallet:
+        if (
+            isinstance(request_id, bool)
+            or not isinstance(request_id, int)
+            or request_id not in request_to_wallet
+        ):
             return
         if "error" in message:
             error = message["error"]
@@ -191,8 +195,8 @@ class WalletMonitor:
                 f"Helius recusou uma assinatura logsSubscribe (código {code})."
             )
         subscription_id = message.get("result")
-        if not isinstance(subscription_id, int):
-            raise RuntimeError("Resposta logsSubscribe sem ID de assinatura.")
+        if isinstance(subscription_id, bool) or not isinstance(subscription_id, int):
+            raise RuntimeError("Resposta logsSubscribe sem ID de assinatura inteiro válido.")
         subscription_to_wallet[subscription_id] = request_to_wallet[request_id]
 
     async def _collect_transaction(

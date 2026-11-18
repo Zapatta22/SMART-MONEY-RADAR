@@ -99,7 +99,7 @@ class MeteoraDammV2EvtSwap2DecoderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "tamanho inválido"):
             decode_meteora_damm_v2_evt_swap2(data[:-1])
         with self.assertRaisesRegex(ValueError, "tamanho inválido"):
-            decode_meteora_damm_v2_evt_swap2(data + b"\\x00")
+            decode_meteora_damm_v2_evt_swap2(data + b"\x00")
 
     def test_rejects_non_borsh_boolean(self):
         with self.assertRaisesRegex(ValueError, "Borsh bool"):

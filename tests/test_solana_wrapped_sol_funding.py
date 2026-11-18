@@ -203,7 +203,7 @@ def _closed_lifecycle_transaction():
             "programId": ASSOCIATED_TOKEN_PROGRAM_ID,
             "accounts": ["wallet", "wsol-account", "wallet", NATIVE_MINT,
                          SYSTEM_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID],
-            "data": _b58(b"\\x01"),
+            "data": _b58(b"\x01"),
         },
         {
             "programId": SYSTEM_PROGRAM_ID,
@@ -213,25 +213,25 @@ def _closed_lifecycle_transaction():
         {
             "programId": SPL_TOKEN_PROGRAM_ID,
             "accounts": ["wsol-account"],
-            "data": _b58(b"\\x11"),
+            "data": _b58(b"\x11"),
         },
         {"programId": "damm-program", "accounts": [], "data": _b58(b"swap")},
         {
             "programId": SPL_TOKEN_PROGRAM_ID,
             "accounts": ["wsol-account", "wallet", "wallet"],
-            "data": _b58(b"\\x09"),
+            "data": _b58(b"\x09"),
         },
         {
             "programId": ASSOCIATED_TOKEN_PROGRAM_ID,
             "accounts": ["wallet", "wsol-account", "wallet", NATIVE_MINT,
                          SYSTEM_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID],
-            "data": _b58(b"\\x01"),
+            "data": _b58(b"\x01"),
         },
         {"programId": "damm-program", "accounts": [], "data": _b58(b"swap")},
         {
             "programId": SPL_TOKEN_PROGRAM_ID,
             "accounts": ["wsol-account", "wallet", "wallet"],
-            "data": _b58(b"\\x09"),
+            "data": _b58(b"\x09"),
         },
     ]
     raw = {

@@ -220,8 +220,9 @@ class SQLiteEventStore:
         parser_version: str = "1",
         parse_error: str | None = None,
         normalized_observation: NormalizedObservation | None = None,
+        advance_checkpoint: bool = True,
     ) -> int:
-        """Persiste payload, contratos normalizados, eventos e checkpoint atomicamente.
+        """Persiste payload e contratos normalizados; checkpoint é opcional.
 
         O payload bruto permite replay quando o parser ganhar cobertura nova.
         Para falhas on-chain, transaction pode ser None e parse_status deve
@@ -231,6 +232,8 @@ class SQLiteEventStore:
             raise ValueError("Carteira e assinatura da observação são obrigatórias.")
         if not parse_status.strip() or not parser_version.strip():
             raise ValueError("Estado de parsing e versão do parser são obrigatórios.")
+        if not isinstance(advance_checkpoint, bool):
+            raise TypeError("advance_checkpoint deve ser bool")
         if any(event.wallet_address != wallet_address or event.signature != signature for event in events):
             raise ValueError("Todos os eventos devem pertencer à observação informada.")
         if normalized_observation is not None:
@@ -312,24 +315,38 @@ class SQLiteEventStore:
                             delta_rows,
                         )
                 inserted = connection.total_changes - before
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO processed_signatures (wallet_address, signature)
-                    VALUES (?, ?)
-                    """,
-                    (wallet_address, signature),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO wallet_checkpoints (wallet_address, signature)
-                    VALUES (?, ?)
-                    ON CONFLICT(wallet_address) DO UPDATE SET
-                        signature = excluded.signature,
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (wallet_address, signature),
-                )
+                if advance_checkpoint:
+                    self._mark_processed_in_connection(connection, wallet_address, signature)
                 return inserted
+
+    @staticmethod
+    def _mark_processed_in_connection(connection, wallet_address: str, signature: str) -> None:
+        connection.execute(
+            """INSERT OR IGNORE INTO processed_signatures (wallet_address, signature)
+               VALUES (?, ?)""",
+            (wallet_address, signature),
+        )
+        connection.execute(
+            """INSERT INTO wallet_checkpoints (wallet_address, signature)
+               VALUES (?, ?)
+               ON CONFLICT(wallet_address) DO UPDATE SET
+                   signature = excluded.signature, updated_at = CURRENT_TIMESTAMP""",
+            (wallet_address, signature),
+        )
+
+    def mark_processed(self, wallet_address: str, signature: str) -> None:
+        """Marca uma transação como concluída somente após todo o pipeline terminar."""
+        if not wallet_address.strip() or not signature.strip():
+            raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
+        with self._connection_scope() as connection:
+            with connection:
+                parent = connection.execute(
+                    "SELECT 1 FROM observed_transactions WHERE wallet_address = ? AND signature = ?",
+                    (wallet_address, signature),
+                ).fetchone()
+                if parent is None:
+                    raise KeyError("A transação observada deve existir antes de marcar como processada.")
+                self._mark_processed_in_connection(connection, wallet_address, signature)
 
     def save_swap_bundle(
         self, observation: SwapObservation, classification: SwapClassification,

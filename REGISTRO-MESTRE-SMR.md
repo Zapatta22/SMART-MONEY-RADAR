@@ -2009,3 +2009,18 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Runs CI #627–#633 permanecem sem steps executados; #633 (`44313351764`) também terminou failure com `steps=[]`. Não há evidência de execução de testes ou compileall. Não repetir retries.
 - Nenhuma validação runtime do PR #25 foi comprovada ainda; alterações de persistência e coordenação do monitor precisam de execução no Termux antes de qualquer merge.
 - PR #25 permanece Draft, sem merge; `main` intacta.
+
+
+## 107. Auditoria negativa de swap DAMM v2 e replay — PR #25 (18/11/2026)
+
+- Adicionado cenário sintético que contém uma associação swap + `EvtSwap2` estruturalmente MATCHED, mas inventário de contas inválido (menos de 14 contas).
+- O teste percorre o adaptador de persistência real até a falha de resolução de contas e verifica que:
+  - o resultado permanece `pending_reconciliation`;
+  - o swap é contabilizado como não resolvido;
+  - uma tentativa `INCOMPLETE` é gravada no SQLite `:memory:`;
+  - a assinatura permanece em `get_pending_signatures`;
+  - nenhum checkpoint é avançado.
+- Corrigido o pipeline para preservar associações e evidências intermediárias quando uma etapa posterior rejeita a transação; sem isso, a persistência perdia o swap que precisava auditar.
+- Corrigido helper Base58 do teste para contar bytes zero iniciais sem escape ambíguo.
+- CI #639–#642 sem execução de etapas; #642 (`44313722273`) também terminou com job sem steps. Nenhum teste/compileall foi executado pelo runner.
+- PR #25 continua Draft; validação runtime do teste sintético e integração ainda depende de Termux ou runner funcional.

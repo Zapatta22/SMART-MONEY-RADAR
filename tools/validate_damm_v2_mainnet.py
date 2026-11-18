@@ -407,6 +407,8 @@ def main() -> int:
                 "outer_index": item.instruction_index,
                 "inner_index": item.inner_instruction_index,
                 "cpi_path": item.cpi_path,
+                "cpi_program_path": list(item.cpi_program_path),
+                "cpi_path_valid": item.cpi_path_valid,
                 "source": item.source_account,
                 "destination": item.destination_account,
                 "mint": item.mint,

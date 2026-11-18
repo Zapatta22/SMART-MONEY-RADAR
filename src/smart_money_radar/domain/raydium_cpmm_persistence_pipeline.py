@@ -124,7 +124,7 @@ def process_raydium_cpmm_observation(
     if isinstance(meta, dict) and meta.get("err") is not None:
         store.mark_processed(wallet_address, signature, advance_checkpoint=advance_checkpoint)
         return RaydiumCpmmPipelineResult(
-            "failed_on_chain", signature, 0, 0, 0, 0, True
+            "failed_on_chain", signature, 0, 0, 0, 0, advance_checkpoint
         )
 
     try:
@@ -132,7 +132,7 @@ def process_raydium_cpmm_observation(
         if not swaps:
             store.mark_processed(wallet_address, signature, advance_checkpoint=advance_checkpoint)
             return RaydiumCpmmPipelineResult(
-                "no_cpmm_swaps", signature, 0, 0, 0, 0, True
+                "no_cpmm_swaps", signature, 0, 0, 0, 0, advance_checkpoint
             )
 
         transfers = decode_solana_token_transfers(payload)
@@ -289,7 +289,7 @@ def process_raydium_cpmm_observation(
             len(matched),
             0,
             saved,
-            True,
+            advance_checkpoint,
         )
     except Exception as exc:
         # Preserve an explicit parse/reconstruction error and keep checkpoint

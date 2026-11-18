@@ -141,6 +141,16 @@ def decode_raydium_cpmm_swaps(
 
         resolved_accounts = []
         for account_index in account_indexes:
+            if isinstance(account_index, str):
+                if not account_index:
+                    raise ValueError(
+                        "instrução CPMM contém endereço de conta vazio"
+                    )
+                # jsonParsed pode fornecer endereços já resolvidos em vez
+                # de índices da lista message.accountKeys.
+                resolved_accounts.append(account_index)
+                continue
+
             if (
                 isinstance(account_index, bool)
                 or not isinstance(account_index, int)

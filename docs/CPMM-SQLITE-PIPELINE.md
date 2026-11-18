@@ -35,7 +35,9 @@ O monitor aceita `reference_mints` como sequência explícita de mints de refer�
 
 - A primeira versão reconstrói somente Raydium CPMM; outros programas/venues não são persistidos por este adaptador.
 - O armazenamento dos bundles é atômico por operação, não para o conjunto inteiro de uma transação multi-swap. Se o processo falhar entre bundles, o replay completa as operações restantes sem duplicar IDs.
-- Swaps não reconciliados ficam pendentes para replay/auditoria; ainda não existe tabela própria de resultados negativos de reconciliação.
+- Swaps não reconciliados ficam pendentes para replay/auditoria; a tabela append-only `swap_reconciliation_attempts` registra os resultados negativos e o motivo por operação/tentativa.
+- `query_swap_reconciliation_attempts()` permite filtrar histórico por carteira, assinatura, `operation_id`, status e intervalo temporal, com limite explícito.
+- `get_reconciliation_diagnostics()` retorna totais, operações/assinaturas distintas, contagem por status, motivos recorrentes e observações arquivadas ainda pendentes. O relatório limita a lista detalhada de pendências a 100 itens e informa a contagem total.
 - A integração está isolada no PR #14, baseado na branch do PR #13, e não está na `main`.
 
 ## Auditoria persistente de reconciliação (PR #14)

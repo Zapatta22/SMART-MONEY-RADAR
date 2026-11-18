@@ -1980,3 +1980,20 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Validação runtime do PR #25 permanece pendente. Nenhuma fixture RAW mainnet prova ainda o caminho completo de swap DAMM v2.
 - PR #25 permanece Draft, aberto e sem merge; PR #24 permanece Draft e é a base. `main` intacta; sem alteração em RAW persistente, SQLite persistente, checkpoints, RPC/Helius ou estado on-chain.
 - Próximo trabalho: obter validação executável do código e criar fixture RAW mainnet auditada; depois, avaliar integração controlada do pipeline com normalização/parser, sem promover BUY/SELL até haver regra de ativo-base/quote comprovada.
+
+
+## 105. Persistência DAMM v2 e bloqueio de checkpoint no WalletMonitor — PR #25 (18/11/2026)
+
+- Continuação do PR #25 na branch `feat/damm-v2-transaction-pipeline`, ainda Draft e baseado no PR #24.
+- Criado `src/smart_money_radar/domain/damm_v2_persistence_pipeline.py`: envolve o pipeline transacional DAMM v2, arquiva a observação normalizada, persiste bundles reconciliados e registra tentativas de reconciliação no `SQLiteEventStore`.
+- O adaptador de persistência **não avança checkpoint** em nenhum caminho. Em transação falha on-chain, delega o fluxo ao pipeline CPMM existente, que já trata esse estado.
+- O `WalletMonitor._collect_transaction` agora executa DAMM v2 antes de Raydium CPMM. Se DAMM v2 retornar pendência, o processamento CPMM é bloqueado e o checkpoint permanece intacto. Se não houver swap DAMM v2 ou o lote for reconciliado, o fluxo segue para CPMM, que permanece coordenador final do checkpoint nesta etapa.
+- Idempotência de bundles continua garantida por `SQLiteEventStore.save_swap_bundle`; retries de transação não devem duplicar bundles já gravados.
+- Testes adicionados:
+  - `tests/test_damm_v2_persistence_pipeline.py`: observação sem swap arquivada sem checkpoint, transação falha delegada sem checkpoint e assinatura divergente rejeitada antes de persistir.
+  - `tests/test_wallet_monitor.py`: cenário em que DAMM v2 permanece pendente; confirma que CPMM não é chamado e checkpoint não avança.
+- Documentação `docs/DAMM-V2-TRANSACTION-PIPELINE.md` atualizada com persistência e coordenação do checkpoint.
+- CI após as alterações anteriores (#620–#623) continuou falhando sem etapas executadas; run #624 (`44312969425`) também terminou sem runner/steps. Não há evidência de unittest ou compileall via CI. Não fazer retries repetidos sem correção do runner.
+- **Validação runtime destes novos arquivos e integração ainda pendente**; os testes sintéticos foram adicionados, mas não foram executados nesta sessão.
+- PR #25 permanece Draft e sem merge. `main` intacta; sem alteração de RAW persistente, SQLite persistente, checkpoints locais, RPC/Helius ou estado on-chain.
+- Próxima etapa: validar a nova integração em ambiente executável; depois ampliar testes para erro de persistência e recuperação idempotente, antes de promover integração adicional a outros venues.

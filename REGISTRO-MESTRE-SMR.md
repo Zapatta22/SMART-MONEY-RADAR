@@ -2446,3 +2446,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI no HEAD: workflow `SMR tests`, run #916 (`44331026593`) terminou `failure`. A consulta do job `134895145577` retornou `steps=null` e `logs_url=null`; portanto não há evidência de checkout, instalação, unittest ou compileall. Não classificar como falha de código nem aprovação; não repetir rerun sem diagnóstico de execução.
 - Revisão GitHub confirmou que o workflow contém etapas explícitas de checkout, Python 3.12, instalação, unittest completo e compileall, mas o run #916 não expôs execução dessas etapas.
 - Próxima ação de validação: continuar a revisão estática pelo GitHub dos três módulos de teste restantes e das respectivas implementações; buscar um caminho de CI executável antes de declarar testes aprovados. A fixture RAW mainnet continua bloqueada até validação runtime focada e suíte completa. Não alterar `main` nem fazer merge do PR #25.
+
+
+## 155. Validação estrita da identidade JSON-RPC no coletor de fixtures — PR #25 (18/11/2026)
+
+- Auditoria estática do coletor `RpcFixtureCollector` identificou uma lacuna de protocolo: a resposta de `getTransaction` era aceita sem validar `jsonrpc == "2.0"` nem confirmar que o ID inteiro da resposta correspondia ao ID `1` enviado. Isso enfraquecia a correlação entre requisição e resposta usada como evidência da fixture.
+- O coletor agora rejeita versão JSON-RPC ausente/incorreta e ID ausente, divergente, booleano ou de tipo inválido antes de aceitar o campo `result`. A verificação da assinatura solicitada e do slot permanece adicional, não substituta.
+- Testes adicionados para versão ausente/1.0, ID divergente e booleano; fixture do teste de resultado nulo atualizada para incluir envelope JSON-RPC válido.
+- Commits: implementação `db7a6ade8e1ec61640a703e662a4cd64b9b9fbff`; testes `81a70ec413af112090e835c931239cfd90e0a5c6` e ajuste de cobertura `e9bdd7d2c90024267842d9f99e99e82533135401`.
+- Releitura GitHub confirmou a implementação e os testes adicionados. Runtime unittest/compileall ainda não executados para esta alteração. A consulta de runs associadas ao commit final ainda não retornou workflow; não declarar CI executado.
+- PR #25 permanece Draft, aberto e sem merge; base empilhada `feat/damm-v2-swap-domain-adapter`. A fixture RAW mainnet segue bloqueada até validação runtime focada e suíte completa.

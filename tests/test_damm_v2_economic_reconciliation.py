@@ -19,6 +19,10 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SolanaTokenTransfer,
 )
 from smart_money_radar.data_sources.solana_wrapped_sol_funding import NATIVE_MINT
+from smart_money_radar.data_sources.token2022_fee_absence_proof import (
+    TOKEN_2022_PROGRAM_ID as TOKEN_2022_OWNER,
+    Token2022NoTransferFeeProof,
+)
 
 
 def _accounts():
@@ -111,7 +115,10 @@ def _deltas(values):
     return SolanaTokenBalanceDeltaResult(tuple(rows), ())
 
 
-def _reconcile(contexts, evidence, deltas, all_transfers=None):
+def _reconcile(
+    contexts, evidence, deltas, all_transfers=None, *,
+    raw_transaction=None, transfer_fee_absence_proofs=(),
+):
     if all_transfers is None:
         all_transfers = []
         for item in evidence:
@@ -121,7 +128,9 @@ def _reconcile(contexts, evidence, deltas, all_transfers=None):
                 ) if transfer is not None
             )
     return reconcile_damm_v2_economic_batch(
-        contexts, evidence, deltas, all_transfers
+        contexts, evidence, deltas, all_transfers,
+        raw_transaction=raw_transaction,
+        transfer_fee_absence_proofs=transfer_fee_absence_proofs,
     )
 
 
@@ -618,6 +627,80 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("não está explícita", result.reason)
+
+    def test_reconciles_referral_when_mint_initialization_proves_zero_fee(self):
+        context = _context(event=_event(referral_fee=5, has_referral=True))
+        referral = _transfer(
+            "vault-b", "referral", "mint-b", 5, fee=None, inner=3
+        )
+        evidence = _evidence(context, self.input, self.output, referral)
+        proof = Token2022NoTransferFeeProof(
+            mint="mint-b",
+            signature="signature",
+            transaction_slot=471107341,
+            transaction_index=144,
+            current_snapshot_slot=471116391,
+            owner=TOKEN_2022_OWNER,
+            transaction_successful=True,
+            mint_transfer_observed=True,
+            transfer_fee_config_present=False,
+        )
+        raw = {
+            "result": {
+                "transaction": {"signatures": ["signature"]},
+                "slot": 471107341,
+            }
+        }
+        result = _reconcile(
+            [context], [evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -95, 6),
+                ("user-b", "mint-b", 90, 6),
+                ("referral", "mint-b", 5, 6),
+            ]),
+            raw_transaction=raw,
+            transfer_fee_absence_proofs=(proof,),
+        )
+        self.assertEqual(result.status, "RECONCILED", result.reason)
+        self.assertEqual(result.transfer_fee_absence_proofs, (proof,))
+
+    def test_rejects_zero_fee_proof_from_another_transaction(self):
+        context = _context(event=_event(referral_fee=5, has_referral=True))
+        referral = _transfer(
+            "vault-b", "referral", "mint-b", 5, fee=None, inner=3
+        )
+        evidence = _evidence(context, self.input, self.output, referral)
+        proof = Token2022NoTransferFeeProof(
+            mint="mint-b",
+            signature="other-signature",
+            transaction_slot=471107341,
+            transaction_index=144,
+            current_snapshot_slot=471116391,
+            owner=TOKEN_2022_OWNER,
+            transaction_successful=True,
+            mint_transfer_observed=True,
+            transfer_fee_config_present=False,
+        )
+        raw = {
+            "result": {
+                "transaction": {"signatures": ["signature"]},
+                "slot": 471107341,
+            }
+        }
+        result = _reconcile(
+            [context], [evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -95, 6),
+                ("user-b", "mint-b", 90, 6),
+                ("referral", "mint-b", 5, 6),
+            ]),
+            raw_transaction=raw,
+            transfer_fee_absence_proofs=(proof,),
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("outra transação/slot", result.reason)
 
     def test_reconciles_referral_transfer_with_explicit_token_2022_fee(self):
         context = _context(event=_event(referral_fee=5, has_referral=True))

@@ -46,7 +46,13 @@ class RealMainnetToken2022FeeFixtureTests(unittest.TestCase):
         cls.manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
     def test_projection_manifest_and_hash_are_valid(self) -> None:
-        self.assertTrue(self.manifest["anonymized"])
+        self.assertTrue(self.manifest["pseudonymized"])
+        self.assertFalse(self.manifest["anonymized"])
+        self.assertNotIn("signature", self.manifest)
+        self.assertNotIn("raw_sha256", self.manifest)
+        self.assertEqual(self.manifest["fixture_id"], "smr-fixture-raydium-cpmm-token2022-fee-v1")
+        self.assertEqual(self.fixture["result"]["transaction"]["signatures"][0], "1" * 64)
+        self.assertEqual(self.fixture["result"]["transaction"]["message"]["recentBlockhash"], "1" * 32)
         self.assertEqual(self.manifest["commitment"], "finalized")
         self.assertEqual(self.manifest["slot"], 344357800)
         self.assertEqual(
@@ -55,7 +61,7 @@ class RealMainnetToken2022FeeFixtureTests(unittest.TestCase):
         )
         self.assertEqual(
             self.fixture["result"]["transaction"]["signatures"][0],
-            self.manifest["signature"],
+            "1" * 64,
         )
         self.assertIsNone(self.fixture["result"]["meta"]["err"])
 
@@ -117,7 +123,7 @@ class RealMainnetToken2022FeeFixtureTests(unittest.TestCase):
         bundles = build_swap_domain_bundles(
             reconciliations,
             chain="solana",
-            signature=self.manifest["signature"],
+            signature=self.manifest["fixture_id"],
             monitored_wallet=monitored_wallet,
             observed_at=datetime.fromtimestamp(result["blockTime"], tz=timezone.utc),
             parser_version="smr-token2022-mainnet-fixture-v1",

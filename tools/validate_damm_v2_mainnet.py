@@ -513,6 +513,12 @@ def main() -> int:
                 )
             })
         ],
+        "program_event_logs": [
+            line for line in raw.get("meta", {}).get("logMessages", [])
+            if isinstance(line, str) and (
+                "Program data:" in line or "Program log:" in line
+            )
+        ],
         "inner_instruction_programs": [
             {
                 "outer_index": group.get("index"),

@@ -70,3 +70,19 @@ parse_error`, sem avançar checkpoint, para permitir replay após correção do
 parser. Exceções inesperadas dentro do orquestrador transacional são convertidas
 em `REJECTED`, preservando os diagnósticos já coletados e mantendo o fluxo
 fail-closed.
+
+## Fixture mainnet DAMM v2 — coleta local somente leitura
+
+O catálogo versionado já contém um candidato Meteora DAMM v2. Para coletar
+somente essa assinatura no Termux, sem baixar os outros quatro protocolos:
+
+```bash
+export SMR_SOLANA_RPC_URL="https://api.mainnet-beta.solana.com"
+PYTHONPATH=src python tools/collect_damm_v2_fixture.py
+```
+
+O script grava RAW e manifesto localmente em
+`data/fixtures/raw/damm-v2/`, valida a assinatura retornada e imprime slot e
+SHA-256. Não envia o RAW ao GitHub, não anonimiza, não importa para SQLite e
+não avança checkpoint. O próximo passo é inspecionar e anonimizar a fixture
+localmente antes de qualquer proposta de versionamento.

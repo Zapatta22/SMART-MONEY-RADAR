@@ -2902,3 +2902,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O scanner interrompe a busca após encontrar uma candidata totalmente reconciliada; por isso `inspected=6` não representa varredura integral de 300 nesse run.
 - Conclusão técnica: lifecycle wSOL create/fund/SyncNative/swap/CloseAccount/recreate/swap/CloseAccount agora tem (a) teste unitário direto, (b) teste de reconciliação econômica em lote, (c) teste do adaptador de domínio com prova de propriedade lifecycle e (d) validação real Mainnet em duas transações dedicadas, além de terceira candidata confirmada pelo scanner.
 - PR #25 continua OPEN/DRAFT, sem merge. Classificação BUY/SELL segue `UNKNOWN`; nenhum sinal, ordem ou execução financeira foi habilitado.
+
+
+## 199. Confirmação final após ajuste de evidência e reconciliação — 18/11/2026
+
+- Mainnet workflow #42 (run `44386963957`, commit de workflow `63f3b66bc8c1715fb110bb58cf8f4d5441683d34`) SUCCESS em todas as etapas: transação single-swap conhecida, duas transações multi-swap dedicadas e scanner paginado.
+- CI #1121 (run `44386963977`) SUCCESS: 489 testes aprovados em 3,900s e compileall aprovado.
+- Texto de evidência do domínio e motivo de reconciliação agora descrevem corretamente snapshots pre/post **e** lifecycle wSOL quando aplicável, sem sugerir que toda conta efêmera tem delta observável.
+- PR #25 permanece OPEN/DRAFT, sem merge; head atualizado pelos commits desta etapa. BUY/SELL permanece UNKNOWN e execução financeira desabilitada.

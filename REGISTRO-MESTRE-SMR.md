@@ -1278,5 +1278,5 @@ Revisar instruções/contas e evidências de CPI do payload de DAMM v2 de forma 
 - Decodifica Base58 localmente para extrair fingerprint; sem RPC, banco ou gravações.
 - Teste sintético verifica fingerprint, tamanho, contagem de contas, localização e ausência de identificadores.
 - Commits: auditor c75a16234d08f1bae2061c784da6a474789994bd; teste 1ebc04eb625028d67a53e17b4bfac4e8d9efb613; correção de bytes zero/Base58 no auditor 6ac99dbb32fa35771b3c3113fbc1c42c50f6a56d; correção equivalente no teste ab6a09522d4347f53e474082188cd926e90872a3.
-- CI run 44251053718 (#393) está queued; ainda sem aprovação.
+- CI run 44251053718 (#393), commit funcional `ab6a09522d4347f53e474082188cd926e90872a3`: concluído com sucesso, 259 testes unitários OK e compileall aprovado.
 - Próximo passo: após CI, atualizar clone PR16 e executar novamente o auditor nos cinco RAW. Os fingerprints vão permitir especificar decoders DAMM v2, AMM v4, DLMM e roteamento Jupiter sem expor payload sensível.

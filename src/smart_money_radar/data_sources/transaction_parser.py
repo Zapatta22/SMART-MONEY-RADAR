@@ -99,19 +99,14 @@ def _token_balances(
     raw_balances: dict[str, Decimal] = defaultdict(Decimal)
     decimals_by_mint: dict[str, set[int]] = defaultdict(set)
     invalid_mints: set[str] = set()
-    account_index_to_mint: dict[int, str] = {}
+    account_index_to_identity: dict[int, tuple[Any, Any] | None] = {}
     if not isinstance(value, list):
         return {}
     for entry in value:
-        if not isinstance(entry, dict) or entry.get("owner") != wallet_address:
+        if not isinstance(entry, dict):
             continue
+        owner = entry.get("owner")
         mint = entry.get("mint")
-        amount_info = entry.get("uiTokenAmount")
-        if not isinstance(mint, str) or not mint:
-            continue
-        if not isinstance(amount_info, dict):
-            invalid_mints.add(mint)
-            continue
         account_index = entry.get("accountIndex")
         if account_index is not None:
             if (
@@ -119,14 +114,31 @@ def _token_balances(
                 or not isinstance(account_index, int)
                 or account_index < 0
             ):
-                invalid_mints.add(mint)
+                if owner == wallet_address and isinstance(mint, str) and mint:
+                    invalid_mints.add(mint)
                 continue
-            previous_mint = account_index_to_mint.get(account_index)
-            if previous_mint is not None:
-                invalid_mints.add(previous_mint)
-                invalid_mints.add(mint)
-                continue
-            account_index_to_mint[account_index] = mint
+            identity = (owner, mint)
+            if account_index in account_index_to_identity:
+                previous_identity = account_index_to_identity[account_index]
+                for candidate in (previous_identity, identity):
+                    if (
+                        candidate is not None
+                        and candidate[0] == wallet_address
+                        and isinstance(candidate[1], str)
+                        and candidate[1]
+                    ):
+                        invalid_mints.add(candidate[1])
+                account_index_to_identity[account_index] = None
+            else:
+                account_index_to_identity[account_index] = identity
+        if owner != wallet_address:
+            continue
+        if not isinstance(mint, str) or not mint:
+            continue
+        amount_info = entry.get("uiTokenAmount")
+        if not isinstance(amount_info, dict):
+            invalid_mints.add(mint)
+            continue
         try:
             raw_amount_value = amount_info["amount"]
             if (

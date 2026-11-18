@@ -87,6 +87,16 @@ class DammV2TransactionPipelineTests(unittest.TestCase):
         self.assertEqual(result.status, "REJECTED")
         self.assertIn("não corresponde à quantidade", result.reason)
 
+    def test_mixed_account_key_formats_fail_closed(self):
+        raw = _raw_transaction()
+        raw["result"]["transaction"]["message"]["accountKeys"] = [
+            {"pubkey": "parsed-key", "signer": True},
+            "compiled-key",
+        ]
+        result = self._process(raw)
+        self.assertEqual(result.status, "REJECTED")
+        self.assertIn("mistura formatos", result.reason)
+
     def test_failed_on_chain_transaction_fails_closed(self):
         raw = _raw_transaction()
         raw["result"]["meta"]["err"] = {"InstructionError": [0, "Custom"]}

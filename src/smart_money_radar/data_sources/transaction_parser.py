@@ -40,15 +40,20 @@ def parse_transaction(
         after = {}
 
     for mint in sorted(before.keys() | after.keys()):
-        before_amount, before_decimals = before.get(mint, (Decimal("0"), None))
-        after_amount, after_decimals = after.get(mint, (Decimal("0"), None))
-        if (
-            before_decimals is not None
-            and after_decimals is not None
-            and before_decimals != after_decimals
-        ):
-            # A mint has one immutable decimal scale; reject conflicting RPC metadata.
+        before_entry = before.get(mint)
+        after_entry = after.get(mint)
+        # None is an explicit invalid/conflicting scale; a missing key alone
+        # represents a token account created or closed during the transaction.
+        if (mint in before and before_entry is None) or (mint in after and after_entry is None):
             continue
+        if (
+            before_entry is not None
+            and after_entry is not None
+            and before_entry[1] != after_entry[1]
+        ):
+            continue
+        before_amount = before_entry[0] if before_entry is not None else Decimal("0")
+        after_amount = after_entry[0] if after_entry is not None else Decimal("0")
         delta = after_amount - before_amount
         if delta == 0:
             continue
@@ -90,7 +95,7 @@ def _timestamp(value: Any) -> datetime | None:
 
 def _token_balances(
     value: Any, wallet_address: str
-) -> dict[str, tuple[Decimal, int]]:
+) -> dict[str, tuple[Decimal, int] | None]:
     raw_balances: dict[str, Decimal] = defaultdict(Decimal)
     decimals_by_mint: dict[str, set[int]] = defaultdict(set)
     if not isinstance(value, list):
@@ -118,14 +123,17 @@ def _token_balances(
         except (KeyError, TypeError, ValueError, InvalidOperation, OverflowError):
             continue
     # Uma mint deve usar a mesma escala em todas as token accounts.
-    return {
-        mint: (
-            raw_balances[mint] / (Decimal(10) ** next(iter(scales))),
-            next(iter(scales)),
+    result: dict[str, tuple[Decimal, int] | None] = {}
+    for mint, scales in decimals_by_mint.items():
+        if len(scales) != 1:
+            result[mint] = None
+            continue
+        decimals = next(iter(scales))
+        result[mint] = (
+            raw_balances[mint] / (Decimal(10) ** decimals),
+            decimals,
         )
-        for mint, scales in decimals_by_mint.items()
-        if len(scales) == 1
-    }
+    return result
 
 
 def _sol_transfers(

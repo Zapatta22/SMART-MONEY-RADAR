@@ -2923,3 +2923,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Limite da evidência: esta cobertura exercita a orquestração de persistência/retry com contratos de bundle sintéticos e SQLite real; não substitui teste Mainnet nem fixture de dois swaps decodificados/reconciliados ponta a ponta.
 - PR #25 permanece OPEN/DRAFT, sem merge. A `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
 - Próxima ação: ampliar a integração DAMM v2 multi-swap entre analyzer, reconciliação econômica, adapter de domínio e persistência, mantendo identidade individual por instrução/CPI e fail-closed.
+
+
+## 201. Persistência independente de dois bundles DAMM v2 no mesmo lote — 18/11/2026
+
+- Adicionado em `tests/test_damm_v2_swap_domain_adapter.py` o teste `test_builds_and_persists_two_distinct_swap2_bundles_from_one_reconciled_batch`.
+- O teste entrega ao adapter dois contextos de swap distintos (instruções 2 e 3, caminhos CPI independentes), evidências de transferências atribuídas, deltas agregados completos e lote econômico `RECONCILED` com duas operações.
+- O adapter deve gerar dois operation IDs distintos, preservar a identidade de cada instrução e manter classificação `UNKNOWN`; ambos os bundles são persistidos e lidos de volta pelo SQLiteEventStore real. Regravar cada bundle idêntico deve retornar idempotentemente `False`, sem duplicação.
+- CI #44411090198 SUCCESS no commit `d5f8df8a8f3bc9061aba3cab72c07e1e8efe35d9`: 491 testes aprovados em 4,213s; compileall aprovado. O log identifica o novo teste como `ok`.
+- Limite da evidência: contextos/evidências/deltas do teste são construídos em fixture sintética. A associação real de duas chamadas `swap2` já possui teste separado no analyzer, e Mainnet já validou transações multi-swap; ainda falta um teste único de integração que atravesse analyzer, decodificação de contas/transferências, reconciliação, adapter e persistência usando o mesmo payload.
+- PR #25 permanece OPEN/DRAFT, sem merge; `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
+- Próxima ação: fechar a lacuna com integração de ponta a ponta DAMM v2 multi-swap em fixture RPC determinística, mantendo bloqueio integral quando qualquer swap do lote não reconciliar.

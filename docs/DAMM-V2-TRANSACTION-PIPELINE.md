@@ -69,6 +69,12 @@ O `WalletMonitor` agora executa DAMM v2 antes do pipeline Raydium CPMM:
   avanço obsoleto. Se o checkpoint já for a própria assinatura alvo, a chamada
   é idempotente. Isso protege transações diferentes no mesmo slot contra dois
   workers que tentem avançar a partir do mesmo predecessor.
+- Para não contornar o compare-and-swap, o caminho de backfill chama o pipeline
+  CPMM com `advance_checkpoint=False`: `mark_processed()` registra a assinatura
+  concluída sem mover o cursor. Só depois o WalletMonitor move o checkpoint via
+  `advance_checkpoint_in_order()`. O fluxo WebSocket mantém o padrão
+  `advance_checkpoint=True`. Transações do backfill sem slot inteiro válido
+  interrompem a recuperação e preservam o cursor.
 
 Testes de persistência usam SQLite `:memory:` para fluxos unitários e
 arquivo temporário com duas threads para concorrência: RAW divergente e bundle

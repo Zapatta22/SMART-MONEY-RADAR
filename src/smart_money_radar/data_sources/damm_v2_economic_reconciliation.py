@@ -15,6 +15,7 @@ from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
     DammV2TransferEvidence,
 )
 from smart_money_radar.data_sources.damm_v2_fee_math import resolve_damm_fee_mode
+from smart_money_radar.data_sources.token2022_fee_absence_proof import Token2022NoTransferFeeProof
 from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
     SolanaTokenBalanceDeltaResult,
 )
@@ -51,6 +52,7 @@ class DammV2EconomicReconciliation:
     reason: str
     wrapped_sol_fundings: tuple[WrappedSolFundingEvidence, ...] = ()
     wrapped_sol_lifecycles: tuple[WrappedSolLifecycleEvidence, ...] = ()
+    transfer_fee_absence_proofs: tuple[Token2022NoTransferFeeProof, ...] = ()
 
 
 def _add_expected(
@@ -146,6 +148,7 @@ def reconcile_damm_v2_economic_batch(
     *,
     raw_transaction: dict | None = None,
     monitored_wallet: str | None = None,
+    transfer_fee_absence_proofs: Sequence[Token2022NoTransferFeeProof] = (),
 ) -> DammV2EconomicReconciliation:
     """Reconcilia todas as operações DAMM v2 do mesmo payload de transação.
 
@@ -164,6 +167,35 @@ def reconcile_damm_v2_economic_batch(
         raise TypeError("balance_deltas inválido")
     if not isinstance(all_transfers, Sequence) or isinstance(all_transfers, (str, bytes)):
         raise TypeError("all_transfers deve ser uma sequência")
+    if not isinstance(transfer_fee_absence_proofs, Sequence) or isinstance(
+        transfer_fee_absence_proofs, (str, bytes)
+    ):
+        raise TypeError("transfer_fee_absence_proofs deve ser uma sequência")
+    if any(
+        not isinstance(proof, Token2022NoTransferFeeProof)
+        for proof in transfer_fee_absence_proofs
+    ):
+        raise TypeError("transfer_fee_absence_proofs contém prova inválida")
+    if len({proof.mint for proof in transfer_fee_absence_proofs}) != len(
+        transfer_fee_absence_proofs
+    ):
+        raise ValueError("prova de ausência de taxa duplicada para o mesmo mint")
+    proof_by_mint = {proof.mint: proof for proof in transfer_fee_absence_proofs}
+    consumed_fee_proof_mints: set[str] = set()
+    if transfer_fee_absence_proofs:
+        payload = (
+            raw_transaction.get("result", raw_transaction)
+            if isinstance(raw_transaction, dict) else None
+        )
+        transaction = payload.get("transaction") if isinstance(payload, dict) else None
+        signatures = transaction.get("signatures") if isinstance(transaction, dict) else None
+        signature = signatures[0] if isinstance(signatures, list) and signatures else None
+        slot = payload.get("slot") if isinstance(payload, dict) else None
+        if not isinstance(signature, str) or isinstance(slot, bool) or not isinstance(slot, int):
+            raise ValueError("raw_transaction precisa comprovar signature/slot para usar prova de taxa zero")
+        for proof in transfer_fee_absence_proofs:
+            if proof.signature != signature or proof.transaction_slot != slot:
+                raise ValueError("prova de taxa zero pertence a outra transação/slot")
     if any(not isinstance(transfer, SolanaTokenTransfer) for transfer in all_transfers):
         raise TypeError("all_transfers contém transferência inválida")
     if len({id(transfer) for transfer in all_transfers}) != len(all_transfers):
@@ -361,14 +393,22 @@ def reconcile_damm_v2_economic_batch(
                     raise ValueError("Token Program referral diverge do FeeMode")
                 if referral.mint != referral_mint:
                     raise ValueError("mint referral diverge do FeeMode")
-                referral_net = _net_received(
-                    referral, referral_fee,
-                    None if referral.program_id == TOKEN_2022_PROGRAM_ID
+                if (
+                    referral.program_id == TOKEN_2022_PROGRAM_ID
                     and referral.instruction_type != "TRANSFER_CHECKED_WITH_FEE"
-                    else (
-                        referral.amount_raw - (referral.fee_amount_raw or 0)
-                    ),
-                    "referral",
+                ):
+                    no_fee_proof = proof_by_mint.get(referral.mint)
+                    if no_fee_proof is None:
+                        expected_referral_net = None
+                    else:
+                        consumed_fee_proof_mints.add(referral.mint)
+                        expected_referral_net = referral.amount_raw
+                else:
+                    expected_referral_net = referral.amount_raw - (
+                        referral.fee_amount_raw or 0
+                    )
+                referral_net = _net_received(
+                    referral, referral_fee, expected_referral_net, "referral",
                 )
                 _add_expected(
                     expected, referral.source_account, referral.mint,
@@ -420,6 +460,13 @@ def reconcile_damm_v2_economic_batch(
                         next(iter(decimals)), funding.amount_raw,
                     )
                     wrapped_sol_fundings.append(funding)
+
+        unused_fee_proofs = set(proof_by_mint) - consumed_fee_proof_mints
+        if unused_fee_proofs:
+            raise ValueError(
+                "prova de ausência de taxa não foi consumida por referral Token-2022: "
+                + ", ".join(sorted(unused_fee_proofs))
+            )
 
         expected_accounts = set(expected)
         claimed_ids = {id(transfer) for transfer in claimed_transfers}
@@ -477,6 +524,7 @@ def reconcile_damm_v2_economic_batch(
             "transferências input/output/referral, funding ou lifecycle wSOL quando aplicável, "
             "e deltas agregados por token account conferem com EvtSwap2",
             tuple(wrapped_sol_fundings), tuple(wrapped_sol_lifecycles),
+            tuple(transfer_fee_absence_proofs),
         )
     except RuntimeError as exc:
         return DammV2EconomicReconciliation(

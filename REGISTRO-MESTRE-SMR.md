@@ -527,3 +527,26 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Nenhuma reescrita de histórico foi executada. O repositório está privado; não ampliar o acesso nem publicar artefatos antes de decidir se a história do branch precisa ser reescrita.
 - Uma reescrita exigiria reconstruir o histórico do PR com cuidado e poderia alterar os SHAs/referências dos commits. Não executar sem avaliar impacto e obter autorização explícita.
 - Mesmo com limpeza de histórico, slot, horário, mints e quantidades reais preservados podem permitir correlação com a blockchain pública.
+
+
+## 30. Atualização 2026-11-18 — validação redundante de evidências no builder
+
+### Lacuna identificada e corrigida
+- A revisão independente mostrou que o `swap_bundle_builder` confiava nos campos `MATCHED` sem revalidar se as quantidades declaradas na reconciliação eram iguais às quantidades das transferências anexadas, nem se as contas/CPIs das transferências correspondiam às contas do swap.
+- O builder agora valida, antes de criar `SwapObservation`, que os valores brutos coincidem com as transferências; input/output usam as contas e programas SPL esperados; mints/decimals explícitos são consistentes; as transferências foram executadas e são de tipo suportado; e as transferências CPI são descendentes do CPI CPMM identificado.
+- Também rejeita a reutilização da mesma instrução de transferência como input e output do mesmo swap.
+- A verificação é uma segunda barreira no limite de domínio; não substitui a reconciliação e não altera as regras de classificação.
+
+### Testes e CI
+- Novo teste cobre quantidade divergente, conta de destino incorreta e caminho CPI não descendente.
+- CI PR run `44233510799` no commit `cde1920a5aabde800dde09d38cc1f766fb2b6bb7`: **195 testes**, `OK`; `python -m compileall -q src tests` aprovado.
+- O push run correspondente `44233504873` também concluiu sucesso.
+
+### Compatibilidade com persistência
+- PR #4 permanece draft, aberto e baseado em `main`; sua implementação `SQLiteEventStore.save_swap_bundle()` não está presente na branch do PR #13.
+- A integração ainda não foi feita. O contrato compatível é chamar `save_swap_bundle(bundle.observation, bundle.classification, bundle.evidence)` somente depois de a transação pai real estar persistida em `observed_transactions`.
+- Não mesclar PR #4 nem conectar persistência antes da revisão independente de seu esquema/migração e da definição da sequência correta entre branches empilhadas.
+
+### Estado
+- PR #13 continua aberto e não merged; head `cde1920a5aabde800dde09d38cc1f766fb2b6bb7`; base `feat/real-mainnet-cpmm-fixture`.
+- `main` não foi alterada. Nenhuma ordem, assinatura ou submissão financeira foi criada.

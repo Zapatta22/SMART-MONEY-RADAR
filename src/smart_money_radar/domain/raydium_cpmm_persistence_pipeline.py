@@ -142,6 +142,29 @@ def process_raydium_cpmm_observation(
         matched = [
             item for item in reconciliations if item.status == "MATCHED"
         ]
+        swap_keys = [
+            (
+                swap.instruction_index,
+                swap.inner_instruction_index,
+                tuple(swap.cpi_path),
+            )
+            for swap in swaps
+        ]
+        reconciliation_keys = [
+            (
+                item.swap.instruction_index,
+                item.swap.inner_instruction_index,
+                tuple(item.swap.cpi_path),
+            )
+            for item in reconciliations
+        ]
+        # Equal cardinality is insufficient: duplicate reconciliation records
+        # could otherwise hide a different decoded swap with no result.
+        reconciliation_identity_mismatch = (
+            len(set(swap_keys)) != len(swap_keys)
+            or len(set(reconciliation_keys)) != len(reconciliation_keys)
+            or set(reconciliation_keys) != set(swap_keys)
+        )
 
         # Persist every decoded swap's outcome independently from positive bundles.
         # A missing reconciler result is explicit UNRESOLVED evidence, never a pass.
@@ -190,8 +213,12 @@ def process_raydium_cpmm_observation(
             0,
             len(swaps) - len(matched),
             len(reconciliations) - len(matched),
+            1 if reconciliation_identity_mismatch else 0,
         )
-        reconciliation_count_mismatch = len(reconciliations) != len(swaps)
+        reconciliation_count_mismatch = (
+            len(reconciliations) != len(swaps)
+            or reconciliation_identity_mismatch
+        )
 
         bundles: list[SwapDomainBundle] = build_swap_domain_bundles(
             matched,

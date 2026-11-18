@@ -2110,3 +2110,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Testes/fixtures: pipeline `01e8ac636edd74f2dbdbf65b344e631ef07c2c18`; analyzer `e95d51f5844a1d0a33b37545fa287933590ee5e8`; transfer fixtures `7d25ffb608c2dea85d24cd3adbd2ced0247122ef`, `5c4c3224c6370bfd173d3daccbc19676b5f1737f`; balance deltas `a5434719122a4e02ed0291d1c450d85f2de31eed`.
 - Revisão estática enviada ao PR #25. Os novos testes não foram executados em runtime/compileall nesta etapa. CI não é evidência de execução se o job não iniciar steps.
 - PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.
+
+
+## 116. Vinculação obrigatória à assinatura primária da transação — PR #25 (18/11/2026)
+
+- Auditoria identificou que o pipeline aceitava ausência do campo `transaction.signatures` e também aceitava a assinatura solicitada em qualquer posição da lista. Em Solana, a assinatura que identifica a transação é a primeira da lista; aceitar uma assinatura secundária ou payload sem assinaturas enfraquece a vinculação do RAW à notificação recebida.
+- O pipeline agora exige lista de assinaturas presente, não vazia, composta apenas por strings não vazias, sem duplicatas, e exige `signatures[0] == signature`.
+- A validação duplicada mais permissiva na camada de persistência foi removida; a camada persiste o RAW/normalização e o pipeline transacional retorna REJECTED, mantendo a assinatura sem checkpoint quando a vinculação falha.
+- Testes negativos adicionados para assinaturas ausentes, assinatura solicitada apenas em posição secundária e lista com duplicatas. Fixtures de WalletMonitor atualizadas para refletir a resposta RPC Solana com assinatura primária.
+- Implementação: `f4c075ebb63efe658364b29a71c15f5fca0d8d2d`; remoção da checagem duplicada na persistência: `e419f4158a27e3177e492a63d72995bb468bb5ff`; testes do pipeline: `b5c0512ba4eb8f519b4d66ed72a7b867ded6b84a`; fixtures WalletMonitor: `ad9bc80c03f56f5e3b888838e35a1ae05ed69a1b`.
+- Revisão estática enviada ao PR #25. Testes runtime/compileall ainda não foram executados para esses commits; CI sem steps/logs não conta como validação.
+- PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.

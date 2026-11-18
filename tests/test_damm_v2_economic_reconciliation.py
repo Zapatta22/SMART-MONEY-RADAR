@@ -187,7 +187,10 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             authority="authority", mint=NATIVE_MINT, amount_raw=100,
             decimals=9, execution_status="EXECUTED", source_format="compiled",
         )
-        evidence = _evidence(context, input_transfer, self.output)
+        output_transfer = _transfer(
+            "vault-b", "user-b", "mint-b", 90, fee=0, outer=2
+        )
+        evidence = _evidence(context, input_transfer, output_transfer)
         raw = {
             "result": {
                 "transaction": {
@@ -218,7 +221,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                 ("vault-b", "mint-b", -90, 6),
                 ("user-b", "mint-b", 90, 6),
             ]),
-            [input_transfer, self.output],
+            [input_transfer, output_transfer],
             raw_transaction=raw, monitored_wallet="wallet",
         )
         self.assertEqual(result.status, "RECONCILED")

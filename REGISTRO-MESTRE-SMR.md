@@ -2285,3 +2285,11 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O teste já existente `test_matched_swap_is_persisted_before_checkpoint` cobre o caminho positivo MATCHED + bundle válido e deverá exercitar a variável na execução runtime.
 - Commit corretivo: `e323cb91f2d6ea6c122a9d5cb11ffe97ae5c13a5`. Revisão estática posterior confirmou `bundle_identity_mismatch` definido antes do cálculo de `unresolved`.
 - Ainda sem unittest/compileall runtime após a correção. Nenhum checkpoint, banco persistente, RPC ou estado on-chain foi alterado.
+
+## 136. Imutabilidade da evidência RAW por assinatura — PR #25 (18/11/2026)
+
+- Auditoria da persistência encontrou que `save_observation()` fazia UPSERT substituindo `payload_json` sempre que uma nova chamada trazia payload não nulo. Como a chave é `(wallet_address, signature)`, um payload divergente para a mesma assinatura poderia sobrescrever a evidência RAW original durante retry/replay.
+- Adicionada guarda transacional: se já existe payload não nulo para a mesma carteira/assinatura e o novo payload serializado diverge, a operação falha com `ValueError` antes de atualizar qualquer tabela/checkpoint. Payload originalmente nulo ainda pode ser preenchido posteriormente, preservando o fluxo de falha on-chain/reconsulta.
+- Adicionados testes para rejeitar payload conflitante sem alterar RAW/checkpoint e para permitir preencher payload inicialmente ausente.
+- Commits: fonte `360168809ba6ac79c8e0a7c55c96a6767a010b11`; testes `6aaf9be8bc6a34959d856d236f392002c16a3b5b`.
+- Revisão estática e re-leitura GitHub concluídas; runtime unittest/compileall ainda pendente. Nenhum banco persistente ou estado on-chain foi tocado.

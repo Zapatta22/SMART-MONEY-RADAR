@@ -286,8 +286,7 @@ class WalletMonitor:
                                 "Prova de taxa Token-2022 indisponível para %d mint(s); mantendo fail-closed.",
                                 len(fee_proof_resolution.unresolved_mints),
                             )
-                    damm_result = await asyncio.to_thread(
-                        process_damm_v2_observation,
+                    damm_result = process_damm_v2_observation(
                         self.event_store,
                         transaction,
                         wallet_address=wallet_address,

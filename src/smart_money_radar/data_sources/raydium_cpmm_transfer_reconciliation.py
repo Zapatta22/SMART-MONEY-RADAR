@@ -104,9 +104,16 @@ def reconcile_raydium_cpmm_swaps(
     """
     if not isinstance(monitored_wallet, str) or not monitored_wallet.strip():
         raise ValueError("monitored_wallet é obrigatório")
-    if any(transfer.execution_status != "EXECUTED" for transfer in transfers):
+    if any(
+        transfer.execution_status != "EXECUTED"
+        or transfer.instruction_type not in {"TRANSFER", "TRANSFER_CHECKED"}
+        for transfer in transfers
+    ):
         return [
-            _failure(swap, "INCOMPLETE", "Status de execução das transferências não é EXECUTED.")
+            _failure(
+                swap, "INCOMPLETE",
+                "Há transferência sem execução confirmada ou fora dos tipos base suportados."
+            )
             for swap in swaps
         ]
 

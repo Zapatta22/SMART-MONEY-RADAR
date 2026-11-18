@@ -118,6 +118,10 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         )
         self.assertEqual(reconciliations[0].input_amount_raw, 4421780000)
         self.assertEqual(reconciliations[0].output_amount_raw, 1390888)
+        self.assertIsNotNone(reconciliations[0].input_token_account_delta_raw)
+        self.assertEqual(reconciliations[0].output_token_account_delta_raw, 0)
+        self.assertIsNotNone(reconciliations[0].input_vault_delta_raw)
+        self.assertIsNotNone(reconciliations[0].output_vault_delta_raw)
         self.assertIn("token account de saída", reconciliations[1].reason)
         self.assertIn("não reconcilia", reconciliations[1].reason)
 
@@ -133,6 +137,7 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         self.assertEqual(bundles[0].observation.input_amount, Decimal("4421.78"))
         self.assertEqual(bundles[0].observation.output_amount, Decimal("1.390888"))
         self.assertEqual(bundles[0].classification.side, "UNKNOWN")
+        self.assertTrue(any(item.startswith("input_vault_delta_raw:") for item in bundles[0].evidence.evidence))
 
         # With an explicitly configured reference mint, the same observed
         # direction is classified relative to that quote asset.

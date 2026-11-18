@@ -40,6 +40,27 @@ jobs:
       - name: Collect finalized transaction through public Solana RPC
         run: |
           python tools/collect_solana_fixtures.py "$SIGNATURE" --output data/fixtures/raw
+      - name: Create one-run anonymization key
+        run: echo "SMR_FIXTURE_ANONYMIZATION_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> "$GITHUB_ENV"
+      - name: Create anonymized projection
+        run: |
+          mkdir -p data/fixtures/anonymized "$RUNNER_TEMP/smr-private"
+          python tools/anonymize_solana_fixture.py \
+            "data/fixtures/raw/$SIGNATURE.raw.json" \
+            "data/fixtures/anonymized/$SIGNATURE.json" \
+            "$RUNNER_TEMP/smr-private/$SIGNATURE.alias-map.json" \
+            --manifest "data/fixtures/raw/$SIGNATURE.manifest.json" \
+            --protect "GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL" \
+            --protect "4GgbgmEcjKtwLy8T8dKcmvfSgNuyAt4Yzq7u1CJ9ZPAd" \
+            --protect "3QNXavMTGaVoB8Kw6TczZjoqdDda8F5heiMRCKwH3SMC" \
+            --protect "9XYDhuomPSUdYJTykr3wSzqM8Yhxj5pB8PBxVhcfJf1E" \
+            --protect "Bt6R1voUhMCMXVwBEU1YnYZLFyYmLczi1ziVQzKqgpkU" \
+            --protect "bgzmGhu9qcyLW6qR1HKQuLTY6PWktNSAuzLNmo7aiQY" \
+            --protect "D4FPEruKEHrG5TenZ2mpDGEfu1iUvTiqBxvpU8HLBvC2" \
+            --protect "97NVw4kt2cNVY1C4QrPerxDA9PXTajKawmiCZ6uBziTw" \
+            --protect "47hEzz83VFR23rLTEeVm9A7eFzjJwjvdupPPmX3cePqF" \
+            --anonymize "Bqf4XHmhMjeVscQCm6MvceujcLVQgNHD9PNEVbQWrdUa" \
+            --anonymize "6xNMoXM3p7s4AWLvujFFcw3rPBw65qTTcdGQVjAwakat"
       - name: Upload raw payload and provenance manifest
         uses: actions/upload-artifact@v4
         with:
@@ -49,3 +70,11 @@ jobs:
             data/fixtures/raw/*.manifest.json
           if-no-files-found: error
           retention-days: 7
+      - name: Upload anonymized test projection
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-mainnet-fixture-projection-${{ github.run_id }}
+          path: |
+            data/fixtures/anonymized/*.json
+          if-no-files-found: error
+          retention-days: 30

@@ -106,3 +106,12 @@ Referências oficiais consultadas:
 - Solana — Transfer tokens: https://solana.com/docs/tokens/basics/transfer-tokens
 - Token-2022 — compatibilidade byte a byte das instruções base: https://github.com/solana-labs/solana-program-library/blob/master/docs/src/token-2022.md
 - SPL Token instruction source: https://github.com/solana-program/token/blob/main/interface/src/instruction.rs
+
+
+## Deltas por token account — incremento seguinte
+
+Foi adicionado `solana_token_balance_deltas.py`, que calcula `post - pre` por `accountIndex`, preservando endereço da token account, mint, owner, quantidades brutas inteiras e decimals. O módulo resolve account keys estáticas e loaded addresses, ignora transações falhas e contas sem alteração.
+
+Os arrays `preTokenBalances` e `postTokenBalances` são obrigatórios. Se um índice aparece em apenas um lado, o outro saldo é zero (caso de conta criada/fechada), desde que ambos os arrays estejam presentes. Duplicidade de índice, mint/decimals/owner divergentes, amount bruto inválido ou índice fora da lista de contas causa falha explícita.
+
+Este resultado é evidência por conta, não por swap. Não atribuir automaticamente um delta a uma instrução CPMM, não assumir que payer é owner e não criar `SwapObservation` com base apenas nesse módulo.

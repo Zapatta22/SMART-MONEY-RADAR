@@ -1762,3 +1762,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Limites preservados: decoder offline; não consulta RPC, não infere epoch, não persiste, não atribui taxas a transferências/swaps, não reconcilia e não cria `SwapObservation`. `withheld_amount` isolado não prova taxa aplicada. Testes/CI não equivalem a validação econômica em nova fixture mainnet.
 - Nenhuma alteração em `main`, RAW fixtures, banco de dados, imports, RPC/Helius, checkpoints ou operações on-chain. PR #17 e PR #18 continuam Draft e não integrados.
 - A descrição do PR #18 foi alinhada aos resultados atuais nesta mesma atualização. Próxima decisão permanece separada: revisão/decisão formal sobre retirar Draft e eventual integração; nenhum merge está autorizado ou executado por esta atualização documental.
+
+
+## 87. CI da atualização documental final do PR #18 — 18/11/2026
+
+- O commit documental `5e1448e13f7ec45878409ccc6c31b37066087f64` atualizou a seção 86 e alinhou a descrição do PR #18.
+- Comparação após esse commit: **19 commits à frente, 0 atrás** do head do PR #17 `fd0f73284039bacc4ec4e6b6a88def21f813ce0d`; merge base igual ao head da base. O diff próprio continua com quatro arquivos.
+- CI GitHub Actions `SMR tests`, run #518 (`44267390443`), associado exatamente ao commit `5e1448e13f7ec45878409ccc6c31b37066087f64`: **completed/success**. Job `test`, etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso.
+- PR #18 continua aberto, Draft e não integrado. PR #17 continua aberto, Draft e não integrado. `main` permanece intacta.
+- Nenhuma alteração de código foi feita nesta atualização documental. Nenhuma fixture RAW, banco de dados, importação, RPC/Helius, checkpoint ou operação on-chain foi tocada.

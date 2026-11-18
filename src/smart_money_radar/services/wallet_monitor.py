@@ -10,9 +10,10 @@ from typing import Any
 from websockets import connect
 
 from smart_money_radar.data_sources.helius import HeliusDataSource
-from smart_money_radar.data_sources.transaction_parser import PARSER_VERSION
-from smart_money_radar.domain.normalization import normalize_transaction
 from smart_money_radar.domain.models import Wallet
+from smart_money_radar.domain.raydium_cpmm_persistence_pipeline import (
+    process_raydium_cpmm_observation,
+)
 from smart_money_radar.settings import HeliusSettings
 from smart_money_radar.storage.event_store import SQLiteEventStore
 
@@ -35,6 +36,7 @@ class WalletMonitor:
         transaction_retry_initial_seconds: float = 0.5,
         backfill_page_limit: int = 100,
         backfill_max_pages: int = 10,
+        reference_mints: Sequence[str] = (),
         websocket_connector: Callable[..., Any] | None = None,
         sleep: Callable[[float], Any] = asyncio.sleep,
         logger: Logger | None = None,
@@ -54,6 +56,9 @@ class WalletMonitor:
         self.transaction_retry_attempts = transaction_retry_attempts
         self.transaction_retry_initial_seconds = transaction_retry_initial_seconds
         self.backfill_page_limit = backfill_page_limit
+        if any(not isinstance(mint, str) or not mint.strip() for mint in reference_mints):
+            raise ValueError("reference_mints deve conter apenas mints não vazios.")
+        self.reference_mints = tuple(reference_mints)
         self.backfill_max_pages = backfill_max_pages
         self._websocket_connector = websocket_connector or connect
         self._sleep = sleep
@@ -206,34 +211,33 @@ class WalletMonitor:
                 )
                 transaction = None
             if transaction is not None:
-                normalized = None
                 try:
-                    normalized = normalize_transaction(transaction, wallet_address, signature)
-                    events = list(normalized.activity_events)
-                    parse_status = normalized.transaction.parse_status
-                    parse_error = None
+                    result = process_raydium_cpmm_observation(
+                        self.event_store,
+                        transaction,
+                        wallet_address=wallet_address,
+                        signature=signature,
+                        reference_mints=self.reference_mints,
+                    )
                 except Exception as exc:
-                    # A falha do parser não descarta o payload: ele fica disponível
-                    # para auditoria e replay com uma versão futura do parser.
-                    events = []
-                    parse_status = "parse_error"
-                    parse_error = type(exc).__name__
                     self._logger.warning(
-                        "Falha ao interpretar transação (%s); payload bruto preservado.",
+                        "Transação arquivada, mas o pipeline CPMM não foi concluído (%s); checkpoint preservado.",
                         type(exc).__name__,
                     )
-                inserted = self.event_store.save_observation(
-                    wallet_address,
-                    signature,
-                    transaction,
-                    events,
-                    parse_status=parse_status,
-                    parser_version=PARSER_VERSION,
-                    parse_error=parse_error,
-                    normalized_observation=normalized,
+                    return False
+                if not result.checkpoint_advanced:
+                    self._logger.warning(
+                        "Transação permanece pendente: %d/%d swap(s) sem reconciliação completa; checkpoint preservado.",
+                        result.unresolved_swaps,
+                        result.decoded_swaps,
+                    )
+                    return False
+                self._logger.info(
+                    "Transação processada (%s): %d swap(s) decodificado(s), %d bundle(s) persistido(s).",
+                    result.status,
+                    result.decoded_swaps,
+                    result.saved_bundles,
                 )
-                if inserted:
-                    self._logger.info("Persistido(s) %d evento(s) para carteira monitorada.", inserted)
                 return True
             if attempt < self.transaction_retry_attempts:
                 self._logger.info(
@@ -251,6 +255,24 @@ class WalletMonitor:
 
     async def _backfill_wallet(self, wallet_address: str, stop_event: asyncio.Event) -> None:
         """Recupera assinaturas posteriores ao último checkpoint, em ordem cronológica."""
+        pending_limit = self.backfill_page_limit * self.backfill_max_pages
+        pending = self.event_store.get_pending_signatures(
+            wallet_address, limit=pending_limit + 1
+        )
+        if len(pending) > pending_limit:
+            raise RuntimeError(
+                "Há mais observações pendentes que o limite de recuperação; cursor preservado."
+            )
+        for pending_signature in pending:
+            if stop_event.is_set():
+                return
+            if not await self._collect_transaction(
+                wallet_address, pending_signature, stop_event
+            ):
+                raise RuntimeError(
+                    "Recuperação de observação pendente interrompida; checkpoint preservado."
+                )
+
         checkpoint = self.event_store.get_checkpoint(wallet_address)
         if checkpoint is None:
             # Na primeira execução não varrer o histórico inteiro sem autorização.

@@ -219,9 +219,11 @@ def analyze_damm_v2_swap_events(
         raise ValueError("message.instructions inválido")
     keys = _account_keys(message, meta)
 
-    groups = meta.get("innerInstructions") or []
+    groups = meta.get("innerInstructions")
     if not isinstance(groups, list):
-        raise ValueError("meta.innerInstructions inválido")
+        raise ValueError(
+            "meta.innerInstructions ausente/nulo: não é possível comprovar ausência de swaps CPI"
+        )
     by_index: dict[int, list[Any]] = {}
     for group in groups:
         if not isinstance(group, dict):

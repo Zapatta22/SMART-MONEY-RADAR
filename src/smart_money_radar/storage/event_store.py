@@ -981,6 +981,54 @@ class SQLiteEventStore:
             ).fetchone()
         return row is not None
 
+    def advance_checkpoint_in_order(
+        self, wallet_address: str, signature: str, slot: int
+    ) -> None:
+        """Avança checkpoint seguindo a ordem autoritativa do RPC getSignaturesForAddress."""
+        if not isinstance(wallet_address, str) or not wallet_address.strip():
+            raise ValueError("Carteira do checkpoint é obrigatória.")
+        if not isinstance(signature, str) or not signature.strip():
+            raise ValueError("Assinatura do checkpoint é obrigatória.")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+            raise ValueError("slot deve ser inteiro não negativo.")
+        with self._connection_scope() as connection:
+            with connection:
+                processed = connection.execute(
+                    """SELECT 1 FROM processed_signatures
+                       WHERE wallet_address = ? AND signature = ?""",
+                    (wallet_address, signature),
+                ).fetchone()
+                if processed is None:
+                    raise ValueError(
+                        "Não é possível avançar checkpoint de transação ainda não processada."
+                    )
+                observed = connection.execute(
+                    """SELECT slot FROM observed_transactions
+                       WHERE wallet_address = ? AND signature = ?""",
+                    (wallet_address, signature),
+                ).fetchone()
+                if observed is None or observed[0] != slot:
+                    raise ValueError(
+                        "Slot informado deve corresponder à observação persistida."
+                    )
+                current = connection.execute(
+                    "SELECT slot FROM wallet_checkpoints WHERE wallet_address = ?",
+                    (wallet_address,),
+                ).fetchone()
+                if current is not None and current[0] is not None and slot < current[0]:
+                    raise ValueError(
+                        "Checkpoint ordenado não pode retroceder para slot anterior."
+                    )
+                connection.execute(
+                    """INSERT INTO wallet_checkpoints (wallet_address, signature, slot)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(wallet_address) DO UPDATE SET
+                           signature = excluded.signature,
+                           slot = excluded.slot,
+                           updated_at = CURRENT_TIMESTAMP""",
+                    (wallet_address, signature, slot),
+                )
+
     def save_checkpoint(self, wallet_address: str, signature: str) -> None:
         """Registra assinatura processada e atualiza o cursor mais recente conhecido."""
         if not wallet_address.strip() or not signature.strip():

@@ -97,6 +97,7 @@ def main() -> int:
     try:
         raw = fetch_transaction(args.rpc_url, args.signature)
         wallet = infer_monitored_wallet(raw)
+        keys = raw["transaction"]["message"]["accountKeys"]
         output = process_damm_v2_transaction(
             {"result": raw},
             monitored_wallet=wallet,
@@ -161,6 +162,53 @@ def main() -> int:
                 "fee_raw": item.fee_amount_raw,
             }
             for item in output.transfers
+        ],
+        "swap_accounts": [
+            {
+                "input_token_account": item.accounts.input_token_account,
+                "output_token_account": item.accounts.output_token_account,
+                "input_vault": item.accounts.input_vault,
+                "output_vault": item.accounts.output_vault,
+                "input_mint": item.accounts.input_mint,
+                "output_mint": item.accounts.output_mint,
+            }
+            for item in output.contexts
+        ],
+        "target_account_lamports": [
+            {
+                "account": account,
+                "account_index": keys.index(account) if account in keys else None,
+                "pre_lamports": raw["meta"]["preBalances"][keys.index(account)] if account in keys and keys.index(account) < len(raw["meta"].get("preBalances", [])) else None,
+                "post_lamports": raw["meta"]["postBalances"][keys.index(account)] if account in keys and keys.index(account) < len(raw["meta"].get("postBalances", [])) else None,
+            }
+            for account in sorted({
+                value
+                for context in output.contexts
+                for value in (
+                    context.accounts.input_token_account,
+                    context.accounts.output_token_account,
+                    context.accounts.input_vault,
+                    context.accounts.output_vault,
+                )
+            })
+        ],
+        "outer_instruction_accounts": [
+            {
+                "index": index,
+                "program": (
+                    instruction.get("programId")
+                    or keys[instruction["programIdIndex"]]
+                    if isinstance(instruction.get("programIdIndex"), int)
+                    and instruction["programIdIndex"] < len(keys)
+                    else instruction.get("programId", "?")
+                ),
+                "accounts": [
+                    keys[value] if isinstance(value, int) and value < len(keys) else value
+                    for value in instruction.get("accounts", [])
+                ],
+                "data": instruction.get("data"),
+            }
+            for index, instruction in enumerate(raw["transaction"]["message"]["instructions"])
         ],
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))

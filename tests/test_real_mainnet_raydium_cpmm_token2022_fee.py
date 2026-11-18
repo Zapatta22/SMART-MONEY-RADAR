@@ -23,6 +23,10 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     decode_solana_token_transfers,
 )
 from smart_money_radar.domain.swap_bundle_builder import build_swap_domain_bundles
+from smart_money_radar.domain.raydium_cpmm_persistence_pipeline import (
+    process_raydium_cpmm_observation,
+)
+from smart_money_radar.storage.event_store import SQLiteEventStore
 
 
 FIXTURE_PATH = (
@@ -130,6 +134,34 @@ class RealMainnetToken2022FeeFixtureTests(unittest.TestCase):
             reference_mints={WSOL_MINT},
         )
         self.assertEqual(bundles, [])
+
+
+    def test_real_token2022_fee_fixture_stays_pending_without_checkpoint(self) -> None:
+        import tempfile
+
+        result = self.fixture["result"]
+        wallet = result["transaction"]["message"]["accountKeys"][0]
+        signature = result["transaction"]["signatures"][0]
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "token2022.sqlite3")
+            try:
+                outcome = process_raydium_cpmm_observation(
+                    store, self.fixture, wallet_address=wallet, signature=signature
+                )
+                self.assertEqual(outcome.status, "pending_reconciliation")
+                self.assertEqual(outcome.decoded_swaps, 1)
+                self.assertEqual(outcome.matched_swaps, 0)
+                self.assertEqual(outcome.unresolved_swaps, 1)
+                self.assertEqual(outcome.saved_bundles, 0)
+                self.assertFalse(outcome.checkpoint_advanced)
+                self.assertFalse(store.has_processed_signature(wallet, signature))
+                self.assertIsNone(store.get_checkpoint(wallet))
+                self.assertEqual(store.get_pending_signatures(wallet), [signature])
+                self.assertEqual(store.get_raw_transaction(wallet, signature), result)
+            finally:
+                store.close()
+
 
 
 if __name__ == "__main__":

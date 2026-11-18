@@ -432,8 +432,16 @@ class SQLiteEventStore:
             (wallet_address, signature, wallet_address, signature),
         )
 
-    def mark_processed(self, wallet_address: str, signature: str) -> None:
-        """Marca uma transação como concluída somente após todo o pipeline terminar."""
+    def mark_processed(
+        self,
+        wallet_address: str,
+        signature: str,
+        *,
+        advance_checkpoint: bool = True,
+    ) -> None:
+        """Marca processamento; backfill pode adiar o cursor até o CAS ordenado."""
+        if not isinstance(advance_checkpoint, bool):
+            raise TypeError("advance_checkpoint deve ser bool.")
         if not wallet_address.strip() or not signature.strip():
             raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
         with self._connection_scope() as connection:
@@ -444,7 +452,14 @@ class SQLiteEventStore:
                 ).fetchone()
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes de marcar como processada.")
-                self._mark_processed_in_connection(connection, wallet_address, signature)
+                if advance_checkpoint:
+                    self._mark_processed_in_connection(connection, wallet_address, signature)
+                else:
+                    connection.execute(
+                        """INSERT OR IGNORE INTO processed_signatures (wallet_address, signature)
+                           VALUES (?, ?)""",
+                        (wallet_address, signature),
+                    )
 
     def save_swap_bundle(
         self, observation: SwapObservation, classification: SwapClassification,

@@ -70,7 +70,10 @@ O `WalletMonitor` agora executa DAMM v2 antes do pipeline Raydium CPMM:
   é idempotente. Isso protege transações diferentes no mesmo slot contra dois
   workers que tentem avançar a partir do mesmo predecessor.
 
-Testes de persistência usam SQLite `:memory:`; os testes de checkpoint cobrem
+Testes de persistência usam SQLite `:memory:` para fluxos unitários e
+arquivo temporário com duas threads para concorrência: RAW divergente e bundle
+divergente disputados simultaneamente devem produzir uma gravação vencedora e
+uma rejeição, preservando a evidência vencedora. Os testes de checkpoint cobrem
 avanço ordenado no mesmo slot e rejeição de predecessor obsoleto. O teste do
 monitor simula bloqueio DAMM e confirma que CPMM não é chamado e checkpoint
 não avança.

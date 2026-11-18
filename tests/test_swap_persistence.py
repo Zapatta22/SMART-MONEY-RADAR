@@ -58,7 +58,7 @@ class SwapPersistenceTests(unittest.TestCase):
         self.assertEqual(bundle["evidence"], self.evidence)
         self.assertEqual(bundle["observation"].input_amount, Decimal("1.250000000"))
 
-    def test_repeated_operation_is_idempotent_and_updates_bundle(self):
+    def test_repeated_identical_operation_is_idempotent(self):
         self.assertTrue(self.store.save_swap_bundle(
             self.observation, self.classification, self.evidence
         ))
@@ -92,6 +92,20 @@ class SwapPersistenceTests(unittest.TestCase):
         bundle = self.store.get_swap_bundle(self.observation.operation_id)
         self.assertEqual(bundle["classification"], self.classification)
         self.assertEqual(bundle["evidence"], self.evidence)
+
+    def test_incomplete_existing_bundle_is_not_silently_repaired(self):
+        self.store.save_swap_bundle(
+            self.observation, self.classification, self.evidence
+        )
+        with self.store._connection_scope() as connection:
+            connection.execute(
+                "DELETE FROM swap_evidence WHERE operation_id = ?",
+                (self.observation.operation_id,),
+            )
+        with self.assertRaisesRegex(RuntimeError, "Bundle existente incompleto"):
+            self.store.save_swap_bundle(
+                self.observation, self.classification, self.evidence
+            )
 
     def test_existing_bundle_can_be_replaced_only_explicitly(self):
         self.assertTrue(self.store.save_swap_bundle(

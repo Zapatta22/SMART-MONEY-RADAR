@@ -253,6 +253,8 @@ def decode_pump_trade_event(data: bytes) -> PumpTradeEvent:
     reader.u64()  # holder_rewards_bps
     reader.u64()  # holder_rewards
     reader.u64()  # creator_fee_unclaimed
+    if len(reader.remaining) > 16:
+        raise ValueError("extensão desconhecida excessiva em Pump TradeEvent")
     return PumpTradeEvent(
         mint, sol_amount, token_amount, is_buy, user, timestamp, fee,
         creator, creator_fee, ix_name, cashback, buyback, quote_mint,
@@ -297,6 +299,8 @@ def decode_pump_amm_sell_event(data: bytes) -> PumpAmmSellEvent:
     reader.u64()  # holder_rewards_bps
     reader.u64()  # holder_rewards
     reader.u64()  # creator_fee_unclaimed
+    if len(reader.remaining) > 16:
+        raise ValueError("extensão desconhecida excessiva em Pump AMM SellEvent")
     return PumpAmmSellEvent(
         timestamp, base_amount_in, quote_amount_out, user_quote_amount_out,
         pool, user, user_base_token_account, user_quote_token_account,
@@ -609,9 +613,16 @@ def decode_routed_venue_swaps(
     transfers = decode_solana_token_transfers({"result": payload})
     instructions = _find_program_cpi_instructions(payload, keys)
     events = decode_anchor_events({"result": payload})
+    transaction_slot = payload.get("slot")
     proof_mints = {
         proof.mint for proof in transfer_fee_absence_proofs
-        if isinstance(getattr(proof, "mint", None), str)
+        if (
+            isinstance(getattr(proof, "mint", None), str)
+            and getattr(proof, "signature", None) == signature
+            and getattr(proof, "transaction_slot", None) == transaction_slot
+            and isinstance(getattr(proof, "current_snapshot_slot", None), int)
+            and proof.current_snapshot_slot >= transaction_slot
+        )
     }
     references = set(reference_mints)
     bundles = []
@@ -696,6 +707,9 @@ def decode_routed_venue_swaps(
             and transfer.execution_status == "EXECUTED"
             and PUMP_SWAP_PROGRAM_ID in transfer.cpi_program_path
         ]
+        if output_mint == trade.mint:
+            unresolved.append(f"PumpSwap outer={outer_index}: input e output mint iguais")
+            continue
         if (
             len(input_candidates) != 1
             or len(output_candidates) != 1

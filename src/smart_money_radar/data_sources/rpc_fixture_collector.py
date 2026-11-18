@@ -112,17 +112,35 @@ class RpcFixtureCollector:
             or response_id != 1
         ):
             raise RuntimeError("RPC retornou ID de resposta divergente da requisição.")
-        if payload.get("error"):
+        if payload.get("error") is not None:
             raise RuntimeError(f"Erro RPC: {payload['error']}")
         result = payload.get("result")
         if not isinstance(result, dict):
             raise RuntimeError("Transação não encontrada ou resposta RPC sem result.")
+        slot = result.get("slot")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+            raise RuntimeError("Payload sem slot inteiro não negativo válido.")
+        version = result.get("version", "legacy")
+        if version != "legacy" and (
+            isinstance(version, bool)
+            or not isinstance(version, int)
+            or version < 0
+        ):
+            raise RuntimeError("Payload com versão de transação inválida.")
         tx = result.get("transaction")
-        signatures = tx.get("signatures", []) if isinstance(tx, dict) else []
-        if signature not in signatures:
-            raise RuntimeError("A assinatura solicitada não confere com o payload retornado.")
-        if not isinstance(result.get("slot"), int):
-            raise RuntimeError("Payload sem slot válido.")
+        if not isinstance(tx, dict):
+            raise RuntimeError("Payload RPC sem objeto transaction válido.")
+        signatures = tx.get("signatures")
+        if (
+            not isinstance(signatures, list)
+            or not signatures
+            or any(not isinstance(item, str) or not item for item in signatures)
+            or len(signatures) != len(set(signatures))
+            or signatures[0] != signature
+        ):
+            raise RuntimeError(
+                "A assinatura solicitada deve ser única e ocupar a primeira posição do payload."
+            )
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         raw_path = self.output_dir / f"{signature}.raw.json"
@@ -135,7 +153,7 @@ class RpcFixtureCollector:
         version = result.get("version", "legacy")
         manifest = {
             "signature": signature,
-            "slot": result["slot"],
+            "slot": slot,
             "version": version,
             "commitment": "finalized",
             "encoding": "json",
@@ -160,7 +178,7 @@ class RpcFixtureCollector:
             if raw_created:
                 raw_path.unlink(missing_ok=True)
             raise
-        return FixtureResult(signature, raw_path, digest, result["slot"], version)
+        return FixtureResult(signature, raw_path, digest, slot, version)
 
 
 def endpoint_from_environment() -> str:

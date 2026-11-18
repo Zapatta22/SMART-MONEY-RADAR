@@ -364,5 +364,43 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self.assertIn("não retornou resultado", attempts[0]["reason"])
 
 
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_solana_token_transfers")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_token_account_balance_deltas")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.reconcile_raydium_cpmm_swaps")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.build_swap_domain_bundles")
+    def test_duplicate_bundle_identity_cannot_cover_two_matched_swaps(
+        self, build, reconcile, deltas, transfers, decode, normalize
+    ):
+        swap_a = self._swap()
+        swap_b = SimpleNamespace(
+            instruction_index=1,
+            inner_instruction_index=None,
+            cpi_path=(1,),
+        )
+        normalize.return_value = self.normalized
+        decode.return_value = [swap_a, swap_b]
+        transfers.return_value = [object()]
+        deltas.return_value = [object()]
+        reconcile.return_value = [
+            SimpleNamespace(swap=swap_a, status="MATCHED", reason="Matched A."),
+            SimpleNamespace(swap=swap_b, status="MATCHED", reason="Matched B."),
+        ]
+        # A faulty builder returns A twice and omits B while preserving cardinality.
+        build.return_value = [self._bundle(), self._bundle()]
+
+        result = process_raydium_cpmm_observation(
+            self.store, self.payload, wallet_address=self.wallet,
+            signature=self.signature,
+        )
+
+        self.assertEqual(result.status, "pending_reconciliation")
+        self.assertGreaterEqual(result.unresolved_swaps, 1)
+        self.assertFalse(result.checkpoint_advanced)
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+
+
+
 if __name__ == "__main__":
     unittest.main()

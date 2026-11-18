@@ -109,6 +109,20 @@ def _deltas(values):
     return SolanaTokenBalanceDeltaResult(tuple(rows), ())
 
 
+def _reconcile(contexts, evidence, deltas, all_transfers=None):
+    if all_transfers is None:
+        all_transfers = []
+        for item in evidence:
+            all_transfers.extend(
+                transfer for transfer in (
+                    item.input_transfer, item.output_transfer, item.referral_transfer
+                ) if transfer is not None
+            )
+    return reconcile_damm_v2_economic_batch(
+        contexts, evidence, deltas, all_transfers
+    )
+
+
 class DammV2EconomicReconciliationTests(unittest.TestCase):
     def setUp(self):
         self.context = _context()
@@ -224,6 +238,23 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             ])
         )
         self.assertEqual(result.status, "RECONCILED")
+
+    def test_rejects_unattributed_transfer_touching_a_swap_account(self):
+        unrelated = _transfer(
+            "third-party", "user-a", "mint-a", 1, fee=0, inner=3
+        )
+        result = _reconcile(
+            [self.context], [self.evidence],
+            _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ]),
+            all_transfers=[self.input, self.output, unrelated],
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("não atribuídas", result.reason)
 
     def test_rejects_transfer_reuse(self):
         result = reconcile_damm_v2_economic_batch(

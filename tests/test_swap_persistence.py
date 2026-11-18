@@ -73,6 +73,37 @@ class SwapPersistenceTests(unittest.TestCase):
             self.store.save_swap_bundle(self.observation, wrong, self.evidence)
         self.assertIsNone(self.store.get_swap_bundle(self.observation.operation_id))
 
+    def test_rejects_non_deterministic_operation_id(self):
+        fake = SwapObservation(
+            operation_id="swap:invented", chain="solana", wallet_address="wallet-a",
+            signature="sig-a", input_mint="mint-a", output_mint="mint-b",
+            input_amount=Decimal("1"), output_amount=Decimal("2"),
+            observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc), parser_version="1",
+        )
+        classification = SwapClassification(
+            operation_id="swap:invented", side="UNKNOWN", confidence=Decimal("0"),
+            reason="not classified",
+        )
+        evidence = SwapEvidence(
+            operation_id="swap:invented", program_id="program", venue=None,
+            instruction_index=2, cpi_path=(0, 1),
+        )
+        with self.assertRaisesRegex(ValueError, "identidade determinística"):
+            self.store.save_swap_bundle(fake, classification, evidence)
+        self.assertIsNone(self.store.get_swap_bundle("swap:invented"))
+
+    def test_bundle_write_rolls_back_if_evidence_insert_fails(self):
+        with self.store._connection_scope() as connection:
+            connection.execute(
+                """CREATE TRIGGER reject_swap_evidence BEFORE INSERT ON swap_evidence
+                   BEGIN SELECT RAISE(ABORT, 'forced evidence failure'); END"""
+            )
+        with self.assertRaisesRegex(Exception, "forced evidence failure"):
+            self.store.save_swap_bundle(
+                self.observation, self.classification, self.evidence
+            )
+        self.assertIsNone(self.store.get_swap_bundle(self.observation.operation_id))
+
     def test_requires_parent_observation(self):
         # A different signature exercises the missing-parent guard.
         orphan = SwapObservation(

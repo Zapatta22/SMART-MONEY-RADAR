@@ -115,6 +115,24 @@ class TokenTransferDecoderTests(unittest.TestCase):
         self.assertEqual(result[0].decimals, 6)
         self.assertEqual(result[0].source_format, "jsonParsed")
 
+    def test_preserves_parsed_checked_variant_without_optional_mint_metadata(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": SPL_TOKEN_PROGRAM_ID,
+            "parsed": {
+                "type": "transferChecked",
+                "info": {
+                    "source": "source",
+                    "destination": "destination",
+                    "tokenAmount": {"amount": "55"},
+                },
+            },
+        }]))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].instruction_type, "TRANSFER_CHECKED")
+        self.assertEqual(result[0].amount_raw, 55)
+        self.assertIsNone(result[0].mint)
+        self.assertIsNone(result[0].decimals)
+
     def test_resolves_loaded_addresses_for_compiled_cpi(self):
         result = decode_solana_token_transfers(_tx(
             [{"programId": "router", "accounts": [], "data": "1"}],

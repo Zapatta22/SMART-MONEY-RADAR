@@ -166,6 +166,14 @@ def build_swap_domain_bundles(
         ):
             raise ValueError("Reconciliação MATCHED sem quantidades, decimals, transferências ou deltas completos.")
 
+        delta_evidence = (
+            item.input_token_account_delta_raw,
+            item.output_token_account_delta_raw,
+            item.input_vault_delta_raw,
+            item.output_vault_delta_raw,
+        )
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in delta_evidence):
+            raise ValueError("Deltas por conta devem ser inteiros brutos.")
         if item.input_amount_raw != item.input_transfer.amount_raw:
             raise ValueError("Quantidade de entrada diverge da transferência selecionada.")
         if item.output_amount_raw != item.output_transfer.amount_raw:

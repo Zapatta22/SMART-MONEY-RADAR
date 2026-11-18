@@ -2846,3 +2846,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Scanner atualizado no commit `56ef7d4a827c11b843a36bd633994deb01026283` para distinguir: (a) mesma conta wSOL reutilizada como input em duas ou mais operações; (b) conta wSOL com funding identificado. Só reportará FOUND quando ambas as condições estiverem comprovadas e o pipeline estiver RECONCILED.
 - Workflow #22 manteve a validação conhecida single-swap e o scanner de 100 assinaturas com sucesso; a etapa dedicada de inspeção da candidata retornou REJECTED como esperado (continue-on-error).
 - Próximo passo: executar a nova varredura e identificar se alguma transação Mainnet recente realmente reutiliza a mesma conta wSOL como input em múltiplos `swap2`. Não há ainda validação Mainnet desse padrão específico.
+
+
+## 195. Varredura paginada Mainnet e padrão round-trip compartilhado — 18/11/2026
+
+- Scanner Mainnet #28 (run `44382687365`, commit scanner `0c2fbfd93a50b839cdbb6cbb376e695abc1e1c69`) concluiu SUCCESS após consultar 3 páginas de 100 assinaturas: 300 transações inspecionadas, sem falhas de RPC; uma transação foi ignorada pela análise por erro de comprimento de instrução não compatível (`swap exige 24 bytes`).
+- Foram encontradas 16 transações com duas chamadas `swap2` MATCHED. As 16 mostram o mesmo padrão estrutural: o swap 1 usa uma conta wSOL como input e o swap 2 usa uma conta do token adquirido como input, devolvendo wSOL à conta original. Portanto, há reutilização da conta wSOL entre operações em sentidos opostos (round-trip), mas não duas entradas wSOL pela mesma conta.
+- Primeira candidata para inspeção detalhada: `4cm2yJUSTzevqYAh5N9vknk2jCmocwgbrJR2s7CiPp8DPCuBBgyMqxKU6qk7F5YSdtLDTJpneRrz4TTn7odqDy6k`, slot 471054827. O pipeline marcou REJECTED por divergência entre funding SOL agregado e valor bruto das transferências wSOL; ainda não é caso reconciliado e não autoriza alterar regras.
+- Scanner passou a paginar por cursor `before`, 3 páginas × 100 (limite 1–10 páginas; 1–100 por página), aceita transaction version 1, e inclui direção de input/output por swap no relatório. As falhas dos runs #25–#27 foram erros de sintaxe/encaminhamento dos argumentos de paginação, corrigidos e verificados pelo sucesso do run #28.
+- CI #1084 (run `44382709318`) SUCCESS: 483 testes e compileall aprovados.
+- Workflow Mainnet #29 (run `44382931922`) está inspecionando a candidata acima com a etapa detalhada; scanner paginado também executa. O workflow foi atualizado para apontar a assinatura `4cm2y...`.
+- Conclusão provisória: o padrão real observado em 16/16 candidatas é round-trip de wSOL, não funding múltiplo para mesma conta. Próximo passo é examinar instruções de funding, SyncNative, transferências SPL e deltas da candidata #29 para explicar a divergência econômica. Manter fail-closed; não ativar BUY/SELL ou execução financeira.

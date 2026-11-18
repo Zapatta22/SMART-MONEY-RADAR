@@ -70,7 +70,7 @@ def _decode_base58(value: Any) -> bytes | None:
         return None
     leading_zeroes = len(value) - len(value.lstrip("1"))
     body = number.to_bytes((number.bit_length() + 7) // 8, "big") if number else b""
-    return (b"\\x00" * leading_zeroes) + body
+    return (bytes([0]) * leading_zeroes) + body
 
 
 def _inspect_payload(payload: dict[str, Any]) -> dict[str, Any]:

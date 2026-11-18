@@ -6,6 +6,7 @@ on:
     paths:
       - "tools/validate_damm_v2_mainnet.py"
       - "tools/scan_damm_v2_multi_swap_mainnet.py"
+      - "tools/inspect_damm_v2_instruction_shapes.py"
       - ".github/workflows/damm-v2-mainnet-validation.yml"
       - "src/smart_money_radar/data_sources/damm_v2_*.py"
       - "src/smart_money_radar/data_sources/solana_token_*.py"
@@ -53,3 +54,15 @@ jobs:
         run: PYTHONPATH=src:tools python tools/scan_damm_v2_multi_swap_mainnet.py --limit 100
       - name: Scan recent Mainnet transactions for non-shared-wSOL multi-swap
         run: PYTHONPATH=src:tools python tools/scan_damm_v2_multi_swap_mainnet.py --limit 100 --pages 1 --target non-shared-wsol
+      - name: Inspect first unsupported legacy swap instruction
+        env:
+          SMR_DAMM_V2_INSPECT_SIGNATURE: 5ujkLBVBSF8EcQxKAnv3ie4hc5adBUBr8GYCRdfwYcdAank2dbcoA9ustGoUKUwrDDixrkrEVTBSwHFRfET8QtQT
+        run: PYTHONPATH=src:tools python tools/inspect_damm_v2_instruction_shapes.py --signature "$SMR_DAMM_V2_INSPECT_SIGNATURE"
+      - name: Inspect second unsupported legacy swap instruction
+        env:
+          SMR_DAMM_V2_INSPECT_SIGNATURE: 4xYWgBV34xYGfm6KxRRsUKikqQoY596w9yx8S946XNLuixcYvaH3bS3wsLZpmJGaC7aQr6dpW8uirfDfXmV63aKt
+        run: PYTHONPATH=src:tools python tools/inspect_damm_v2_instruction_shapes.py --signature "$SMR_DAMM_V2_INSPECT_SIGNATURE"
+      - name: Inspect third unsupported legacy swap instruction
+        env:
+          SMR_DAMM_V2_INSPECT_SIGNATURE: 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9
+        run: PYTHONPATH=src:tools python tools/inspect_damm_v2_instruction_shapes.py --signature "$SMR_DAMM_V2_INSPECT_SIGNATURE"

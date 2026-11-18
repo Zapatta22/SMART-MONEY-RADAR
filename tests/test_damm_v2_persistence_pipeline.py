@@ -483,6 +483,64 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
             self.assertIsNone(self.store.get_swap_bundle(operation_id))
 
 
+    def test_wallet_monitor_calls_cpmm_only_after_both_damm_bundles_persist(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from smart_money_radar.services.wallet_monitor import WalletMonitor
+        from smart_money_radar.settings import HeliusSettings
+
+        raw = _damm_two_swap2_reconciled_raw()
+
+        class Source:
+            async def get_transaction_async(self, signature):
+                return raw
+
+        monitor = WalletMonitor(
+            HeliusSettings(api_key="simulated-key"), Source(), self.store
+        )
+        observed_at = datetime(2026, 11, 18, tzinfo=timezone.utc)
+        persisted_before_cpmm = []
+
+        def cpmm_after_damm_persistence(*args, **kwargs):
+            attempts = self.store.get_swap_reconciliation_attempts(
+                "wallet", "signature"
+            )
+            bundles = [
+                self.store.get_swap_bundle(item["operation_id"])
+                for item in attempts
+            ]
+            persisted_before_cpmm.append(
+                len(attempts) == 2 and all(bundle is not None for bundle in bundles)
+            )
+            return SimpleNamespace(
+                status="no_cpmm_swaps",
+                unresolved_swaps=0,
+                decoded_swaps=0,
+                saved_bundles=0,
+            )
+
+        with patch(
+            "smart_money_radar.services.wallet_monitor.process_raydium_cpmm_observation",
+            side_effect=cpmm_after_damm_persistence,
+        ) as cpmm:
+            result = asyncio.run(
+                monitor._collect_transaction("wallet", "signature")
+            )
+
+        self.assertTrue(result)
+        cpmm.assert_called_once()
+        self.assertEqual(persisted_before_cpmm, [True])
+        attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(all(
+            self.store.get_swap_bundle(item["operation_id"]) is not None
+            for item in attempts
+        ))
+
+
     def test_wallet_monitor_blocks_cpmm_on_real_two_swap_economic_mismatch(self):
         import asyncio
         from unittest.mock import patch

@@ -483,6 +483,41 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
             self.assertIsNone(self.store.get_swap_bundle(operation_id))
 
 
+    def test_two_swap2_economic_mismatch_blocks_both_bundles_and_next_venue(self):
+        raw = _damm_two_swap2_reconciled_raw()
+        second_user_output_index = raw["transaction"]["message"]["accountKeys"].index(
+            "user-out-1"
+        )
+        second_output_snapshot = next(
+            item for item in raw["meta"]["postTokenBalances"]
+            if item["accountIndex"] == second_user_output_index
+        )
+        second_output_snapshot["uiTokenAmount"]["amount"] = "4089"
+        second_output_snapshot["uiTokenAmount"]["uiAmount"] = 0.004089
+        second_output_snapshot["uiTokenAmount"]["uiAmountString"] = "0.004089"
+
+        result = process_damm_v2_observation(
+            self.store, raw, wallet_address="wallet", signature="signature"
+        )
+
+        self.assertEqual(result.status, "pending_reconciliation")
+        self.assertEqual(result.decoded_swaps, 2)
+        self.assertEqual(result.reconciled_swaps, 0)
+        self.assertEqual(result.unresolved_swaps, 2)
+        self.assertEqual(result.saved_bundles, 0)
+        self.assertFalse(result.ready_for_next_venue)
+        self.assertFalse(self.store.has_processed_signature("wallet", "signature"))
+        self.assertIsNone(self.store.get_checkpoint("wallet"))
+        attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(all(item["status"] == "INCOMPLETE" for item in attempts))
+        self.assertTrue(all("delta" in item["reason"] for item in attempts))
+        for item in attempts:
+            self.assertIsNone(self.store.get_swap_bundle(item["operation_id"]))
+
+
     def test_two_swap2_payload_runs_full_pipeline_and_persists_both_bundles(self):
         from datetime import datetime, timezone
 

@@ -5,7 +5,9 @@ from decimal import Decimal
 
 from smart_money_radar.data_sources.damm_v2_accounts import DammV2SwapAccounts
 from smart_money_radar.data_sources.damm_v2_analyzer import DammV2SwapEventAssociation
-from smart_money_radar.data_sources.damm_v2_decoder import (\n    METEORA_DAMM_V2_PROGRAM_ID, DammV2EvtSwap2, DammV2SwapResult,\n)
+from smart_money_radar.data_sources.damm_v2_decoder import (
+    METEORA_DAMM_V2_PROGRAM_ID, DammV2EvtSwap2, DammV2SwapResult,
+)
 from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
     DammV2EconomicReconciliation,
 )

@@ -21,9 +21,9 @@ class FakeResponse:
         return self.body
 
 
-def rpc_bytes(signature=SIG):
+def rpc_bytes(signature=SIG, version=0):
     return json.dumps({"jsonrpc": "2.0", "id": 1, "result": {
-        "slot": 123, "version": 0,
+        "slot": 123, "version": version,
         "transaction": {"signatures": [signature], "message": {"instructions": []}},
         "meta": {"err": None},
     }}).encode()
@@ -43,6 +43,18 @@ class RpcFixtureCollectorTests(unittest.TestCase):
             self.assertEqual(manifest["slot"], 123)
             request = opener.call_args.args[0]
             self.assertIn(b'"method":"getTransaction"', request.data)
+
+    def test_requests_and_preserves_transaction_version_one(self):
+        raw = rpc_bytes(version=1)
+        opener = Mock(return_value=FakeResponse(raw))
+        with tempfile.TemporaryDirectory() as directory:
+            collector = RpcFixtureCollector("https://rpc.example", directory, opener=opener)
+            result = collector.collect(SIG)
+            request = json.loads(opener.call_args.args[0].data)
+            self.assertEqual(request["params"][1]["maxSupportedTransactionVersion"], 1)
+            self.assertEqual(result.version, 1)
+            manifest = json.loads((Path(directory) / f"{SIG}.manifest.json").read_text())
+            self.assertEqual(manifest["version"], 1)
 
     def test_does_not_overwrite_existing_raw_fixture(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,0 +1,87 @@
+name: SMR Token-2022 fee fixture collection
+
+on:
+  push:
+    branches:
+      - feat/github-actions-mainnet-fixture-collector
+    paths:
+      - ".github/workflows/collect-solana-token2022-fee-fixture.yml"
+  workflow_dispatch:
+    inputs:
+      signature:
+        description: "Solana transaction signature (Base58)"
+        required: true
+        default: "22eMQm4iya5tzcA8kwK3pXUavurvSD76AcarZY51ZzNG5DoVHwungJCRSjFSWLr4FtXTze8LbrSQ9LvJnUQA6KxK"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SMR_SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
+      SIGNATURE: ${{ inputs.signature || '22eMQm4iya5tzcA8kwK3pXUavurvSD76AcarZY51ZzNG5DoVHwungJCRSjFSWLr4FtXTze8LbrSQ9LvJnUQA6KxK' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Collect finalized transaction through public Solana RPC
+        run: |
+          python tools/collect_solana_fixtures.py "$SIGNATURE" --output data/fixtures/raw
+      - name: Create one-run anonymization key
+        run: echo "SMR_FIXTURE_ANONYMIZATION_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> "$GITHUB_ENV"
+      - name: Create anonymized projection
+        run: |
+          mkdir -p data/fixtures/anonymized "$RUNNER_TEMP/smr-private"
+          python tools/anonymize_solana_fixture.py \
+            "data/fixtures/raw/$SIGNATURE.raw.json" \
+            "data/fixtures/anonymized/$SIGNATURE.json" \
+            "$RUNNER_TEMP/smr-private/$SIGNATURE.alias-map.json" \
+            --manifest "data/fixtures/raw/$SIGNATURE.manifest.json" \
+            --protect "9vKct4Xwcwz53YJVbzjLXBNYAoBiPymNTb1uoxicGKiU" \
+            --protect "GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL" \
+            --protect "D4FPEruKEHrG5TenZ2mpDGEfu1iUvTiqBxvpU8HLBvC2" \
+            --protect "HznJv4BST86kbkcaW5EEmFmN5DA97g9qVzG4k7fCqygs" \
+            --protect "ESbMrgVpihzAog55JGfrfiPFTuQWiP3QKmSGkgSDeRuq" \
+            --protect "CKBnFh9d2bi2VpojyHPpwHW9qz8jYDPLgn3q7veduwrA"
+      - name: Commit anonymized projection on the fee-validation branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin feat/real-mainnet-cpmm-fixture
+          git switch --create feat/real-mainnet-cpmm-fee-fixture FETCH_HEAD
+          mkdir -p data/fixtures/mainnet/anonymized
+          cp "data/fixtures/anonymized/$SIGNATURE.json" "data/fixtures/mainnet/anonymized/raydium-cpmm-token2022-fee.json"
+          cp "data/fixtures/anonymized/$SIGNATURE.json.manifest.json" "data/fixtures/mainnet/anonymized/raydium-cpmm-token2022-fee.json.manifest.json"
+          git add data/fixtures/mainnet/anonymized/
+          git commit -m "Add anonymized mainnet Raydium CPMM Token-2022 fee fixture"
+          git push origin HEAD:feat/real-mainnet-cpmm-fee-fixture
+      - name: Upload raw payload and provenance manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-token2022-fee-raw-${{ github.run_id }}
+          path: |
+            data/fixtures/raw/*.raw.json
+            data/fixtures/raw/*.manifest.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload anonymized test projection
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-token2022-fee-projection-${{ github.run_id }}
+          path: |
+            data/fixtures/anonymized/*.json
+          if-no-files-found: error
+          retention-days: 30

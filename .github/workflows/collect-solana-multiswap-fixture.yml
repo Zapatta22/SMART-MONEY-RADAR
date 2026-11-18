@@ -1,0 +1,86 @@
+name: SMR Jupiter multi-swap mainnet fixture
+
+on:
+  workflow_dispatch:
+    inputs:
+      signature:
+        description: "Finalized Solana transaction signature (Base58)"
+        required: true
+        default: "39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  collect-and-project:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SMR_SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
+      SIGNATURE: ${{ inputs.signature || '39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6' }}
+      TARGET_BRANCH: feat/real-mainnet-cpmm-fee-fixture
+    steps:
+      - name: Checkout collector branch
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Collect finalized transaction through public Solana RPC
+        run: |
+          python tools/collect_solana_fixtures.py "$SIGNATURE" --output data/fixtures/raw
+      - name: Create one-run anonymization key
+        run: echo "SMR_FIXTURE_ANONYMIZATION_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> "$GITHUB_ENV"
+      - name: Create anonymized projection
+        run: |
+          mkdir -p data/fixtures/anonymized "$RUNNER_TEMP/smr-private"
+          python tools/anonymize_solana_fixture.py \
+            "data/fixtures/raw/$SIGNATURE.raw.json" \
+            "data/fixtures/anonymized/$SIGNATURE.json" \
+            "$RUNNER_TEMP/smr-private/$SIGNATURE.alias-map.json" \
+            --manifest "data/fixtures/raw/$SIGNATURE.manifest.json" \
+            --protect "GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL" \
+            --protect "6sEkZ73vph5AFYmQTzaV6H5vAQQLZ2C8WqeCQ6MhLqFk" \
+            --protect "5fXgn6ouUBtihWxnJWqACauxAG4AJyPaRFSWTJWhphDm" \
+            --protect "2P5hWzNvNwbR9y1S6Tim5nvkxVANnKozU4ZJYqKGoReY" \
+            --protect "7xcSv6hbK5JeQq59UqagD8KScQLt2Mm8rtskeCc7Nwii" \
+            --protect "CG2gJ4gXCurnWCRGSqQdy9vFa8S8cmHA6xd2TiPdkiSg" \
+            --protect "5vowWKBPH7AdXbzX6891qmcHbCVNxbFCgSJeCkixpaZi"
+      - name: Publish only anonymized projection to the CPMM reconciliation branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$TARGET_BRANCH"
+          git switch --create smr-multiswap-fixture-publish FETCH_HEAD
+          mkdir -p data/fixtures/mainnet/anonymized
+          cp "data/fixtures/anonymized/$SIGNATURE.json" \
+            data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json
+          cp "data/fixtures/anonymized/$SIGNATURE.json.manifest.json" \
+            data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json.manifest.json
+          git add data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json*
+          git commit -m "Add anonymized Jupiter multi-swap CPMM mainnet fixture"
+          git push origin HEAD:"$TARGET_BRANCH"
+      - name: Upload raw payload and provenance manifest privately
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-multiswap-raw-${{ github.run_id }}
+          path: |
+            data/fixtures/raw/*.raw.json
+            data/fixtures/raw/*.manifest.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload anonymized test projection
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-multiswap-projection-${{ github.run_id }}
+          path: |
+            data/fixtures/anonymized/*.json
+          if-no-files-found: error
+          retention-days: 30

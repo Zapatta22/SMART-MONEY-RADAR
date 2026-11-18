@@ -98,6 +98,7 @@ def _token_balances(
 ) -> dict[str, tuple[Decimal, int] | None]:
     raw_balances: dict[str, Decimal] = defaultdict(Decimal)
     decimals_by_mint: dict[str, set[int]] = defaultdict(set)
+    invalid_mints: set[str] = set()
     if not isinstance(value, list):
         return {}
     for entry in value:
@@ -105,7 +106,10 @@ def _token_balances(
             continue
         mint = entry.get("mint")
         amount_info = entry.get("uiTokenAmount")
-        if not isinstance(mint, str) or not mint or not isinstance(amount_info, dict):
+        if not isinstance(mint, str) or not mint:
+            continue
+        if not isinstance(amount_info, dict):
+            invalid_mints.add(mint)
             continue
         try:
             raw_amount = Decimal(str(amount_info["amount"]))
@@ -113,19 +117,24 @@ def _token_balances(
             # JSON-RPC representa decimals SPL como inteiro. Não coagir strings,
             # floats ou booleanos: 6.9 truncado para 6 alteraria o saldo.
             if isinstance(decimals_value, bool) or not isinstance(decimals_value, int):
+                invalid_mints.add(mint)
                 continue
             decimals = decimals_value
             # O campo decimals do SPL Token é um u8 (0..255).
             if not 0 <= decimals <= 255 or not raw_amount.is_finite() or raw_amount < 0:
+                invalid_mints.add(mint)
                 continue
             raw_balances[mint] += raw_amount
             decimals_by_mint[mint].add(decimals)
         except (KeyError, TypeError, ValueError, InvalidOperation, OverflowError):
+            invalid_mints.add(mint)
             continue
     # Uma mint deve usar a mesma escala em todas as token accounts.
     result: dict[str, tuple[Decimal, int] | None] = {}
+    for mint in invalid_mints:
+        result[mint] = None
     for mint, scales in decimals_by_mint.items():
-        if len(scales) != 1:
+        if mint in invalid_mints or len(scales) != 1:
             result[mint] = None
             continue
         decimals = next(iter(scales))

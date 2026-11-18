@@ -1,0 +1,14 @@
+{
+  "schema": "smr.anonymized-fixture.v1",
+  "signature": "3DNxxfNzKEG7VLiKE8E39Ss3y2vtxxVabdgS4S3brj4M7HmeMwE8Qi11EnnyEngFPvi5zqv5GBzGXUAwxCBuDK4t",
+  "slot": 388739013,
+  "commitment": "finalized",
+  "raw_sha256": "89dbe2cb81c8995206c541b410660c81f493a571141e61e1b3074c6c90e9e082",
+  "projection_file": "raydium-cpmm-route-multivenue.json",
+  "projection_sha256": "eac0b242401c1c4f3f7a95e4928233576f7919a33c9440ffaa94953df2e22028",
+  "anonymized": true,
+  "replaced_addresses": 20,
+  "mapping_file": null,
+  "provenance_manifest": "3DNxxfNzKEG7VLiKE8E39Ss3y2vtxxVabdgS4S3brj4M7HmeMwE8Qi11EnnyEngFPvi5zqv5GBzGXUAwxCBuDK4t.manifest.json",
+  "protected_address_count": 13
+}

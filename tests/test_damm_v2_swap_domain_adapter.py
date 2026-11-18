@@ -115,6 +115,21 @@ class DammV2SwapDomainAdapterTests(unittest.TestCase):
         self.assertEqual(bundle.observation.operation_id, bundle.classification.operation_id)
         self.assertEqual(bundle.observation.operation_id, bundle.evidence.operation_id)
 
+    def test_rejects_duplicate_swap_identity_in_adapter_batch(self):
+        context, evidence, deltas, _ = _inputs()
+        reconciliation = DammV2EconomicReconciliation("RECONCILED", 2, (), "ok")
+        with self.assertRaisesRegex(ValueError, "identidade de swap DAMM v2 duplicada"):
+            build_damm_v2_swap_domain_bundles(
+                contexts=[context, context],
+                transfer_evidence=[evidence, evidence],
+                balance_deltas=deltas,
+                reconciliation=reconciliation,
+                monitored_wallet="wallet-1",
+                signature="signature-1",
+                observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc),
+                parser_version="smr-test",
+            )
+
     def test_rejects_non_reconciled_batch(self):
         context, evidence, deltas, _ = _inputs()
         result = DammV2EconomicReconciliation("INCOMPLETE", 1, (), "delta mismatch")

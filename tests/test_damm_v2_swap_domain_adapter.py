@@ -206,7 +206,7 @@ class DammV2SwapDomainAdapterTests(unittest.TestCase):
         self.assertEqual(len(bundles), 1)
         self.assertEqual(bundles[0].observation.input_mint, NATIVE_MINT)
         self.assertIn(
-            "propriedade das token accounts confirmada por snapshots ou ATA lifecycle",
+            "propriedade das token accounts confirmada por snapshots ou ATA lifecycle para a carteira monitorada",
             bundles[0].evidence.evidence,
         )
 

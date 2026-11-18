@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -12,6 +13,14 @@ from datetime import datetime, timezone
 
 from smart_money_radar.data_sources.damm_v2_transaction_pipeline import (
     process_damm_v2_transaction,
+)
+from smart_money_radar.data_sources.solana_token_transfer_decoder import (
+    TOKEN_2022_PROGRAM_ID,
+    decode_solana_token_transfers,
+)
+from smart_money_radar.data_sources.solana_transaction_position import get_transaction_index
+from smart_money_radar.data_sources.token2022_fee_absence_proof import (
+    build_no_transfer_fee_proof,
 )
 from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
     _is_descendant_transfer,
@@ -60,6 +69,46 @@ def fetch_transaction(endpoint: str, signature: str, *, max_supported_transactio
     return result
 
 
+def fetch_current_account(endpoint: str, address: str) -> tuple[str, bytes, int]:
+    body = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "getAccountInfo",
+        "params": [address, {"commitment": "finalized", "encoding": "base64"}],
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        endpoint, data=body,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=25) as response:
+            payload = json.loads(response.read())
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"Falha ao consultar mint atual ({type(exc).__name__}).") from exc
+    if not isinstance(payload, dict) or payload.get("jsonrpc") != "2.0" or payload.get("id") != 2:
+        raise RuntimeError("Resposta getAccountInfo inválida.")
+    if payload.get("error") is not None:
+        raise RuntimeError("getAccountInfo rejeitado pelo RPC.")
+    result = payload.get("result")
+    value = result.get("value") if isinstance(result, dict) else None
+    context = result.get("context") if isinstance(result, dict) else None
+    if not isinstance(value, dict) or not isinstance(context, dict):
+        raise RuntimeError("Mint atual ausente ou resposta sem context.")
+    owner = value.get("owner")
+    data = value.get("data")
+    slot = context.get("slot")
+    if not isinstance(owner, str) or not isinstance(data, list) or len(data) != 2 or data[1] != "base64":
+        raise RuntimeError("Formato do mint atual inválido.")
+    if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+        raise RuntimeError("Context slot do mint atual inválido.")
+    try:
+        raw_data = base64.b64decode(data[0], validate=True)
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("Dados base64 do mint inválidos.") from exc
+    return owner, raw_data, slot
+
+
 def infer_monitored_wallet(result: dict) -> str:
     transaction = result["transaction"]
     message = transaction["message"]
@@ -88,6 +137,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--signature", default=os.environ.get("SMR_DAMM_V2_SIGNATURE"))
     parser.add_argument(
+        "--prove-no-transfer-fee-mint",
+        action="append",
+        default=[],
+        help="mint Token-2022 para verificar ausência imutável de TransferFeeConfig",
+    )
+    parser.add_argument(
         "--rpc-url",
         default=os.environ.get("SMR_SOLANA_RPC_URL", DEFAULT_RPC),
     )
@@ -101,12 +156,37 @@ def main() -> int:
         raw = fetch_transaction(args.rpc_url, args.signature)
         wallet = infer_monitored_wallet(raw)
         keys = raw["transaction"]["message"]["accountKeys"]
+        fee_absence_proofs = []
+        for mint in args.prove_no_transfer_fee_mint:
+            if isinstance(raw.get("slot"), bool) or not isinstance(raw.get("slot"), int):
+                raise RuntimeError("slot da transação ausente para prova de taxa zero")
+            tx_index = get_transaction_index(args.rpc_url, raw["slot"], args.signature)
+            owner, mint_data, snapshot_slot = fetch_current_account(args.rpc_url, mint)
+            transfers = decode_solana_token_transfers({"result": raw})
+            mint_transfer_observed = any(
+                transfer.execution_status == "EXECUTED"
+                and transfer.program_id == TOKEN_2022_PROGRAM_ID
+                and transfer.mint == mint
+                for transfer in transfers
+            )
+            fee_absence_proofs.append(build_no_transfer_fee_proof(
+                mint=mint,
+                signature=args.signature,
+                transaction_slot=raw["slot"],
+                transaction_index=tx_index,
+                current_snapshot_slot=snapshot_slot,
+                owner=owner,
+                mint_data=mint_data,
+                transaction_successful=raw.get("meta", {}).get("err") is None,
+                mint_transfer_observed=mint_transfer_observed,
+            ))
         output = process_damm_v2_transaction(
             {"result": raw},
             monitored_wallet=wallet,
             signature=args.signature,
             observed_at=datetime.now(timezone.utc),
             parser_version="smr-damm-v2-mainnet-validation",
+            transfer_fee_absence_proofs=tuple(fee_absence_proofs),
         )
     except (KeyError, TypeError, ValueError, RuntimeError) as exc:
         print(json.dumps({"status": "ERROR", "reason": str(exc)}, ensure_ascii=False))
@@ -173,6 +253,21 @@ def main() -> int:
         "reconciliation_status": (
             output.reconciliation.status if output.reconciliation else None
         ),
+        "transfer_fee_absence_proofs": [
+            {
+                "mint": proof.mint,
+                "signature": proof.signature,
+                "transaction_slot": proof.transaction_slot,
+                "transaction_index": proof.transaction_index,
+                "current_snapshot_slot": proof.current_snapshot_slot,
+                "fee_amount_raw": proof.fee_amount_raw,
+                "basis": proof.basis,
+            }
+            for proof in (
+                output.reconciliation.transfer_fee_absence_proofs
+                if output.reconciliation else tuple(fee_absence_proofs)
+            )
+        ],
         "wrapped_sol_fundings": [
             {
                 "token_account": item.token_account,

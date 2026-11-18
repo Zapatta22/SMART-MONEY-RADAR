@@ -1749,3 +1749,16 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Nenhum PR foi integrado; ambos permanecem Draft. `main` não foi modificada.
 - CI do merge commit `c04fafcfd50b810b56cacbf1f110d703f29b8c10`: workflow `SMR tests`, run #515 (`44266493751`), **success**; `Run unit tests` e `Compile source and tests` concluídos com sucesso.
 - Próxima ação: revisar o diff integrado do PR #18 e confirmar se a mergeability permanece estável; não retirar Draft nem integrar sem autorização.
+
+
+## 86. Atualização documental final do PR #18 — sincronização e CI (18/11/2026)
+
+- PR #18 permanece aberto, Draft e não integrado; branch `feat/token2022-transfer-fee-state-decoder`, base `feat/damm-v2-economic-fee-math`.
+- A branch do PR #18 incorpora o head do PR #17 `fd0f73284039bacc4ec4e6b6a88def21f813ce0d`. Comparação atual entre esse head e o head do PR #18 `769bf4ba07b697f615c00be6c22006d3dc7edb39`: **18 commits à frente, 0 atrás**; merge base igual ao head do PR #17.
+- O diff próprio do PR #18 contra a base atual contém exatamente quatro arquivos: este Registro Mestre, `docs/TOKEN2022-TRANSFER-FEE-STATE-DECODER.md`, `src/smart_money_radar/data_sources/token2022_transfer_fee_state.py` e `tests/test_token2022_transfer_fee_state.py`. A correção CPI do PR #17 está na base e não é duplicada no diff próprio do PR #18.
+- CI GitHub Actions `SMR tests`, run #517 (`44266570005`), associado ao HEAD `769bf4ba07b697f615c00be6c22006d3dc7edb39`: **completed/success**. Job `test`, etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso.
+- CI #515 também havia passado no merge commit da sincronização. O resultado #517 é a validação final registrada para o HEAD documental atual.
+- Revisão estática final do decoder não encontrou bloqueio técnico evidente: TLV, tipos/tamanhos das extensões, offsets, padding, truncamentos/duplicações, terminador `Uninitialized`, cauda final de um byte e seleção older/newer por epoch estão cobertos pela implementação/testes e alinhados ao comportamento oficial consultado.
+- Limites preservados: decoder offline; não consulta RPC, não infere epoch, não persiste, não atribui taxas a transferências/swaps, não reconcilia e não cria `SwapObservation`. `withheld_amount` isolado não prova taxa aplicada. Testes/CI não equivalem a validação econômica em nova fixture mainnet.
+- Nenhuma alteração em `main`, RAW fixtures, banco de dados, imports, RPC/Helius, checkpoints ou operações on-chain. PR #17 e PR #18 continuam Draft e não integrados.
+- A descrição do PR #18 foi alinhada aos resultados atuais nesta mesma atualização. Próxima decisão permanece separada: revisão/decisão formal sobre retirar Draft e eventual integração; nenhum merge está autorizado ou executado por esta atualização documental.

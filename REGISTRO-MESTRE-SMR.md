@@ -2799,3 +2799,5 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Corrigido o gatilho adicionando o caminho explícito `src/smart_money_radar/data_sources/solana_wrapped_sol_funding.py`. Commit `b46010b3290239b757abbb898206f632529173fd`.
 - A mudança disparou workflow de validação Mainnet #9 (run `44379455602`), inicialmente QUEUED. CI de testes #1061 (run `44379424567`) SUCCESS, com 482 testes e compileall aprovados (HEAD anterior documental `587bea2fb7857d94406837a6c71f38c29289475b`).
 - Próxima verificação imediata: aguardar workflow #9 e confirmar novamente a transação real DAMM v2 com status RECONCILED, funding 20.700 lamports e um bundle.
+
+- Workflow Mainnet #9 (run `44379455602`) SUCCESS após incluir o decoder wSOL nos gatilhos. Reexecutou a consulta RPC da transação real e confirmou novamente `status=RECONCILED`, `reconciliation_status=RECONCILED`, funding 20.700 lamports, índices de funding reportados e 1 bundle. Isso comprova que o workflow é disparado por mudanças no decoder e que a alteração de validação não quebrou o caminho Mainnet single-swap.

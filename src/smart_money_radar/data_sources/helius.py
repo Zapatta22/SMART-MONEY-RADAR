@@ -125,6 +125,18 @@ class HeliusDataSource:
         result = self.call("getSignaturesForAddress", [wallet_address, options])
         if not isinstance(result, list) or any(not isinstance(item, dict) for item in result):
             raise HeliusRpcError("getSignaturesForAddress retornou um formato inválido.")
+        seen_signatures: set[str] = set()
+        for item in result:
+            signature = item.get("signature")
+            if not isinstance(signature, str) or not signature.strip():
+                raise HeliusRpcError(
+                    "getSignaturesForAddress retornou item sem assinatura válida."
+                )
+            if signature in seen_signatures:
+                raise HeliusRpcError(
+                    "getSignaturesForAddress retornou assinatura duplicada na mesma página."
+                )
+            seen_signatures.add(signature)
         return result
 
     def get_activity(self, wallet_address: str, *, limit: int = 25) -> list[ActivityEvent]:

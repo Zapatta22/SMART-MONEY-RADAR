@@ -148,3 +148,14 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - O CI de 104 testes é validação do código de persistência e testes existentes; não valida decodificadores Raydium, reconstrução econômica nem fixtures mainnet.
 - Estado técnico: persistência dedicada implementada e validada em CI; ainda não conectada ao parser/normalizador que produzirá swaps reais.
 - Próxima tarefa: revisar e integrar os módulos Raydium locais e os respectivos testes. Não mesclar PR #2 até revisão técnica completa e confirmação do estado da branch/base.
+
+## 17. Atualização 2026-11-18 — branch limpa e PR de persistência validado
+
+- Para eliminar a divergência de histórico criada pelos commits corretivos de criação/remoção do arquivo de teste na `main`, foi criada uma branch limpa diretamente da `main` atual: `feat/swap-contract-persistence`.
+- Os quatro arquivos de trabalho foram reaplicados nessa branch, sem alterar o conteúdo-base da `main`: `REGISTRO-MESTRE-SMR.md`, `docs/RAYDIUM-SWAP-INTEGRATION-PLAN.md`, `src/smart_money_radar/storage/event_store.py` e `tests/test_swap_persistence.py`.
+- Comparação confirmada: branch limpa **4 commits à frente e 0 atrás** da `main` no momento da criação; o diff contém somente os quatro arquivos acima.
+- PR #2 foi fechado sem merge por estar baseado no histórico anterior. PR #3 foi aberto como draft, baseado na `main` atual: [Draft: persist separated swap contracts in SQLite](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/3).
+- CI na branch limpa, commit `1c2c45018b439d60e427182143f4558e744560fe`: **104 testes aprovados**, `compileall` aprovado. Execução: [GitHub Actions](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44217759046).
+- A `main` contém dois commits corretivos de criação/remoção do arquivo de teste; a comparação da árvore antes/depois confirmou que não há diferença de arquivos. O PR #3 parte do HEAD atual da `main`, sem divergência de commits.
+- Persistência dos três contratos está implementada e validada em CI. Ela ainda não está ligada a um reconstrutor real de swaps; Raydium continua aguardando a transferência/revisão dos módulos locais.
+- Próxima ação técnica: revisar os módulos Raydium CPMM/AMM v4 e seus testes, então conectar a saída do reconciliador a `save_swap_bundle()`. Não mesclar PR #3 até concluir revisão.

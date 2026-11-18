@@ -1813,3 +1813,17 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Issue #19 foi renomeada para auditar e avançar a reconciliação econômica DAMM v2 usando os módulos existentes.
 - Próximo trabalho correto: auditar invariantes de ponta a ponta entre `EvtSwap2`, transferências atribuídas, taxas Token-2022 por epoch e deltas de token accounts/vaults por operação. Não criar outro decoder.
 - Nenhuma alteração em `main`, RAW fixtures, banco, imports, RPC/Helius, checkpoints ou operações on-chain.
+
+
+## 92. Token-2022 TransferCheckedWithFee decodificado e testado — 18/11/2026
+
+- Issue #19 foi refinada para suportar `TransferCheckedWithFee` antes da reconciliação econômica DAMM v2.
+- Criado PR #21, Draft, branch `feat/token2022-transfer-checked-with-fee`, base PR #18.
+- `solana_token_transfer_decoder.py` agora reconhece opcode Token-2022 26 + subdiscriminador 1, layout de 19 bytes, contas source/mint/destination/authority, amount u64, decimals u8 e fee u64; registra `instruction_type=TRANSFER_CHECKED_WITH_FEE` e `fee_amount_raw`.
+- A variante só é reconhecida sob Token-2022. Outros subdiscriminadores permanecem ignorados. A variante jsonParsed só é aceita quando feeAmount está presente.
+- `raydium_cpmm_transfer_reconciliation.py` trata o débito da origem pelo bruto e o crédito spendable do destino como `amount - fee`; `output_amount_raw` representa o valor líquido recebido pela carteira.
+- A primeira execução CI #535 (`44269711111`) detectou um erro no teste de taxa inválida: a validação ocorria tarde demais e lançava ValueError. Corrigido no commit `931d82744a350bf94c4293b819f13497cb630830`, movendo a validação para o limite de entrada da reconciliação.
+- CI #537 (`44269793991`) no HEAD `931d82744a350bf94c4293b819f13497cb630830`: **completed/success**; 352 testes aprovados e compileall aprovado.
+- A taxa declarada em TransferCheckedWithFee é validada pelo próprio programa Token-2022 contra o epoch corrente; em transação executada com sucesso, o destino recebe amount-fee em saldo spendable e o withheld fica na extensão TransferFeeAmount. O decoder não infere epoch nem consulta estado de mint.
+- Limites: TransferChecked padrão com taxa implícita continua sem fee explícita e deve falhar fechado se os deltas não reconciliarem. A atribuição DAMM v2 permanece ATTRIBUTED, não MATCHED; reconciliação econômica DAMM v2 ainda não foi implementada.
+- Sem RPC/Helius, RAW fixtures, SQLite, checkpoints ou operações on-chain. PR #17, #18 e #21 permanecem Draft e não integrados; PR #20 foi fechado sem merge por duplicar decoder já existente. `main` intacta.

@@ -327,6 +327,20 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         self.assertEqual(result.status, "AMBIGUOUS")
         self.assertIn("referência duplicada", result.reason)
 
+    def test_rejects_claimed_transfer_missing_from_complete_inventory(self):
+        result = _reconcile(
+            [self.context], [self.evidence],
+            _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ]),
+            all_transfers=[self.input],
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("não contém todas as transferências atribuídas", result.reason)
+
     def test_rejects_unattributed_transfer_touching_a_swap_account(self):
         unrelated = _transfer(
             "third-party", "user-a", "mint-a", 1, fee=0, inner=3

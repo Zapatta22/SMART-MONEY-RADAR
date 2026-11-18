@@ -121,7 +121,7 @@ def _account_keys(message: dict, meta: dict) -> list[str]:
                         raise ValueError(f"addressTableLookup.{field}Indexes inválido")
                     expected[field] += len(indexes)
         else:
-            loaded = loaded or {}
+            loaded = {} if loaded is None else loaded
         if not isinstance(loaded, dict):
             raise ValueError("meta.loadedAddresses inválido")
         for field in ("writable", "readonly"):
@@ -133,6 +133,10 @@ def _account_keys(message: dict, meta: dict) -> list[str]:
             if lookups and len(values) != expected[field]:
                 raise ValueError(
                     f"loadedAddresses.{field} não corresponde à quantidade de índices da lookup table"
+                )
+            if not lookups and values:
+                raise ValueError(
+                    "meta.loadedAddresses contém endereços sem addressTableLookups"
                 )
             keys.extend(values)
     return keys

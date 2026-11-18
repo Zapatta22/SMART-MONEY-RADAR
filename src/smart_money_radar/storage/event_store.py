@@ -734,6 +734,174 @@ class SQLiteEventStore:
             ).fetchall()
         return [str(row[0]) for row in rows]
 
+    def query_swap_reconciliation_attempts(
+        self,
+        *,
+        wallet_address: str | None = None,
+        signature: str | None = None,
+        operation_id: str | None = None,
+        status: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Consulta tentativas auditáveis com filtros opcionais e limite explícito."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("O limite deve ser inteiro positivo.")
+        if status is not None and status not in {
+            "MATCHED", "INCOMPLETE", "AMBIGUOUS", "UNRESOLVED"
+        }:
+            raise ValueError("Status de reconciliação não suportado.")
+        for name, value in (("wallet_address", wallet_address),
+                            ("signature", signature),
+                            ("operation_id", operation_id),
+                            ("since", since), ("until", until)):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} deve ser texto não vazio quando informado.")
+        if since is not None and until is not None and since > until:
+            raise ValueError("since não pode ser posterior a until.")
+
+        clauses = []
+        parameters: list[object] = []
+        for column, value in (
+            ("wallet_address", wallet_address),
+            ("signature", signature),
+            ("operation_id", operation_id),
+            ("status", status),
+        ):
+            if value is not None:
+                clauses.append(f"{column} = ?")
+                parameters.append(value)
+        if since is not None:
+            clauses.append("attempted_at >= ?")
+            parameters.append(since)
+        if until is not None:
+            clauses.append("attempted_at <= ?")
+            parameters.append(until)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        parameters.append(limit)
+        with self._connection_scope() as connection:
+            rows = connection.execute(
+                """SELECT wallet_address, signature, attempt_id, operation_id,
+                          instruction_index, inner_instruction_index, cpi_path_json,
+                          status, reason, attempted_at
+                   FROM swap_reconciliation_attempts"""
+                + where
+                + " ORDER BY id DESC LIMIT ?",
+                tuple(parameters),
+            ).fetchall()
+        return [{
+            "wallet_address": row[0], "signature": row[1],
+            "attempt_id": row[2], "operation_id": row[3],
+            "instruction_index": row[4], "inner_instruction_index": row[5],
+            "cpi_path": tuple(json.loads(row[6])), "status": row[7],
+            "reason": row[8], "attempted_at": row[9],
+        } for row in rows]
+
+    def get_reconciliation_diagnostics(
+        self,
+        *,
+        wallet_address: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        top_reasons_limit: int = 10,
+    ) -> dict:
+        """Resume volume, status, motivos recorrentes e pendências de reconciliação."""
+        if isinstance(top_reasons_limit, bool) or not isinstance(top_reasons_limit, int) or top_reasons_limit < 1:
+            raise ValueError("top_reasons_limit deve ser inteiro positivo.")
+        for name, value in (("wallet_address", wallet_address),
+                            ("since", since), ("until", until)):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} deve ser texto não vazio quando informado.")
+        if since is not None and until is not None and since > until:
+            raise ValueError("since não pode ser posterior a until.")
+
+        attempt_clauses = []
+        attempt_parameters: list[object] = []
+        pending_clauses = ["observed.payload_json IS NOT NULL",
+                           "processed.signature IS NULL"]
+        pending_parameters: list[object] = []
+        if wallet_address is not None:
+            attempt_clauses.append("wallet_address = ?")
+            attempt_parameters.append(wallet_address)
+            pending_clauses.append("observed.wallet_address = ?")
+            pending_parameters.append(wallet_address)
+        if since is not None:
+            attempt_clauses.append("attempted_at >= ?")
+            attempt_parameters.append(since)
+            pending_clauses.append("observed.observed_at >= ?")
+            pending_parameters.append(since)
+        if until is not None:
+            attempt_clauses.append("attempted_at <= ?")
+            attempt_parameters.append(until)
+            pending_clauses.append("observed.observed_at <= ?")
+            pending_parameters.append(until)
+        attempt_where = (
+            " WHERE " + " AND ".join(attempt_clauses) if attempt_clauses else ""
+        )
+        pending_where = " WHERE " + " AND ".join(pending_clauses)
+
+        statuses = {name: 0 for name in (
+            "MATCHED", "INCOMPLETE", "AMBIGUOUS", "UNRESOLVED"
+        )}
+        with self._connection_scope() as connection:
+            totals = connection.execute(
+                """SELECT COUNT(*), COUNT(DISTINCT operation_id),
+                          COUNT(DISTINCT signature)
+                   FROM swap_reconciliation_attempts""" + attempt_where,
+                tuple(attempt_parameters),
+            ).fetchone()
+            status_rows = connection.execute(
+                """SELECT status, COUNT(*) FROM swap_reconciliation_attempts"""
+                + attempt_where + " GROUP BY status",
+                tuple(attempt_parameters),
+            ).fetchall()
+            reason_rows = connection.execute(
+                """SELECT reason, COUNT(*) AS occurrences
+                   FROM swap_reconciliation_attempts"""
+                + attempt_where
+                + """ GROUP BY reason
+                    ORDER BY occurrences DESC, reason ASC LIMIT ?""",
+                tuple(attempt_parameters + [top_reasons_limit]),
+            ).fetchall()
+            pending_count = connection.execute(
+                """SELECT COUNT(*) FROM observed_transactions AS observed
+                   LEFT JOIN processed_signatures AS processed
+                     ON processed.wallet_address = observed.wallet_address
+                    AND processed.signature = observed.signature"""
+                + pending_where,
+                tuple(pending_parameters),
+            ).fetchone()[0]
+            pending_rows = connection.execute(
+                """SELECT observed.wallet_address, observed.signature,
+                          observed.parse_status, observed.observed_at
+                   FROM observed_transactions AS observed
+                   LEFT JOIN processed_signatures AS processed
+                     ON processed.wallet_address = observed.wallet_address
+                    AND processed.signature = observed.signature"""
+                + pending_where
+                + """ ORDER BY COALESCE(observed.slot, 0) ASC,
+                             observed.observed_at ASC, observed.rowid ASC LIMIT 100""",
+                tuple(pending_parameters),
+            ).fetchall()
+        statuses.update({str(row[0]): int(row[1]) for row in status_rows})
+        return {
+            "total_attempts": int(totals[0]),
+            "distinct_operations": int(totals[1]),
+            "distinct_signatures": int(totals[2]),
+            "statuses": statuses,
+            "top_reasons": [
+                {"reason": str(row[0]), "count": int(row[1])}
+                for row in reason_rows
+            ],
+            "pending_transactions_count": int(pending_count),
+            "pending_transactions": [
+                {"wallet_address": row[0], "signature": row[1],
+                 "parse_status": row[2], "observed_at": row[3]}
+                for row in pending_rows
+            ],
+        }
+
     def get_checkpoint(self, wallet_address: str) -> str | None:
         """Retorna a última assinatura processada com sucesso para a carteira."""
         with self._connection_scope() as connection:

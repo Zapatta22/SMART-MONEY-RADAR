@@ -2084,3 +2084,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O teste exige pending_reconciliation, ready_for_next_venue=False, RAW arquivado, assinatura na fila de replay e ausência de assinatura processada/checkpoint. Assim, cobre a propagação do novo bloqueio até a fronteira que impede o WalletMonitor de liberar CPMM.
 - Teste ainda não executado em runtime; CI segue sem steps/logs. Commit do teste: ceb008d1a980290204cf4d4224c05cac4a9b98b0.
 - PR #25 Draft, sem merge; main e estado persistente preservados.
+
+
+## 114. Formato homogêneo obrigatório para accountKeys — PR #25 (18/11/2026)
+
+- Auditoria estática identificou que os helpers de resolução usavam `any(dict)` para decidir se `accountKeys` estava em formato `jsonParsed`. Uma lista mista (objetos e strings) podia ser aceita parcialmente e produzir índices/chaves inconsistentes.
+- O pipeline DAMM v2, o decodificador SPL/Token-2022 e o decodificador de deltas agora rejeitam listas que misturam objetos `jsonParsed` e strings `compiled`. A validação ocorre antes de resolver endereços/índices.
+- Testes negativos adicionados nos três níveis: pipeline DAMM v2 retorna `REJECTED`; decodificador de transferências levanta `ValueError`; decodificador de deltas retorna `ACCOUNT_KEYS_INVALID`.
+- Commits de implementação: `45c1372bd535c1608b348569ea8e7db53bb228b9`, `d8fa7b8c41809b9c0c701057577b58ff30e09750`, `93853ccf8e28a1e60d0b4165327aae9d1b061cea`.
+- Commits de testes: `fc40f28931eec6d247f5203ff5391c5f602c1d77`, `8a4bac2cdb57fcdeff390bd750feb7b8363ce479`, `f6b9f818a3d14941eded6b779444711fd2daabf1`.
+- Documentação atualizada. Esta alteração é revisão estática enviada à branch; nenhum teste runtime/compileall foi executado por esta ação. A CI continua sujeita à indisponibilidade pré-etapas já registrada.
+- PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.

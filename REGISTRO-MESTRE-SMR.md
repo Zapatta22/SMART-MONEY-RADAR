@@ -327,8 +327,8 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Segunda fixture mainnet real — Token-2022
 - Coleta/anonymização/publicação via workflow run `44224903617`, sucesso; slot `344357800`; transação finalized, `meta.err=null`, version `0`.
-- Raw RPC SHA-256: `12e48f9cb3082355756b1bd96bbbb68f2561f3bae82191585c818a089f4c0e00`.
-- Projeção anonimizada: `data/fixtures/mainnet/anonymized/raydium-cpmm-token2022-fee.json`; SHA-256 `0f400421d25dd40ca65d13216543d292be1b8aa1a61c5b57550220f019c0556c`. Manifesto adjacente registra proveniência, hash, slot e anonimização.
+- Fingerprint do payload bruto omitido do registro versionado.
+- Projeção pseudonimizada: `data/fixtures/mainnet/anonymized/raydium-cpmm-token2022-fee.json`; hash atual `e63ad3fb799b208a5a4209587d3f11d3820476c472f297866a9b4ab244127a73`. Manifesto adjacente usa fixture_id sintético e não publica assinatura original nem fingerprint do payload bruto.
 - Artefatos privados: bruto ID `14393115160` (7 dias); projeção ID `14393020518` (30 dias). Raw e mapa reversível não foram commitados; três endereços pessoais foram pseudonimizados e 12 endereços de programa/protocolo/pool/vault/mints protegidos.
 - A transação tem um swap CPMM externo no índice 2 e duas transferências CPI `TransferChecked`: Token-2022 na entrada e SPL Token na saída. Quantidades brutas: `734738353` (6 decimals) e `1542848` (9 decimals).
 - Débito da token account do usuário: `-734738353`; aumento líquido do vault de entrada: `+661264517`; diferença observada: `73473836` unidades brutas. Não inferir nem nomear a causa/valor de taxa sem decodificação explícita. O teste confirma somente que bruto e delta líquido não coincidem.
@@ -564,3 +564,12 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Testes atualizados para verificar os deltas da fixture multi-venue e da rota Jupiter, além da rejeição de reconciliação sem delta e de delta com tipo inválido.
 - CI push run `44233840405` no commit `d98680b47b3cf9fbaef4f40bf84dd22a9fbc1e63`: **196 testes**, `OK`; `python -m compileall -q src tests` aprovado.
 - PR #13 continua aberto e não merged. A persistência proposta no PR #4 continua fora desta branch; não há integração de escrita no EventStore.
+
+
+## 32. Atualização 2026-11-18 — pseudonimização da fixture negativa Token-2022
+
+- A terceira projeção do PR #13 (`raydium-cpmm-token2022-fee.json`) também foi migrada para `smr.pseudonymized-fixture.v2`.
+- Assinatura e recentBlockhash substituídos por placeholders sintéticos; manifesto agora usa `smr-fixture-raydium-cpmm-token2022-fee-v1`, remove `signature`, `raw_sha256` e nome de arquivo derivado da assinatura, e mantém hash da projeção.
+- Teste de integração usa fixture_id e valida ausência dos identificadores/fingerprint originais.
+- Slot, horário, mints e valores exatos foram mantidos para preservar o caso fail-closed de Token-2022; portanto, continua pseudonimizada e potencialmente correlacionável, não anônima.
+- A CI deve ser repetida no novo head antes de considerar a correção validada.

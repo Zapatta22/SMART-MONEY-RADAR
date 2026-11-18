@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from smart_money_radar.domain.models import (
-    SwapClassification, SwapEvidence, SwapObservation,
+    SwapClassification, SwapEvidence, SwapObservation, build_swap_operation_id,
 )
 from smart_money_radar.storage.event_store import SQLiteEventStore
 
@@ -16,7 +16,7 @@ class SwapPersistenceTests(unittest.TestCase):
             parse_status="no_events", parser_version="1",
         )
         self.observation = SwapObservation(
-            operation_id="swap:test-operation-1",
+            operation_id=build_swap_operation_id("solana", "sig-a", 2, (0, 1)),
             chain="solana",
             wallet_address="wallet-a",
             signature="sig-a",
@@ -76,22 +76,22 @@ class SwapPersistenceTests(unittest.TestCase):
     def test_requires_parent_observation(self):
         # A different signature exercises the missing-parent guard.
         orphan = SwapObservation(
-            operation_id="swap:orphan", chain="solana", wallet_address="wallet-a",
+            operation_id=build_swap_operation_id("solana", "missing-signature", 0), chain="solana", wallet_address="wallet-a",
             signature="missing-signature", input_mint="mint-a", output_mint="mint-b",
             input_amount=Decimal("1"), output_amount=Decimal("2"),
             observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc), parser_version="1",
         )
         orphan_classification = SwapClassification(
-            operation_id="swap:orphan", side="UNKNOWN", confidence=Decimal("0"),
+            operation_id=build_swap_operation_id("solana", "missing-signature", 0), side="UNKNOWN", confidence=Decimal("0"),
             reason="unverified",
         )
         orphan_evidence = SwapEvidence(
-            operation_id="swap:orphan", program_id="program", venue=None,
+            operation_id=build_swap_operation_id("solana", "missing-signature", 0), program_id="program", venue=None,
             instruction_index=0,
         )
         with self.assertRaises(KeyError):
             self.store.save_swap_bundle(orphan, orphan_classification, orphan_evidence)
-        self.assertIsNone(self.store.get_swap_bundle("swap:orphan"))
+        self.assertIsNone(self.store.get_swap_bundle(build_swap_operation_id("solana", "missing-signature", 0)))
 
 
 if __name__ == "__main__":

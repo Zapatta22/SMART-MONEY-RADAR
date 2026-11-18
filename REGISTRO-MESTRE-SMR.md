@@ -2947,3 +2947,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Limite da evidência: o cenário de duas operações usa payload sintético e interrompe deliberadamente na resolução de contas da segunda operação. Não demonstra ainda o caminho de sucesso completo com duas operações passando por transferências, reconciliação econômica, adapter e SQLite no mesmo payload.
 - PR #25 permanece OPEN/DRAFT e sem merge; `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
 - Próxima ação: completar o fixture sintético de sucesso multi-swap com contas, transferências, snapshots/deltas e lifecycle quando aplicável, e passar o payload completo pelo pipeline de ponta a ponta.
+
+
+## 203. Integração ponta a ponta de duas operações DAMM v2 — 18/11/2026
+
+- Adicionada a fixture RPC sintética `_damm_two_swap2_reconciled_raw` em `tests/test_damm_v2_persistence_pipeline.py`, contendo duas chamadas `swap2` sequenciais, dois eventos `EvtSwap2`, listas de contas completas e independentes, quatro transferências `TransferChecked` (input/output por operação) e snapshots pre/post completos para as oito token accounts.
+- O teste `test_two_swap2_payload_runs_full_pipeline_and_persists_both_bundles` chama diretamente `process_damm_v2_observation`, sem mocks nas etapas internas. Portanto percorre o analyzer, associação evento/instrução, decoder de contas, decoder de transferências, atribuição CPI, decoder de deltas, reconciliação econômica do lote, adapter de domínio e persistência SQLite.
+- Resultado comprovado: `reconciled`; 2 swaps decodificados; 2 reconciliados; 0 unresolved; 2 bundles persistidos; 2 tentativas `MATCHED`; IDs de operação distintos; ambos os bundles recuperados do SQLite e classificados `UNKNOWN`; lote liberado para a próxima venue.
+- Durante a construção, a primeira fixture falhou porque os campos `included_transfer_fee_amount_in/out` do evento estavam zerados, apesar dos valores de swap serem 100/90. O log expôs a divergência; a fixture foi corrigida para codificar 100/90/90, conforme o layout do decoder. A execução final não usa mocks para mascarar a reconciliação.
+- CI push #44411969562 SUCCESS no commit `1ffb850856328835903371165e8bcb739bbac28d`: 493 testes aprovados em 4,176s; `compileall` concluído. O log identifica o novo teste como `ok`.
+- O cenário de sucesso é uma fixture RPC sintética determinística, não uma captura Mainnet integral. As evidências Mainnet existentes continuam documentadas nas seções anteriores; não confundir os dois níveis de validação.
+- PR #25 permanece OPEN/DRAFT e sem merge. A `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
+- Próxima ação: acrescentar o teste negativo complementar com duas operações em que ambas as contas/transferências são decodificáveis, mas a reconciliação econômica de apenas uma falha; comprovar que nenhum bundle do lote é persistido e que a venue seguinte/checkpoint continuam bloqueados.

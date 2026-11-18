@@ -2934,3 +2934,16 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Limite da evidência: contextos/evidências/deltas do teste são construídos em fixture sintética. A associação real de duas chamadas `swap2` já possui teste separado no analyzer, e Mainnet já validou transações multi-swap; ainda falta um teste único de integração que atravesse analyzer, decodificação de contas/transferências, reconciliação, adapter e persistência usando o mesmo payload.
 - PR #25 permanece OPEN/DRAFT, sem merge; `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
 - Próxima ação: fechar a lacuna com integração de ponta a ponta DAMM v2 multi-swap em fixture RPC determinística, mantendo bloqueio integral quando qualquer swap do lote não reconciliar.
+
+
+## 202. Integração fail-closed de duas chamadas swap2 até a persistência — 18/11/2026
+
+- Adicionado em `tests/test_damm_v2_persistence_pipeline.py` o teste `test_two_real_swap2_associations_block_entire_batch_when_second_account_decode_fails`.
+- O teste constrói um payload RPC sintético realista com duas chamadas DAMM v2 `swap2` sequenciais e dois eventos `EvtSwap2`; o analyzer associa ambas como operações distintas.
+- A primeira instrução possui inventário de contas válido e a segunda é deliberadamente incompleta. O pipeline real percorre associação e início da resolução de contas, rejeita o lote inteiro e não produz bundle parcial.
+- A camada de persistência registra as duas operações como `INCOMPLETE`, mantém a assinatura pendente, não avança checkpoint e não persiste bundles.
+- A primeira execução PR no commit intermediário `2ac0d546986ffe19b69efa4329433a4665d28c3d` falhou somente porque o teste chamou um método inexistente `list_swap_bundles`. A asserção foi corrigida para consultar `get_swap_bundle` por operation ID; a execução push no commit `edd74ca385c7e294635351ec0a79249205fbd49a` passou.
+- CI push #44411418961 SUCCESS: 492 testes aprovados em 3,899s e compileall concluído. O log identifica o novo teste como `ok`.
+- Limite da evidência: o cenário de duas operações usa payload sintético e interrompe deliberadamente na resolução de contas da segunda operação. Não demonstra ainda o caminho de sucesso completo com duas operações passando por transferências, reconciliação econômica, adapter e SQLite no mesmo payload.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
+- Próxima ação: completar o fixture sintético de sucesso multi-swap com contas, transferências, snapshots/deltas e lifecycle quando aplicável, e passar o payload completo pelo pipeline de ponta a ponta.

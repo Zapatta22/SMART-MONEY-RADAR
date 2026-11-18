@@ -253,7 +253,7 @@ def build_damm_v2_swap_domain_bundles(
             evidence=(
                 "EvtSwap2 associado estruturalmente ao swap",
                 "transferências input/output atribuídas e executadas",
-                "lote completo reconciliado contra deltas pre/post",
+                "lote completo reconciliado contra deltas pre/post e lifecycle wSOL quando aplicável",
                 "propriedade das token accounts confirmada por snapshots ou ATA lifecycle para a carteira monitorada",
                 "input_amount representa débito bruto; output_amount representa crédito líquido",
             ),

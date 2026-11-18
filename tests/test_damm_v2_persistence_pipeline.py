@@ -665,7 +665,7 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
         raw = _damm_two_swap2_reconciled_raw()
         event_instruction = raw["meta"]["innerInstructions"][0]["instructions"][3]
         event_data = bytearray(_b58decode(event_instruction["data"]))
-        event_data[8:40] = bytes([99]) * 32
+        event_data[16:48] = bytes([99]) * 32
         event_instruction["data"] = _b58encode(bytes(event_data))
 
         result = process_damm_v2_observation(

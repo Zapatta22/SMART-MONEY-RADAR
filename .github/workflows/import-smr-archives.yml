@@ -1,10 +1,10 @@
-name: Import recovered SMR archives
+name: Import SMR Etapa 16 source
 
 on:
   push:
     branches: [main]
     paths:
-      - "*.zip"
+      - "SMR-CODIGO-BASE-ETAPA16-2026-11-16.zip"
   workflow_dispatch:
 
 permissions:
@@ -22,63 +22,59 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Extract and merge archives
+      - name: Extract only the canonical Etapa 16 archive
         shell: bash
         run: |
           set -euo pipefail
+          archive="SMR-CODIGO-BASE-ETAPA16-2026-11-16.zip"
+          test -f "$archive"
           mkdir -p /tmp/smr-import
-          shopt -s nullglob
-          archives=( *.zip )
-          if [ ${#archives[@]} -eq 0 ]; then
-            echo "No ZIP archives found at repository root."
-            exit 1
-          fi
-          for archive in "${archives[@]}"; do
-            echo "Extracting $archive"
-            python - "$archive" "/tmp/smr-import" <<'PY'
+          python - "$archive" /tmp/smr-import <<'PY'
           import pathlib, sys, zipfile
           archive = pathlib.Path(sys.argv[1])
           destination = pathlib.Path(sys.argv[2])
           with zipfile.ZipFile(archive) as z:
+              bad = z.testzip()
+              if bad:
+                  raise SystemExit(f"Corrupt ZIP member: {bad}")
               for member in z.infolist():
-                  p = pathlib.PurePosixPath(member.filename)
-                  if p.is_absolute() or ".." in p.parts:
+                  path = pathlib.PurePosixPath(member.filename)
+                  if path.is_absolute() or ".." in path.parts:
                       raise SystemExit(f"Unsafe archive path: {member.filename}")
-                  if not member.is_dir():
-                      target = destination.joinpath(*p.parts)
-                      target.parent.mkdir(parents=True, exist_ok=True)
-                      with z.open(member) as src, target.open("wb") as dst:
-                          dst.write(src.read())
+                  if member.is_dir():
+                      continue
+                  target = destination.joinpath(*path.parts)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  with z.open(member) as src, target.open("wb") as dst:
+                      dst.write(src.read())
           PY
-          done
 
-      - name: Locate project root and sanitize
+      - name: Locate one project root and sanitize
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          import shutil
           root = Path("/tmp/smr-import")
-          candidates = [p for p in root.rglob("pyproject.toml") if p.is_file()]
-          if not candidates:
-              candidates = [p for p in root.rglob("setup.cfg") if p.is_file()]
-          if not candidates:
-              candidates = [p for p in root.rglob("src/smart_money_radar") if p.is_dir()]
-          if not candidates:
-              raise SystemExit("Could not locate Python project root in supplied archives.")
-          marker = candidates[0]
-          project = marker.parent if marker.is_file() else marker.parent.parent
-          print(f"Detected project root: {project}")
+          markers = sorted(root.rglob("pyproject.toml"))
+          if len(markers) != 1:
+              raise SystemExit(f"Expected exactly one pyproject.toml; found {len(markers)}")
+          project = markers[0].parent
+          if not (project / "src" / "smart_money_radar").is_dir():
+              raise SystemExit("Canonical archive does not contain src/smart_money_radar.")
+          if not (project / "tests").is_dir():
+              raise SystemExit("Canonical archive does not contain tests/.")
           destination = Path.cwd()
           for item in project.iterdir():
               target = destination / item.name
               if item.is_dir():
-                  import shutil
-                  if target.exists(): shutil.rmtree(target)
+                  if target.exists():
+                      shutil.rmtree(target)
                   shutil.copytree(item, target)
               else:
-                  import shutil
                   shutil.copy2(item, target)
+          print(f"Imported project root: {project}")
           PY
           find . -type d \( -name __pycache__ -o -name .pytest_cache -o -name .mypy_cache -o -name .ruff_cache \) -prune -exec rm -rf {} +
           find . -type f \( -name "*.pyc" -o -name "*.sqlite" -o -name "*.sqlite3" -o -name "*.db" -o -name ".env" \) -delete
@@ -97,19 +93,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f pyproject.toml ]; then
-            python -m pip install --upgrade pip
-            python -m pip install -e ".[dev]" || python -m pip install -e .
-          fi
-          if [ -d tests ]; then
-            if python -c "import pytest" >/dev/null 2>&1; then
-              python -m pytest -q
-            else
-              PYTHONPATH=src python -m unittest discover -s tests -v
-            fi
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" || python -m pip install -e .
+          if python -c "import pytest" >/dev/null 2>&1; then
+            python -m pytest -q
           else
-            echo "No tests directory found."
-            exit 1
+            PYTHONPATH=src python -m unittest discover -s tests -v
           fi
           python -m compileall -q src tests
 
@@ -123,6 +112,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No source changes to commit."
           else
-            git commit -m "chore: import recovered SMR Etapa 16 source"
+            git commit -m "chore: import canonical SMR Etapa 16 source"
             git push
           fi

@@ -122,6 +122,14 @@ def reconcile_raydium_cpmm_swaps(
     if any(
         transfer.execution_status != "EXECUTED"
         or transfer.instruction_type not in {"TRANSFER", "TRANSFER_CHECKED", "TRANSFER_CHECKED_WITH_FEE"}
+        or (
+            transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE"
+            and (
+                isinstance(transfer.fee_amount_raw, bool)
+                or not isinstance(transfer.fee_amount_raw, int)
+                or not 0 <= transfer.fee_amount_raw <= transfer.amount_raw
+            )
+        )
         for transfer in transfers
     ):
         return [

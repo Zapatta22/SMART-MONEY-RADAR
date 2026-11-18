@@ -153,5 +153,32 @@ class DammV2SwapDomainAdapterTests(unittest.TestCase):
             )
 
 
+    def test_adapter_bundle_round_trips_through_existing_sqlite_event_store(self):
+        context, evidence, deltas, reconciliation = _inputs()
+        bundles = build_damm_v2_swap_domain_bundles(
+            contexts=[context], transfer_evidence=[evidence],
+            balance_deltas=deltas, reconciliation=reconciliation,
+            monitored_wallet="wallet-1", signature="signature-1",
+            observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc),
+            parser_version="smr-test",
+        )
+        store = SQLiteEventStore(":memory:")
+        try:
+            store.save_observation(
+                "wallet-1", "signature-1", {"meta": {"err": None}}, [],
+                parse_status="parsed", parser_version="smr-test",
+            )
+            bundle = bundles[0]
+            self.assertTrue(store.save_swap_bundle(
+                bundle.observation, bundle.classification, bundle.evidence
+            ))
+            persisted = store.get_swap_bundle(bundle.observation.operation_id)
+            self.assertEqual(persisted["observation"], bundle.observation)
+            self.assertEqual(persisted["classification"], bundle.classification)
+            self.assertEqual(persisted["evidence"], bundle.evidence)
+        finally:
+            store.close()
+
+
 if __name__ == "__main__":
     unittest.main()

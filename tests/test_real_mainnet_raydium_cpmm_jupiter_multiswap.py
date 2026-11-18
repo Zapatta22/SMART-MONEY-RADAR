@@ -7,6 +7,7 @@ not produce economic observations.
 from __future__ import annotations
 
 import hashlib
+from decimal import Decimal
 import json
 import unittest
 from datetime import datetime, timezone
@@ -82,14 +83,19 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
         result = self.fixture["result"]
         swaps = decode_raydium_cpmm_swaps(self.fixture)
         transfers = decode_solana_token_transfers(self.fixture)
-        deltas = decode_token_account_balance_deltas(self.fixture)
-        delta_accounts = {item.token_account for item in deltas}
+        # Keep zero-net snapshots: intermediate accounts can receive and send
+        # tokens within the route while ending with the same pre/post balance.
+        deltas = decode_token_account_balance_deltas(
+            self.fixture,
+            include_unchanged=True,
+        )
+        delta_by_account = {item.token_account: item for item in deltas}
 
         self.assertGreaterEqual(len(transfers), 4)
-        # First CPMM output and second CPMM input are intermediate accounts
-        # whose pre/post token balance is unchanged after the full route.
-        self.assertNotIn(swaps[0].accounts.output_token_account, delta_accounts)
-        self.assertNotIn(swaps[1].accounts.input_token_account, delta_accounts)
+        first_intermediate = delta_by_account[swaps[0].accounts.output_token_account]
+        second_intermediate = delta_by_account[swaps[1].accounts.input_token_account]
+        self.assertEqual(first_intermediate.delta_raw, 0)
+        self.assertEqual(second_intermediate.delta_raw, 0)
 
         wallet = result["transaction"]["message"]["accountKeys"][0]
         reconciliations = reconcile_raydium_cpmm_swaps(
@@ -99,13 +105,18 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
             monitored_wallet=wallet,
         )
         self.assertEqual(len(reconciliations), 2)
+        # First swap is fully reconcilable, including the intermediate account
+        # whose incoming and outgoing transfers net to zero. The second swap
+        # remains incomplete because Token-2022 gross output differs from the
+        # recipient account's net balance increase.
         self.assertEqual(
             [item.status for item in reconciliations],
-            ["INCOMPLETE", "INCOMPLETE"],
+            ["MATCHED", "INCOMPLETE"],
         )
-        self.assertTrue(
-            all("Falta delta pre/post" in item.reason for item in reconciliations)
-        )
+        self.assertEqual(reconciliations[0].input_amount_raw, 4421780000)
+        self.assertEqual(reconciliations[0].output_amount_raw, 1390888)
+        self.assertIn("token account de saída", reconciliations[1].reason)
+        self.assertIn("não reconcilia", reconciliations[1].reason)
 
         bundles = build_swap_domain_bundles(
             reconciliations,
@@ -115,7 +126,10 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
             observed_at=datetime.fromtimestamp(result["blockTime"], tz=timezone.utc),
             parser_version="smr-real-mainnet-jupiter-multiswap-v1",
         )
-        self.assertEqual(bundles, [])
+        self.assertEqual(len(bundles), 1)
+        self.assertEqual(bundles[0].observation.input_amount, Decimal("4421.78"))
+        self.assertEqual(bundles[0].observation.output_amount, Decimal("1.390888"))
+        self.assertEqual(bundles[0].classification.side, "UNKNOWN")
 
 
 if __name__ == "__main__":

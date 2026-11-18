@@ -2801,3 +2801,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Próxima verificação imediata: aguardar workflow #9 e confirmar novamente a transação real DAMM v2 com status RECONCILED, funding 20.700 lamports e um bundle.
 
 - Workflow Mainnet #9 (run `44379455602`) SUCCESS após incluir o decoder wSOL nos gatilhos. Reexecutou a consulta RPC da transação real e confirmou novamente `status=RECONCILED`, `reconciliation_status=RECONCILED`, funding 20.700 lamports, índices de funding reportados e 1 bundle. Isso comprova que o workflow é disparado por mudanças no decoder e que a alteração de validação não quebrou o caminho Mainnet single-swap.
+
+
+## 191. Cobertura explícita para múltiplos calls DAMM v2 `swap2` — 18/11/2026
+
+- Revisada a cobertura do analyzer após consulta ao relatório de auditoria OtterSec para Meteora DAMM v2 (versão auditada 0.1.5; relatório publicado em 2025): o sumário registra que uma verificação de swap único podia ser contornada por chamadas `swap2`, permitindo múltiplos swaps na mesma transação. Referência pública: https://resources.cryptocompare.com/asset-management/21061/1762508237558.pdf
+- O decoder já reconhecia o discriminador `SWAP2_DISCRIMINATOR`, e o analyzer trata swaps por instrução. A lacuna encontrada era de teste explícito: a cobertura sequencial existente usava apenas o discriminador legado `swap`.
+- Adicionado teste `test_keeps_two_sequential_swap2_calls_as_two_matched_operations`: duas chamadas `swap2` dentro do mesmo grupo inner, cada uma seguida do seu próprio `EvtSwap2`, devem produzir duas associações MATCHED, preservando índices, nomes e amounts.
+- CI #1065 (run `44379857442`) SUCCESS no commit `49395fef9adb181b16c024837e04615b7efd93e8`: 483 testes passaram e compileall passou.
+- Esta evidência é sintética e cobre associação estrutural de duas instruções `swap2`; não é fixture Mainnet de dois swaps, nem valida por si só funding wSOL compartilhado em Mainnet. PR #25 permanece aberto/Draft; sem merge, BUY/SELL ou execução financeira.
+- Próximo passo: localizar e validar uma transação Mainnet que contenha pelo menos duas instruções DAMM v2 `swap2` e compartilhe a conta wSOL monitorada, caso exista dentro do conjunto de transações disponíveis.

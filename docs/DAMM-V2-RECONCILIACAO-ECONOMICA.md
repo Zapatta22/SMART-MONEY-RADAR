@@ -221,3 +221,20 @@ Fonte oficial: https://solana.com/docs/tokens/extensions/transfer-fees
 
 ### 12.9 Refinamento do requisito de withheld
 A leitura direta da extensão TransferFeeAmount é evidência adicional, não requisito absoluto para toda operação. Uma reconciliação pode provar a taxa retida por meio da quantia bruta da instrução, dos campos bruto/líquido do EvtSwap2 e do delta spendable pre/post, desde que a transferência seja exclusiva e todos os outros movimentos da conta sejam identificados. Quando o delta é agregado e não pode ser atribuído com exclusividade, o caso continua INCOMPLETE sem estado adicional da extensão.
+
+### 12.10 Matriz de FeeMode derivada do código fixado
+
+| CollectFeeMode | Direção | fees_on_input | fees_on_token_a | Token de cobrança AMM/referral |
+|---|---|---:|---:|---|
+| BOTH_TOKEN | A_TO_B | false | false | B (output) |
+| BOTH_TOKEN | B_TO_A | false | true | A (output) |
+| ONLY_B | A_TO_B | false | false | B (output) |
+| ONLY_B | B_TO_A | true | false | B (input) |
+| COMPOUNDING | A_TO_B | false | false | B (output) |
+| COMPOUNDING | B_TO_A | true | false | B (input) |
+
+Quando has_referral é verdadeiro, o programa transfere referral_fee separadamente do vault do token indicado por fees_on_token_a. O referral account pode estar ausente (sentinela do próprio programa), portanto has_referral e a transferência efetiva precisam ser confirmados pelas contas e instruções reais, não somente pelo valor do campo.
+
+split_fees primeiro calcula a parcela protocol sobre a taxa AMM, calcula referral como percentual dessa parcela quando houver referral e subtrai referral da parcela protocol emitida no resultado. O evento protocol_fee é, portanto, a parcela protocol líquida de referral; referral_fee é separada. claiming_fee e compounding_fee são as parcelas restantes destinadas ao accounting LP/compounding. Não somar protocol_fee + referral_fee como se protocol_fee já incluísse referral, nem somar essas parcelas novamente ao débito de uma transferência que já as contém.
+
+O reconciliador precisa aplicar essa matriz antes de determinar qual vault pode sofrer a transferência referral e qual ativo recebe o accounting de taxa. Casos em que a transferência referral esperada não aparece, aparece duplicada ou usa mint/conta divergente permanecem INCOMPLETE ou AMBIGUOUS.

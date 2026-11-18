@@ -3092,3 +3092,15 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - PR #25 permanece OPEN/DRAFT, mergeable e sem merge. PRs anteriores continuam abertas conforme o estado individual; `main` permanece intacta.
 - O scanner Mainnet #43 identificou uma transação real de duas instruções `swap2` reconciliadas com uma conta wSOL compartilhada entre input da operação 0 e output da operação 1 (seção 211).
 - Próxima ação de engenharia: iniciar a cobertura de multi-swap DAMM v2 sem round-trip wSOL, separando o critério de descoberta do critério específico de wSOL; preservar a validação atual como regressão e não alterar o estado das PRs.
+
+
+## 215. Scanner Mainnet separado por padrão de wSOL e diagnóstico por assinatura — 18/11/2026
+
+- O scanner `tools/scan_damm_v2_multi_swap_mainnet.py` agora aceita `--target shared-wsol` (padrão anterior, mantido) e `--target non-shared-wsol`. Ambos só retornam FOUND quando o lote tem ao menos dois `swap2` MATCHED e o pipeline econômico retorna `RECONCILED`.
+- O workflow Mainnet agora executa as duas buscas: shared-wSOL com até 3 páginas de 100 assinaturas; non-shared-wSOL com 1 página de 100. A busca não compartilhada é limitada à amostra recente consultada; resultado vazio não prova inexistência global.
+- Adicionados testes unitários para: descoberta de multi-swap reconciliado sem wSOL compartilhado; preservação do comportamento padrão shared-wSOL; e retenção de assinatura/slot dos erros de análise enquanto o scanner continua para a próxima transação.
+- Run Mainnet #44415303991 SUCCESS no commit `22acf19ac86ab27db9f6223e33f4995bbffb4ba1`. As três validações de transações conhecidas passaram; a busca shared-wSOL inspecionou 98 transações, sem falhas, e encontrou `4dmHfTNPmK3qYmPSqwkcDhrK6rvGhmWNcRopWjEauif9v41j9aHfg1gFi9T6TkqiU84NzFGoKwE9rMRyt7bqLENt`, slot 471107678, com 2 swaps MATCHED e pipeline `RECONCILED`. A conta wSOL `Cj3i3MYyH7LSGmF377mpTFBuRKhJfkU3Lqc6rcV59BbM` é input da operação 0 e output da operação 1.
+- A busca non-shared-wSOL inspecionou 100 transações, sem falhas, e não encontrou candidato nessa amostra (`NO_NON_SHARED_WSOL_MULTI_SWAP_FOUND`, lista de candidatos vazia).
+- CI PR #44415313819 SUCCESS no commit `22acf19ac86ab27db9f6223e33f4995bbffb4ba1`: 501 testes aprovados em 3,897s e `compileall` concluído. O teste de captura de assinatura/slot de falhas está aprovado.
+- Uma execução intermediária no commit `9b90bb4e5e3057512f36cd67cea7a1d8e9fc9b86` falhou porque o retorno antecipado non-shared não incluía `failure_samples`; corrigido em `22acf19` e validado no CI atual.
+- Próxima ação: investigar as três assinaturas Mainnet anteriormente registradas com erro `swap exige 24 bytes` (slots 471107341–471107342), capturando o comprimento real e a instrução específica antes de decidir se são variantes legítimas, payloads malformados ou incompatibilidades do decoder. Não relaxar o fail-closed sem evidência do IDL/programa.

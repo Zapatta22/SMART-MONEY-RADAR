@@ -483,6 +483,53 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
             self.assertIsNone(self.store.get_swap_bundle(operation_id))
 
 
+    def test_wallet_monitor_blocks_cpmm_on_real_two_swap_economic_mismatch(self):
+        import asyncio
+        from unittest.mock import patch
+        from smart_money_radar.services.wallet_monitor import WalletMonitor
+        from smart_money_radar.settings import HeliusSettings
+
+        raw = _damm_two_swap2_reconciled_raw()
+        second_user_output_index = raw["transaction"]["message"]["accountKeys"].index(
+            "user-out-1"
+        )
+        second_output_snapshot = next(
+            item for item in raw["meta"]["postTokenBalances"]
+            if item["accountIndex"] == second_user_output_index
+        )
+        second_output_snapshot["uiTokenAmount"]["amount"] = "4089"
+        second_output_snapshot["uiTokenAmount"]["uiAmount"] = 0.004089
+        second_output_snapshot["uiTokenAmount"]["uiAmountString"] = "0.004089"
+
+        class Source:
+            async def get_transaction_async(self, signature):
+                self.signature = signature
+                return raw
+
+        monitor = WalletMonitor(
+            HeliusSettings(api_key="simulated-key"), Source(), self.store
+        )
+        with patch(
+            "smart_money_radar.services.wallet_monitor.process_raydium_cpmm_observation"
+        ) as cpmm:
+            result = asyncio.run(
+                monitor._collect_transaction("wallet", "signature")
+            )
+
+        self.assertFalse(result)
+        cpmm.assert_not_called()
+        self.assertFalse(self.store.has_processed_signature("wallet", "signature"))
+        self.assertIsNone(self.store.get_checkpoint("wallet"))
+        self.assertEqual(
+            self.store.get_pending_signatures("wallet"), ["signature"]
+        )
+        attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(all(item["status"] == "INCOMPLETE" for item in attempts))
+
+
     def test_two_swap2_economic_mismatch_blocks_both_bundles_and_next_venue(self):
         raw = _damm_two_swap2_reconciled_raw()
         second_user_output_index = raw["transaction"]["message"]["accountKeys"].index(

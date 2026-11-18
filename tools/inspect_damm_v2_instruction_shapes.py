@@ -79,6 +79,7 @@ def inspect(raw: dict, signature: str) -> dict:
             "data_length": len(data),
             "expected_length": expected,
             "length_status": "VALID" if len(data) == expected else "UNSUPPORTED_LENGTH",
+            "trailing_bytes_hex": data[expected:].hex() if len(data) > expected else "",
             "discriminator_hex": discriminator.hex(),
         })
 

@@ -79,7 +79,7 @@ class RpcFixtureCollector:
             "params": [signature, {
                 "commitment": "finalized",
                 "encoding": "json",
-                "maxSupportedTransactionVersion": 0,
+                "maxSupportedTransactionVersion": 1,
             }],
         }, separators=(",", ":")).encode("utf-8")
         request = urllib.request.Request(

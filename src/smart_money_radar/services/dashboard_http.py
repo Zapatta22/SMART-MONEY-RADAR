@@ -108,3 +108,43 @@ def create_read_only_server(
     server.dashboard_service = DashboardReadService(event_store)
     server.diagnostics_service = ReconciliationDiagnosticsService(event_store)
     return server
+
+
+def main(argv=None) -> None:
+    """Run the local read-only API without enabling Helius/RPC networking."""
+    import argparse
+    import os
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(
+        prog="smr-api",
+        description="API HTTP local e somente leitura do SMART MONEY RADAR.",
+    )
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    args = parser.parse_args(argv)
+
+    token = os.environ.get("SMR_API_TOKEN", "")
+    if len(token) < 32:
+        raise SystemExit(
+            "Defina SMR_API_TOKEN com pelo menos 32 caracteres antes de iniciar."
+        )
+    database_path = Path(
+        os.environ.get("SMR_DB_PATH", "data/smr_history.sqlite3")
+    ).expanduser()
+    event_store = SQLiteEventStore(database_path)
+    server = None
+    try:
+        server = create_read_only_server(
+            event_store, auth_token=token, host=args.host, port=args.port
+        )
+        print(f"SMR API somente leitura disponível em http://{args.host}:{server.server_port}")
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nSMR API encerrada.")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+    finally:
+        if server is not None:
+            server.server_close()
+        event_store.close()

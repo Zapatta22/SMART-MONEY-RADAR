@@ -99,6 +99,7 @@ def _token_balances(
     raw_balances: dict[str, Decimal] = defaultdict(Decimal)
     decimals_by_mint: dict[str, set[int]] = defaultdict(set)
     invalid_mints: set[str] = set()
+    account_index_to_mint: dict[int, str] = {}
     if not isinstance(value, list):
         return {}
     for entry in value:
@@ -111,8 +112,31 @@ def _token_balances(
         if not isinstance(amount_info, dict):
             invalid_mints.add(mint)
             continue
+        account_index = entry.get("accountIndex")
+        if account_index is not None:
+            if (
+                isinstance(account_index, bool)
+                or not isinstance(account_index, int)
+                or account_index < 0
+            ):
+                invalid_mints.add(mint)
+                continue
+            previous_mint = account_index_to_mint.get(account_index)
+            if previous_mint is not None:
+                invalid_mints.add(previous_mint)
+                invalid_mints.add(mint)
+                continue
+            account_index_to_mint[account_index] = mint
         try:
-            raw_amount = Decimal(str(amount_info["amount"]))
+            raw_amount_value = amount_info["amount"]
+            if (
+                not isinstance(raw_amount_value, str)
+                or not raw_amount_value.isascii()
+                or not raw_amount_value.isdigit()
+            ):
+                invalid_mints.add(mint)
+                continue
+            raw_amount = Decimal(raw_amount_value)
             decimals_value = amount_info["decimals"]
             # JSON-RPC representa decimals SPL como inteiro. Não coagir strings,
             # floats ou booleanos: 6.9 truncado para 6 alteraria o saldo.

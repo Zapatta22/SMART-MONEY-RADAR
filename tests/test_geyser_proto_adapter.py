@@ -866,6 +866,40 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "hash do bloco diverge"):
             receiver.transaction_evidence_at(41, block_sequence=46)
 
+    def test_cli_lists_session_inventory_and_transport_gaps_read_only(self):
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "journal.sqlite"
+            store = SQLiteGeyserRawStore(database)
+            first = self.receiver(store)
+            store.start_capture_session(*first.scope[:2])
+            transaction = self.transaction_frame()
+            first.receive(transaction, stream_sequence=40)
+            first.receive(transaction, stream_sequence=42)
+            store.finish_capture_session(*first.scope[:2], "deadline_exceeded")
+            self.receiver(store, stream="connection-b", domain="domain-b")
+            self.receiver(store, source="other")
+            store.close()
+
+            before = hashlib.sha256(database.read_bytes()).hexdigest()
+            output = StringIO()
+            with patch("smart_money_radar.cli.HeliusSettings.from_environment",
+                       side_effect=AssertionError("offline")), redirect_stdout(output):
+                main(["geyser-sessions", str(database), "--source", "validator-a"])
+            sessions = json.loads(output.getvalue())["sessions"]
+            interrupted, empty = sessions
+            self.assertEqual(interrupted["stream_id"], "connection-a")
+            self.assertTrue(interrupted["interrupted"])
+            self.assertFalse(interrupted["tainted"])
+            self.assertEqual(interrupted["contiguous_sequence"], 40)
+            self.assertEqual(interrupted["last_seen_sequence"], 42)
+            self.assertEqual(interrupted["capture"]["outcome"], "deadline_exceeded")
+            self.assertEqual(interrupted["counts"], [
+                {"status": "accepted", "frame_kind": "transaction", "frame_count": 2},
+            ])
+            self.assertEqual(empty["counts"], [])
+            self.assertIsNone(empty["capture"])
+            self.assertEqual(hashlib.sha256(database.read_bytes()).hexdigest(), before)
+
     def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
         descriptors = descriptor_pb2.FileDescriptorSet()
         _UPDATE.DESCRIPTOR.file.CopyToProto(descriptors.file.add())

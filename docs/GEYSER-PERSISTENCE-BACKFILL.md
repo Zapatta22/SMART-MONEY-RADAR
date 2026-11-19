@@ -488,3 +488,13 @@ e o registro distingue esses eventos. Uma interrupção do processo antes do
 encerramento deixa o resultado em aberto. Journals schema 3 continuam
 legíveis e a migração preserva as entregas antigas sem atribuir a elas um
 resultado de captura.
+
+### Inventário local de sessões
+
+`smr geyser-sessions journal.sqlite --source validator-a` lista os domínios
+da fonte, os limites de sequência, indicação de lacuna ou anomalia e
+contagens por tipo e status de frame. A opção `--limit` controla a quantidade
+de sessões no resultado. Quando o schema inclui o resultado gRPC, o relatório
+mostra também como a tentativa terminou. A leitura usa um único snapshot
+SQLite, sem conexão com a rede. O inventário descreve o que consta no journal.
+Use o replay de evidência para conferir os hashes dos frames.

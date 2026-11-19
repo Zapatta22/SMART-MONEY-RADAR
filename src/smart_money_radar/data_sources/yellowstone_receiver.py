@@ -2,12 +2,30 @@
 
 from collections.abc import Callable, Iterator
 
+from google.protobuf import descriptor_pb2, message_factory
 from google.protobuf.message import DecodeError, Message
 
+from smart_money_radar.data_sources.geyser_account_timeline import AccountUpdateTimeline
+from smart_money_radar.data_sources.geyser_account_updates import NormalizedAccountUpdate
+from smart_money_radar.data_sources.geyser_bank_lineage import (
+    NormalizedBlockMeta,
+    NormalizedEntryUpdateParent,
+    NormalizedSlotUpdate,
+)
 from smart_money_radar.data_sources.geyser_ingestion import NormalizedGeyserEvent
 from smart_money_radar.data_sources.geyser_proto_adapter import adapt_subscribe_update
 from smart_money_radar.data_sources.geyser_transaction_updates import NormalizedTransactionObservation
 from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore, WireFrameReceipt
+
+
+def load_yellowstone_decoder(descriptor_set: bytes) -> Callable[[bytes], Message]:
+    """Load the official SubscribeUpdate type from a descriptor set with imports."""
+    descriptors = descriptor_pb2.FileDescriptorSet.FromString(descriptor_set)
+    messages = message_factory.GetMessages(descriptors.file)
+    update = messages.get("geyser.SubscribeUpdate")
+    if update is None or "update_oneof" not in update.DESCRIPTOR.oneofs_by_name:
+        raise ValueError("descriptor não define geyser.SubscribeUpdate com update_oneof")
+    return update.FromString
 
 
 class YellowstoneFrameReceiver:
@@ -59,3 +77,19 @@ class YellowstoneFrameReceiver:
                 raw_message_bytes=payload,
             )
             yield sequence, event
+
+    def rebuild_account_timeline(self) -> AccountUpdateTimeline:
+        """Return a timeline only after every frame in this domain passes replay."""
+        timeline = AccountUpdateTimeline()
+        for sequence, event in self.replay():
+            if isinstance(event, NormalizedAccountUpdate):
+                timeline.add(event)
+                continue
+            timeline.advance_transport(self._stream_id, sequence)
+            if isinstance(event, NormalizedSlotUpdate):
+                timeline.add_slot_update(event)
+            elif isinstance(event, NormalizedBlockMeta):
+                timeline.add_block_meta(event)
+            elif isinstance(event, NormalizedEntryUpdateParent):
+                timeline.add_entry_update_parent(event)
+        return timeline

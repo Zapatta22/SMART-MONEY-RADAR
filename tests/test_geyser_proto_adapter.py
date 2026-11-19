@@ -14,7 +14,9 @@ from smart_money_radar.data_sources.geyser_proto_adapter import (
     adapt_subscribe_update,
 )
 
-from smart_money_radar.data_sources.yellowstone_receiver import YellowstoneFrameReceiver
+from smart_money_radar.data_sources.yellowstone_receiver import (
+    YellowstoneFrameReceiver, load_yellowstone_decoder,
+)
 from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
 
 
@@ -101,6 +103,7 @@ def _protobuf_update_class():
     transaction_update = msg("SubscribeUpdateTransaction")
     fld(transaction_update, "transaction", 1, T.TYPE_MESSAGE, ".geyser.SubscribeUpdateTransactionInfo")
     fld(transaction_update, "slot", 2, T.TYPE_UINT64)
+    fld(transaction_update, "bank_id", 3, T.TYPE_UINT64)
     msg("SubscribeUpdatePing")
     update = msg("SubscribeUpdate")
     update.oneof_decl.add(name="update_oneof")
@@ -188,6 +191,7 @@ class YellowstoneProtoAdapterTests(unittest.TestCase):
         signature = bytes(range(64))
         update = message.transaction
         update.slot = 123457
+        update.bank_id = 9001
         info = update.transaction
         info.signature = signature
         info.is_vote = True
@@ -209,6 +213,7 @@ class YellowstoneProtoAdapterTests(unittest.TestCase):
         )
         self.assertEqual(item.transaction_signature, _b58(signature))
         self.assertEqual(item.slot, 123457)
+        self.assertEqual(item.bank_id, 9001)
         self.assertEqual(item.transaction_index, 19)
         self.assertTrue(item.is_vote)
         self.assertEqual(item.transaction_payload, info.transaction.SerializeToString(deterministic=True))
@@ -268,6 +273,15 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         info.signature = bytes(range(64))
         info.transaction.signatures.append(info.signature)
         return message.SerializeToString()
+
+    def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
+        descriptors = descriptor_pb2.FileDescriptorSet()
+        _UPDATE.DESCRIPTOR.file.CopyToProto(descriptors.file.add())
+        decode = load_yellowstone_decoder(descriptors.SerializeToString())
+        raw = self.transaction_frame()
+        self.assertEqual(decode(raw).WhichOneof("update_oneof"), "transaction")
+        with self.assertRaisesRegex(ValueError, "SubscribeUpdate"):
+            load_yellowstone_decoder(b"")
 
     def test_shared_sequence_replays_account_transaction_and_control_after_restart(self):
         account = _parse("account_update").SerializeToString()
@@ -346,6 +360,39 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
                              ("validator-a", "domain-b", 40))
             separate_source = self.receiver(store, source="validator-b")
             self.assertFalse(separate_source.receive(raw, stream_sequence=40).interrupted)
+
+    def test_timeline_replay_preserves_account_coordinates_across_non_account_frames(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        self.addCleanup(store.close)
+        receiver = self.receiver(store)
+        message = _parse("account_update")
+        receiver.receive(message.SerializeToString(), stream_sequence=40)
+
+        ping = _UPDATE()
+        ping.ping.SetInParent()
+        receiver.receive(self.transaction_frame(), stream_sequence=41)
+        receiver.receive(ping.SerializeToString(), stream_sequence=42)
+        receiver.receive(_parse("slot_created_bank").SerializeToString(), stream_sequence=43)
+
+        message.account.slot += 1
+        message.account.account.write_version += 1
+        receiver.receive(message.SerializeToString(), stream_sequence=44)
+        timeline = receiver.rebuild_account_timeline()
+        writes = timeline.timeline_records()
+        self.assertEqual([record.update.stream_sequence for record in writes], [40, 44])
+        self.assertEqual([record.continuity_epoch for record in writes], [0, 0])
+        self.assertEqual(timeline.gaps, ())
+
+        receiver.receive(message.SerializeToString(), stream_sequence=46)
+        with self.assertRaisesRegex(ValueError, "interrompido"):
+            receiver.rebuild_account_timeline()
+
+        reconnected = self.receiver(store, stream="connection-b", domain="domain-b")
+        reconnected.receive(message.SerializeToString(), stream_sequence=40)
+        records = reconnected.rebuild_account_timeline().timeline_records()
+        self.assertEqual(len(records), 1)
+        self.assertTrue(records[0].baseline)
+        self.assertEqual(records[0].update.stream_id, "connection-b")
 
     def test_malformed_frame_remains_auditable_and_taints_domain(self):
         store = SQLiteGeyserRawStore(":memory:")

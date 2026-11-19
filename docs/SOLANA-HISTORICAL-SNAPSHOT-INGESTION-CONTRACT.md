@@ -124,7 +124,8 @@ A implementação deverá permanecer provider-neutral. Yellowstone/Helius é uma
 A implementação inicial em `geyser_transaction_updates.py` normaliza o wrapper `SubscribeUpdateTransaction` sem decodificar sua semântica econômica:
 
 - valida assinatura de 64 bytes e exige igualdade com a primeira assinatura contida no objeto Transaction;
-- preserva slot do wrapper, índice de transação quando disponível, flag de vote, bytes serializados de Transaction e bytes serializados de TransactionStatusMeta;
+- preserva slot e o valor de bank_id do wrapper quando exposto pelo schema, índice de transação quando disponível, flag de vote, bytes serializados de Transaction e bytes serializados de TransactionStatusMeta;
+- o schema oficial declara bank_id como escalar proto3; zero pode ser o valor padrão. Nenhum valor deste campo confirma linhagem ou finalidade por si só;
 - preserva ausência de meta como evidência incompleta. Um campo presente, inclusive vazio, indica apenas presença de meta;
 - exige `source_id`, `stream_id`, `ordering_domain_id` e `stream_sequence` explícitos;
 - o receptor deve atribuir a sequência monotônica a cada mensagem SubscribeUpdate recebida, antes da dispatch por tipo. Não usar contadores separados para transaction/account/slot;

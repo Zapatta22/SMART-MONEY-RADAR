@@ -161,23 +161,35 @@ class AccountUpdateTimeline:
         self._gaps.append(gap)
         return gap
 
+    def advance_transport(self, stream_id: str, stream_sequence: int) -> None:
+        """Record a verified non-account frame in the timeline's transport sequence."""
+        last = self._stream_last.get(stream_id)
+        if last is not None and stream_sequence != last + 1:
+            raise ValueError("frame de transporte fora da sequência esperada")
+        self._activate_stream(stream_id, stream_sequence)
+        self._stream_sequences[(stream_id, stream_sequence)] = "non-account"
+        self._stream_last[stream_id] = stream_sequence
+
+    def _activate_stream(self, stream_id: str, stream_sequence: int) -> AccountTimelineGap | None:
+        if self._active_stream_id is None:
+            self._active_stream_id = stream_id
+        elif stream_id != self._active_stream_id:
+            self._active_stream_id = stream_id
+            self._stream_last.setdefault(stream_id, stream_sequence - 1)
+            return self._mark_gap(
+                stream_id=stream_id,
+                expected_sequence=None,
+                received_sequence=stream_sequence,
+                reason="stream_changed_or_reconnected",
+            )
+        return None
+
     def add(self, update: NormalizedAccountUpdate) -> TimelineInsertResult:
         """Insert an update idempotently, detecting stream gaps and write conflicts."""
         if not isinstance(update, NormalizedAccountUpdate):
             raise TypeError("update deve ser NormalizedAccountUpdate")
 
-        gap = None
-        if self._active_stream_id is None:
-            self._active_stream_id = update.stream_id
-        elif update.stream_id != self._active_stream_id:
-            gap = self._mark_gap(
-                stream_id=update.stream_id,
-                expected_sequence=None,
-                received_sequence=update.stream_sequence,
-                reason="stream_changed_or_reconnected",
-            )
-            self._active_stream_id = update.stream_id
-            self._stream_last.setdefault(update.stream_id, update.stream_sequence - 1)
+        gap = self._activate_stream(update.stream_id, update.stream_sequence)
 
         sequence_key = (update.stream_id, update.stream_sequence)
         prior_sequence_fingerprint = self._stream_sequences.get(sequence_key)

@@ -75,6 +75,7 @@ class NormalizedTransactionObservation:
     raw_payload: bytes
     raw_payload_provenance: str
     payload_sha256: str
+    bank_id: int | None = None
 
     @property
     def ordering_key(self) -> tuple[str, str, int]:
@@ -127,6 +128,8 @@ def normalize_transaction_update(message: Any, *, source_id: str, stream_id: str
     if nested_signature != signature:
         raise ValueError("signature diverge de transaction.signatures[0]")
     slot = _u64(getattr(message, "slot", None), "slot")
+    bank_id_value = getattr(message, "bank_id", None)
+    bank_id = None if bank_id_value is None else _u64(bank_id_value, "bank_id")
     source_id = _text(source_id, "source_id")
     stream_id = _text(stream_id, "stream_id")
     ordering_domain_id = _text(ordering_domain_id, "ordering_domain_id")
@@ -144,7 +147,8 @@ def normalize_transaction_update(message: Any, *, source_id: str, stream_id: str
         transaction_signature=signature, slot=slot, source_id=source_id, stream_id=stream_id,
         ordering_domain_id=ordering_domain_id, stream_sequence=stream_sequence, transaction_index=transaction_index, is_vote=is_vote,
         transaction_payload=transaction_payload, meta_payload=meta_payload, raw_payload=raw_payload,
-        raw_payload_provenance="PROTOBUF_DETERMINISTIC_RESERIALIZATION", payload_sha256=hashlib.sha256(raw_payload).hexdigest(),
+        raw_payload_provenance="PROTOBUF_DETERMINISTIC_RESERIALIZATION",
+        payload_sha256=hashlib.sha256(raw_payload).hexdigest(), bank_id=bank_id,
     )
     if raw_message_bytes is not None:
         return bind_transaction_wire(observation, message, raw_message_bytes)

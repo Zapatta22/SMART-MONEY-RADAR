@@ -3339,3 +3339,10 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - Contrato inicial de observação de transações Yellowstone implementado e validado em CI.
 - Ainda falta: sequenciador compartilhado real para todas as mensagens SubscribeUpdate; integração de ordering_domain_id com account updates; captura de wire bytes na camada de transporte; persistência RAW; reconexão/gap/replay; decodificação integral de instruções/CPI; vínculo com transaction_order e snapshots históricos.
 - PR #39 permanece Draft e sem merge. A integração na branch Token-2022 e qualquer merge para `main` dependem de autorização expressa do usuário.
+
+
+### Confirmação adicional de CI no HEAD documental — 19/11/2026
+- Após a atualização documental registrada acima, o HEAD `9252a0785d6415f5c1eed98d62da8bb53c3c63a2` também foi validado pelo workflow `44618376264`, job `135893072276`: SUCCESS.
+- Logs: `Ran 617 tests in 4.149s`; `python -m compileall -q src tests` concluído SUCCESS.
+- A alteração posterior a esse HEAD é somente este complemento documental; nenhum código ou teste foi alterado após a validação.
+- PR #39 segue OPEN/DRAFT e não foi mergeada. Branch-base Token-2022 permanece idêntica ao SHA `f688d290115ada8067ea0b1465076ff99f2e5f7c`; `main` permanece idêntica ao SHA `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.

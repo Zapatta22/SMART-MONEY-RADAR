@@ -100,6 +100,7 @@ class DammV2MintPrestate:
     source: str
     state_ref: str
     source_id: str = ""
+    ordering_domain_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -121,6 +122,7 @@ class DammV2MintFeeConfigSnapshot:
     transaction_payload_sha256: str = ""
     pre_state_sha256: str = ""
     pre_state_data: bytes = b""
+    ordering_domain_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,7 @@ class DammV2WithheldFeeSnapshot:
     post_state_sha256: str = ""
     pre_state_data: bytes = b""
     post_state_data: bytes = b""
+    ordering_domain_id: str = ""
 
 
 def _add_expected(
@@ -244,6 +247,7 @@ def build_damm_v2_mint_fee_config_snapshots(
     transaction_order: int,
     source_id: str,
     transaction_payload_sha256: str,
+    ordering_domain_id: str,
 ) -> tuple[DammV2MintFeeConfigSnapshot, ...]:
     """Builds per-transfer mint fee snapshots from ordered transaction evidence.
 
@@ -272,6 +276,8 @@ def build_damm_v2_mint_fee_config_snapshots(
         or any(ch not in "0123456789abcdef" for ch in transaction_payload_sha256)
     ):
         raise ValueError("transaction_payload_sha256 inválido")
+    if not isinstance(ordering_domain_id, str) or not ordering_domain_id.strip():
+        raise ValueError("ordering_domain_id é obrigatório")
     for label, value in (
         ("transaction_epoch", transaction_epoch),
         ("transaction_slot", transaction_slot),
@@ -322,6 +328,7 @@ def build_damm_v2_mint_fee_config_snapshots(
             not isinstance(prestate.source, str) or not prestate.source.strip()
             or not isinstance(prestate.state_ref, str) or not prestate.state_ref.strip()
             or prestate.source_id != source_id
+            or prestate.ordering_domain_id != ordering_domain_id
         ):
             raise ValueError(f"proveniência/source_id do mint prestate ausente ou divergente para {mint}")
         actual_state_sha256 = hashlib.sha256(prestate.account_data).hexdigest()
@@ -355,6 +362,7 @@ def build_damm_v2_mint_fee_config_snapshots(
             transaction_payload_sha256=transaction_payload_sha256,
             pre_state_sha256=actual_state_sha256,
             pre_state_data=prestate.account_data,
+            ordering_domain_id=prestate.ordering_domain_id,
         ))
     return tuple(snapshots)
 
@@ -368,6 +376,7 @@ def _calculate_fee_from_mint_snapshot(
     transaction_signature: str,
     transaction_source_id: str,
     transaction_payload_sha256: str,
+    transaction_ordering_domain_id: str,
 ) -> int:
     if not isinstance(transaction_signature, str) or not transaction_signature.strip():
         raise ValueError("transaction_signature é obrigatório")
@@ -379,6 +388,8 @@ def _calculate_fee_from_mint_snapshot(
         or any(ch not in "0123456789abcdef" for ch in transaction_payload_sha256)
     ):
         raise ValueError("transaction_payload_sha256 inválido")
+    if not isinstance(transaction_ordering_domain_id, str) or not transaction_ordering_domain_id.strip():
+        raise ValueError("transaction_ordering_domain_id é obrigatório")
     for label, value in (
         ("transaction_epoch", transaction_epoch),
         ("transaction_slot", transaction_slot),
@@ -388,6 +399,12 @@ def _calculate_fee_from_mint_snapshot(
             raise ValueError(f"{label} inválido")
     if snapshot.transaction_signature != transaction_signature:
         raise ValueError("assinatura do mint prestate diverge da transação")
+    if (
+        not isinstance(transaction_ordering_domain_id, str)
+        or not transaction_ordering_domain_id.strip()
+        or snapshot.ordering_domain_id != transaction_ordering_domain_id
+    ):
+        raise ValueError("ordering_domain_id do mint prestate diverge da transação")
     if (
         not isinstance(transaction_source_id, str) or not transaction_source_id.strip()
         or snapshot.source_id != transaction_source_id
@@ -489,6 +506,7 @@ def reconcile_damm_v2_economic_batch(
     transaction_signature: str | None = None,
     transaction_source_id: str | None = None,
     transaction_payload_sha256: str | None = None,
+    transaction_ordering_domain_id: str | None = None,
 ) -> DammV2EconomicReconciliation:
     """Reconcilia todas as operações DAMM v2 do mesmo payload de transação.
 
@@ -815,6 +833,7 @@ def reconcile_damm_v2_economic_batch(
                         transaction_signature=transaction_signature,
                         transaction_source_id=transaction_source_id,
                         transaction_payload_sha256=transaction_payload_sha256,
+                        transaction_ordering_domain_id=transaction_ordering_domain_id,
                     )
                     referral_expected_net = referral.amount_raw - referral_fee_amount
                 else:
@@ -936,6 +955,7 @@ def verify_damm_v2_withheld_fee_deltas(
     transaction_order: int,
     transaction_source_id: str,
     transaction_payload_sha256: str,
+    transaction_ordering_domain_id: str,
 ) -> DammV2EconomicReconciliation:
     """Verifies expected withheld increments against provenance-bound TLV snapshots.
 
@@ -961,6 +981,8 @@ def verify_damm_v2_withheld_fee_deltas(
         or any(ch not in "0123456789abcdef" for ch in transaction_payload_sha256)
     ):
         raise ValueError("transaction_payload_sha256 inválido")
+    if not isinstance(transaction_ordering_domain_id, str) or not transaction_ordering_domain_id.strip():
+        raise ValueError("transaction_ordering_domain_id é obrigatório")
     for label, value in (("transaction_slot", transaction_slot), ("transaction_order", transaction_order)):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"{label} inválido")
@@ -1000,6 +1022,9 @@ def verify_damm_v2_withheld_fee_deltas(
             continue
         if snapshot.source_id != transaction_source_id:
             mismatches.append(f"source_id do snapshot diverge para {expected.token_account}")
+            continue
+        if snapshot.ordering_domain_id != transaction_ordering_domain_id:
+            mismatches.append(f"ordering_domain_id do snapshot diverge para {expected.token_account}")
             continue
         if snapshot.transaction_payload_sha256 != transaction_payload_sha256:
             mismatches.append(f"hash do payload da transação diverge para {expected.token_account}")
@@ -1107,6 +1132,7 @@ def verify_damm_v2_mint_fee_config(
     transaction_signature: str,
     transaction_source_id: str,
     transaction_payload_sha256: str,
+    transaction_ordering_domain_id: str,
 ) -> DammV2EconomicReconciliation:
     """Verifies each Token-2022 transfer fee against its mint pre-state.
 
@@ -1184,6 +1210,9 @@ def verify_damm_v2_mint_fee_config(
             continue
         if snapshot.source_id != transaction_source_id:
             mismatches.append(f"source_id do snapshot diverge para {expected.mint}")
+            continue
+        if snapshot.ordering_domain_id != transaction_ordering_domain_id:
+            mismatches.append(f"ordering_domain_id do snapshot diverge para {expected.mint}")
             continue
         if snapshot.transaction_payload_sha256 != transaction_payload_sha256:
             mismatches.append(f"hash do payload da transação diverge para {expected.mint}")

@@ -2570,7 +2570,8 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 
 ### Testes e CI
 - Dez testes específicos adicionados para lifecycle, prova de cobertura, divergência de semântica, contadores monotônicos, recuperação após interrupção, retomada de cursor/tentativa, isolamento de fonte, cobertura fail-closed, monotonicidade do checkpoint e validação de estado/intervalo.
-- CI da nova implementação: pendente de conclusão nesta atualização.
+- CI #1733 — run `44519550364`, commit `f90fd43bbbd03c7c03bfbf7b23ca5907e5d60066`: SUCCESS; **569/569 testes OK** em 4,343 s; `python -m compileall -q src tests` aprovado.
+- Runs #1727 e #1731 falharam em dois testes da etapa (expectativa incorreta sobre iniciar job PENDING e atualização do attempt interrompido); ambos corrigidos antes do CI #1733 aprovado.
 
 ### Estado
 - PR #23 permanece Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`.

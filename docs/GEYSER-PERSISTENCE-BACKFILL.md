@@ -256,8 +256,8 @@ Validation for deterministic identity:
 - CI #1674, run `44510167848`, pull_request event, HEAD `bde85727630b4f37994852c67594a9c70887d1a3`: SUCCESS; **539/539 tests OK** in 3.843 s; `python -m compileall -q src tests` passed.
 
 Still not implemented:
-- account/slot/block_meta/entry_update_parent normalized-event ingestion through `data_sources/geyser_ingestion.py`, deterministic `normalized_json` serialization, and automatic event identity + separate delivery persistence;
-- continuity checkpoints/epochs, account-write persistence, timeline generations, backfill jobs, or restart orchestration;
+- dedicated normalized-event projections/tables, account-write index, persistent timeline generations, historical backfill, and restart recovery;
+- dedicated continuity epochs, account-write projections/index, timeline generations, backfill jobs, or restart orchestration;
 - live Yellowstone/Helius client, original protobuf wire-byte capture boundary, provider connection, credentials, continuous capture, or financial/on-chain execution.
 
 No provider connection or financial execution is authorized by this document.

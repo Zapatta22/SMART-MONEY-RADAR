@@ -120,6 +120,8 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         self.ingest()
         self.audit.rebuild()
         previous = self.audit.get_checkpoint()
+        previous_rows = self.audit.list_deliveries()
+        raw_counts = self.raw.counts()
         with sqlite3.connect(self.db) as connection:
             connection.execute("""
                 CREATE TRIGGER reject_audit_insert
@@ -129,7 +131,9 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(sqlite3.DatabaseError, "forced audit failure"):
             self.audit.rebuild()
         self.assertEqual(self.audit.get_checkpoint()["generation"], previous["generation"])
-        self.assertEqual(len(self.audit.list_deliveries()), 1)
+        self.assertEqual(self.audit.list_deliveries(), previous_rows)
+        self.assertEqual(self.raw.counts(), raw_counts)
+        self.assertEqual(self.raw.integrity_check(), ["ok"])
 
     def test_different_sources_never_reconcile_each_other(self):
         first = self.ingest(source="source-a")

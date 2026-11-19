@@ -214,7 +214,21 @@ class SQLiteGeyserAccountTimelineProjection:
                 FROM geyser_raw_events e
                 JOIN geyser_raw_deliveries d ON d.delivery_id=(
                     SELECT MIN(d2.delivery_id) FROM geyser_raw_deliveries d2
-                    WHERE d2.event_id=e.event_id AND d2.stream_sequence IS NOT NULL
+                    WHERE d2.event_id=e.event_id
+                      AND d2.source_id=e.source_id
+                      AND d2.stream_sequence IS NOT NULL
+                      AND d2.conflict_id IS NULL
+                      AND NOT EXISTS (
+                          SELECT 1 FROM geyser_raw_conflicts rc
+                          WHERE rc.event_id=e.event_id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM geyser_transport_anomalies ta
+                          WHERE ta.source_id=d2.source_id
+                            AND ta.stream_id=d2.stream_id
+                            AND ta.stream_sequence=d2.stream_sequence
+                            AND ta.status='OPEN'
+                      )
                 )
                 ORDER BY d.delivery_id,e.event_id
             """).fetchall()

@@ -338,7 +338,7 @@ class SwapPersistenceTests(unittest.TestCase):
             payload = {"meta": {"err": None}, "slot": slot}
             envelope = ObservedTransaction(
                 chain="solana",
-                wallet_address="wallet-a",
+                wallet_address="wallet-checkpoint",
                 signature=signature,
                 observed_at=observed_at,
                 raw_transaction=payload,
@@ -351,25 +351,25 @@ class SwapPersistenceTests(unittest.TestCase):
                 transaction=envelope, token_deltas=(), activity_events=()
             )
             self.store.save_observation(
-                "wallet-a", signature, payload, [],
+                "wallet-checkpoint", signature, payload, [],
                 parse_status="no_events",
                 normalized_observation=normalized,
                 advance_checkpoint=False,
             )
 
         save_observation("sig-older", 100, 1)
-        self.store.mark_processed("wallet-a", "sig-older")
-        self.assertEqual(self.store.get_checkpoint("wallet-a"), "sig-older")
+        self.store.mark_processed("wallet-checkpoint", "sig-older")
+        self.assertEqual(self.store.get_checkpoint("wallet-checkpoint"), "sig-older")
 
         save_observation("sig-newer", 200, 2)
-        self.store.mark_processed("wallet-a", "sig-newer")
-        self.assertEqual(self.store.get_checkpoint("wallet-a"), "sig-newer")
+        self.store.mark_processed("wallet-checkpoint", "sig-newer")
+        self.assertEqual(self.store.get_checkpoint("wallet-checkpoint"), "sig-newer")
 
         # A previously pending older transaction is replayed after the newer one.
-        self.store.mark_processed("wallet-a", "sig-older")
-        self.assertEqual(self.store.get_checkpoint("wallet-a"), "sig-newer")
-        self.assertTrue(self.store.has_processed_signature("wallet-a", "sig-older"))
-        self.assertTrue(self.store.has_processed_signature("wallet-a", "sig-newer"))
+        self.store.mark_processed("wallet-checkpoint", "sig-older")
+        self.assertEqual(self.store.get_checkpoint("wallet-checkpoint"), "sig-newer")
+        self.assertTrue(self.store.has_processed_signature("wallet-checkpoint", "sig-older"))
+        self.assertTrue(self.store.has_processed_signature("wallet-checkpoint", "sig-newer"))
 
 
 if __name__ == "__main__":

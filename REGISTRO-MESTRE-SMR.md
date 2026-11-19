@@ -2652,3 +2652,13 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 
 ### Próxima etapa
 Validar os testes e compileall em CI no HEAD desta branch. Em seguida, revisar o contrato contra os casos de proveniência DAMM v2 e desenhar a integração com contexts, transfer evidence e snapshots históricos antes de conectar o reconciliador econômico.
+
+
+### Atualização de CI e correção — PR #34 (19/11/2026)
+- Primeiro CI observado no HEAD `4eb9a90876f7d9a5f7712c7331bc92df3f6909de`: workflow `SMR tests`, run `44599405464`, job `135826377268`, FAILURE.
+- O job instalou o projeto e iniciou `PYTHONPATH=src python -m unittest discover -s tests -v`; foram executados 580 testes e 9 erros ficaram concentrados no novo módulo.
+- Causa confirmada nos logs: `_transaction_identity()` chamava `_is_valid_signature()`, mas a função não estava definida no arquivo naquele HEAD, gerando `NameError`.
+- Correção aplicada: definição explícita de `_is_valid_signature()` antes de `_transaction_identity()`, validando Base58 e comprimento decodificado de 64 bytes.
+- Commit corretivo: `4199bdc0dcc75956a5709ac635fd188d16e41a4b`.
+- CI do novo HEAD ainda precisa ser consultado; a correção não é considerada validada até o workflow correspondente terminar com sucesso.
+- PR #34 permanece Draft e sem merge; `main` não foi alterada.

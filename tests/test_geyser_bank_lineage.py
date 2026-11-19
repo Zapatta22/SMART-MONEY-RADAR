@@ -125,6 +125,7 @@ class BankLineageTrackerTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "conflict")
         self.assertEqual(result.conflict.reason, "ambiguous_replacement")
+        self.assertNotIn(BankKey("yellowstone", 101, 3), {node.key for node in tracker.banks})
 
     def test_slot_dead_without_bank_id_invalidates_known_and_future_banks(self):
         tracker = BankLineageTracker()
@@ -157,6 +158,21 @@ class BankLineageTrackerTests(unittest.TestCase):
         )
         self.assertEqual(tracker.account_bank_status(startup), "startup_unassigned")
 
+    def test_account_status_resolves_exact_source_slot_and_bank_id(self):
+        tracker = BankLineageTracker()
+        tracker.add_slot_update(_slot(101, "SLOT_FINALIZED", bank_id=77, parent=100))
+        account = normalize_account_update(
+            {
+                "slot": 101, "bank_id": 77,
+                "account": {
+                    "pubkey": "acct", "lamports": 1, "owner": "owner",
+                    "executable": False, "rent_epoch": 0, "data": b"x",
+                    "write_version": 1, "txn_signature": "sig",
+                },
+            },
+            stream_id="conn-1", stream_sequence=1,
+        )
+        self.assertEqual(tracker.account_bank_status(account), "bank_observed_finalized")
     def test_bank_scoped_updates_are_not_paired_by_linear_timeline(self):
         from smart_money_radar.data_sources.geyser_account_timeline import AccountUpdateTimeline
         timeline = AccountUpdateTimeline()

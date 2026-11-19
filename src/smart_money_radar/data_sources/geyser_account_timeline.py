@@ -315,6 +315,8 @@ class AccountUpdateTimeline:
                     target_key = BankKey(update.source, update.slot, update.bank_id)
                     if tracker.is_bank_usable(target_key) is not True:
                         continue
+                    if tracker.is_bank_finalized(target_key) is not True:
+                        continue
                     for candidate in entries[:index]:
                         prior = candidate.update
                         if (
@@ -326,6 +328,8 @@ class AccountUpdateTimeline:
                             continue
                         prior_key = BankKey(prior.source, prior.slot, prior.bank_id)
                         if tracker.is_bank_usable(prior_key) is not True:
+                            continue
+                        if tracker.is_bank_finalized(prior_key) is not True:
                             continue
                         if tracker.is_ancestor(prior_key, target_key) is True:
                             candidates.append(candidate)

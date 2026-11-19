@@ -2916,3 +2916,29 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 
 ### Próxima ação
 - Fazer revisão final de segurança do diff após a CI aprovada; manter PR #35 Draft e sem merge até autorização explícita.
+
+
+## 304. Auditoria dos consumidores downstream de AccountStateTransition — 19/11/2026
+
+### Escopo e método
+- Revisado o snapshot da branch fix/geyser-finalized-evidence-gate, HEAD 4dc6b8bf8e70d2d26a0d80ebf7f1007e710e1e0a.
+- Inventário recursivo do Git tree: 54 módulos Python sob src/ e 60 arquivos de teste sob tests/.
+- Inspecionadas as referências de produção a AccountStateTransition, transition_for(), evidence_classification, is_bank_finalized(), is_bank_usable() e commitment_state(), além dos módulos de ingestão, storage/projections, serviços e CLI.
+
+### Resultado
+- Nenhum módulo Python de produção fora de data_sources/geyser_account_timeline.py referencia ou consome AccountStateTransition ou chama transition_for().
+- Nenhum consumidor downstream de produção atual foi encontrado que possa ignorar evidence_classification.
+- Chamadas transition_for() encontradas estão na própria implementação da Timeline e nos testes Geyser.
+- Os módulos de storage/projection, ingestão, serviços, dashboard e CLI revisados não promovem transições da Timeline a VERIFIED nem as consomem como autorização operacional.
+- Portanto, a classificação explícita adicionada na PR #35 não tem consumidor de produção atual que a ignore neste snapshot.
+
+### Limites
+- Esta conclusão é limitada ao snapshot e ao código versionado inspecionado; não prova comportamento de processos externos, forks ou código futuro.
+- Ainda não existe adapter operacional/provider integrado. Qualquer adapter futuro deve exigir explicitamente evidence_classification == BANK_PROVIDER_REPORTED_FINALIZED para caminhos que demandem evidência finalizada, e deve implementar separadamente autenticação do provider, identidade do endpoint, integridade do transporte, reconnect/rollback e controles de finalização.
+- PROVIDER_REPORTED_FINALIZED permanece uma declaração do provider, não prova criptográfica independente de consenso.
+- Nenhum arquivo de produção foi alterado nesta auditoria; apenas o Registro Mestre foi atualizado.
+
+### Conclusão e próxima ação
+- Auditoria downstream atual: sem achados de consumidores produtivos que ignorem a classificação.
+- PR #35 permanece Draft e sem merge; main intacta.
+- Próxima ação recomendada: revisão final do diff completo e confirmação do CI da implementação; depois, apresentar estado para decisão explícita sobre eventual merge, sem executá-lo automaticamente.

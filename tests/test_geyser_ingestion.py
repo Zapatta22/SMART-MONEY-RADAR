@@ -61,6 +61,7 @@ class GeyserNormalizedIngestionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "smr_geyser.sqlite"
             store = SQLiteGeyserRawStore(database)
+            store.register_stream("yellowstone-mainnet", "stream-a", 1)
             first = ingest_normalized_event(
                 store, self.account(sequence=1, data=b"first"),
                 schema_version="geyser-v16",

@@ -349,6 +349,50 @@ class SQLiteGeyserRawStore:
             ).fetchone()
             return dict(row) if row is not None else None
 
+    def list_wire_sessions(self, *, source_id: str | None = None, limit: int = 100) -> list[dict]:
+        """Summarize archived transport coverage in one SQLite snapshot."""
+        if source_id is not None:
+            _text(source_id, "source_id")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limite de sessões precisa estar entre 1 e 1000")
+        with self._connection() as connection, connection:
+            connection.execute("BEGIN")
+            connection.row_factory = sqlite3.Row
+            sessions = connection.execute(
+                """SELECT source_id, stream_id, ordering_domain_id, initial_sequence,
+                          contiguous_sequence, last_seen_sequence, tainted
+                   FROM geyser_frame_streams
+                   WHERE (? IS NULL OR source_id = ?)
+                   ORDER BY source_id, stream_id LIMIT ?""",
+                (source_id, source_id, limit),
+            ).fetchall()
+            has_metadata = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = 'geyser_capture_sessions' AND type = 'table'"
+            ).fetchone()
+            report = []
+            for row in sessions:
+                session = dict(row)
+                scope = (session["source_id"], session["stream_id"])
+                counts = connection.execute(
+                    """SELECT status, frame_kind, COUNT(*) AS frame_count
+                       FROM geyser_wire_frames WHERE source_id = ? AND stream_id = ?
+                       GROUP BY status, frame_kind ORDER BY status, frame_kind""",
+                    scope,
+                )
+                metadata = connection.execute(
+                    """SELECT started_at, finished_at, outcome, frame_count
+                       FROM geyser_capture_sessions WHERE source_id = ? AND stream_id = ?""",
+                    scope,
+                ).fetchone() if has_metadata else None
+                session["tainted"] = bool(session["tainted"])
+                session["interrupted"] = (
+                    session["tainted"] or session["contiguous_sequence"] != session["last_seen_sequence"]
+                )
+                session["counts"] = [dict(count) for count in counts]
+                session["capture"] = dict(metadata) if metadata is not None else None
+                report.append(session)
+            return report
+
     def register_frame_stream(
         self, source_id: str, stream_id: str, ordering_domain_id: str, initial_sequence: int
     ) -> None:

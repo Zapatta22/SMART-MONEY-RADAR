@@ -58,6 +58,12 @@ def _parser() -> argparse.ArgumentParser:
     capture.add_argument("--max-frames", type=int, default=1000)
     capture.add_argument("--timeout", type=int, default=60)
     capture.add_argument("--max-attempts", type=int, default=1)
+    sessions = subparsers.add_parser(
+        "geyser-sessions", help="lista cobertura e desfecho das sessões Yellowstone arquivadas"
+    )
+    sessions.add_argument("database", type=Path)
+    sessions.add_argument("--source")
+    sessions.add_argument("--limit", type=int, default=100)
     return parser
 
 
@@ -77,6 +83,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
         if args.command == "geyser-capture":
             _capture_geyser(args)
+            return
+        if args.command == "geyser-sessions":
+            _list_geyser_sessions(args)
             return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)
@@ -174,6 +183,17 @@ def _inspect_geyser_evidence(args: argparse.Namespace) -> None:
         print(json.dumps(report, ensure_ascii=False))
     except DecodeError as exc:
         raise ValueError("frame incompatível com o descriptor Yellowstone") from exc
+    finally:
+        store.close()
+
+
+def _list_geyser_sessions(args: argparse.Namespace) -> None:
+    from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+
+    store = SQLiteGeyserRawStore(args.database, read_only=True)
+    try:
+        report = store.list_wire_sessions(source_id=args.source, limit=args.limit)
+        print(json.dumps({"sessions": report}, ensure_ascii=False))
     finally:
         store.close()
 

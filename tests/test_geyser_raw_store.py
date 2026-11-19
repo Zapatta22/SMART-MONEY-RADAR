@@ -232,6 +232,9 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
             read_only = SQLiteGeyserRawStore(path, read_only=True)
             self.assertEqual(list(read_only.iter_wire_frames(*scope)), [])
             self.assertIsNone(read_only.get_capture_session(*scope[:2]))
+            session, = read_only.list_wire_sessions(limit=1)
+            self.assertIsNone(session["capture"])
+            self.assertEqual(session["counts"], [])
             read_only.close()
 
             store = SQLiteGeyserRawStore(path)

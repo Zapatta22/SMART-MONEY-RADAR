@@ -2053,3 +2053,19 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - CI #1527 (`44447361606`) no HEAD `4d444bff357adb579716b3241bb6fedf2f0394a3`: completed/success, **440 testes OK**, compileall aprovado.
 - PR #23 permanece OPEN/DRAFT, mergeable/clean, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
 - Próxima ação: implementar scanner de instruções Token-2022 externas e CPI, mapear account index do mint e gerar automaticamente o inventário completo de inicialização por mint.
+
+
+## 273. Scanner de instruções externas/CPI para inicialização de TransferFeeConfig — 19/11/2026
+
+- Adicionado `SolanaInstructionRecord`, `SolanaInstructionInventory` e `decode_solana_instruction_inventory(raw_transaction)` ao decoder de instruções Solana.
+- O inventário resolve program IDs e contas de instruções externas e inner/CPI, preserva posição outer/inner, dados compilados ou parsed type e registra stackHeight/CPI path.
+- Falha fechado se `meta.innerInstructions` estiver ausente, a transação falhar, programId/account index não puder ser resolvido ou dados Token-2022 relevantes estiverem ausentes/inválidos.
+- Adicionado `TransferFeeConfigInitInventory` e `collect_transfer_fee_config_init_positions(inventory, mint)`: filtra Token-2022 com a primeira conta igual ao mint, reconhece `InitializeTransferFeeConfig` 26/0 e retorna posições `(outer, inner)`; `-1` representa instrução externa.
+- `SetTransferFee` 26/5 é validada, mas não adicionada como inicialização; sub-tags desconhecidas da extensão causam inventário incompleto. A saída fornece diretamente posições e flag de completude para o snapshot de mint.
+- Testes cobrem instruções externas e CPI, mint distinto, SetTransferFee, parsed initialize, lista interna ausente, subtag desconhecida, init malformada e transação falha.
+- Commits: inventory decoder `53d93545cd781427a69e1ec068ef8a2774c4304b`; testes scanner `5c82ea891582d046551ca2e7262c2bc7ba0b3ce4`; rejeição de transação falha `ba82ef52499087c1fab376133b08ec6fba628f49`; teste de falha `7057c5611a20e122c7b3bfbe6ed0491ee87151e9`; documentação `4240c070c928a09243abf2721bdb0a9fd09786bc`.
+- CI #1537 (`44447770956`) e #1538 no HEAD funcional/teste `7057c5611a20e122c7b3bfbe6ed0491ee87151e9`: completed/success, **448 testes OK**, compileall aprovado.
+- CI #1539 (`44447862941`) no HEAD `4240c070c928a09243abf2721bdb0a9fd09786bc`: completed/success, **448 testes OK**, compileall aprovado.
+- A saída do scanner ainda não foi conectada automaticamente ao adapter que monta `DammV2MintFeeConfigSnapshot`; o coletor também ainda não fornece snapshots históricos de mint/account em produção.
+- PR #23 permanece OPEN/DRAFT, mergeable, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: criar um construtor/adapter que receba o inventário, a saída por mint, o epoch/slot e os snapshots prestate e gere `DammV2MintFeeConfigSnapshot` com proveniência verificável, sem aceitar dados atuais como históricos.

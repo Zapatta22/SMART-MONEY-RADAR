@@ -42,7 +42,7 @@ def _serialize(message: Any, field: str) -> bytes:
         value = serialize(deterministic=True)
     except TypeError:
         value = serialize()
-    if not isinstance(value, bytes) or not value:
+    if not isinstance(value, bytes):
         raise ValueError(f"{field} não produziu bytes protobuf")
     return value
 

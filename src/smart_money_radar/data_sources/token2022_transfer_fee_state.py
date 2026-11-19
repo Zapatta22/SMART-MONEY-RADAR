@@ -11,6 +11,10 @@ EXTENSION_TRANSFER_FEE_CONFIG = 1
 EXTENSION_TRANSFER_FEE_AMOUNT = 2
 TRANSFER_FEE_CONFIG_LENGTH = 108
 TRANSFER_FEE_AMOUNT_LENGTH = 8
+MULTISIG_LENGTH = 355
+MINT_INITIALIZED_OFFSET = 45
+TOKEN_ACCOUNT_STATE_OFFSET = 108
+KNOWN_EXTENSION_TYPES = frozenset(range(29))
 U64_MAX = (1 << 64) - 1
 
 
@@ -47,6 +51,34 @@ def _read_u16(data: bytes, offset: int) -> int:
     return int.from_bytes(data[offset:offset + 2], "little")
 
 
+def _validate_coption_tag(data: bytes, offset: int, field: str) -> None:
+    tag = data[offset:offset + 4]
+    if tag not in (b"\\x00\\x00\\x00\\x00", b"\\x01\\x00\\x00\\x00"):
+        raise ValueError(f"tag COption inválida em {field}")
+
+
+def _validate_mint_base(data: bytes) -> None:
+    if len(data) < MINT_BASE_LENGTH or len(data) == MULTISIG_LENGTH:
+        raise ValueError("tamanho de base Mint inválido")
+    _validate_coption_tag(data, 0, "mint_authority")
+    if data[MINT_INITIALIZED_OFFSET] != 1:
+        raise ValueError("Mint não inicializado ou estado inválido")
+    _validate_coption_tag(data, 46, "freeze_authority")
+    if any(data[MINT_BASE_LENGTH:ACCOUNT_TYPE_OFFSET]):
+        raise ValueError("padding do mint deve conter somente bytes zero")
+
+
+def _validate_token_account_base(data: bytes) -> None:
+    if len(data) < TOKEN_ACCOUNT_BASE_LENGTH or len(data) == MULTISIG_LENGTH:
+        raise ValueError("tamanho de base token account inválido")
+    _validate_coption_tag(data, 72, "delegate")
+    state = data[TOKEN_ACCOUNT_STATE_OFFSET]
+    if state not in (1, 2):
+        raise ValueError("token account não inicializada ou estado inválido")
+    _validate_coption_tag(data, 109, "is_native")
+    _validate_coption_tag(data, 129, "close_authority")
+
+
 def _read_u64(data: bytes, offset: int) -> int:
     return int.from_bytes(data[offset:offset + 8], "little")
 
@@ -67,6 +99,8 @@ def _read_extensions(data: bytes, expected_account_type: int) -> dict[int, bytes
         extension_type = _read_u16(data, offset)
         if extension_type == 0:
             break
+        if extension_type not in KNOWN_EXTENSION_TYPES:
+            raise ValueError(f"tipo de extensão TLV desconhecido: {extension_type}")
         if len(remaining) < 4:
             raise ValueError("cabeçalho TLV truncado")
         length = _read_u16(data, offset + 2)
@@ -83,10 +117,7 @@ def _read_extensions(data: bytes, expected_account_type: int) -> dict[int, bytes
 def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
     if not isinstance(mint_data, bytes):
         raise TypeError("mint_data deve ser bytes")
-    if len(mint_data) < MINT_BASE_LENGTH:
-        raise ValueError("dados base de mint truncados")
-    if any(mint_data[MINT_BASE_LENGTH:ACCOUNT_TYPE_OFFSET]):
-        raise ValueError("padding do mint deve conter somente bytes zero")
+    _validate_mint_base(mint_data)
     payload = _read_extensions(mint_data, ACCOUNT_TYPE_MINT).get(EXTENSION_TRANSFER_FEE_CONFIG)
     if payload is None:
         raise ValueError("TransferFeeConfig ausente")
@@ -107,8 +138,7 @@ def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
 def decode_transfer_fee_amount(account_data: bytes) -> TransferFeeAmountState:
     if not isinstance(account_data, bytes):
         raise TypeError("account_data deve ser bytes")
-    if len(account_data) < TOKEN_ACCOUNT_BASE_LENGTH:
-        raise ValueError("dados base de token account truncados")
+    _validate_token_account_base(account_data)
     payload = _read_extensions(account_data, ACCOUNT_TYPE_ACCOUNT).get(EXTENSION_TRANSFER_FEE_AMOUNT)
     if payload is None:
         raise ValueError("TransferFeeAmount ausente")

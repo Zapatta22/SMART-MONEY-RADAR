@@ -598,12 +598,18 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         wait.assert_called_once_with(1)
 
     def test_reconciles_damm_economics_only_after_finalized_wire_bank(self):
+        self._reconcile_archived_damm_swap(referral=False)
+
+    def test_reconciles_damm_referral_from_archived_mint_states(self):
+        self._reconcile_archived_damm_swap(referral=True)
+
+    def _reconcile_archived_damm_swap(self, *, referral):
         from smart_money_radar.data_sources.solana_token_transfer_decoder import _decode_base58
         from dataclasses import replace
         from test_damm_v2_economic_reconciliation import _mint_account_data, _withheld_account_data
         from test_solana_transaction_evidence_bundle import _damm_complete_transaction
 
-        payload = _damm_complete_transaction()["result"]
+        payload = _damm_complete_transaction(referral=referral)["result"]
         rpc_message = payload["transaction"]["message"]
         names = rpc_message["accountKeys"]
         unique = list(dict.fromkeys(names))
@@ -666,10 +672,14 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         receiver.receive(slot.SerializeToString(), stream_sequence=41)
         evidence = receiver.transaction_evidence_at(40)
         result = evidence.reconcile_damm_v2(monitored_wallet=wallet)
-        self.assertEqual(result.status, "RECONCILED", result.reason)
-        self.assertEqual(result.operation_count, 1)
-        self.assertEqual(result.withheld_fee_status, "EXPECTED_NOT_VERIFIED")
-        self.assertEqual(result.mint_fee_config_status, "EXPECTED_NOT_VERIFIED")
+        if referral:
+            self.assertEqual(result.status, "INCOMPLETE")
+            self.assertIn("mint prestate", result.reason)
+        else:
+            self.assertEqual(result.status, "RECONCILED", result.reason)
+            self.assertEqual(result.operation_count, 1)
+            self.assertEqual(result.withheld_fee_status, "EXPECTED_NOT_VERIFIED")
+            self.assertEqual(result.mint_fee_config_status, "EXPECTED_NOT_VERIFIED")
 
         block_frame = _UPDATE()
         block = block_frame.block
@@ -687,6 +697,26 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         meta.block_meta.parent_slot = tx.slot - 1
         meta.block_meta.parent_blockhash = _b58(bytes([52]) * 32)
         receiver.receive(meta.SerializeToString(), stream_sequence=43)
+
+        if referral:
+            for sequence, name, rate in ((44, names[6], 500), (45, names[7], 1000)):
+                mint_frame = _parse("account_update")
+                mint_frame.account.slot, mint_frame.account.bank_id = tx.slot, tx.bank_id
+                mint = mint_frame.account.account
+                mint.pubkey = addresses[name]
+                mint.owner = _decode_base58(names[9])
+                mint.txn_signature = previous_signature
+                mint.write_version = sequence
+                mint.data = _mint_account_data(basis_points=rate)
+                receiver.receive(mint_frame.SerializeToString(), stream_sequence=sequence)
+            evidence = receiver.transaction_evidence_at(40, block_sequence=42)
+            self.assertEqual(evidence.reconcile_damm_v2(monitored_wallet=wallet).status, "INCOMPLETE")
+            result = evidence.reconcile_damm_v2(monitored_wallet=wallet, transaction_epoch=0)
+            self.assertEqual(result.status, "RECONCILED", result.reason)
+            self.assertEqual(result.mint_fee_config_status, "VERIFIED")
+            fee, = [item for item in result.expected_transfer_fees if item.fee_source == "MINT_PRESTATE"]
+            self.assertEqual(fee.expected_fee_raw, 1)
+            return
 
         sequence = 44
         balances = {item.token_account: item for item in evidence.bundle.balance_deltas.deltas}
@@ -748,7 +778,21 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
             receiver.receive(mint_frame.SerializeToString(), stream_sequence=sequence)
             sequence += 1
         evidence = receiver.transaction_evidence_at(40, block_sequence=42)
-        verified = evidence.reconcile_damm_v2(monitored_wallet=wallet, transaction_epoch=0)
+        from smart_money_radar.data_sources.solana_transaction_evidence_bundle import (
+            reconcile_solana_transaction_damm_v2_bundle,
+        )
+
+        with patch(
+            "smart_money_radar.data_sources.yellowstone_transaction_evidence."
+            "reconcile_solana_transaction_damm_v2_bundle",
+            wraps=reconcile_solana_transaction_damm_v2_bundle,
+        ) as reconcile:
+            verified = evidence.reconcile_damm_v2(monitored_wallet=wallet, transaction_epoch=0)
+        arguments = reconcile.call_args.kwargs
+        self.assertEqual(arguments["transaction_epoch"], 0)
+        self.assertEqual(arguments["transaction_order"], 2)
+        self.assertEqual(len(arguments["mint_fee_snapshots"]), 2)
+        self.assertEqual(arguments["transaction_ordering_domain_id"], "domain-a")
         self.assertEqual(verified.status, "RECONCILED", verified.reason)
         self.assertEqual(verified.mint_fee_config_status, "VERIFIED")
         wrong_epoch = evidence.reconcile_damm_v2(monitored_wallet=wallet, transaction_epoch=10)

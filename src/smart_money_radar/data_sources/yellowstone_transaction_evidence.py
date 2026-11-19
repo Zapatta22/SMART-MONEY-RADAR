@@ -7,6 +7,7 @@ from google.protobuf.message import Message
 
 from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
     DammV2EconomicReconciliation,
+    DammV2MintFeeConfigSnapshot,
     DammV2MintPrestate,
     DammV2WithheldFeeSnapshot,
     build_damm_v2_mint_fee_config_snapshots,
@@ -59,11 +60,30 @@ class YellowstoneTransactionEvidence:
                 "INCOMPLETE", len(self.bundle.damm_v2_associations), (),
                 "evidência estrutural ou finalidade do banco Yellowstone insuficiente",
             )
+        try:
+            mint_snapshots = (
+                self._mint_fee_snapshots(transaction_epoch) if transaction_epoch is not None else ()
+            )
+        except (TypeError, ValueError) as exc:
+            return DammV2EconomicReconciliation(
+                "INCOMPLETE", len(self.bundle.damm_v2_associations), (), str(exc),
+            )
+        observation = self.observation
+        order = 2 * self.block_order.transaction_index if self.block_order is not None else None
         result = reconcile_solana_transaction_damm_v2_bundle(
             self.bundle, monitored_wallet=monitored_wallet,
+            mint_fee_snapshots=mint_snapshots, transaction_epoch=transaction_epoch,
+            transaction_order=order, transaction_ordering_domain_id=observation.ordering_domain_id,
         )
-        if transaction_epoch is not None and result.status == "RECONCILED":
-            result = self._verify_mint_fees(result, transaction_epoch)
+        if (mint_snapshots and transaction_epoch is not None and order is not None
+                and result.status == "RECONCILED"):
+            result = verify_damm_v2_mint_fee_config(
+                result, mint_snapshots, transaction_signature=observation.transaction_signature,
+                transaction_slot=observation.slot, transaction_order=order,
+                transaction_epoch=transaction_epoch, transaction_source_id=observation.source_id,
+                transaction_payload_sha256=self.bundle.identity.payload_sha256,
+                transaction_ordering_domain_id=observation.ordering_domain_id,
+            )
         if result.status != "RECONCILED" or not result.expected_withheld_fee_deltas:
             return result
         order = self.block_order
@@ -122,11 +142,9 @@ class YellowstoneTransactionEvidence:
             transaction_ordering_domain_id=observation.ordering_domain_id,
         )
 
-    def _verify_mint_fees(
-        self, result: DammV2EconomicReconciliation, epoch: int,
-    ) -> DammV2EconomicReconciliation:
-        if self.block_order is None or not result.expected_transfer_fees:
-            return result
+    def _mint_fee_snapshots(self, epoch: int) -> tuple[DammV2MintFeeConfigSnapshot, ...]:
+        if self.block_order is None:
+            return ()
         observation = self.observation
         order = 2 * self.block_order.transaction_index
         snapshots_by_mint = {
@@ -137,27 +155,21 @@ class YellowstoneTransactionEvidence:
             )
             for state in self.mint_prestates if state.owner == TOKEN_2022_PROGRAM_ID
         }
-        if any(fee.mint not in snapshots_by_mint for fee in result.expected_transfer_fees):
-            return result
-        identity = {
-            "transaction_signature": observation.transaction_signature,
-            "transaction_slot": observation.slot,
-            "transaction_order": order,
-            "transaction_epoch": epoch,
-            "transaction_payload_sha256": self.bundle.identity.payload_sha256,
+        evidence = self.bundle.damm_v2_transfer_evidence
+        mints = {
+            transfer.mint for item in evidence
+            for transfer in (item.input_transfer, item.output_transfer, item.referral_transfer)
+            if transfer is not None and transfer.program_id == TOKEN_2022_PROGRAM_ID
         }
-        try:
-            snapshots = build_damm_v2_mint_fee_config_snapshots(
-                self.bundle.damm_v2_transfer_evidence, snapshots_by_mint,
-                self.bundle.instruction_inventory, source_id=observation.source_id,
-                ordering_domain_id=observation.ordering_domain_id, **identity,
-            )
-            return verify_damm_v2_mint_fee_config(
-                result, snapshots, transaction_source_id=observation.source_id,
-                transaction_ordering_domain_id=observation.ordering_domain_id, **identity,
-            )
-        except (TypeError, ValueError) as exc:
-            return replace(result, status="INCOMPLETE", reason=str(exc))
+        if not mints or not mints.issubset(snapshots_by_mint):
+            return ()
+        return build_damm_v2_mint_fee_config_snapshots(
+            evidence, snapshots_by_mint, self.bundle.instruction_inventory,
+            source_id=observation.source_id, ordering_domain_id=observation.ordering_domain_id,
+            transaction_signature=observation.transaction_signature, transaction_slot=observation.slot,
+            transaction_order=order, transaction_epoch=epoch,
+            transaction_payload_sha256=self.bundle.identity.payload_sha256,
+        )
 
 
 def verify_yellowstone_block_order(

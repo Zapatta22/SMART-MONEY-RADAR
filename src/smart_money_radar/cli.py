@@ -64,6 +64,14 @@ def _parser() -> argparse.ArgumentParser:
     sessions.add_argument("database", type=Path)
     sessions.add_argument("--source")
     sessions.add_argument("--limit", type=int, default=100)
+    verify = subparsers.add_parser(
+        "geyser-verify", help="confere os frames arquivados e calcula o SHA-256 da sessão"
+    )
+    verify.add_argument("database", type=Path)
+    verify.add_argument("--source", required=True)
+    verify.add_argument("--stream", required=True)
+    verify.add_argument("--domain", required=True)
+    verify.add_argument("--expected-sha256")
     return parser
 
 
@@ -86,6 +94,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
         if args.command == "geyser-sessions":
             _list_geyser_sessions(args)
+            return
+        if args.command == "geyser-verify":
+            _verify_geyser_session(args)
             return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)
@@ -194,6 +205,22 @@ def _list_geyser_sessions(args: argparse.Namespace) -> None:
     try:
         report = store.list_wire_sessions(source_id=args.source, limit=args.limit)
         print(json.dumps({"sessions": report}, ensure_ascii=False))
+    finally:
+        store.close()
+
+
+def _verify_geyser_session(args: argparse.Namespace) -> None:
+    from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+
+    expected = args.expected_sha256
+    if expected is not None and (len(expected) != 64 or any(ch not in "0123456789abcdef" for ch in expected)):
+        raise ValueError("SHA-256 esperado inválido")
+    store = SQLiteGeyserRawStore(args.database, read_only=True)
+    try:
+        report = store.verify_wire_session(args.source, args.stream, args.domain)
+        if expected is not None and report["sha256"] != expected:
+            raise ValueError("SHA-256 da sessão Yellowstone diverge do esperado")
+        print(json.dumps(report, ensure_ascii=False))
     finally:
         store.close()
 

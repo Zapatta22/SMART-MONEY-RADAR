@@ -1,8 +1,13 @@
+import json
 import unittest
+from pathlib import Path
 
 from smart_money_radar.data_sources.raydium_cpmm_accounts import RaydiumCpmmAccounts
 from smart_money_radar.data_sources.raydium_cpmm_decoder import RaydiumCpmmSwapBaseInput
-from smart_money_radar.data_sources.raydium_cpmm_analyzer import RaydiumCpmmDecodedSwap
+from smart_money_radar.data_sources.raydium_cpmm_analyzer import (
+    RaydiumCpmmDecodedSwap,
+    decode_raydium_cpmm_swaps,
+)
 from smart_money_radar.data_sources.raydium_cpmm_transfer_reconciliation import (
     reconcile_raydium_cpmm_swaps,
 )
@@ -12,6 +17,7 @@ from smart_money_radar.data_sources.solana_token_balance_deltas import (
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SPL_TOKEN_PROGRAM_ID,
     SolanaTokenTransfer,
+    decode_solana_token_transfers,
 )
 
 
@@ -108,6 +114,46 @@ def _pair(input_amount=100, output_amount=90, path=(), first_index=0, height=2):
 
 
 class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
+
+    def test_anonymized_mainnet_jupiter_fixture_decodes_two_cpmm_swaps_and_token_transfers(self):
+        fixture_path = (
+            Path(__file__).resolve().parents[1]
+            / "data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+        swaps = decode_raydium_cpmm_swaps(fixture)
+        transfers = decode_solana_token_transfers(fixture)
+
+        self.assertEqual(len(swaps), 2)
+        self.assertEqual([swap.instruction_index for swap in swaps], [0, 0])
+        self.assertEqual(
+            [swap.inner_instruction_index for swap in swaps], [0, 6]
+        )
+        self.assertEqual([swap.cpi_path for swap in swaps], [(0,), (2,)])
+        self.assertEqual([swap.stack_height for swap in swaps], [2, 2])
+
+        keys = fixture["result"]["transaction"]["message"]["accountKeys"]
+        self.assertEqual(
+            [swap.accounts.input_token_account for swap in swaps],
+            [keys[17], keys[14]],
+        )
+        self.assertEqual(
+            [swap.accounts.output_token_account for swap in swaps],
+            [keys[16], keys[12]],
+        )
+        self.assertEqual(
+            [transfer.inner_instruction_index for transfer in transfers],
+            [1, 2, 4, 5, 7, 8, 10],
+        )
+        self.assertTrue(all(
+            transfer.execution_status == "EXECUTED" for transfer in transfers
+        ))
+        self.assertEqual(
+            {transfer.program_id for transfer in transfers},
+            {SPL_TOKEN_PROGRAM_ID, "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"},
+        )
+
     def test_matches_outer_swap_using_exact_transfers_and_account_deltas(self):
         result = reconcile_raydium_cpmm_swaps(
             [_swap()], _pair(), _deltas(), monitored_wallet=WALLET

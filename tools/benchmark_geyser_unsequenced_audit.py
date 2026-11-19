@@ -1,16 +1,18 @@
 """Reproducible synthetic benchmark for the Geyser unsequenced-delivery audit.
 
 The fixture is inserted directly into the real SQLite schema in one transaction.
-This isolates projection rebuild cost from per-event ingestion/transport overhead.
-Each logical event has two deliveries: one without sequence and one sequenced
-witness in another stream. No provider or network connection is used.
+A separate worker process performs the rebuild so its RSS high-water mark excludes
+fixture construction. No provider or network connection is used.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import resource
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import time
 import tracemalloc
@@ -37,8 +39,6 @@ def seed_database(database: Path, logical_events: int) -> None:
                 event_id, "benchmark-source", "account", "benchmark-v1",
                 "normalized_json", payload, digest, now,
             ))
-            # The unsequenced delivery appears first; its witness is in a
-            # separate stream and must remain a reference, not sequence transfer.
             deliveries.append((
                 event_id, "benchmark-source", "unsequenced-stream", None,
                 "unknown", now,
@@ -62,18 +62,43 @@ def seed_database(database: Path, logical_events: int) -> None:
         )
 
 
+def run_rebuild_worker(database: Path) -> dict:
+    audit = SQLiteGeyserUnsequencedDeliveryAudit(database)
+    tracemalloc.start()
+    started = time.perf_counter()
+    summary = audit.rebuild()
+    elapsed = time.perf_counter() - started
+    _, peak_bytes = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    # Linux reports ru_maxrss in KiB; macOS reports bytes.
+    rss_peak_raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    rss_peak_mib = rss_peak_raw / (1024 if sys.platform != "darwin" else 1024 * 1024)
+    return {
+        "summary": summary,
+        "rebuild_seconds": round(elapsed, 6),
+        "tracemalloc_peak_mib": round(peak_bytes / (1024 * 1024), 2),
+        "process_rss_peak_mib": round(rss_peak_mib, 2),
+        **audit.last_rebuild_metrics,
+    }
+
+
 def benchmark_size(logical_events: int) -> dict:
     with tempfile.TemporaryDirectory(prefix="smr-geyser-audit-bench-") as tmp:
         database = Path(tmp) / "benchmark.sqlite"
         seed_database(database, logical_events)
-        audit = SQLiteGeyserUnsequencedDeliveryAudit(database)
 
-        tracemalloc.start()
-        started = time.perf_counter()
-        summary = audit.rebuild()
-        elapsed = time.perf_counter() - started
-        _, peak_bytes = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+        # Isolate RSS high-water measurement from Python allocations used to seed
+        # the synthetic fixture. The child process starts only after seeding ends.
+        worker = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--worker-db", str(database)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        measured = json.loads(worker.stdout)
+        summary = measured.pop("summary")
 
         with sqlite3.connect(database) as connection:
             class_counts = dict(connection.execute(
@@ -103,10 +128,15 @@ def benchmark_size(logical_events: int) -> dict:
         return {
             "logical_events": logical_events,
             "deliveries": expected_deliveries,
-            "rebuild_seconds": round(elapsed, 6),
-            "deliveries_per_second": round(expected_deliveries / elapsed, 2)
-                if elapsed else None,
-            "tracemalloc_peak_mib": round(peak_bytes / (1024 * 1024), 2),
+            "rebuild_seconds": measured["rebuild_seconds"],
+            "deliveries_per_second": round(
+                expected_deliveries / measured["rebuild_seconds"], 2
+            ) if measured["rebuild_seconds"] else None,
+            "tracemalloc_peak_mib": measured["tracemalloc_peak_mib"],
+            "process_rss_peak_mib": measured["process_rss_peak_mib"],
+            "temp_db_pages": measured["temp_db_pages"],
+            "temp_db_page_size_bytes": measured["temp_db_page_size_bytes"],
+            "temp_db_allocated_bytes": measured["temp_db_allocated_bytes"],
             "classification_counts": class_counts,
             "raw_events_after_rebuild": raw_event_count,
             "raw_deliveries_after_rebuild": raw_delivery_count,
@@ -121,7 +151,15 @@ def main() -> None:
         default=[1000, 10000, 50000, 100000],
         help="número de eventos lógicos; cada um gera duas deliveries",
     )
+    parser.add_argument(
+        "--worker-db", type=Path,
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
+
+    if args.worker_db is not None:
+        print(json.dumps(run_rebuild_worker(args.worker_db), sort_keys=True))
+        return
     if not args.sizes or any(size <= 0 for size in args.sizes):
         parser.error("todos os tamanhos devem ser inteiros positivos")
 
@@ -129,6 +167,8 @@ def main() -> None:
     print(json.dumps({
         "benchmark": "geyser_unsequenced_delivery_audit_rebuild",
         "fixture": "synthetic_sqlite_two_deliveries_per_event",
+        "rss_method": "isolated_worker_process_ru_maxrss",
+        "temp_storage_method": "sqlite_temp_page_count_times_page_size",
         "results": results,
     }, indent=2, sort_keys=True))
 

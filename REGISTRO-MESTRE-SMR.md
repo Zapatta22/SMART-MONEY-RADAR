@@ -3294,3 +3294,13 @@ Precedência e efeito:
 - main permanece em 5060bc65ddf181a4736fdb662c44c3fec0dd7259.
 - Nenhum provider/RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
 - Próxima etapa recomendada: revisão técnica da PR #26 contra a base #23, incluindo o conjunto completo de alterações herdadas e a cadeia de PRs, sem repetir os testes já aprovados. Só depois decidir a promoção da PR #26 para revisão final; não fazer merge na #23 ou na main sem autorização explícita.
+
+### Validação da atualização do próprio Registro Mestre
+- A seção 314 foi registrada na branch feat/geyser-unsequenced-raw-audit pelo commit 0a174fab6f7fdfcc3196ef98d15617b24b7747a7.
+- No HEAD 0a174fab..., workflow SMR tests run ID 44591253468: SUCCESS; 593 testes em 7,802 s e compileall aprovado.
+- No mesmo HEAD, workflow Geyser audit benchmark run ID 44591253458: SUCCESS; checkout do merge ref temporário da PR #26 e upload do artefato concluídos.
+- Artefato geyser-audit-benchmark-results, ID 14562134508, SHA-256 do ZIP 8430578bf974729b9253cd30da5dbbd7d1cf10d89cdb87beeee3bcecd4d18573.
+- Escala máxima nesta rodada documental: 100.000 eventos lógicos / 200.000 deliveries; rebuild 5,578896 s; throughput 35.849,39 deliveries/s; pico RSS 29,01 MiB; TEMP SQLite 24.399.872 bytes; tracemalloc 0,60 MiB; 100.000 SEQUENCED e 100.000 UNSEQUENCED_RECONCILED; RAW preservado e integrity_check=[ok].
+- Fanout alto: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,207009 s; pico RSS 28,86 MiB; TEMP SQLite 2.088.960 bytes; todas as testemunhas preservadas e integrity_check=[ok].
+- Comparação TEMP: DEFAULT 5,571093 s / aproximadamente 29,01 MiB RSS; FILE 5,549700 s / aproximadamente 29 MiB; MEMORY 5,578654 s / 53,30 MiB. MEMORY não apresentou ganho de tempo e elevou RSS em cerca de 24 MiB; manter DEFAULT/file-backed.
+- A nova rodada foi disparada pela atualização documental, não por alteração de código. Os resultados são sintéticos e não substituem validação em Termux/VPS ou ambiente real.

@@ -52,6 +52,7 @@ class BankAwareAccountTimelineTests(unittest.TestCase):
     def test_same_bank_pre_post_pair_is_allowed_when_bank_is_observed(self):
         timeline = AccountUpdateTimeline()
         timeline.add_slot_update(_slot(100, "SLOT_CREATED_BANK", 10, 99))
+        timeline.add_slot_update(_slot(100, "SLOT_FINALIZED", 10, 99, 2))
         timeline.add(_account(100, 10, "before", 1, write_version=10))
         timeline.add(_account(100, 10, "target", 2, write_version=11))
         result = timeline.transition_for("target")
@@ -62,11 +63,24 @@ class BankAwareAccountTimelineTests(unittest.TestCase):
         timeline = AccountUpdateTimeline()
         timeline.add_block_meta(_block(100, 10, "parent-hash", 99, "grandparent-hash"))
         timeline.add_block_meta(_block(101, 11, "child-hash", 100, "parent-hash", 2))
+        timeline.add_slot_update(_slot(100, "SLOT_FINALIZED", 10, 99, 3))
+        timeline.add_slot_update(_slot(101, "SLOT_FINALIZED", 11, 100, 4))
         timeline.add(_account(100, 10, "before", 1, write_version=10))
         timeline.add(_account(101, 11, "target", 2, write_version=11))
         result = timeline.transition_for("target")
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].pre_state.txn_signature, "before")
+
+
+    def test_dead_after_finalized_revokes_transition_eligibility(self):
+        timeline = AccountUpdateTimeline()
+        timeline.add_slot_update(_slot(100, "SLOT_CREATED_BANK", 10, 99))
+        timeline.add_slot_update(_slot(100, "SLOT_FINALIZED", 10, 99, 2))
+        timeline.add(_account(100, 10, "before", 1, write_version=10))
+        timeline.add(_account(100, 10, "target", 2, write_version=11))
+        self.assertEqual(len(timeline.transition_for("target")), 1)
+        timeline.add_slot_update(_slot(100, "SLOT_DEAD", 10, sequence=3))
+        self.assertEqual(timeline.transition_for("target"), ())
 
     def test_sibling_forks_are_never_paired(self):
         timeline = AccountUpdateTimeline()
@@ -117,11 +131,14 @@ class BankAwareAccountTimelineTests(unittest.TestCase):
         self.assertEqual(timeline.transition_for("target"), ())
         timeline.add_block_meta(_block(100, 10, "parent-hash", 99, "grandparent-hash"))
         timeline.add_block_meta(_block(101, 11, "child-hash", 100, "parent-hash", 2))
+        timeline.add_slot_update(_slot(100, "SLOT_FINALIZED", 10, 99, 3))
+        timeline.add_slot_update(_slot(101, "SLOT_FINALIZED", 11, 100, 4))
         self.assertEqual(len(timeline.transition_for("target")), 1)
 
     def test_reconnect_creates_new_baseline_before_pairing_resumes(self):
         timeline = AccountUpdateTimeline()
         timeline.add_slot_update(_slot(100, "SLOT_CREATED_BANK", 10, 99))
+        timeline.add_slot_update(_slot(100, "SLOT_FINALIZED", 10, 99, 2))
         timeline.add(_account(100, 10, "before-reconnect", 1))
         gap = timeline.add(_account(100, 10, "after-reconnect", 1, stream="stream-2", write_version=2))
         self.assertIsNotNone(gap.gap)
@@ -175,6 +192,8 @@ class BankAwareAccountTimelineTests(unittest.TestCase):
         timeline = AccountUpdateTimeline()
         timeline.add_block_meta(_block(100, 10, "parent-hash", 99, "grandparent-hash"))
         timeline.add_block_meta(_block(101, 11, "child-hash", 100, "parent-hash", 2))
+        timeline.add_slot_update(_slot(100, "SLOT_FINALIZED", 10, 99, 3))
+        timeline.add_slot_update(_slot(101, "SLOT_FINALIZED", 11, 100, 4))
         # The child/post-state arrives first. Its baseline flag must not prevent
         # pairing once an earlier ancestor write arrives in the same continuity epoch.
         timeline.add(_account(101, 11, "target", 1, write_version=11))

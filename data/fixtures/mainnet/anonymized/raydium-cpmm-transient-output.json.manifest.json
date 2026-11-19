@@ -1,0 +1,14 @@
+{
+  "schema": "smr.anonymized-fixture.v1",
+  "signature": "G2GwWpKY3ssU9JsWtc8FHTX5PqLYgYqBDpANu1jFLHK45qvEHsiZYRMoi5kVHZQGRsx85v26PYgAtGFUkZJvgJa",
+  "slot": 353586080,
+  "commitment": "finalized",
+  "raw_sha256": "a2067d162b2bd93f66db4ff86fcf51930bceeeeb223b5816833ec96f34cc5adf",
+  "projection_file": "G2GwWpKY3ssU9JsWtc8FHTX5PqLYgYqBDpANu1jFLHK45qvEHsiZYRMoi5kVHZQGRsx85v26PYgAtGFUkZJvgJa.json",
+  "projection_sha256": "c7d3c57683d90f48cc6d74162c53df79ebb695aacd3242f463f0dd2b011f4b60",
+  "anonymized": true,
+  "replaced_addresses": 4,
+  "mapping_file": null,
+  "provenance_manifest": "G2GwWpKY3ssU9JsWtc8FHTX5PqLYgYqBDpANu1jFLHK45qvEHsiZYRMoi5kVHZQGRsx85v26PYgAtGFUkZJvgJa.manifest.json",
+  "protected_address_count": 16
+}

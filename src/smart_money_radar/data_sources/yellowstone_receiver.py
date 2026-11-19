@@ -15,6 +15,10 @@ from smart_money_radar.data_sources.geyser_bank_lineage import (
 from smart_money_radar.data_sources.geyser_ingestion import NormalizedGeyserEvent
 from smart_money_radar.data_sources.geyser_proto_adapter import adapt_subscribe_update
 from smart_money_radar.data_sources.geyser_transaction_updates import NormalizedTransactionObservation
+from smart_money_radar.data_sources.yellowstone_transaction_evidence import (
+    YellowstoneTransactionEvidence,
+    project_yellowstone_evidence,
+)
 from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore, WireFrameReceipt
 
 
@@ -77,15 +81,26 @@ class YellowstoneFrameReceiver:
         self,
     ) -> Iterator[tuple[int, NormalizedGeyserEvent | NormalizedTransactionObservation | None]]:
         """Decode a consistent stream snapshot, including coordinates of control frames."""
+        for sequence, _, event in self._replay_frames():
+            yield sequence, event
+
+    def replay_transaction_evidence(self) -> Iterator[YellowstoneTransactionEvidence]:
+        """Derive Solana decoder evidence while replay verifies the wire journal."""
+        for _, frame, event in self._replay_frames():
+            if isinstance(event, NormalizedTransactionObservation):
+                yield project_yellowstone_evidence(frame, event)
+
+    def _replay_frames(self):
         for sequence, payload in self._store.iter_wire_frames(
             self._source_id, self._stream_id, self._ordering_domain_id,
         ):
+            frame = self._decode(payload)
             event = adapt_subscribe_update(
-                self._decode(payload), source_id=self._source_id, stream_id=self._stream_id,
+                frame, source_id=self._source_id, stream_id=self._stream_id,
                 ordering_domain_id=self._ordering_domain_id, stream_sequence=sequence,
                 raw_message_bytes=payload,
             )
-            yield sequence, event
+            yield sequence, frame, event
 
     def rebuild_account_timeline(self) -> AccountUpdateTimeline:
         """Return a timeline only after every frame in this domain passes replay."""

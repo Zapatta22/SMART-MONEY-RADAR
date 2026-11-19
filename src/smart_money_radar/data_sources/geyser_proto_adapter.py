@@ -39,8 +39,10 @@ _SLOT_STATUS_BY_NUMBER = {
 _BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 
-def _base58_encode(value: bytes, *, field: str, expected_length: int) -> str:
-    if not isinstance(value, bytes) or len(value) != expected_length:
+def _base58_encode(value: bytes, *, field: str, expected_length: int | None = None) -> str:
+    if not isinstance(value, bytes):
+        raise ValueError(f"{field} deve conter bytes")
+    if expected_length is not None and len(value) != expected_length:
         raise ValueError(f"{field} deve conter exatamente {expected_length} bytes")
     leading_zeroes = len(value) - len(value.lstrip(b"\x00"))
     number = int.from_bytes(value, "big")

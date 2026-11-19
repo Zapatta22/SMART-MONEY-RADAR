@@ -383,6 +383,23 @@ class TokenTransferDecoderTests(unittest.TestCase):
                 ],
             ))
 
+    def test_ignores_parsed_transfer_checked_with_fee_under_spl_program(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": SPL_TOKEN_PROGRAM_ID,
+            "parsed": {
+                "type": "transferCheckedWithFee",
+                "info": {
+                    "source": "source",
+                    "destination": "destination",
+                    "mint": "mint",
+                    "authority": "authority",
+                    "tokenAmount": {"amount": "100", "decimals": 6},
+                    "feeAmount": "1",
+                },
+            },
+        }]))
+        self.assertEqual(result, [])
+
 
 if __name__ == "__main__":
     unittest.main()

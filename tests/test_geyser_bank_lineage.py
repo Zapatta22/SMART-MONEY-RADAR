@@ -80,6 +80,23 @@ class BankLineageTrackerTests(unittest.TestCase):
         child = BankKey("yellowstone", 101, 11)
         self.assertTrue(tracker.is_ancestor(parent, child))
 
+    def test_conflicting_blockhash_invalidates_bank_and_ancestor_proof(self):
+        tracker = BankLineageTracker()
+        tracker.add_block_meta(_block(100, 10, "parent-hash", 99, "grandparent-hash"))
+        tracker.add_block_meta(_block(101, 11, "child-hash", 100, "parent-hash", sequence=2))
+        parent = BankKey("yellowstone", 100, 10)
+        child = BankKey("yellowstone", 101, 11)
+        self.assertTrue(tracker.is_ancestor(parent, child))
+
+        conflict = tracker.add_block_meta(
+            _block(101, 11, "contradictory-child-hash", 100, "parent-hash", sequence=3)
+        )
+        self.assertEqual(conflict.status, "conflict")
+        self.assertFalse(tracker.is_bank_usable(child))
+        self.assertIsNone(tracker.is_ancestor(parent, child))
+        node = next(item for item in tracker.banks if item.key == child)
+        self.assertTrue(node.invalidated)
+
     def test_same_slot_distinct_bank_ids_remain_distinct_forks(self):
         tracker = BankLineageTracker()
         tracker.add_slot_update(_slot(100, "SLOT_CREATED_BANK", bank_id=10, parent=99))
@@ -125,7 +142,14 @@ class BankLineageTrackerTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "conflict")
         self.assertEqual(result.conflict.reason, "ambiguous_replacement")
-        self.assertNotIn(BankKey("yellowstone", 101, 3), {node.key for node in tracker.banks})
+        conflicted_key = BankKey("yellowstone", 101, 3)
+        self.assertNotIn(conflicted_key, {node.key for node in tracker.banks})
+        # If later metadata creates this bank identity, the prior conflict
+        # remains tainted and the bank is not usable.
+        tracker.add_block_meta(_block(101, 3, "later-hash", 100, "parent-hash", sequence=4))
+        conflicted_node = next(node for node in tracker.banks if node.key == conflicted_key)
+        self.assertTrue(conflicted_node.invalidated)
+        self.assertFalse(tracker.is_bank_usable(conflicted_key))
 
     def test_slot_dead_without_bank_id_invalidates_known_and_future_banks(self):
         tracker = BankLineageTracker()

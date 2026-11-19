@@ -3698,3 +3698,34 @@ A ausência no GitHub não prova que o RAW e o manifesto não existam no armazen
 - PR #10: OPEN, HEAD `e7c02adb3564fefb3a8c734098f5c92603eb4a7b`, CI #115 SUCCESS (181 testes + compileall no head próprio); quatro commits da base #9 ainda não estão incorporados no head #10. Não foi feito rebase, atualização de branch ou merge.
 - PR #25: OPEN/DRAFT, não mergeada; este registro será atualizado nesta branch de integração. Nenhuma alteração na `main`.
 - Progresso mantido: módulo **92%**, revisão técnica **93%**. Não elevar enquanto a decisão de proveniência e a validação combinada da PR #10 permanecerem pendentes.
+
+
+## 245. Confirmação CI da auditoria de proveniência e revisão estática da PR #10 — 19/11/2026
+
+### CI do Registro Mestre
+
+O commit `dfec3eb944f6019c0ace5ad94939884fcd331ee1`, que registra a auditoria de disponibilidade dos artefatos RAW da fixture CPMM/Jupiter (seção 244), foi validado pelo workflow #1376, run ID `44435406567`:
+
+- Evento `pull_request`, PR #25, HEAD exato `dfec3eb944f6019c0ace5ad94939884fcd331ee1`.
+- Conclusão SUCCESS.
+- Job `test` concluído com sucesso.
+- **539 testes aprovados** (`Ran 539 tests in 4.279s`, `OK`).
+- `python -m compileall -q src tests` aprovado.
+
+### Revisão estática da PR #10
+
+- A PR #10 continua OPEN, não Draft, não mergeada e GitHub informa `mergeable=true`.
+- Head #10: `e7c02adb3564fefb3a8c734098f5c92603eb4a7b`; base atual #9: `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a`.
+- A comparação permanece divergente: base 4 commits à frente e head #10 7 commits à frente do merge-base `5b57955fa843e4880bb6b8099cb455c160da83e4`.
+- As mudanças funcionais da PR #10 são o builder de bundles de domínio e seus testes. A PR #9 acrescenta fixture/teste de decodificação; não há sobreposição entre esses arquivos funcionais. Ambas atualizam o Registro Mestre.
+- O CI próprio #115 (run `44223834918`) permanece SUCCESS no head #10: 181 testes + compileall. Ele não valida a combinação com os quatro commits mais recentes da base #9.
+- Revisão de compatibilidade: o builder da PR #10 foi escrito antes dos reforços posteriores de Token-2022/transfer-fee e evidências de deltas por token account. A branch de integração PR #25 já contém validações adicionais no builder para transferência executada, fee Token-2022, valor líquido de saída, identidade CPI, deltas e consistência entre reconciliação e transferências. Os testes da PR #10, isoladamente, são sintéticos e não cobrem esse conjunto posterior. Isso não é conflito funcional com a fixture #9, mas reforça que o CI combinado da cadeia deve ser executado no estado final integrado.
+- Não foi feito rebase, atualização da branch #10, merge ou alteração na `main`.
+
+### Estado
+
+- PR #9: OPEN; CI #1371 SUCCESS, 170 testes + compileall; rastreabilidade RAW permanece não comprovada no GitHub.
+- PR #10: OPEN; CI próprio #115 SUCCESS, 181 testes + compileall; integração com base atualizada ainda sem CI.
+- PR #25: OPEN/DRAFT; CI #1376 SUCCESS, 539 testes + compileall no commit `dfec3eb...`.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Progresso mantido: módulo **92%**, revisão técnica **93%**. Nenhum percentual foi elevado porque permanecem pendentes a decisão sobre a proveniência externa e a validação conjunta da PR #10.

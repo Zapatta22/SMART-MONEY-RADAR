@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import os
 import json
 import resource
 import sqlite3
@@ -94,10 +93,6 @@ def run_rebuild_worker(database: Path, temp_store: str | None) -> dict:
     _, peak_bytes = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     after_memory = process_memory_snapshot()
-    with sqlite3.connect(database) as diagnostic:
-        temp_store_pragma = diagnostic.execute("PRAGMA temp_store").fetchone()[0]
-        compile_options = [row[0] for row in diagnostic.execute("PRAGMA compile_options")
-                           if row[0].startswith(("TEMP_STORE=", "DEFAULT_CACHE_SIZE="))]
     # Linux reports ru_maxrss in KiB; macOS reports bytes.
     rss_peak_raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     rss_peak_mib = rss_peak_raw / (1024 if sys.platform != "darwin" else 1024 * 1024)
@@ -109,8 +104,7 @@ def run_rebuild_worker(database: Path, temp_store: str | None) -> dict:
         "memory_before_rebuild": before_memory,
         "memory_after_rebuild": after_memory,
         "temp_store_requested": temp_store or "DEFAULT",
-        "temp_store_pragma": temp_store_pragma,
-        "sqlite_compile_options": compile_options,
+        "temp_store_requested": temp_store or "DEFAULT",
         **audit.last_rebuild_metrics,
     }
 
@@ -167,11 +161,6 @@ def benchmark_size(logical_events: int, temp_store: str | None = None) -> dict:
             ) if measured["rebuild_seconds"] else None,
             "tracemalloc_peak_mib": measured["tracemalloc_peak_mib"],
             "process_rss_peak_mib": measured["process_rss_peak_mib"],
-            "memory_before_rebuild": measured["memory_before_rebuild"],
-            "memory_after_rebuild": measured["memory_after_rebuild"],
-            "temp_store_requested": measured["temp_store_requested"],
-            "temp_store_pragma": measured["temp_store_pragma"],
-            "sqlite_compile_options": measured["sqlite_compile_options"],
             "memory_before_rebuild": measured["memory_before_rebuild"],
             "memory_after_rebuild": measured["memory_after_rebuild"],
             "temp_store_requested": measured["temp_store_requested"],
@@ -245,6 +234,11 @@ def benchmark_witness_fanout(witness_count: int, temp_store: str | None = None) 
             "rebuild_seconds": measured["rebuild_seconds"],
             "tracemalloc_peak_mib": measured["tracemalloc_peak_mib"],
             "process_rss_peak_mib": measured["process_rss_peak_mib"],
+            "memory_before_rebuild": measured["memory_before_rebuild"],
+            "memory_after_rebuild": measured["memory_after_rebuild"],
+            "temp_store_requested": measured["temp_store_requested"],
+            "temp_store_pragma": measured["temp_store_pragma"],
+            "sqlite_compile_options": measured["sqlite_compile_options"],
             "temp_db_pages": measured["temp_db_pages"],
             "temp_db_page_size_bytes": measured["temp_db_page_size_bytes"],
             "temp_db_allocated_bytes": measured["temp_db_allocated_bytes"],

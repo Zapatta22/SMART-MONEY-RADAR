@@ -2935,3 +2935,34 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - Nenhuma alteração à política de reconciliação, tabelas RAW ou Timeline.
 - PR #27 permanece OPEN/DRAFT e sem merge. PR #26 e `main` não foram modificadas.
 - Próxima ação: revisão final do diff atualizado e conferência do resultado agregado da PR antes de qualquer proposta de integração. Nenhum merge sem aprovação explícita.
+
+
+## 305. Revisão de integração PR #26 + PR #27 — 19/11/2026
+
+### Estado da cadeia de branches confirmado
+- PR #23 permanece OPEN/DRAFT, sem merge; base `feat/damm-v2-referral-transfer-attribution`, HEAD `4a517ca15499746ddd3f5522f112c80aaac1433b`.
+- PR #26 permanece OPEN/DRAFT, `merged=false`; base `feat/damm-v2-economic-reconciliation` (HEAD base `4a517ca15499746ddd3f5522f112c80aaac1433b`), HEAD `f0d63038411cc4207fae910a3ef168e3af443784`.
+- PR #27 permanece OPEN/DRAFT, `merged=false`; base `feat/geyser-unsequenced-raw-audit`, e seu `base_sha` coincide exatamente com o HEAD da PR #26 (`f0d63038411cc4207fae910a3ef168e3af443784`); HEAD documental consultado `56190344951bf65112c8190178b56ca6a855f7d4`.
+- A cadeia de PRs está corretamente empilhada: PR #27 adiciona a otimização sobre a implementação da PR #26, que por sua vez depende da PR #23. Nenhuma alteração em `main`; nenhum merge executado.
+
+### Revisão da compatibilidade entre auditoria e otimização
+- PR #27 altera o rebuild da projeção, mas preserva o contrato persistente, a policy ID `geyser-unsequenced-delivery:v1`, os códigos de classificação e a regra de reconciliação da PR #26.
+- A tabela TEMP indexada materializa somente testemunhas sequenciadas sem conflito de identidade e sem anomalia de transporte aberta; a chave continua `event_id + source_id + payload_sha256`, sem incluir `stream_id`.
+- Entregas são lidas em lotes de 500; testemunhas são consultadas por chave e ordenadas por `delivery_id`; IDs completos são serializados sem transferir sequência à delivery não sequenciada.
+- `BEGIN IMMEDIATE`, substituição da projeção e atualização do checkpoint permanecem na mesma transação. O teste concorrente verifica duas instâncias serializadas e gerações sucessivas; o teste de rollback compara linhas projetadas, checkpoint, contagens RAW e integridade.
+- O benchmark permanece fora da API operacional. Não foi identificada alteração de RAW, deliveries, conflitos, checkpoints de transporte ou contrato de Timeline pelo código da PR #27.
+- Validações finais de código/testes/benchmark já registradas na seção 304 continuam válidas para o commit de código validado; esta revisão não repetiu CI nem benchmark.
+
+### Achado de integração — Timeline não filtra todas as deliveries inelegíveis
+- Arquivo: `src/smart_money_radar/storage/geyser_account_timeline_projection.py`, método `SQLiteGeyserAccountTimelineProjection.rebuild()`.
+- A consulta atual seleciona a delivery por `MIN(delivery_id)` com a única condição `d2.stream_sequence IS NOT NULL`. Ela não filtra `conflict_id`, conflitos em `geyser_raw_conflicts` nem anomalias abertas em `geyser_transport_anomalies`.
+- Em contraste, a auditoria da PR #26 classifica deliveries com conflito de identidade como `IDENTITY_CONFLICT` e deliveries sequenciadas afetadas por anomalia aberta como `SEQUENCE_ANOMALY`; nenhuma delas é testemunha elegível para reconciliar uma delivery sem sequência.
+- Consequência: uma delivery sequenciada que a auditoria considera inelegível ainda pode ser escolhida pela Timeline. Se houver uma delivery inelegível com menor `delivery_id`, a seleção também pode preferi-la a uma delivery sequenciada elegível posterior.
+- O teste adicionado na PR #26 comprova que uma delivery sem sequência não entra na Timeline, mas não cobre a exclusão de deliveries sequenciadas com conflito RAW ou anomalia aberta.
+- O achado é uma lacuna de integração entre a política aprovada e a projeção Timeline preexistente; não é defeito introduzido pela otimização da PR #27. A consulta e os testes de Timeline precisam ser ajustados para consumir a mesma regra de elegibilidade (ou predicado compartilhado equivalente), preservando o isolamento da auditoria e sem transferir sequência.
+
+### Conclusão e próxima ação
+- A otimização da PR #27 é compatível com o contrato de auditoria da PR #26 na revisão estática realizada; a cadeia de branches está corretamente empilhada.
+- **Integração ainda não pode ser considerada totalmente aprovada** enquanto a Timeline puder selecionar deliveries sequenciadas com conflito RAW ou anomalia aberta.
+- Próxima ação recomendada: preparar uma correção isolada para a elegibilidade da Timeline, com testes que demonstrem exclusão de conflito RAW e anomalia aberta, e teste que escolha uma delivery elegível posterior quando a primeira sequenciada for inelegível. Reexecutar CI somente na branch que receber essa correção.
+- PR #23, #26 e #27 permanecem OPEN/DRAFT e sem merge. `main` permanece intacta. Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.

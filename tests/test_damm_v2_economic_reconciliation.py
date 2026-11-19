@@ -5,8 +5,10 @@ from smart_money_radar.data_sources.damm_v2_analyzer import DammV2SwapEventAssoc
 from smart_money_radar.data_sources.damm_v2_decoder import DammV2EvtSwap2, DammV2SwapResult
 from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
     DammV2ExpectedWithheldFeeDelta,
+    DammV2MintFeeConfigSnapshot,
     DammV2WithheldFeeSnapshot,
     reconcile_damm_v2_economic_batch,
+    verify_damm_v2_mint_fee_config,
     verify_damm_v2_withheld_fee_deltas,
 )
 from smart_money_radar.data_sources.damm_v2_transfer_analyzer import DammV2SwapTransferContext, DammV2TransferEvidence
@@ -21,6 +23,8 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SolanaTokenTransfer,
 )
 from smart_money_radar.data_sources.token2022_transfer_fee_state import (
+    TransferFeeConfigState,
+    TransferFeeRate,
     decode_transfer_fee_amount_delta,
 )
 
@@ -112,6 +116,34 @@ def _withheld_delta(pre, post):
         base[108] = 1
         return bytes(base) + bytes([2]) + (2).to_bytes(2, "little") + (8).to_bytes(2, "little") + amount.to_bytes(8, "little")
     return decode_transfer_fee_amount_delta(account_data(pre), account_data(post))
+
+
+
+def _mint_fee_snapshots(input_bps=500, input_max_fee=100, input_epoch=10):
+    state = TransferFeeConfigState(
+        withheld_amount=0,
+        older_transfer_fee=TransferFeeRate(
+            epoch=0, maximum_fee=input_max_fee, basis_points=input_bps
+        ),
+        newer_transfer_fee=TransferFeeRate(
+            epoch=input_epoch, maximum_fee=input_max_fee, basis_points=input_bps
+        ),
+        extension_types=(1,),
+    )
+    return [
+        DammV2MintFeeConfigSnapshot(
+            mint="mint-a", config_state=state,
+            transaction_epoch=input_epoch, transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49,
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
+        ),
+        DammV2MintFeeConfigSnapshot(
+            mint="mint-b", config_state=None,
+            transaction_epoch=input_epoch, transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49,
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-b-pre",
+        ),
+    ]
 
 
 def _deltas(values):
@@ -616,6 +648,124 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "AMBIGUOUS")
         self.assertIn("duplicado", result.reason)
+
+
+    def test_verifies_token2022_fees_against_historical_mint_config_and_epoch(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        result = verify_damm_v2_mint_fee_config(
+            base, _mint_fee_snapshots(),
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "RECONCILED")
+        self.assertEqual(result.mint_fee_config_status, "VERIFIED")
+
+    def test_mint_fee_config_mismatch_fails_closed(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        result = verify_damm_v2_mint_fee_config(
+            base, _mint_fee_snapshots(input_bps=400),
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("transfer fee diverge", result.reason)
+
+    def test_mint_fee_config_requires_snapshot_for_each_token2022_mint(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        result = verify_damm_v2_mint_fee_config(
+            base, _mint_fee_snapshots()[:1],
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("snapshot histórico de mint ausente", result.reason)
+
+    def test_mint_fee_config_requires_prestate_before_transaction(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshots = _mint_fee_snapshots()
+        snapshots[0] = DammV2MintFeeConfigSnapshot(
+            mint="mint-a", config_state=snapshots[0].config_state,
+            transaction_epoch=10, transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=50,
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
+        )
+        result = verify_damm_v2_mint_fee_config(
+            base, snapshots,
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("prestate do mint não antecede", result.reason)
+
+    def test_mint_fee_config_rejects_duplicate_mint_snapshots(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshots = _mint_fee_snapshots()
+        result = verify_damm_v2_mint_fee_config(
+            base, snapshots + [snapshots[0]],
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "AMBIGUOUS")
+        self.assertIn("duplicado", result.reason)
+
+    def test_mint_fee_config_selects_older_rate_before_newer_epoch(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        old_state = TransferFeeConfigState(
+            withheld_amount=0,
+            older_transfer_fee=TransferFeeRate(epoch=0, maximum_fee=100, basis_points=500),
+            newer_transfer_fee=TransferFeeRate(epoch=20, maximum_fee=100, basis_points=250),
+            extension_types=(1,),
+        )
+        snapshots = _mint_fee_snapshots()
+        snapshots[0] = DammV2MintFeeConfigSnapshot(
+            mint="mint-a", config_state=old_state,
+            transaction_epoch=10, transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49,
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
+        )
+        result = verify_damm_v2_mint_fee_config(
+            base, snapshots,
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "RECONCILED")
+        self.assertEqual(result.mint_fee_config_status, "VERIFIED")
 
 if __name__ == "__main__":
     unittest.main()

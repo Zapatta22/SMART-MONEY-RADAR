@@ -453,8 +453,16 @@ def _calculate_fee_from_mint_snapshot(
     if (
         not isinstance(snapshot.source, str) or not snapshot.source.strip()
         or not isinstance(snapshot.pre_state_ref, str) or not snapshot.pre_state_ref.strip()
+        or not isinstance(snapshot.pre_state_data, bytes)
+        or hashlib.sha256(snapshot.pre_state_data).hexdigest() != snapshot.pre_state_sha256
     ):
-        raise ValueError("proveniência do mint prestate ausente")
+        raise ValueError("proveniência/hash do mint prestate ausente ou divergente")
+    try:
+        decoded_config = decode_transfer_fee_config_optional(snapshot.pre_state_data)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("bytes TLV do mint prestate inválidos") from exc
+    if decoded_config != snapshot.config_state:
+        raise ValueError("config_state não corresponde aos bytes do mint prestate")
     if snapshot.config_state is None:
         return 0
     if (

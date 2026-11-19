@@ -43,6 +43,14 @@ class TransferFeeAmountState:
     extension_types: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class TransferFeeAmountDelta:
+    pre_withheld_amount: int
+    post_withheld_amount: int
+    delta: int
+    extension_types: tuple[int, ...]
+
+
 def _u64(value: int, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= U64_MAX:
         raise ValueError(f"{field} deve ser u64")
@@ -151,3 +159,25 @@ def decode_transfer_fee_amount(account_data: bytes) -> TransferFeeAmountState:
     if len(payload) != TRANSFER_FEE_AMOUNT_LENGTH:
         raise ValueError("tamanho inválido de TransferFeeAmount")
     return TransferFeeAmountState(_read_u64(payload, 0), tuple(sorted(extensions)))
+
+
+def decode_transfer_fee_amount_delta(
+    pre_account_data: bytes,
+    post_account_data: bytes,
+) -> TransferFeeAmountDelta:
+    """Decodes the signed pre/post delta of a token account's withheld fee TLV.
+
+    The caller must supply account-data snapshots from the exact transaction
+    boundary being audited. This function validates TLV structure, not snapshot
+    provenance, slot ordering, or transaction identity.
+    """
+    before = decode_transfer_fee_amount(pre_account_data)
+    after = decode_transfer_fee_amount(post_account_data)
+    if before.extension_types != after.extension_types:
+        raise ValueError("conjunto de extensões mudou entre snapshots pre/post")
+    return TransferFeeAmountDelta(
+        pre_withheld_amount=before.withheld_amount,
+        post_withheld_amount=after.withheld_amount,
+        delta=after.withheld_amount - before.withheld_amount,
+        extension_types=before.extension_types,
+    )

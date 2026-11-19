@@ -19,6 +19,9 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
 )
 
 
+WALLET = "wallet"
+
+
 def _accounts():
     return DammV2SwapAccounts(
         pool_authority="authority", pool="pool",
@@ -100,9 +103,15 @@ def _evidence(context, input_transfer, output_transfer, referral=None):
 def _deltas(values):
     rows = []
     for index, (account, mint, amount, decimals) in enumerate(values):
+        owner = {
+            "user-a": WALLET,
+            "user-b": WALLET,
+            "vault-a": "authority",
+            "vault-b": "authority",
+        }.get(account, "referral-owner")
         rows.append(SolanaTokenAccountBalanceDelta(
             account_index=index, token_account=account, mint=mint,
-            owner="owner", pre_amount_raw=1_000,
+            owner=owner, pre_amount_raw=1_000,
             post_amount_raw=1_000 + amount, delta_raw=amount,
             decimals=decimals,
         ))
@@ -119,7 +128,8 @@ def _reconcile(contexts, evidence, deltas, all_transfers=None):
                 ) if transfer is not None
             )
     return reconcile_damm_v2_economic_batch(
-        contexts, evidence, deltas, all_transfers
+        contexts, evidence, deltas, all_transfers,
+        monitored_wallet=WALLET,
     )
 
 
@@ -368,6 +378,94 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         self.assertEqual(result.status, "AMBIGUOUS")
         self.assertIn("reutilizada", result.reason)
 
+
+
+    def test_requires_monitored_wallet_owner_for_user_token_accounts(self):
+        deltas = _deltas([
+            ("user-a", "mint-a", -100, 6),
+            ("vault-a", "mint-a", 95, 6),
+            ("vault-b", "mint-b", -90, 6),
+            ("user-b", "mint-b", 90, 6),
+        ])
+        rows = list(deltas.deltas)
+        rows[0] = SolanaTokenAccountBalanceDelta(
+            account_index=rows[0].account_index,
+            token_account=rows[0].token_account,
+            mint=rows[0].mint,
+            owner="different-wallet",
+            pre_amount_raw=rows[0].pre_amount_raw,
+            post_amount_raw=rows[0].post_amount_raw,
+            delta_raw=rows[0].delta_raw,
+            decimals=rows[0].decimals,
+        )
+        result = _reconcile(
+            [self.context], [self.evidence],
+            SolanaTokenBalanceDeltaResult(tuple(rows), ()),
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("owner diverge", result.reason)
+
+    def test_requires_pool_authority_to_own_both_vaults(self):
+        deltas = _deltas([
+            ("user-a", "mint-a", -100, 6),
+            ("vault-a", "mint-a", 95, 6),
+            ("vault-b", "mint-b", -90, 6),
+            ("user-b", "mint-b", 90, 6),
+        ])
+        rows = list(deltas.deltas)
+        rows[1] = SolanaTokenAccountBalanceDelta(
+            account_index=rows[1].account_index,
+            token_account=rows[1].token_account,
+            mint=rows[1].mint,
+            owner="wrong-pool-authority",
+            pre_amount_raw=rows[1].pre_amount_raw,
+            post_amount_raw=rows[1].post_amount_raw,
+            delta_raw=rows[1].delta_raw,
+            decimals=rows[1].decimals,
+        )
+        result = _reconcile(
+            [self.context], [self.evidence],
+            SolanaTokenBalanceDeltaResult(tuple(rows), ()),
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("owner diverge", result.reason)
+
+    def test_exposes_expected_withheld_fee_without_claiming_state_verification(self):
+        result = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        self.assertEqual(result.status, "RECONCILED")
+        self.assertEqual(result.withheld_fee_status, "EXPECTED_NOT_VERIFIED")
+        self.assertEqual(
+            result.expected_withheld_fee_deltas,
+            (
+                # The input transfer withheld five units at the input vault.
+                type(result.expected_withheld_fee_deltas[0])(
+                    token_account="vault-a",
+                    mint="mint-a",
+                    expected_withheld_delta_raw=5,
+                ),
+            ),
+        )
+
+    def test_rejects_empty_monitored_wallet(self):
+        with self.assertRaisesRegex(ValueError, "monitored_wallet"):
+            reconcile_damm_v2_economic_batch(
+                [self.context], [self.evidence],
+                _deltas([
+                    ("user-a", "mint-a", -100, 6),
+                    ("vault-a", "mint-a", 95, 6),
+                    ("vault-b", "mint-b", -90, 6),
+                    ("user-b", "mint-b", 90, 6),
+                ]),
+                [self.input, self.output],
+                monitored_wallet="",
+            )
 
 if __name__ == "__main__":
     unittest.main()

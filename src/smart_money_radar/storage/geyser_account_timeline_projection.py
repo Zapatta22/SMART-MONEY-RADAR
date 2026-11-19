@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -120,6 +121,7 @@ class SQLiteGeyserAccountTimelineProjection:
                 );
             """)
 
+    @contextmanager
     def _connect(self):
         connection = sqlite3.connect(self.database_path, timeout=30.0)
         try:
@@ -243,11 +245,9 @@ class SQLiteGeyserAccountTimelineProjection:
             account_rows = []
             for record in timeline.timeline_records():
                 update = record.update
-                identity = derive_event_identity(update, schema_version=next(
-                    row[3] for row in rows if row[0] == self._event_id_for(update, rows)
-                ))
+                event_id = self._event_id_for(update, rows)
                 account_rows.append((
-                    identity.event_id, update.source, update.pubkey, update.slot,
+                    event_id, update.source, update.pubkey, update.slot,
                     update.write_version, update.bank_id, update.txn_signature,
                     record.continuity_epoch, int(record.baseline),
                     int(record.continuity_baseline),
@@ -333,16 +333,12 @@ class SQLiteGeyserAccountTimelineProjection:
 
     @staticmethod
     def _event_id_for(update, rows):
-        # Match account RAW by immutable event identity across schema versions.
+        # Recompute the versioned logical identity, including account state bytes.
         for row in rows:
             if row[1] != update.source or row[2] != "account" or row[4] != "normalized_json":
                 continue
-            envelope = json.loads(row[5].decode("utf-8"))
-            p = envelope["payload"]
-            if (p.get("pubkey"),p.get("slot"),p.get("write_version"),p.get("bank_id"),
-                p.get("is_startup"),p.get("txn_signature")) == (
-                update.pubkey,update.slot,update.write_version,update.bank_id,
-                update.is_startup,update.txn_signature):
+            identity = derive_event_identity(update, schema_version=row[3])
+            if identity.event_id == row[0]:
                 return row[0]
         raise ValueError("não foi possível associar escrita à identidade RAW")
 

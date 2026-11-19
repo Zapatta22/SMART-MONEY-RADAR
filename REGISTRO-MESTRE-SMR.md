@@ -2469,7 +2469,8 @@ Integrar o helper ao contrato de ingestão RAW sem acoplar identidade a transpor
 - Conflito quando conteúdo muda sob mesma identidade.
 - Cobertura de Slot, BlockMeta e EntryUpdateParent.
 - Isolamento por versão de schema.
-- Validação geral será registrada após CI final.
+- CI #1686 — run `44515088642`, pull_request, código HEAD `0beb6c26f2ac6833cb7ebff5861d208c2a1c307b`: completed/success; **544/544 testes OK** em 4,035 s; `python -m compileall -q src tests` aprovado.
+- Runs #1680 e #1684 falharam em asserções dos testes recém-criados (contrato de retorno de conflito e representação Base64); expectativas corrigidas antes do CI aprovado #1686.
 
 ### Limites
 - Este é um coordenador offline chamado explicitamente pelo consumidor; não há loop/worker de stream nem conexão Yellowstone/Helius.

@@ -167,5 +167,17 @@ class Token2022TransferFeeInstructionInventoryTests(unittest.TestCase):
         self.assertIn("InitializeTransferFeeConfig inválida", result.issues[0])
 
 
+
+    def test_failed_transaction_is_not_a_complete_instruction_inventory(self):
+        raw = _tx([{
+            "programId": TOKEN_2022_PROGRAM_ID,
+            "accounts": [0],
+            "data": _b58(_init_fee()),
+        }])
+        raw["meta"]["err"] = {"InstructionError": [0, "Custom"]}
+        inventory = decode_solana_instruction_inventory(raw)
+        self.assertFalse(inventory.complete)
+        self.assertIn("não foi executada", inventory.issues[0])
+
 if __name__ == "__main__":
     unittest.main()

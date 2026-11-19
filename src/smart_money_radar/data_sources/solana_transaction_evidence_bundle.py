@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from smart_money_radar.data_sources.damm_v2_accounts import decode_damm_v2_swap_accounts
+from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
+    DammV2EconomicReconciliation,
+    DammV2MintFeeConfigSnapshot,
+    reconcile_damm_v2_economic_batch,
+)
 from smart_money_radar.data_sources.damm_v2_analyzer import (
     DammV2SwapEventAssociation,
     analyze_damm_v2_swap_events,
@@ -62,6 +67,7 @@ class SolanaTransactionEvidenceBundle:
         return (
             not self.damm_v2_issues
             and len(self.damm_v2_contexts) == len(self.damm_v2_associations)
+            and len(self.damm_v2_transfer_evidence) == len(self.damm_v2_contexts)
             and all(item.status == "ATTRIBUTED" for item in self.damm_v2_transfer_evidence)
         )
 
@@ -211,4 +217,69 @@ def build_solana_transaction_evidence_bundle(
         damm_v2_contexts=tuple(contexts),
         damm_v2_transfer_evidence=tuple(transfer_evidence),
         damm_v2_issues=tuple(damm_issues),
+    )
+
+
+def reconcile_solana_transaction_damm_v2_bundle(
+    bundle: SolanaTransactionEvidenceBundle,
+    *,
+    monitored_wallet: str,
+    mint_fee_snapshots: tuple[DammV2MintFeeConfigSnapshot, ...] = (),
+    transaction_epoch: int | None = None,
+    transaction_order: int | None = None,
+) -> DammV2EconomicReconciliation:
+    """Reconcile DAMM v2 only from evidence derived inside one validated bundle.
+
+    The caller cannot supply independent contexts, transfers or balance
+    deltas. Transaction signature and slot are taken from the bundle identity.
+    Historical mint snapshots retain their own provenance and must still pass
+    the economic reconciler's ordering and applicability checks.
+    """
+    if not isinstance(bundle, SolanaTransactionEvidenceBundle):
+        raise TypeError("bundle de evidências Solana inválido")
+
+    operation_count = len(bundle.damm_v2_associations)
+    if not bundle.damm_v2_associations:
+        return DammV2EconomicReconciliation(
+            "INCOMPLETE", 0, (), "nenhuma associação DAMM v2 encontrada no bundle"
+        )
+    if not bundle.structurally_complete:
+        return DammV2EconomicReconciliation(
+            "INCOMPLETE", operation_count, (),
+            "bundle estruturalmente incompleto; reconciliação bloqueada",
+        )
+    if bundle.damm_v2_issues:
+        return DammV2EconomicReconciliation(
+            "INCOMPLETE", operation_count, (),
+            "; ".join(bundle.damm_v2_issues),
+        )
+    if (
+        len(bundle.damm_v2_contexts) != operation_count
+        or len(bundle.damm_v2_transfer_evidence) != operation_count
+    ):
+        return DammV2EconomicReconciliation(
+            "INCOMPLETE", operation_count, (),
+            "contexts/evidence não cobrem todas as associações DAMM v2",
+        )
+    unresolved = [
+        item.status for item in bundle.damm_v2_transfer_evidence
+        if item.status != "ATTRIBUTED"
+    ]
+    if unresolved:
+        return DammV2EconomicReconciliation(
+            "INCOMPLETE", operation_count, (),
+            "transfer evidence não atribuída: " + ", ".join(unresolved),
+        )
+
+    return reconcile_damm_v2_economic_batch(
+        bundle.damm_v2_contexts,
+        bundle.damm_v2_transfer_evidence,
+        bundle.balance_deltas,
+        bundle.transfers,
+        monitored_wallet=monitored_wallet,
+        mint_fee_snapshots=mint_fee_snapshots,
+        transaction_epoch=transaction_epoch,
+        transaction_slot=bundle.identity.slot,
+        transaction_order=transaction_order,
+        transaction_signature=bundle.identity.transaction_signature,
     )

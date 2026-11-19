@@ -48,6 +48,8 @@ class NormalizedAccountUpdate:
     stream_id: str
     stream_sequence: int
     source: str
+    bank_id: int | None = None
+    is_startup: bool = False
 
     @property
     def ordering_key(self) -> tuple[int, int, int]:
@@ -83,6 +85,8 @@ class NormalizedAccountUpdate:
             "slot": self.slot,
             "write_version": self.write_version,
             "txn_signature": self.txn_signature,
+            "bank_id": self.bank_id,
+            "is_startup": self.is_startup,
             "state_hash": self.state_hash,
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -100,7 +104,7 @@ def normalize_account_update(
 
     Canonical envelope:
       {
-        "slot": int,
+        "slot": int, "bank_id": int | None, "is_startup": bool,
         "account": {
           "pubkey": str, "lamports": int, "owner": str,
           "executable": bool, "rent_epoch": int, "data": bytes,
@@ -121,6 +125,13 @@ def normalize_account_update(
     pubkey = _required_text(account.get("pubkey"), "account.pubkey")
     owner = _required_text(account.get("owner"), "account.owner")
     slot = _u64(payload.get("slot"), "slot")
+    raw_bank_id = payload.get("bank_id")
+    bank_id = None if raw_bank_id is None else _u64(raw_bank_id, "bank_id")
+    is_startup = payload.get("is_startup", False)
+    if not isinstance(is_startup, bool):
+        raise ValueError("is_startup deve ser booleano")
+    if is_startup and bank_id is not None:
+        raise ValueError("is_startup não pode carregar bank_id")
     write_version = _u64(account.get("write_version"), "account.write_version")
     lamports = _u64(account.get("lamports"), "account.lamports")
     rent_epoch = _u64(account.get("rent_epoch"), "account.rent_epoch")
@@ -154,4 +165,6 @@ def normalize_account_update(
         stream_id=stream_id,
         stream_sequence=stream_sequence,
         source=source,
+        bank_id=bank_id,
+        is_startup=is_startup,
     )

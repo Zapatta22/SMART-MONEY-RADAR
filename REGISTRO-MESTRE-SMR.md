@@ -2822,6 +2822,8 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 
 
 ## 302. Cardinalidade de testemunhas, RSS e alocação TEMP SQLite — 19/11/2026
+> **Nota de correção (seção 303):** os valores `process_rss_peak_mib` desta seção, calculados com `resource.getrusage().ru_maxrss`, foram contaminados pelo high-water mark do processo pai que preparou a fixture antes de iniciar o subprocesso. Portanto, os números de 87,12 MiB não representam o pico exclusivo do worker de rebuild e estão supersedidos pela medição `/proc/self/status` da seção 303. Os valores `tracemalloc` e TEMP SQLite continuam sendo medições independentes.
+
 
 ### Objetivo e alterações
 - Continuação autorizada da revisão da otimização da auditoria Geyser na branch isolada `perf/geyser-audit-bounded-rebuild`.
@@ -2866,3 +2868,49 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - HEAD de código/testes e workflows validado pelo CI: `e3763dd47f6ede8b5dfc3fc16b8ec11fc6f835e7`.
 - Próxima revisão técnica: investigar a diferença entre o pico RSS (~87 MiB) e `tracemalloc` (~0,6 MiB), além de medir se TEMP SQLite está em memória ou em arquivo no runner e como o comportamento varia com cache/disco. Preservar a serialização completa, ordenação, atomicidade e rollback.
 - Não fazer merge sem revisão e aprovação explícitas.
+
+
+## 303. Correção de RSS e diagnóstico do armazenamento TEMP SQLite — 19/11/2026
+
+### Correção metodológica
+- Investigação identificou que `resource.getrusage(RUSAGE_SELF).ru_maxrss` no subprocesso não era uma medida confiável para este benchmark: o valor reportado estava contaminado pelo high-water mark do processo pai que semeava a fixture antes de chamar `subprocess.run`.
+- Os valores anteriores de 87–95 MiB não devem ser atribuídos ao rebuild nem ao SQLite. A seção 302 foi anotada para marcar essa medição como supersedida.
+- Benchmark corrigido para usar `VmHWM` de `/proc/self/status` e snapshots de `VmRSS`, `smaps_rollup:Rss`, `Pss` e `Private_Dirty` dentro do próprio worker. Assim, o high-water mark é lido no espaço de processo do worker, sem a métrica herdada do pai.
+- Adicionado parâmetro opcional `temp_store=None|"FILE"|"MEMORY"` ao auditor. O padrão continua sem override; opções explícitas são aplicadas por conexão antes da criação de objetos TEMP. Valores não suportados são rejeitados.
+- Benchmark compara DEFAULT, FILE e MEMORY em 100.000 eventos lógicos / 200.000 deliveries; as classificações, contagens RAW e integridade são verificadas em todos os modos.
+- Testes cobrem FILE, MEMORY e rejeição de modo inválido.
+
+### Evidência de modo TEMP
+- Opções de compilação SQLite do runner: `TEMP_STORE=1` e `DEFAULT_CACHE_SIZE=-2000`.
+- Com `PRAGMA temp_store=0` (DEFAULT), o SQLite usa o default compilado `TEMP_STORE=1`, isto é, armazenamento TEMP baseado em arquivo.
+- Override FILE resulta em `PRAGMA temp_store=1`; override MEMORY resulta em `PRAGMA temp_store=2`.
+- O tamanho de TEMP no cenário de 200.000 deliveries foi 5.957 páginas × 4.096 bytes = 24.399.872 bytes (~23,27 MiB). Isso mede páginas alocadas pela base TEMP; não é medição direta de bytes físicos gravados no dispositivo nem prova de que o filesystem subjacente não seja tmpfs.
+
+### RSS corrigido e comparação de modos
+| Modo TEMP | RSS pico real do worker (VmHWM) | RSS antes | RSS depois | Rebuild | Throughput |
+|---|---:|---:|---:|---:|---:|
+| DEFAULT (TEMP_STORE=1) | 28,91 MiB | 23,00 MiB | 28,79 MiB | 5,565 s | 35.937,55 deliveries/s |
+| FILE | 29,06 MiB | 23,03 MiB | 28,83 MiB | 5,622 s | 35.573,77 deliveries/s |
+| MEMORY | 53,24 MiB | 22,98 MiB | 53,24 MiB | 5,543 s | 36.080,69 deliveries/s |
+
+- Os tempos acima são uma execução no runner compartilhado e não sustentam diferença de performance significativa entre os modos.
+- MEMORY elevou o RSS em aproximadamente 24 MiB adicionais em relação ao modo FILE/DEFAULT, sem ganho de velocidade mensurável. Não adotar MEMORY como padrão.
+- Para 200.000 deliveries no cenário principal, DEFAULT apresentou `VmHWM=29,0 MiB`, `VmRSS` pós-rebuild ~28,8 MiB, TEMP de 24.399.872 bytes e `tracemalloc=0,60 MiB`.
+- Fanout de 10.000 testemunhas: 10.001 deliveries; `VmHWM=28,70 MiB`, `VmRSS` pós-rebuild ~28,8 MiB, TEMP 2.088.960 bytes (~1,99 MiB), `tracemalloc=0,60 MiB`, 10.000 IDs completos/ordenados e `integrity_check=ok`.
+- O incremento de RSS no modo DEFAULT/FILE foi de cerca de 5,8 MiB sobre o processo inicial (~23 MiB), enquanto MEMORY reteve cerca de 30 MiB adicionais. Isso é compatível com TEMP em arquivo no runner e TEMP em memória no modo explícito.
+
+### Validação
+- CI SMR tests #1800, run ID `44562544337`, HEAD `d78b7dceafedad8a596156dfb42dbf80330d83c7`: SUCCESS.
+- Log: `Ran 591 tests in 6.343s`, `OK`; `python -m compileall -q src tests` SUCCESS.
+- Geyser audit benchmark #29, run ID `44562529547`, mesmo HEAD: SUCCESS.
+- Artefato `geyser-audit-benchmark-results`, ID `14550116560`, disponível até 2027-02-17.
+- Nenhuma alteração na política de reconciliação; RAW e resultados de classificação permaneceram íntegros nos três modos.
+
+### Conclusão e estado
+- O pico anterior de 87–95 MiB era artefato de medição, não evidência de consumo real do rebuild.
+- No runner Linux, o modo TEMP padrão efetivo é FILE e o rebuild manteve RSS de pico próximo a 29 MiB em 200.000 deliveries. O modo MEMORY aumenta RSS para ~53 MiB sem ganho de throughput relevante.
+- Manter DEFAULT (SQLite file-backed TEMP) como comportamento padrão; não mudar para MEMORY.
+- A evidência não mede RSS em Android/Termux, VPS ou produção, nem confirma se o diretório temporário do runner está num filesystem físico ou tmpfs.
+- PR #27 permanece OPEN/DRAFT, sem merge; PR #26 e `main` não foram alteradas.
+- HEAD de código/testes/benchmark validado: `d78b7dceafedad8a596156dfb42dbf80330d83c7`; commits de registro posteriores, se houver, devem ser identificados separadamente.
+- Próxima ação: revisão final de implementação e documentação, especialmente validar o parâmetro opcional TEMP_STORE e decidir se ele permanece como opção diagnóstica ou é removido após o experimento. Nenhum merge sem aprovação explícita.

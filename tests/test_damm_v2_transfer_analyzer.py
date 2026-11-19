@@ -379,5 +379,21 @@ class DammV2TransferAnalyzerTests(unittest.TestCase):
         self.assertIn("quantidade bruta", result.reason)
 
 
+    def test_rejects_referral_transfer_occurring_after_evt_swap2(self):
+        event = _event(has_referral=True, referral_fee=5)
+        context = DammV2SwapTransferContext(_association(event=event), _accounts())
+        after_event = _transfer(
+            "vault-b", "referral", TOKEN_2022_PROGRAM_ID, "mint-b", 9, amount=5
+        )
+        after_event = SolanaTokenTransfer(
+            **{**after_event.__dict__, "inner_instruction_index": 6}
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [context], [self.input, self.output, after_event]
+        )[0]
+        self.assertEqual(result.status, "TRANSFER_MISSING")
+        self.assertIsNone(result.referral_transfer)
+
+
 if __name__ == "__main__":
     unittest.main()

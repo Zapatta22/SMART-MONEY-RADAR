@@ -3110,7 +3110,7 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
   - `test_raw_identity_conflict_taints_original_event_from_timeline`
   - `test_valid_json_payload_mutation_fails_raw_hash_and_rolls_back_generation`
   - `test_late_arriving_sequence_is_replayed_in_stream_order`
-- CI do commit de código/testes comprova o snapshot `ceeaf82...`; após commits documentais subsequentes, a validação final deve ser confirmada no HEAD final da branch.
+- CI push no commit de código/testes `ceeaf82f1873dfdbe873120789d16dc08a79750b`: run `44614876540`, job `135880748123`, SUCCESS, 609 testes em 4,712s e compileall SUCCESS. CI pull_request após a atualização da política documental: run `44615009546`, head `48b58391f4e091a85a742e06166ec62cca1d9259`, job `135881222296`, SUCCESS; log confirma os mesmos 609 testes em 4,713s, os quatro testes novos e compileall SUCCESS. O HEAD final da branch passou depois a `4e699dd1f57c967c0e00566c77b803580b766a93` apenas por atualização do Registro Mestre; nenhum arquivo de código ou teste foi alterado após o snapshot validado.
 
 ### Limites e pendências
 - A revisão não cria adapter live nem consulta provider; não altera RAW; não infere sequência ausente; não declara fork canônico; não habilita execução financeira.

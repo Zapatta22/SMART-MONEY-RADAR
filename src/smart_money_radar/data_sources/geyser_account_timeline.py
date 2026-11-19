@@ -39,7 +39,11 @@ class AccountTimelineConflict:
 
 @dataclass(frozen=True)
 class AccountStateTransition:
-    """A transaction-linked post-state and its immediately preceding observed state."""
+    """A transaction-linked post-state with explicit evidence provenance.
+
+    LEGACY_UNSCOPED_UNVERIFIED preserves historical linear pairing only; it is
+    not commitment-verified and must never satisfy a VERIFIED evidence gate.
+    """
 
     pubkey: str
     txn_signature: str
@@ -47,6 +51,10 @@ class AccountStateTransition:
     write_version: int
     pre_state: NormalizedAccountUpdate
     post_state: NormalizedAccountUpdate
+    evidence_classification: Literal[
+        "LEGACY_UNSCOPED_UNVERIFIED",
+        "BANK_PROVIDER_REPORTED_FINALIZED",
+    ]
 
 
 @dataclass(frozen=True)
@@ -275,10 +283,10 @@ class AccountUpdateTimeline:
     def transition_for(
         self, txn_signature: str, *, pubkey: str | None = None
     ) -> tuple[AccountStateTransition, ...]:
-        """Return pre/post states only when their bank relationship is proven.
+        """Return transitions with provenance that distinguishes legacy observations.
 
         Non-bank-scoped legacy updates retain the original same-epoch linear
-        rule. Bank-scoped updates require both banks to be observed and usable.
+        rule but are explicitly marked unverified. Bank-scoped updates require both banks to be observed and usable.
         Cross-bank pairs additionally require an exact verified ancestor edge
         chain; a shared slot, parent slot number, or delivery order is not enough.
         """
@@ -315,6 +323,8 @@ class AccountUpdateTimeline:
                     target_key = BankKey(update.source, update.slot, update.bank_id)
                     if tracker.is_bank_usable(target_key) is not True:
                         continue
+                    if tracker.is_bank_finalized(target_key) is not True:
+                        continue
                     for candidate in entries[:index]:
                         prior = candidate.update
                         if (
@@ -326,6 +336,8 @@ class AccountUpdateTimeline:
                             continue
                         prior_key = BankKey(prior.source, prior.slot, prior.bank_id)
                         if tracker.is_bank_usable(prior_key) is not True:
+                            continue
+                        if tracker.is_bank_finalized(prior_key) is not True:
                             continue
                         if tracker.is_ancestor(prior_key, target_key) is True:
                             candidates.append(candidate)
@@ -347,6 +359,11 @@ class AccountUpdateTimeline:
                         write_version=update.write_version,
                         pre_state=previous.update,
                         post_state=update,
+                        evidence_classification=(
+                            "LEGACY_UNSCOPED_UNVERIFIED"
+                            if update.bank_id is None
+                            else "BANK_PROVIDER_REPORTED_FINALIZED"
+                        ),
                     )
                 )
         return tuple(transitions)

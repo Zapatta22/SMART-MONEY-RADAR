@@ -2818,3 +2818,152 @@ Auditar o diff completo da PR #34 e verificar se o contrato de snapshots, o bund
 - PR #34 continua Draft, aberta, mergeable e sem merge.
 - `main` permanece intocada.
 - Próxima ação: auditar o contrato do adapter contra os normalizadores/timeline Geyser existentes e especificar a representação tipada de commitment/finality antes de qualquer adapter operacional.
+
+## 301. Política de commitment/finality e bloqueio de transições não finalizadas — 19/11/2026
+
+### Decisão
+- Estados de commitment não são equivalentes: PROCESSED e CONFIRMED são observações não finais; FINALIZED é somente declaração reportada pelo provider.
+- `commitment_state()` expõe `UNKNOWN`, `PROVIDER_REPORTED_PROCESSED`, `PROVIDER_REPORTED_CONFIRMED`, `PROVIDER_REPORTED_FINALIZED`, `DEAD`, `INVALIDATED` e `CONFLICTED`.
+- A elegibilidade de uma transição bank-scoped exige o banco do prestate e do poststate em estado provider-reported finalized.
+- Para transições entre bancos, cada ancestral explicitamente ligado na cadeia precisa estar finalizado e utilizável; ancestralidade ausente não é inferida.
+- Conflitos de blockhash/parent metadata contaminam a identidade do banco e invalidam o nó existente ou sua materialização posterior. Uma mensagem FINALIZED posterior não reabilita banco conflitante.
+- SLOT_DEAD, EntryUpdateParent e rollback permanecem bloqueios; RAW/orphaned evidence é preservada sem promoção.
+- FINALIZED não autentica criptograficamente o provider nem comprova consenso independente. Adapter operacional ainda exige política de autenticação, identidade de endpoint, integridade de transporte, reconnect e rollback.
+
+### Implementação
+- Branch: `fix/geyser-finalized-evidence-gate`, criada a partir do HEAD exato da PR #34 `e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`.
+- Arquivos de código/teste: `src/smart_money_radar/data_sources/geyser_bank_lineage.py`, `src/smart_money_radar/data_sources/geyser_account_timeline.py`, `tests/test_geyser_bank_lineage.py`, `tests/test_geyser_account_timeline.py`.
+- Documento: `docs/GEYSER-COMMITMENT-FINALITY-POLICY.md`.
+- Testes adicionados para progressão de commitment, ancestral finalizado, conflito de metadados e bloqueio de transição até finalização dos dois lados.
+
+### Estado de validação
+- Implementação enviada à branch isolada; CI ainda não executado/confirmado.
+- Nenhum provider foi conectado. Nenhuma execução financeira foi habilitada.
+- PR #34 e main não foram alteradas; nenhuma integração/merge foi feita.
+
+### Próxima etapa
+Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. Não promover FINALIZED a VERIFIED operacional até implementar confiança/autenticação do provider.
+
+
+### CI inicial e atualização dos fixtures — PR #35
+- Primeira execução `SMR tests`, run `44609714040`, job `135862746101`: FAILURE em 603 testes; 5 falhas estavam em `tests/test_geyser_bank_aware_timeline.py`, que ainda esperava transições com bancos apenas observados.
+- A falha confirmou a alteração semântica pretendida: os cenários positivos antigos precisavam declarar `SLOT_FINALIZED` nos bancos relevantes.
+- Fixtures atualizados para finalizar bancos e ancestrais nos casos positivos; adicionado teste de que `SLOT_DEAD` posterior revoga a elegibilidade mesmo após finalização.
+- Novo CI ainda pendente. Nenhum resultado de sucesso pode ser declarado até consulta ao run do HEAD atualizado.
+
+
+### Validação final da PR #35 — 19/11/2026
+- HEAD exato validado: `77b6702f1961c4591544b1c0a7f69da2fafa3cb4`.
+- Workflow `SMR tests`, run `44610018989`, job `135863814877`: SUCCESS.
+- `PYTHONPATH=src python -m unittest discover -s tests -v`: 604 testes executados em 4,133 s, sem falhas.
+- `python -m compileall -q src tests`: etapa concluída com sucesso.
+- A primeira execução no código antes da atualização dos fixtures falhou em 5 testes antigos que esperavam transições sem SLOT_FINALIZED; os fixtures foram corrigidos para refletir a nova regra. A validação final ocorreu no HEAD documental exato informado acima.
+- CI valida testes unitários e compilação; não autentica provider, não prova finalização em mainnet e não valida adapter operacional.
+- PR #35 continua Draft, aberta, mergeable e sem merge; PR #34 permanece sem alteração/merge; main não foi alterada.
+
+
+## 302. Auditoria de segurança final da PR #35 — 19/11/2026
+
+### Escopo revisado
+- Diff completo da PR #35: 7 arquivos, 247 adições e 2 remoções.
+- `geyser_bank_lineage.py`, `geyser_account_timeline.py` e testes bank-aware/lineage/timeline.
+- Estado do PR: OPEN, Draft, mergeable, sem merge; base `feat/solana-transaction-evidence-bundle`; HEAD de código validado `25279630ac0310343ac55425232ad65f68064efd`.
+
+### Resultado: achado que impede considerar a política completa
+- `AccountUpdateTimeline.transition_for()` preserva o caminho legado para updates sem `bank_id`: aceita predecessor linear imediato dentro do mesmo continuity_epoch.
+- Esse caminho não exige commitment/finality, como esperado para compatibilidade histórica, mas retorna a mesma estrutura `AccountStateTransition` usada pelo caminho bank-scoped, sem campo de proveniência/nível de confiança que distinga `LEGACY_UNSCOPED` de `BANK_PROVIDER_REPORTED_FINALIZED`.
+- Risco: um consumidor pode interpretar todas as transições retornadas como igualmente verificadas, apesar de as transições legadas não terem identidade bancária nem prova de finalização.
+- Não foi comprovado neste escopo que algum consumidor downstream esteja de fato promovendo tais transições a evidência operacional. Portanto, é uma lacuna de contrato/rotulagem, não um bug downstream observado.
+- Correção recomendada antes de adapter operacional: tipar a proveniência/confiança da transição (p.ex. `BANK_PROVIDER_REPORTED_FINALIZED` vs `LEGACY_UNSCOPED_UNVERIFIED`) ou separar APIs/coleções; qualquer consumidor que exija evidência finalizada deve rejeitar explicitamente o estado legado. Não inferir finalização para dados sem `bank_id`.
+
+### Propagação de conflitos e ancestrais
+- `_conflict()` marca a identidade afetada como conflicted e invalidated, inclusive quando o nó já existe; `_node()` também aplica a contaminação se o conflito preceder a materialização.
+- `is_bank_usable()` percorre os ancestrais explicitamente vinculados e retorna falso se encontrar nó morto/inválido; `is_bank_finalized()` também exige finalização e usabilidade de cada ancestral ligado.
+- `transition_for()` exige ambas as verificações para target e predecessor e, em pares cross-bank, exige `is_ancestor(...) is True`.
+- Revisão estática indica que conflito em ancestral ligado bloqueia a elegibilidade do descendente. Entretanto, a suíte atual não possui teste direto dedicado que crie descendente ligado, contamine depois o ancestral e prove que a transição deixa de ser retornada. Recomenda-se adicionar esse teste de regressão.
+- `SLOT_DEAD` mantém dead persistente; `EntryUpdateParent` invalida o banco específico; a transição legada não atravessa updates bank-scoped intermediários e respeita continuity_epoch/reconnect.
+
+### Conclusão
+- A regra bank-scoped está fail-closed para estados não finalizados e ancestrais explicitamente ligados, conforme o código revisado.
+- A PR #35 ainda não deve ser considerada completa para uso operacional até distinguir explicitamente transições legadas sem bank_id e adicionar o teste de taint de ancestral para descendente.
+- Nenhuma alteração de código foi feita nesta auditoria; apenas este registro foi acrescentado.
+- Nenhum provider foi conectado; nenhuma evidência foi promovida a VERIFIED; nenhuma execução financeira habilitada.
+
+### Próxima ação
+- Propor alteração mínima de contrato para rotular transições legadas como não verificadas e adicionar teste de regressão para conflito histórico de ancestral. Manter PR #35 Draft e sem merge até nova CI e revisão.
+
+
+## 303. Correções da auditoria PR #35 — implementação — 19/11/2026
+
+### Alterações implementadas na branch da PR #35
+- `AccountStateTransition` agora carrega `evidence_classification` explícito:
+  - `BANK_PROVIDER_REPORTED_FINALIZED` para transições bank-scoped que passaram os gates de usabilidade e finalização de ambos os bancos e ancestrais explicitamente ligados.
+  - `LEGACY_UNSCOPED_UNVERIFIED` para pareamento linear legado sem `bank_id`; preserva compatibilidade, mas não é evidência finalizada nem pode ser promovido a `VERIFIED`.
+- Docstrings e `docs/GEYSER-COMMITMENT-FINALITY-POLICY.md` esclarecem que consumidores que exigem evidência finalizada devem aceitar explicitamente apenas `BANK_PROVIDER_REPORTED_FINALIZED`.
+- Teste positivo verifica classificação bank-scoped.
+- Novo teste prova que transição sem `bank_id` retorna `LEGACY_UNSCOPED_UNVERIFIED`.
+- Novo teste de regressão constrói cadeia pai/filho finalizada, confirma inicialmente a transição e depois injeta blockhash conflitante no ancestral; a identidade ancestral é contaminada e a transição do descendente deixa de ser retornada.
+- Arquivos alterados: `src/smart_money_radar/data_sources/geyser_account_timeline.py`, `tests/test_geyser_bank_aware_timeline.py`, `docs/GEYSER-COMMITMENT-FINALITY-POLICY.md` e este Registro Mestre.
+
+### Estado de validação
+- Alterações gravadas na branch `fix/geyser-finalized-evidence-gate` por commits sequenciais.
+- HEAD atual da PR após as correções e atualização do registro: `19669153c460d49c5133653b7be8b79c05c45c5a`.
+- A revisão do diff confirmou a classificação mutuamente exclusiva no construtor: `LEGACY_UNSCOPED_UNVERIFIED` apenas quando `bank_id` está ausente; caso contrário, `BANK_PROVIDER_REPORTED_FINALIZED` somente após os gates bancários.
+- Workflow `SMR tests`, run `44611738575`, job `135869848269`: SUCCESS no merge ref da PR `8eb6d0136d35369f020ab76557e98d40a2f9aab1`, que incorpora o HEAD `19669153c460d49c5133653b7be8b79c05c45c5a` sobre a base `e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`.
+- `PYTHONPATH=src python -m unittest discover -s tests -v`: 606 testes executados em 4,133 s, todos aprovados; `python -m compileall -q src tests` também aprovado.
+- CI valida o conjunto integrado da PR, não provider mainnet nem adapter operacional.
+- PR #35 permanece Draft e sem merge; `main` permanece intacta.
+
+### Próxima ação
+- Fazer revisão final de segurança do diff após a CI aprovada; manter PR #35 Draft e sem merge até autorização explícita.
+
+
+## 304. Auditoria dos consumidores downstream de AccountStateTransition — 19/11/2026
+
+### Escopo e método
+- Revisado o snapshot da branch fix/geyser-finalized-evidence-gate, HEAD 4dc6b8bf8e70d2d26a0d80ebf7f1007e710e1e0a.
+- Inventário recursivo do Git tree: 54 módulos Python sob src/ e 60 arquivos de teste sob tests/.
+- Inspecionadas as referências de produção a AccountStateTransition, transition_for(), evidence_classification, is_bank_finalized(), is_bank_usable() e commitment_state(), além dos módulos de ingestão, storage/projections, serviços e CLI.
+
+### Resultado
+- Nenhum módulo Python de produção fora de data_sources/geyser_account_timeline.py referencia ou consome AccountStateTransition ou chama transition_for().
+- Nenhum consumidor downstream de produção atual foi encontrado que possa ignorar evidence_classification.
+- Chamadas transition_for() encontradas estão na própria implementação da Timeline e nos testes Geyser.
+- Os módulos de storage/projection, ingestão, serviços, dashboard e CLI revisados não promovem transições da Timeline a VERIFIED nem as consomem como autorização operacional.
+- Portanto, a classificação explícita adicionada na PR #35 não tem consumidor de produção atual que a ignore neste snapshot.
+
+### Limites
+- Esta conclusão é limitada ao snapshot e ao código versionado inspecionado; não prova comportamento de processos externos, forks ou código futuro.
+- Ainda não existe adapter operacional/provider integrado. Qualquer adapter futuro deve exigir explicitamente evidence_classification == BANK_PROVIDER_REPORTED_FINALIZED para caminhos que demandem evidência finalizada, e deve implementar separadamente autenticação do provider, identidade do endpoint, integridade do transporte, reconnect/rollback e controles de finalização.
+- PROVIDER_REPORTED_FINALIZED permanece uma declaração do provider, não prova criptográfica independente de consenso.
+- Nenhum arquivo de produção foi alterado nesta auditoria; apenas o Registro Mestre foi atualizado.
+
+### Conclusão e próxima ação
+- Auditoria downstream atual: sem achados de consumidores produtivos que ignorem a classificação.
+- PR #35 permanece Draft e sem merge; main intacta.
+- Próxima ação recomendada: revisão final do diff completo e confirmação do CI da implementação; depois, apresentar estado para decisão explícita sobre eventual merge, sem executá-lo automaticamente.
+
+
+## 305. Avaliação de integração PR #35 sobre PR #34 — 19/11/2026
+
+### Relação entre branches e PRs
+- PR #34: base `feat/damm-v2-economic-reconciliation`, HEAD `e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`, Draft, aberta, sem merge, mergeable.
+- PR #35: base `feat/solana-transaction-evidence-bundle`, HEAD `71acfdd603cf92d34b78298e6e8b9c524c48bae1`, Draft, aberta, sem merge, mergeable.
+- Comparação GitHub entre a base da PR #35 e seu HEAD: `ahead_by=19`, `behind_by=0`, `merge_base=e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`, idêntico ao HEAD/base atual da PR #34. Relação linear confirmada: PR #35 está diretamente construída sobre o HEAD da PR #34, sem divergência da base.
+- Diff específico da PR #35 contra a base PR #34: sete arquivos; política de finality, lineage, timeline, testes e Registro Mestre. Os arquivos e commits próprios da PR #34 permanecem como ancestralidade/base, não são reintroduzidos como mudanças da PR #35.
+
+### CI e compatibilidade
+- Após o commit documental da auditoria downstream, o workflow `SMR tests` executou no HEAD exato `71acfdd603cf92d34b78298e6e8b9c524c48bae1`: run `44612471809`, job `135872388784`, SUCCESS.
+- Etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso. Esta consulta confirma o sucesso do workflow completo; não foi obtido nesta consulta um total de testes distinto do registro anterior de 606.
+- O workflow é evento `pull_request` para PR #35 contra o HEAD/base `e3d3cba...` da PR #34, portanto valida a combinação proposta PR #34 + PR #35 no contexto de merge do GitHub.
+- A PR #35 preserva as alterações do bundle da PR #34 como ancestralidade e adiciona a política Geyser de finality; não foi observada divergência de base nem conflito reportado pelo GitHub.
+
+### Conclusão da avaliação
+- Integração proposta tecnicamente coerente: PR #35 é uma continuação direta da PR #34, sem commits da base ausentes ou divergentes.
+- O GitHub reporta ambas as PRs `mergeable=true`; PR #35 está Draft e não mergeada.
+- Isto é uma avaliação de compatibilidade, não autorização nem execução de merge. Nenhuma branch foi movida, nenhuma PR foi retargeted ou merged e `main` permanece intacta.
+- Sequência de integração, caso seja autorizada depois: integrar PR #35 na branch-base da PR #34 (não em `main`); confirmar o novo HEAD da PR #34 e executar/confirmar CI nesse HEAD atualizado; só então revisar a PR #34 como unidade antes de qualquer decisão posterior sobre `main`.
+
+### Estado
+- Avaliação concluída sem bloqueio estrutural identificado para a integração PR #35 -> PR #34.
+- Próxima ação: aguardar autorização expressa para integrar/mergear PR #35 na branch da PR #34. Não executar automaticamente.

@@ -183,7 +183,12 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
         self.assertTrue(checkpoint["interrupted"])
         self.assertEqual(anomalies[0]["reason"], "sequence_reused_for_different_event")
         store.resolve_transport_anomaly(anomalies[0]["anomaly_id"], "Conferido em fixture offline")
-        self.assertFalse(
+        resolved = store.list_transport_anomalies(
+            "yellowstone-mainnet", "stream-a", status="RESOLVED"
+        )
+        self.assertEqual(len(resolved), 1)
+        # Administrative resolution does not rehabilitate a colliding sequence.
+        self.assertTrue(
             store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")["interrupted"]
         )
         store.close()

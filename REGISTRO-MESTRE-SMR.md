@@ -2850,3 +2850,13 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - A falha confirmou a alteração semântica pretendida: os cenários positivos antigos precisavam declarar `SLOT_FINALIZED` nos bancos relevantes.
 - Fixtures atualizados para finalizar bancos e ancestrais nos casos positivos; adicionado teste de que `SLOT_DEAD` posterior revoga a elegibilidade mesmo após finalização.
 - Novo CI ainda pendente. Nenhum resultado de sucesso pode ser declarado até consulta ao run do HEAD atualizado.
+
+
+### Validação final da PR #35 — 19/11/2026
+- HEAD exato validado: `77b6702f1961c4591544b1c0a7f69da2fafa3cb4`.
+- Workflow `SMR tests`, run `44610018989`, job `135863814877`: SUCCESS.
+- `PYTHONPATH=src python -m unittest discover -s tests -v`: 604 testes executados em 4,133 s, sem falhas.
+- `python -m compileall -q src tests`: etapa concluída com sucesso.
+- A primeira execução no código antes da atualização dos fixtures falhou em 5 testes antigos que esperavam transições sem SLOT_FINALIZED; os fixtures foram corrigidos para refletir a nova regra. A validação final ocorreu no HEAD documental exato informado acima.
+- CI valida testes unitários e compilação; não autentica provider, não prova finalização em mainnet e não valida adapter operacional.
+- PR #35 continua Draft, aberta, mergeable e sem merge; PR #34 permanece sem alteração/merge; main não foi alterada.

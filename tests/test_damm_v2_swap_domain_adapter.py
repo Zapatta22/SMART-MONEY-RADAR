@@ -136,6 +136,73 @@ class DammV2SwapDomainAdapterTests(unittest.TestCase):
                 parser_version="smr-test",
             )
 
+    def test_preserves_and_validates_referral_transfer_in_domain_evidence(self):
+        context, evidence, deltas, reconciliation = _inputs()
+        event = replace(
+            context.association.event,
+            has_referral=True,
+            swap_result=replace(
+                context.association.event.swap_result,
+                referral_fee=5,
+            ),
+        )
+        context = replace(
+            context,
+            association=replace(context.association, event=event),
+        )
+        referral = _transfer("vault-b", "referral", "mint-b", 5, fee=1)
+        referral = replace(referral, inner_instruction_index=3)
+        evidence = replace(evidence, referral_transfer=referral)
+
+        bundles = build_damm_v2_swap_domain_bundles(
+            contexts=[context], transfer_evidence=[evidence],
+            balance_deltas=deltas, reconciliation=reconciliation,
+            monitored_wallet="wallet-1", signature="signature-referral",
+            observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc),
+            parser_version="smr-test",
+        )
+
+        self.assertEqual(len(bundles), 1)
+        self.assertIn(
+            "referral_transfer:2:3",
+            bundles[0].evidence.evidence,
+        )
+        self.assertIn(
+            "referral_transfer_accounts:vault-b->referral",
+            bundles[0].evidence.evidence,
+        )
+        self.assertIn(
+            "referral_transfer_gross_raw:5",
+            bundles[0].evidence.evidence,
+        )
+        self.assertIn(
+            "referral_transfer_fee_raw:1",
+            bundles[0].evidence.evidence,
+        )
+
+    def test_rejects_missing_referral_transfer_before_bundle_creation(self):
+        context, evidence, deltas, reconciliation = _inputs()
+        event = replace(
+            context.association.event,
+            has_referral=True,
+            swap_result=replace(
+                context.association.event.swap_result,
+                referral_fee=5,
+            ),
+        )
+        context = replace(
+            context,
+            association=replace(context.association, event=event),
+        )
+        with self.assertRaisesRegex(ValueError, "referral obrigatória"):
+            build_damm_v2_swap_domain_bundles(
+                contexts=[context], transfer_evidence=[evidence],
+                balance_deltas=deltas, reconciliation=reconciliation,
+                monitored_wallet="wallet-1", signature="signature-referral-missing",
+                observed_at=datetime(2026, 11, 18, tzinfo=timezone.utc),
+                parser_version="smr-test",
+            )
+
     def test_rejects_non_reconciled_batch(self):
         context, evidence, deltas, _ = _inputs()
         result = DammV2EconomicReconciliation("INCOMPLETE", 1, (), "delta mismatch")

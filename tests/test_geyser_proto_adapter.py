@@ -20,7 +20,9 @@ from smart_money_radar.data_sources.geyser_proto_adapter import (
     adapt_subscribe_update,
 )
 
-from smart_money_radar.data_sources.yellowstone_grpc import capture_yellowstone
+from smart_money_radar.data_sources.yellowstone_grpc import (
+    YellowstoneCapture, capture_yellowstone, capture_yellowstone_sessions,
+)
 from smart_money_radar.data_sources.yellowstone_receiver import (
     YellowstoneFrameReceiver, load_yellowstone_decoder,
 )
@@ -568,6 +570,24 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
                 list(store.iter_wire_frames("validator", capture.stream_id, capture.ordering_domain_id)),
                 [(0, ping_bytes), (1, transaction)],
             )
+
+    def test_capture_retries_only_transient_failure_and_shares_budgets(self):
+        first = YellowstoneCapture("stream-a", "domain-a", 3, "unavailable")
+        second = YellowstoneCapture("stream-b", "domain-b", 2, "permission_denied")
+        module = "smart_money_radar.data_sources.yellowstone_grpc"
+        with (
+            patch(f"{module}.capture_yellowstone", side_effect=(first, second)) as capture,
+            patch(f"{module}.monotonic", side_effect=(0, 0, 2, 3)),
+            patch(f"{module}.sleep") as wait,
+        ):
+            sessions = capture_yellowstone_sessions(
+                None, target="provider.example:443", source_id="validator",
+                descriptor=b"", subscription={}, max_frames=10, timeout=20, max_attempts=3,
+            )
+        self.assertEqual(sessions, (first, second))
+        self.assertEqual([call.kwargs["max_frames"] for call in capture.call_args_list], [10, 7])
+        self.assertEqual([call.kwargs["timeout"] for call in capture.call_args_list], [20, 17])
+        wait.assert_called_once_with(1)
 
     def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
         descriptors = descriptor_pb2.FileDescriptorSet()

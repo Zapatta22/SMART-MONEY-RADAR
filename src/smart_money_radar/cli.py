@@ -53,6 +53,7 @@ def _parser() -> argparse.ArgumentParser:
     capture.add_argument("--subscription", type=Path, required=True)
     capture.add_argument("--max-frames", type=int, default=1000)
     capture.add_argument("--timeout", type=int, default=60)
+    capture.add_argument("--max-attempts", type=int, default=1)
     return parser
 
 
@@ -146,7 +147,7 @@ def _capture_geyser(args: argparse.Namespace) -> None:
     from google.protobuf.json_format import ParseError
     from google.protobuf.message import DecodeError
 
-    from smart_money_radar.data_sources.yellowstone_grpc import capture_yellowstone
+    from smart_money_radar.data_sources.yellowstone_grpc import capture_yellowstone_sessions
     from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
 
     subscription = json.loads(args.subscription.read_text(encoding="utf-8"))
@@ -154,14 +155,17 @@ def _capture_geyser(args: argparse.Namespace) -> None:
         raise ValueError("a assinatura Yellowstone precisa ser um objeto JSON")
     store = SQLiteGeyserRawStore(args.database)
     try:
-        capture = capture_yellowstone(
+        attempts = capture_yellowstone_sessions(
             store, target=args.target, source_id=args.source, descriptor=args.descriptor.read_bytes(),
             subscription=subscription, token=os.environ.get("YELLOWSTONE_TOKEN"),
-            max_frames=args.max_frames, timeout=args.timeout,
+            max_frames=args.max_frames, timeout=args.timeout, max_attempts=args.max_attempts,
         )
-        print(json.dumps(asdict(capture)))
-        if capture.outcome not in {"eof", "frame_limit", "deadline_exceeded"}:
-            raise ValueError(f"captura Yellowstone interrompida: {capture.outcome}")
+        print(json.dumps({"sessions": [asdict(capture) for capture in attempts]}))
+        if not attempts:
+            raise ValueError("orçamento de tempo Yellowstone esgotado antes da conexão")
+        outcome = attempts[-1].outcome
+        if outcome not in {"eof", "frame_limit", "deadline_exceeded"}:
+            raise ValueError(f"captura Yellowstone interrompida: {outcome}")
     except ModuleNotFoundError as exc:
         if exc.name != "grpc":
             raise

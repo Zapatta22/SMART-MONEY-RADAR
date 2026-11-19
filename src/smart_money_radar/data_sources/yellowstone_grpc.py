@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from queue import Queue
+from time import monotonic, sleep
 from uuid import uuid4
 
 from google.protobuf import descriptor_pb2, message_factory
@@ -25,12 +26,12 @@ class YellowstoneCapture:
 def capture_yellowstone(
     store: SQLiteGeyserRawStore, *, target: str, source_id: str,
     descriptor: bytes, subscription: dict, token: str | None = None,
-    max_frames: int = 1000, timeout: int = 60,
+    max_frames: int = 1000, timeout: float = 60,
 ) -> YellowstoneCapture:
     """Capture one TLS connection. A later call gets a fresh ordering domain."""
     import grpc
 
-    if not 1 <= max_frames <= 100_000 or not 1 <= timeout <= 600:
+    if not 1 <= max_frames <= 100_000 or not 0 < timeout <= 600:
         raise ValueError("limites de captura Yellowstone inválidos")
     if not target or "://" in target or "/" in target:
         raise ValueError("destino Yellowstone deve usar host:porta")
@@ -88,3 +89,33 @@ def capture_yellowstone(
             if call is not None:
                 call.cancel()
     return YellowstoneCapture(stream_id, domain, frames, outcome)
+
+
+def capture_yellowstone_sessions(
+    store: SQLiteGeyserRawStore, *, target: str, source_id: str,
+    descriptor: bytes, subscription: dict, token: str | None = None,
+    max_frames: int = 1000, timeout: int = 60, max_attempts: int = 1,
+) -> tuple[YellowstoneCapture, ...]:
+    """Retry transient disconnections within a shared frame and time budget."""
+    if not 1 <= max_attempts <= 5 or not 1 <= timeout <= 600 or not 1 <= max_frames <= 100_000:
+        raise ValueError("limites de captura Yellowstone inválidos")
+    deadline = monotonic() + timeout
+    attempts = []
+    for attempt in range(max_attempts):
+        remaining_time = deadline - monotonic()
+        if remaining_time <= 0:
+            break
+        capture = capture_yellowstone(
+            store, target=target, source_id=source_id, descriptor=descriptor,
+            subscription=subscription, token=token, max_frames=max_frames,
+            timeout=remaining_time,
+        )
+        attempts.append(capture)
+        max_frames -= capture.frame_count
+        if capture.outcome != "unavailable" or attempt + 1 == max_attempts or max_frames <= 0:
+            break
+        backoff = 2**attempt
+        if monotonic() + backoff >= deadline:
+            break
+        sleep(backoff)
+    return tuple(attempts)

@@ -477,6 +477,6 @@ smr geyser-capture journal.sqlite --target PROVIDER_HOST:443 \
 O comando limita a duração a 600 segundos e o total a 100 mil frames.
 Ele preserva os bytes recebidos e atribui uma sequência única antes da
 validação. Cada execução cria novos IDs de conexão e domínio. Ao receber
-um ping, responde dentro da mesma assinatura. O JSON final contém os IDs
+um ping, responde dentro da mesma assinatura. O JSON final lista todas as sessões e seus IDs
 necessários para inspecionar a captura com `smr geyser-evidence`. A sequência
 contínua de uma captura indica apenas a ordem recebida durante a sessão.

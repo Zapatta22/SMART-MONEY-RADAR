@@ -136,7 +136,7 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
         self.assertEqual(final["contiguous_sequence"], 102)
         self.assertFalse(final["interrupted"])
         gaps = store.list_transport_gaps("yellowstone-mainnet", "stream-a")
-        self.assertEqual([gap["status"] for gap in gaps], ["RESOLVED"])
+        self.assertEqual([gap["status"] for gap in gaps], ["SUPERSEDED", "RESOLVED"])
         store.close()
 
     def test_first_observed_baseline_is_explicitly_unverified(self):
@@ -159,6 +159,17 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
         self.assertFalse(
             store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")["interrupted"]
         )
+        store.close()
+
+    def test_raw_identity_conflict_interrupts_transport_checkpoint(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        store.register_stream("yellowstone-mainnet", "stream-a", 1)
+        store.ingest(self.event(b"original"), self.delivery(1))
+        store.ingest(self.event(b"changed"), self.delivery(2))
+        checkpoint = store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")
+        anomalies = store.list_transport_anomalies("yellowstone-mainnet", "stream-a", status="OPEN")
+        self.assertTrue(checkpoint["interrupted"])
+        self.assertEqual(anomalies[0]["reason"], "raw_identity_conflict")
         store.close()
 
     def test_different_events_reusing_sequence_create_resolvable_anomaly(self):

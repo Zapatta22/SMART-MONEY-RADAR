@@ -2926,8 +2926,12 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - Removida a chave duplicada `temp_store_requested` no resultado do worker.
 - Documentado que `VmHWM` mede o high-water mark durante toda a vida do worker isolado (incluindo imports e construção do auditor), não o pico exclusivo de `rebuild()`. O isolamento elimina a contaminação do processo pai, mas não isola o rebuild de toda a memória anterior do próprio worker.
 
-### Estado de validação
-- Alterações de código e testes preparadas nesta branch; CI ainda precisa ser executado após o commit.
+### Validação desta revisão
+- Commit de código/testes/benchmark validado: `7ff820e966b67b8f65a05bf07a992f44a4c5d8b6`.
+- CI SMR tests #? — run ID `44564297986`: SUCCESS; inclui o teste concorrente de duas reconstruções e a suíte completa.
+- Geyser audit benchmark #? — run ID `44564298047`: SUCCESS; artefato `geyser-audit-benchmark-results`, ID `14551905844`, disponível até 2027-02-17.
+- Execuções anteriores de CI falharam durante a própria revisão por dois erros introduzidos nas edições (import `threading` ausente e quebra de linha literal no benchmark); ambos foram corrigidos. A validação final acima é a execução posterior às correções.
+- `VmHWM` é descrito como high-water mark do worker inteiro, não como pico exclusivo de `rebuild()`.
 - Nenhuma alteração à política de reconciliação, tabelas RAW ou Timeline.
-- PR #27 deve permanecer OPEN/DRAFT e sem merge até CI e revisão dos resultados.
-- PR #26 e `main` não devem ser modificadas.
+- PR #27 permanece OPEN/DRAFT e sem merge. PR #26 e `main` não foram modificadas.
+- Próxima ação: revisão final do diff atualizado e conferência do resultado agregado da PR antes de qualquer proposta de integração. Nenhum merge sem aprovação explícita.

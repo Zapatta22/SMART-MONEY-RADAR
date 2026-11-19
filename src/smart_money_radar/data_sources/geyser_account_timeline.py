@@ -213,7 +213,7 @@ class AccountUpdateTimeline:
         if not entries:
             return None
         # Without a BankLineageTracker this linear view cannot choose a fork.
-        if any(entry.update.bank_id is not None or entry.update.is_startup for entry in entries):
+        if any(entry.update.bank_id is not None for entry in entries) or entries[-1].update.is_startup:
             return None
         return entries[-1].update
 
@@ -264,6 +264,8 @@ class AccountUpdateTimeline:
         """
         if isinstance(first_orphaned_slot, bool) or not isinstance(first_orphaned_slot, int) or first_orphaned_slot < 0:
             raise ValueError("first_orphaned_slot deve ser inteiro não negativo")
+        if any(entry.update.bank_id is not None for entries in self._events.values() for entry in entries):
+            raise ValueError("rollback por slot não pode remover histórico com bank_id; use BankLineageTracker")
         removed: list[NormalizedAccountUpdate] = []
         for pubkey, entries in tuple(self._events.items()):
             kept = []

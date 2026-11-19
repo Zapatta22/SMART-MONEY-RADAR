@@ -42,7 +42,7 @@ def _decode_base58(value: str) -> bytes:
     except ValueError as exc:
         raise ValueError("data contém caractere base58 inválido") from exc
     body = number.to_bytes((number.bit_length() + 7) // 8, "big")
-    return b"\\x00" * (len(value) - len(value.lstrip("1"))) + body
+    return b"\x00" * (len(value) - len(value.lstrip("1"))) + body
 
 
 def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any] | None) -> list[str]:

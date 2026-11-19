@@ -3299,3 +3299,34 @@ Lacuna de cobertura mantida explicitamente: ainda não foi demonstrada, por uma 
 Progresso da revisão técnica: estimativa atualizada de **75%** (antes 65%), pois o pipeline CPMM, o builder e a compatibilidade estrutural dos contratos foram examinados. O progresso geral do módulo permanece **92%**. Esses percentuais são estimativas de revisão/conclusão, não métricas de testes.
 
 Próxima ação: revisar os detalhes restantes da compatibilidade e da cadeia de PRs #21–#25; decidir se a lacuna de fixture simultânea pode ser coberta com payload Mainnet adequado ou se deve permanecer como critério explícito antes do fechamento. PR #25 permanece OPEN/DRAFT e não mergeada; nenhuma alteração na `main`. Não iniciar PumpSwap/Meteora DLMM como módulo novo antes do fechamento desta integração.
+
+
+## 229. Correção de compatibilidade Token-2022 no builder CPMM — 19/11/2026
+
+Durante a revisão da cadeia empilhada, foi identificado defeito confirmado entre a PR #21 e o builder de domínio incluído na PR #25:
+
+- PR #21 introduziu `TRANSFER_CHECKED_WITH_FEE` e o reconciliador CPMM passou a retornar `output_amount_raw` líquido (bruto menos fee).
+- `domain/swap_bundle_builder.py` ainda rejeitava esse tipo de transferência e comparava a saída reconciliada líquida diretamente com o valor bruto da transferência.
+- Consequência anterior à correção: reconciliação podia resultar em `MATCHED`, mas a criação do bundle falhava; o pipeline CPMM permanecia pendente e não avançava checkpoint.
+
+Correção aplicada na branch `feat/damm-v2-transaction-pipeline`:
+
+- `_validate_transfer_evidence` agora aceita `TRANSFER_CHECKED_WITH_FEE` e valida defensivamente fee como inteiro não booleano, não negativo e não superior ao valor bruto.
+- A comparação da saída do bundle agora usa crédito spendable: `amount_raw - fee_amount_raw` para TransferCheckedWithFee; transferências comuns mantêm o valor integral.
+- Adicionado teste de regressão `test_builds_domain_bundle_for_transfer_checked_with_fee_using_net_output` em `tests/test_raydium_cpmm_transfer_reconciliation.py`, cobrindo reconciliação MATCHED e geração do bundle com entrada bruta 100 e saída líquida 95 unidades mínimas.
+
+Commits:
+- Código: `88210dfeb673bd3028a1181c9e9286f8d8094852`.
+- Teste: `1ed91c5d51d537ce812d62267387454b40a74a11` (HEAD após a correção).
+
+Validação:
+- CI #1349, run `44429585134`, SUCCESS no commit `1ed91c5d51d537ce812d62267387454b40a74a11`.
+- Suíte: 536 testes executados, todos aprovados; o teste novo aparece explicitamente como `ok`.
+- `python -m compileall -q src tests`: aprovado.
+- Não houve alteração na `main`, execução de ordens ou gravação em banco de produção.
+
+Estado de revisão:
+- PRs #21, #22, #23, #24 e #25 permanecem OPEN/DRAFT, mergeable, sem reviews e sem threads de revisão registrados na consulta de 19/11/2026.
+- A cadeia de dependências permanece #21 → #22 → #23 → #24 → #25; PR #25 tem base #24. Nenhuma foi mergeada.
+- A revisão técnica geral fica estimada em **80%**; a conclusão estimada do módulo permanece **92%**. A lacuna de fixture única com swaps positivos simultâneos DAMM v2 + CPMM permanece aberta.
+- Próxima ação: continuar a revisão de compatibilidade da cadeia, verificando se existem outros contratos/tipos adicionados em PRs ancestrais que não foram propagados até os adaptadores e builders posteriores. Não fazer merge sem revisão final e autorização.

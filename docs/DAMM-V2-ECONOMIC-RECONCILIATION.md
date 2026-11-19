@@ -113,3 +113,13 @@ Movimentos externos que atinjam as mesmas token accounts também podem provocar 
 - `collect_transfer_fee_config_init_positions(inventory, mint)` percorre instruções Token-2022 cuja primeira conta é o mint, reconhece `InitializeTransferFeeConfig` e retorna posições `(outer_index, inner_index)`; `-1` representa instrução externa.
 - `SetTransferFee` é validada, mas não entra na lista de inicialização porque agenda taxa futura e preserva a taxa ativa no epoch corrente. Sub-tags desconhecidas para a extensão causam inventário incompleto.
 - O resultado `TransferFeeConfigInitInventory` fornece diretamente `initialization_positions` e `complete` para preencher o snapshot do mint. O adapter ainda precisa ligar essa saída ao coletor de snapshots históricos e ao cálculo do epoch.
+
+
+## Construtor de snapshots de mint por transferência
+
+- `build_damm_v2_mint_fee_config_snapshots(evidence, mint_prestate_by_mint, instruction_inventory, ...)` conecta a evidência de cada transferência Token-2022 ao prestate TLV do mint e ao inventário externo/CPI.
+- Gera um snapshot por identidade outer/inner/mint, incluindo assinatura e slot da transação, epoch, ordem da transação, ordem do prestate, configuração decodificada, posições de inicialização, fonte e state ref.
+- Exige que o inventário corresponda exatamente à assinatura/slot da transação e esteja completo; o prestate do mint precisa ser do mesmo slot e anterior à transação no mesmo domínio de ordenação.
+- A configuração é decodificada por `decode_transfer_fee_config_optional`; ausência da extensão vira `config_state=None`, enquanto TLV inválido gera erro.
+- A saída pode ser passada diretamente a `reconcile_damm_v2_economic_batch` (necessária para referral Token-2022 padrão) e depois a `verify_damm_v2_mint_fee_config`.
+- O construtor não busca dados históricos: o adapter ainda precisa fornecer bytes de mint realmente capturados antes da transação, com fonte/ref rastreáveis. Estado atual obtido por `getAccountInfo` não serve como substituto.

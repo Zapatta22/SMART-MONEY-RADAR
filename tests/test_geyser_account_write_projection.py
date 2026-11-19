@@ -82,33 +82,17 @@ class GeyserAccountWriteProjectionTests(unittest.TestCase):
     def test_malformed_normalized_account_aborts_without_replacing_projection(self):
         self.add_account()
         self.projection.rebuild()
-        raw = self.raw.get_raw_event(self.raw.get_raw_event(
-            self.raw.get_raw_event.__self__ if False else ""
-        ) or "")
-        # Corrupt a second account record directly to simulate damaged RAW.
-        self.add_account(pubkey="account-b", slot=11, sequence=2)
-        event_id = self.raw.get_raw_event(
-            ingest_normalized_event(
-                self.raw,
-                NormalizedAccountUpdate(
-                    pubkey="account-b", slot=11, write_version=1,
-                    txn_signature="signature-a", lamports=123, owner="owner-a",
-                    executable=False, rent_epoch=9, data=b"data", stream_id="stream-c",
-                    stream_sequence=1, source="yellowstone-mainnet", bank_id=77,
-                    is_startup=False,
-                ),
-                schema_version="geyser-v16",
-            ).event_id
-        )["event_id"]
+        second = self.add_account(pubkey="account-b", slot=11, sequence=2)
         with sqlite3.connect(self.database) as connection:
             row = connection.execute(
-                "SELECT payload_bytes FROM geyser_raw_events WHERE event_id=?", (event_id,)
+                "SELECT payload_bytes FROM geyser_raw_events WHERE event_id=?",
+                (second.event_id,),
             ).fetchone()
             payload = json.loads(row[0])
             payload["payload"]["data_base64"] = "not base64!"
             connection.execute(
                 "UPDATE geyser_raw_events SET payload_bytes=? WHERE event_id=?",
-                (json.dumps(payload).encode(), event_id),
+                (json.dumps(payload).encode(), second.event_id),
             )
         previous = self.projection.get_checkpoint()
         with self.assertRaises(ValueError):

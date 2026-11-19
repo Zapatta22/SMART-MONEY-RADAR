@@ -2,7 +2,7 @@ import unittest
 
 from smart_money_radar.data_sources.token2022_transfer_fee_state import (
     ACCOUNT_TYPE_ACCOUNT, ACCOUNT_TYPE_MINT, decode_transfer_fee_amount,
-    decode_transfer_fee_config,
+    decode_transfer_fee_amount_delta, decode_transfer_fee_config,
 )
 
 
@@ -168,6 +168,34 @@ class TransferFeeStateDecoderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "tamanho de base token account"):
             decode_transfer_fee_amount(account)
 
+
+
+    def test_withheld_amount_delta_between_exact_pre_post_account_snapshots(self):
+        before = account_data([tlv(2, u64(10))])
+        after = account_data([tlv(2, u64(15))])
+        delta = decode_transfer_fee_amount_delta(before, after)
+        self.assertEqual(delta.pre_withheld_amount, 10)
+        self.assertEqual(delta.post_withheld_amount, 15)
+        self.assertEqual(delta.delta, 5)
+        self.assertEqual(delta.extension_types, (2,))
+
+    def test_withheld_amount_delta_can_be_negative_after_harvest(self):
+        before = account_data([tlv(2, u64(20))])
+        after = account_data([tlv(2, u64(0))])
+        delta = decode_transfer_fee_amount_delta(before, after)
+        self.assertEqual(delta.delta, -20)
+
+    def test_withheld_amount_delta_rejects_extension_set_change(self):
+        before = account_data([tlv(2, u64(10))])
+        after = account_data([tlv(2, u64(15)), tlv(3, b"other")])
+        with self.assertRaisesRegex(ValueError, "conjunto de extensões mudou"):
+            decode_transfer_fee_amount_delta(before, after)
+
+    def test_withheld_amount_delta_requires_extension_on_both_sides(self):
+        before = account_data([tlv(2, u64(10))])
+        after = account_data([])
+        with self.assertRaisesRegex(ValueError, "TransferFeeAmount ausente"):
+            decode_transfer_fee_amount_delta(before, after)
 
 if __name__ == "__main__":
     unittest.main()

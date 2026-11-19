@@ -30,6 +30,7 @@ class TransferFeeConfigState:
     withheld_amount: int
     older_transfer_fee: TransferFeeRate
     newer_transfer_fee: TransferFeeRate
+    extension_types: tuple[int, ...]
 
     def fee_for_epoch(self, epoch: int) -> TransferFeeRate:
         _u64(epoch, "epoch")
@@ -39,6 +40,7 @@ class TransferFeeConfigState:
 @dataclass(frozen=True)
 class TransferFeeAmountState:
     withheld_amount: int
+    extension_types: tuple[int, ...]
 
 
 def _u64(value: int, field: str) -> int:
@@ -118,7 +120,8 @@ def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
     if not isinstance(mint_data, bytes):
         raise TypeError("mint_data deve ser bytes")
     _validate_mint_base(mint_data)
-    payload = _read_extensions(mint_data, ACCOUNT_TYPE_MINT).get(EXTENSION_TRANSFER_FEE_CONFIG)
+    extensions = _read_extensions(mint_data, ACCOUNT_TYPE_MINT)
+    payload = extensions.get(EXTENSION_TRANSFER_FEE_CONFIG)
     if payload is None:
         raise ValueError("TransferFeeConfig ausente")
     if len(payload) != TRANSFER_FEE_CONFIG_LENGTH:
@@ -132,16 +135,19 @@ def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
             raise ValueError("transfer_fee_basis_points excede 10000")
         return TransferFeeRate(epoch, maximum_fee, basis_points)
 
-    return TransferFeeConfigState(withheld, read_rate(72), read_rate(90))
+    return TransferFeeConfigState(
+        withheld, read_rate(72), read_rate(90), tuple(sorted(extensions))
+    )
 
 
 def decode_transfer_fee_amount(account_data: bytes) -> TransferFeeAmountState:
     if not isinstance(account_data, bytes):
         raise TypeError("account_data deve ser bytes")
     _validate_token_account_base(account_data)
-    payload = _read_extensions(account_data, ACCOUNT_TYPE_ACCOUNT).get(EXTENSION_TRANSFER_FEE_AMOUNT)
+    extensions = _read_extensions(account_data, ACCOUNT_TYPE_ACCOUNT)
+    payload = extensions.get(EXTENSION_TRANSFER_FEE_AMOUNT)
     if payload is None:
         raise ValueError("TransferFeeAmount ausente")
     if len(payload) != TRANSFER_FEE_AMOUNT_LENGTH:
         raise ValueError("tamanho inválido de TransferFeeAmount")
-    return TransferFeeAmountState(_read_u64(payload, 0))
+    return TransferFeeAmountState(_read_u64(payload, 0), tuple(sorted(extensions)))

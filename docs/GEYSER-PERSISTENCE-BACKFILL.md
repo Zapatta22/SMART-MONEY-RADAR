@@ -289,3 +289,34 @@ No provider connection or financial execution is authorized by this document.
 - Não cria ainda timeline persistente, estado canônico de forks, transições pre/post, checkpoint incremental de projeção ou rotina de rebuild após reinício.
 - Reconstrução integral carrega os registros elegíveis em memória e mantém transação de escrita durante a operação; desempenho deverá ser medido antes de escolher estratégia incremental segura.
 - A projeção não converte estado de conta em swap, BUY/SELL, sinal ou autorização de execução.
+
+
+## Timeline persistente e reconstruível de contas/bancos — 19/11/2026
+
+### Implementação
+- Criado `src/smart_money_radar/storage/geyser_account_timeline_projection.py`.
+- Criado `tests/test_geyser_account_timeline_projection.py`.
+- A API `SQLiteGeyserAccountTimelineProjection` oferece `rebuild()`, `get_checkpoint()`, `list_account_writes()`, `list_banks()`, `list_gaps()` e `list_conflicts()`.
+- A projeção é armazenada no mesmo arquivo dedicado `smr_geyser.sqlite`; não toca no banco `smr_events.sqlite`.
+- O rebuild lê o RAW imutável e usa a primeira entrega com sequência de transporte conhecida de cada evento lógico; ordena a reprodução por `delivery_id`. Eventos sem payload `normalized_json`, sem entrega sequenciada ou sem entrega são contabilizados como ignorados. Payload normalizado malformado aborta o rebuild.
+- As timelines são reconstruídas separadamente por `source_id`; fontes distintas não são tratadas como reconexões uma da outra.
+- Persiste escritas ativas com `event_id`, chave de conta/ledger, `continuity_epoch`, baseline, baseline após quebra de continuidade e status de observação do banco.
+- Persiste nós de banco com parent slot, blockhash/parent blockhash, vínculo exato de banco pai quando comprovado, statuses, dead, invalidated, cleared_by_parent_update, parent_block_id opaco em hex e relação replaces_bank.
+- Persiste gaps e conflitos de timeline/linhagem; APIs de leitura expõem esses registros.
+- Bancos invalidados e escritas associadas não são apagados: ficam no histórico derivado com estado `invalidated`. A projeção não promove automaticamente um fork a canônico.
+- Checkpoint versionado e geração própria. Rebuild integral, com substituição de escritas, nós, gaps, conflitos e checkpoint na mesma transação SQLite. Falha mantém geração anterior.
+- `AccountUpdateTimeline.timeline_records()` fornece snapshot de leitura dos registros ativos com metadados de continuidade, sem expor mutabilidade interna.
+
+### Testes e CI
+- Nove testes específicos cobrem: persistência de timeline/linhagem; vínculo exato por blockhash; preservação de parent_block_id opaco e invalidação; escrita associada a banco invalidado; repetibilidade/checkpoint; inclusão de RAW tardio; rollback em payload corrompido; persistência de gap e quebra de predecessor; isolamento entre fontes.
+- CI #1706 — run `44517573857`, commit `6bf265be4f9f7cd48ba1044ad19272c8b1a4095b`: SUCCESS; **559/559 testes OK** em 4,247 s; `python -m compileall -q src tests` aprovado.
+
+### Limites
+- Reconstrução offline a partir de eventos já normalizados; não é captura protobuf wire, stream Geyser, nem backfill real.
+- Ordem de entrega é usada apenas para reproduzir a lógica de continuidade; não declara canonicalidade de fork.
+- A projeção ainda não materializa uma tabela de transições econômicas pre/post, nem executa rollback canônico automático. Não existe inferência de BUY/SELL ou autorização de trade.
+- Rebuild integral mantém os registros elegíveis em memória; desempenho precisa ser medido com volume real.
+- Eventos RAW sem uma entrega com sequência conhecida são ignorados na timeline e contabilizados no checkpoint; RAW permanece preservado.
+
+### Próxima etapa
+Definir e implementar recuperação/backfill e checkpoints de projeção mais granulares, com cobertura auditável e reconciliação de eventos sem sequência. Não conectar provider nem declarar fork canônico por heurística.

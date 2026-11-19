@@ -8,6 +8,8 @@ on:
     paths:
       - "tools/benchmark_geyser_unsequenced_audit.py"
       - ".github/workflows/geyser-audit-benchmark.yml"
+  pull_request:
+    branches: ['feat/**']
   workflow_dispatch:
 
 permissions:

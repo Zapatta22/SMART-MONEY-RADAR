@@ -1840,3 +1840,16 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #544 (`44270156613`) no HEAD `90da41436022b2875f76b88a5c999b1328fade01`: **completed/success**; 359 testes aprovados e compileall aprovado.
 - PR #22 permanece Draft, aberto e não integrado. PR #21 permanece Draft. PR #17 e #18 também permanecem Draft. PR #20 foi fechado sem merge por duplicação de decoder. `main` intacta.
 - Limite atual: a evidência DAMM v2 permanece `ATTRIBUTED`; ainda não há reconciliação econômica por operação usando deltas de contas/vaults, fees input/output/referral e estado withheld. Sem RPC/Helius, RAW fixtures, SQLite, checkpoints ou operações on-chain.
+
+
+## 94. Retomada após refinamento do decoder de referral — estado real do GitHub (18/11/2026)
+
+- A sessão foi retomada a partir da PR #22, não da PR #18. A PR #18 foi integrada à sua branch-base `feat/damm-v2-economic-fee-math`; a PR #21 foi integrada à sua branch-base `feat/token2022-transfer-fee-state-decoder`. Essas integrações são encadeadas entre branches de feature e **não representam merge em `main`**.
+- A branch `main` foi consultada e permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; não foi modificada por esta retomada.
+- PR #22 permanece aberta e Draft: `feat/damm-v2-referral-transfer-attribution`, base `feat/token2022-transfer-checked-with-fee`, HEAD `392b91719b8c76d4b6796ea7800952eaa158ec8d`; comparação contra a base: 10 commits à frente, 0 atrás.
+- Desde o HEAD coberto pelo CI #544 (`90da41436022b2875f76b88a5c999b1328fade01)), foram adicionados cinco commits: validação do tipo de transferência/fee Token-2022, proteção contra comparações inseguras com quantidades malformadas, testes fail-closed e atualização documental.
+- O CI #544 (`44270156613`) concluiu com sucesso no HEAD antigo `90da414`: 359 testes e compileall aprovados. No HEAD atual `392b917`, a consulta retornou zero check-runs e status combinado pending; portanto, **o HEAD atual ainda não está validado por CI**.
+- Revisão estática do módulo atual `damm_v2_transfer_analyzer.py`: referral é selecionado por vault derivado de FeeMode, exige CPI descendente confiável anterior ao EvtSwap2, valida mint/programa/tipo/amount u64/fee, compara o bruto com `EvtSwap2.referral_fee` e impede reutilização. Os novos testes incluem tipos desconhecidos, fee incompatível, fee maior que o bruto, quantidades malformadas e casos referral.
+- O status `ATTRIBUTED` continua sendo apenas atribuição estrutural; não equivale a `MATCHED` nem à reconciliação econômica. Deltas por conta/vault, taxas implícitas de TransferChecked e estado withheld histórico continuam fora desta PR.
+- Nesta retomada não houve merge, alteração da `main`, execução local no Termux, leitura/escrita de RAW, RPC/Helius, SQLite, importação, checkpoint ou operação on-chain.
+- Próxima ação: obter CI verde **no HEAD atual** da PR #22 e auditar o diff final antes de qualquer decisão sobre retirar Draft ou integrar.

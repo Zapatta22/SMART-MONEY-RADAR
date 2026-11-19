@@ -2763,6 +2763,6 @@ Arquivo `tests/test_geyser_account_timeline_projection.py`:
 
 ### Estado e pendências
 - PR #28 é uma correção isolada e validada por CI para o achado da seção 305.
-- A revisão final ainda deve confirmar a relação de branches/PRs e o estado `mergeable` depois do commit documental.
+- Revisão final concluída: PR #28 permanece OPEN/DRAFT, `merged=false`, `mergeable=true`; base SHA coincide com o HEAD da PR #26. O workflow PR #28 run ID `44577550530` também concluiu SUCCESS no HEAD documental `abc8a1a591f65d0dc525c2cf633fa6b6524fce50`.
 - PR #23, #26, #27 e #28 permanecem sem merge. `main` intacta.
 - Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain conectado.

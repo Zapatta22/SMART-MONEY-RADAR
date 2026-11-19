@@ -70,7 +70,7 @@ class NormalizeTransactionUpdateTests(unittest.TestCase):
             normalize_transaction_update(SubscribeUpdateTransaction(_valid_info()), source_id="provider-a", stream_id="conn-a", ordering_domain_id="domain-a", stream_sequence=-1)
 
     def test_adapter_dispatches_transaction_update(self):
-        item = adapt_subscribe_update(SubscribeUpdateTransaction(_valid_info()), source_id="provider-a", stream_id="conn-a", ordering_domain_id="domain-a", stream_sequence=9, raw_message_bytes=b"wire-transaction")
+        item = adapt_subscribe_update(SubscribeUpdate(SubscribeUpdateTransaction(_valid_info())), source_id="provider-a", stream_id="conn-a", ordering_domain_id="domain-a", stream_sequence=9, raw_message_bytes=b"wire-transaction")
         self.assertEqual(item.transaction_index, 17)
         self.assertEqual(item.raw_payload, b"wire-transaction")
         self.assertEqual(item.raw_payload_provenance, "WIRE")

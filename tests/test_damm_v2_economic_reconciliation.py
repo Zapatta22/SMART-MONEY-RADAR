@@ -915,5 +915,33 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("exige epoch/slot/ordem", result.reason)
 
+
+    def test_mint_fee_config_requires_complete_initialize_instruction_inventory(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshots = _mint_fee_snapshots()
+        snapshots[0] = DammV2MintFeeConfigSnapshot(
+            mint="mint-a", transfer_instruction_index=0,
+            transfer_inner_instruction_index=2,
+            config_state=snapshots[0].config_state,
+            transaction_epoch=10, transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49,
+            transfer_fee_config_init_positions=(),
+            transfer_fee_init_inventory_complete=False,
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
+        )
+        result = verify_damm_v2_mint_fee_config(
+            base, snapshots,
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("inventário de InitializeTransferFeeConfig incompleto", result.reason)
+
 if __name__ == "__main__":
     unittest.main()

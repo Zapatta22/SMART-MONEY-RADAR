@@ -163,10 +163,25 @@ class YellowstoneFrameReceiver:
             and update.pre_state.stream_id == update.post_state.stream_id == observation.stream_id
         ]
         counts = Counter(update.pubkey for update in matching)
+        mint_prestates = []
+        if block_order is not None and block_order.previous_transaction_signature:
+            mint_addresses = {transfer.mint for transfer in evidence.bundle.transfers if transfer.mint}
+            for mint in sorted(mint_addresses - conflicted_accounts):
+                states = [
+                    state for state in timeline.events_for(mint)
+                    if (state.slot, state.bank_id, state.txn_signature)
+                    == (observation.slot, observation.bank_id, block_order.previous_transaction_signature)
+                    and state.source == observation.source_id
+                    and state.stream_id == observation.stream_id
+                    and not state.is_startup
+                ]
+                if len(states) == 1:
+                    mint_prestates.append(states[0])
         return replace(
             evidence,
             provider_reported_finalized=True,
             block_order=block_order,
+            mint_prestates=tuple(mint_prestates),
             account_transitions=tuple(update for update in matching if counts[update.pubkey] == 1),
         )
 

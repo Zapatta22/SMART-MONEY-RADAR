@@ -600,7 +600,7 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
     def test_reconciles_damm_economics_only_after_finalized_wire_bank(self):
         from smart_money_radar.data_sources.solana_token_transfer_decoder import _decode_base58
         from dataclasses import replace
-        from test_damm_v2_economic_reconciliation import _withheld_account_data
+        from test_damm_v2_economic_reconciliation import _mint_account_data, _withheld_account_data
         from test_solana_transaction_evidence_bundle import _damm_complete_transaction
 
         payload = _damm_complete_transaction()["result"]
@@ -735,6 +735,26 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         mismatch = inconsistent.reconcile_damm_v2(monitored_wallet=wallet)
         self.assertEqual(mismatch.status, "INCOMPLETE")
         self.assertIn("withheld diverge", mismatch.reason)
+
+        mint_frame = _parse("account_update")
+        mint_frame.account.slot, mint_frame.account.bank_id = tx.slot, tx.bank_id
+        mint = mint_frame.account.account
+        mint.owner = _decode_base58(names[9])
+        mint.txn_signature = previous_signature
+        for name, rate in ((names[6], 500), (names[7], None)):
+            mint.pubkey = addresses[name]
+            mint.write_version = sequence
+            mint.data = _mint_account_data(basis_points=rate, newer_basis_points=900 if rate else None)
+            receiver.receive(mint_frame.SerializeToString(), stream_sequence=sequence)
+            sequence += 1
+        evidence = receiver.transaction_evidence_at(40, block_sequence=42)
+        verified = evidence.reconcile_damm_v2(monitored_wallet=wallet, transaction_epoch=0)
+        self.assertEqual(verified.status, "RECONCILED", verified.reason)
+        self.assertEqual(verified.mint_fee_config_status, "VERIFIED")
+        wrong_epoch = evidence.reconcile_damm_v2(monitored_wallet=wallet, transaction_epoch=10)
+        self.assertEqual(wrong_epoch.status, "INCOMPLETE")
+        self.assertEqual(wrong_epoch.mint_fee_config_status, "EXPECTED_NOT_VERIFIED")
+        self.assertEqual(verified.withheld_fee_status, "VERIFIED")
 
         slot.slot.status = 6
         receiver.receive(slot.SerializeToString(), stream_sequence=sequence)

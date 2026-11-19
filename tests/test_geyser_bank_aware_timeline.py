@@ -123,7 +123,7 @@ class BankAwareAccountTimelineTests(unittest.TestCase):
         timeline = AccountUpdateTimeline()
         timeline.add_slot_update(_slot(100, "SLOT_CREATED_BANK", 10, 99))
         timeline.add(_account(100, 10, "before-reconnect", 1))
-        gap = timeline.add(_account(100, 10, "after-reconnect", 1, stream="stream-2"))
+        gap = timeline.add(_account(100, 10, "after-reconnect", 1, stream="stream-2", write_version=2))
         self.assertIsNotNone(gap.gap)
         self.assertEqual(timeline.transition_for("after-reconnect"), ())
         timeline.add(_account(100, 10, "continuous", 2, stream="stream-2", write_version=3))
@@ -135,7 +135,8 @@ class BankAwareAccountTimelineTests(unittest.TestCase):
         timeline = AccountUpdateTimeline()
         timeline.add_slot_update(_slot(100, "SLOT_CREATED_BANK", 10, 99))
         first = _account(100, 10, "same", 1)
-        replay = _account(100, 10, "same", 2)
+        from dataclasses import replace
+        replay = replace(first, stream_sequence=2)
         self.assertEqual(timeline.add(first).status, "inserted")
         self.assertEqual(timeline.add(replay).status, "duplicate")
         self.assertEqual(len(timeline.events_for("wallet-account")), 1)

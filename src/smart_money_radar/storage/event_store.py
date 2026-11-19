@@ -31,27 +31,70 @@ class SwapReconciliationRecord:
 class SQLiteEventStore:
     """Persiste eventos sem armazenar chaves ou credenciais."""
 
-    def __init__(self, database_path: Path | str) -> None:
+    def __init__(
+        self, database_path: Path | str, *, read_only: bool = False
+    ) -> None:
+        if not isinstance(read_only, bool):
+            raise TypeError("read_only deve ser bool")
         self.database_path = Path(database_path)
+        self.read_only = read_only
         self._memory_connection: sqlite3.Connection | None = None
-        if str(self.database_path) == ":memory:":
+        if read_only:
+            if str(database_path) == ":memory:":
+                raise ValueError("read_only exige um arquivo SQLite existente.")
+            if not self.database_path.is_file():
+                raise FileNotFoundError(
+                    f"Banco SQLite não encontrado para abertura somente leitura: {self.database_path}"
+                )
+            self._validate_read_only_schema()
+        elif str(database_path) == ":memory:":
             # Keep one connection alive: a fresh SQLite :memory: connection is
             # a different database and would lose the schema/data immediately.
             self._memory_connection = sqlite3.connect(":memory:")
+            self._initialize()
         else:
             self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+            self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
         if self._memory_connection is not None:
             self._memory_connection.execute("PRAGMA foreign_keys = ON")
             return self._memory_connection
+        if self.read_only:
+            uri = self.database_path.resolve().as_uri() + "?mode=ro"
+            connection = sqlite3.connect(uri, uri=True, timeout=15.0)
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 15000")
+            return connection
         connection = sqlite3.connect(self.database_path, timeout=15.0)
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 15000")
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
         return connection
+
+    def _validate_read_only_schema(self) -> None:
+        """Valida o esquema existente sem criar tabelas, índices ou migrações."""
+        required = {
+            "activity_events", "wallet_checkpoints", "observed_transactions",
+            "token_balance_deltas", "processed_signatures", "swap_observations",
+            "swap_classifications", "swap_evidence", "swap_reconciliation_attempts",
+        }
+        uri = self.database_path.resolve().as_uri() + "?mode=ro"
+        connection = sqlite3.connect(uri, uri=True, timeout=15.0)
+        try:
+            present = {
+                row[0] for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+        finally:
+            connection.close()
+        missing = sorted(required - present)
+        if missing:
+            raise sqlite3.DatabaseError(
+                "Banco SQLite sem o esquema completo para leitura: " + ", ".join(missing)
+            )
 
     @contextmanager
     def _connection_scope(self):

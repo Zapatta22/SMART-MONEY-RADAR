@@ -27,7 +27,7 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
         if temp_store not in (None, "FILE", "MEMORY"):
             raise ValueError("temp_store deve ser None, 'FILE' ou 'MEMORY'")
         self.temp_store = temp_store
-        self.last_rebuild_metrics: dict[str, int] = {}
+        self.last_rebuild_metrics: dict[str, object] = {}
         if self.database_path == ":memory:":
             raise ValueError("a auditoria deve compartilhar o arquivo SQLite persistente do RAW store")
         path = Path(database_path)
@@ -156,6 +156,11 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                 "temp_db_pages": temp_page_count,
                 "temp_db_page_size_bytes": temp_page_size,
                 "temp_db_allocated_bytes": temp_page_count * temp_page_size,
+                "temp_store_pragma": connection.execute("PRAGMA temp_store").fetchone()[0],
+                "sqlite_compile_options": [
+                    row[0] for row in connection.execute("PRAGMA compile_options")
+                    if row[0].startswith(("TEMP_STORE=", "DEFAULT_CACHE_SIZE="))
+                ],
             }
 
             prior = connection.execute(

@@ -49,7 +49,7 @@ def _accounts():
     )
 
 
-def _event(referral_fee=0, has_referral=False):
+def _event(referral_fee=0, has_referral=False, excluded_output=90):
     return DammV2EvtSwap2(
         pool=bytes(32), trade_direction="A_TO_B",
         collect_fee_mode="BOTH_TOKEN", has_referral=has_referral,
@@ -63,7 +63,7 @@ def _event(referral_fee=0, has_referral=False):
         ),
         included_transfer_fee_amount_in=100,
         included_transfer_fee_amount_out=90,
-        excluded_transfer_fee_amount_out=90,
+        excluded_transfer_fee_amount_out=excluded_output,
         current_timestamp=1_700_000_000,
         reserve_a_amount=1_000, reserve_b_amount=2_000,
     )
@@ -168,7 +168,7 @@ def _deltas(values):
     return SolanaTokenBalanceDeltaResult(tuple(rows), ())
 
 
-def _reconcile(contexts, evidence, deltas, all_transfers=None):
+def _reconcile(contexts, evidence, deltas, all_transfers=None, **kwargs):
     if all_transfers is None:
         all_transfers = []
         for item in evidence:
@@ -180,6 +180,7 @@ def _reconcile(contexts, evidence, deltas, all_transfers=None):
     return reconcile_damm_v2_economic_batch(
         contexts, evidence, deltas, all_transfers,
         monitored_wallet=WALLET,
+        **kwargs,
     )
 
 
@@ -801,6 +802,110 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("pode ter mudado antes", result.reason)
+
+
+    def test_reconciles_token2022_standard_referral_using_historical_mint_prestate(self):
+        event = _event(referral_fee=5, has_referral=True, excluded_output=81)
+        context = _context(event=event)
+        input_transfer = _transfer(
+            "user-a", "vault-a", "mint-a", 100, fee=None, inner=2
+        )
+        output_transfer = _transfer(
+            "vault-b", "user-b", "mint-b", 90, fee=None, inner=2
+        )
+        referral_transfer = _transfer(
+            "vault-b", "referral", "mint-b", 5, fee=None, inner=3
+        )
+        evidence = _evidence(
+            context, input_transfer, output_transfer, referral_transfer
+        )
+        mint_a = TransferFeeConfigState(
+            withheld_amount=0,
+            older_transfer_fee=TransferFeeRate(epoch=0, maximum_fee=100, basis_points=500),
+            newer_transfer_fee=TransferFeeRate(epoch=10, maximum_fee=100, basis_points=500),
+            extension_types=(1,),
+        )
+        mint_b = TransferFeeConfigState(
+            withheld_amount=0,
+            older_transfer_fee=TransferFeeRate(epoch=0, maximum_fee=100, basis_points=1_000),
+            newer_transfer_fee=TransferFeeRate(epoch=10, maximum_fee=100, basis_points=1_000),
+            extension_types=(1,),
+        )
+        snapshots = [
+            DammV2MintFeeConfigSnapshot(
+                mint="mint-a", transfer_instruction_index=0,
+                transfer_inner_instruction_index=2, config_state=mint_a,
+                transaction_epoch=10, transaction_slot=123,
+                transaction_order=50, pre_snapshot_order=49,
+                mint_state_unchanged_before_transfer=True,
+                source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
+            ),
+            DammV2MintFeeConfigSnapshot(
+                mint="mint-b", transfer_instruction_index=0,
+                transfer_inner_instruction_index=2, config_state=mint_b,
+                transaction_epoch=10, transaction_slot=123,
+                transaction_order=50, pre_snapshot_order=49,
+                mint_state_unchanged_before_transfer=True,
+                source="ordered-mint-prestate-fixture", pre_state_ref="mint-b-output-pre",
+            ),
+            DammV2MintFeeConfigSnapshot(
+                mint="mint-b", transfer_instruction_index=0,
+                transfer_inner_instruction_index=3, config_state=mint_b,
+                transaction_epoch=10, transaction_slot=123,
+                transaction_order=50, pre_snapshot_order=49,
+                mint_state_unchanged_before_transfer=True,
+                source="ordered-mint-prestate-fixture", pre_state_ref="mint-b-referral-pre",
+            ),
+        ]
+        result = _reconcile(
+            [context], [evidence],
+            _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -95, 6),
+                ("user-b", "mint-b", 81, 6),
+                ("referral", "mint-b", 4, 6),
+            ]),
+            [input_transfer, output_transfer, referral_transfer],
+            mint_fee_snapshots=snapshots,
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "RECONCILED")
+        self.assertEqual(
+            [item.expected_fee_raw for item in result.expected_transfer_fees],
+            [5, 9, 1],
+        )
+        self.assertEqual(
+            [item.fee_source for item in result.expected_transfer_fees],
+            ["EVT_SWAP2_NET", "EVT_SWAP2_NET", "MINT_PRESTATE"],
+        )
+        verified = verify_damm_v2_mint_fee_config(
+            result, snapshots,
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(verified.status, "RECONCILED")
+        self.assertEqual(verified.mint_fee_config_status, "VERIFIED")
+
+    def test_token2022_standard_referral_without_mint_prestate_fails_closed(self):
+        event = _event(referral_fee=5, has_referral=True, excluded_output=81)
+        context = _context(event=event)
+        input_transfer = _transfer("user-a", "vault-a", "mint-a", 100, fee=None, inner=2)
+        output_transfer = _transfer("vault-b", "user-b", "mint-b", 90, fee=None, inner=2)
+        referral_transfer = _transfer("vault-b", "referral", "mint-b", 5, fee=None, inner=3)
+        evidence = _evidence(context, input_transfer, output_transfer, referral_transfer)
+        result = _reconcile(
+            [context], [evidence],
+            _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -95, 6),
+                ("user-b", "mint-b", 81, 6),
+                ("referral", "mint-b", 4, 6),
+            ]),
+            [input_transfer, output_transfer, referral_transfer],
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("exige epoch/slot/ordem", result.reason)
 
 if __name__ == "__main__":
     unittest.main()

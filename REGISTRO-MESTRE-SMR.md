@@ -3276,3 +3276,10 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 
 ### Próxima ação
 - Aguardar e verificar CI pós-merge no commit `aa173f7bc13158d641e04d571173763df4962052`. Após SUCCESS, atualizar o Registro Mestre e avaliar tecnicamente a próxima etapa de integração da branch Token-2022, sem merge para `main` sem autorização expressa.
+
+### Complemento CI pós-merge — 19/11/2026
+- CI no merge commit exato `aa173f7bc13158d641e04d571173763df4962052` concluiu SUCCESS.
+- Workflow run `44617037258`, job `135888377740`: SUCCESS.
+- Logs: `Ran 609 tests in 4.821s`, `OK`; `python -m compileall -q src tests` SUCCESS.
+- A branch `feat/token2022-transfer-checked-with-fee` permanece no merge commit `aa173f7bc13158d641e04d571173763df4962052` antes desta atualização exclusivamente documental.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.

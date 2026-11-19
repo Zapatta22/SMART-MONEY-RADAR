@@ -2748,3 +2748,40 @@ Criar fixture sintético de ponta a ponta que percorra factory -> associação -
 
 ### Próxima ação
 Revisar e formalizar o contrato de proveniência dos snapshots históricos de mint/withheld, incluindo vínculo inequívoco de source, assinatura, slot, ordem e referências pre/post; adicionar testes negativos de mistura e só então avaliar uma fixture positiva com fee state verificado.
+
+## 299. Proveniência vinculada de snapshots históricos mint/withheld — 19/11/2026
+
+### Contrato implementado
+- Snapshots históricos de mint e withheld agora carregam `source_id` e `transaction_payload_sha256`, vinculando a evidência à mesma origem e ao payload transacional usado no bundle.
+- `build_damm_v2_mint_fee_config_snapshots()` exige `source_id` do prestate igual ao da transação e SHA-256 válido do payload RPC. Calcula o SHA-256 dos bytes brutos do mint prestate, preserva esses bytes no snapshot e deriva `config_state` diretamente deles.
+- `verify_damm_v2_mint_fee_config()` exige source ID e payload hash esperados; compara assinatura, source ID, payload hash, epoch, slot, ordem, mint e posição exata da transferência.
+- O verifier recalcula o hash dos bytes do mint e decodifica novamente o TLV; rejeita bytes alterados ou config_state que não corresponda aos bytes.
+- `DammV2WithheldFeeSnapshot` preserva bytes brutos pre/post, SHA-256 individuais, source ID, hash do payload e referências separadas.
+- `verify_damm_v2_withheld_fee_deltas()` recalcula os hashes, redecodifica TransferFeeAmount dos bytes brutos e compara com `decoded_delta`; também exige source ID e hash do payload iguais aos da transação, assinatura/slot/ordem e `pre < transaction < post`.
+- `reconcile_solana_transaction_damm_v2_bundle()` propaga source ID e payload SHA-256 da identidade raiz para a reconciliação econômica.
+
+### Testes negativos adicionados
+- Snapshot de mint com source ID diferente.
+- Snapshot withheld com source ID diferente.
+- Hash do payload transacional divergente para mint.
+- Hash do payload transacional divergente para withheld.
+- Bytes brutos do mint alterados sem atualizar o digest.
+- Bytes brutos withheld alterados sem atualizar o digest.
+- Builder de mint rejeita prestate de outra origem.
+- Testes anteriores de assinatura, slot, ordem, posição de inicialização, configuração e divergência de taxas continuam ativos.
+
+### Validação
+- HEAD de código validado: `6527b70d0a66916be668fbfc52f3e7c85b96277d`.
+- Workflow `SMR tests`, run `44604415356`, job `135844149691`: SUCCESS.
+- 595 testes em 4,724 s; `python -m compileall -q src tests` aprovado.
+- O CI valida testes sintéticos/unitários e compilação; não comprova autenticidade do provider, coleta Geyser real, ordering real, mainnet ou execução em produção.
+
+### Limites explícitos
+- SHA-256 prova consistência dos bytes apresentados, não autenticidade do provider nem correção da ordem atribuída pelo adapter.
+- `source_id` precisa ser estável e representar o domínio real de origem/ordenação; a camada de ingestão ainda deve provar essa semântica.
+- Ainda não há adapter operacional que capture mint/account pre/post snapshots em mainnet e demonstre ordenação real.
+- Nenhuma execução financeira foi conectada.
+- PR #34 continua Draft e sem merge; `main` permanece intacta.
+
+### Próxima ação
+Auditar o diff completo da PR #34 e verificar se o contrato de snapshots, o bundle e a documentação estão coerentes. Depois, definir o contrato do adapter de ingestão Geyser/provider-neutral, sem conectar execução financeira.

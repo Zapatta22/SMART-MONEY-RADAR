@@ -84,7 +84,7 @@ class GeyserNormalizedIngestionTests(unittest.TestCase):
             self.assertEqual(summary["skipped_count"], 2)
             recovery = SQLiteGeyserRecoveryStore(database)
             checkpoint = recovery.get_projection_checkpoint(
-                "geyser_account_timeline", 1, "yellowstone-mainnet"
+                "geyser_account_timeline", 2, "yellowstone-mainnet"
             )
             self.assertTrue(checkpoint["continuity_interrupted"])
             self.assertEqual(checkpoint["input_coverage_status"], "PARTIAL")

@@ -88,3 +88,37 @@ Helius integration is part of this change.
 
 - O método legado `rollback_from_slot` rejeita histórico que contenha `bank_id`: remover tudo a partir de um slot poderia apagar simultaneamente bancos concorrentes. Para dados fork-scoped, a invalidação deve passar pelo `BankLineageTracker` com identidade exata do banco.
 - A timeline não expõe `current_state` quando há histórico fork-scoped ou quando o último evento ainda é startup; um snapshot de startup não é promovido a estado corrente de banco.
+
+
+## Yellowstone protobuf boundary adapter
+
+The boundary adapter in `geyser_proto_adapter.py` accepts decoded messages
+from the Yellowstone Geyser protobuf client and maps only four event families
+to the provider-neutral contracts:
+
+- `SubscribeUpdateAccount`: Base58-encodes 32-byte pubkey/owner and an optional
+  64-byte transaction signature; preserves account data as raw bytes, slot,
+  write_version, optional bank_id and is_startup.
+- `SubscribeUpdateSlot`: maps the numeric SlotStatus enum and preserves the
+  optional parent, bank_id and dead_error fields.
+- `SubscribeUpdateBlockMeta`: preserves blockhash, parent slot/hash and bank ID.
+- `SubscribeUpdateEntryUpdateParent`: preserves parent_block_id as opaque bytes.
+
+The protocol contract is pinned to rpcpool/yellowstone-grpc tag
+`v16.1.5+solana.4.3.2`; the exact upstream `geyser.proto` Git blob SHA and
+serialized fixture hashes are recorded in
+`tests/fixtures/yellowstone/v16.1.5+solana.4.3.2/manifest.json`. Tests parse
+versioned, serialized protobuf wire fixtures with a descriptor subset matching
+the pinned field numbers, enum values and wire types. The production adapter
+does not depend on the fixture descriptor.
+
+The caller supplies a stable provider/node `source_id`, a per-connection
+`stream_id`, and a monotonically assigned `stream_sequence`. This adapter
+does not create that sequence, infer commitment, reorder messages, reconnect,
+or replay. Unknown/unhandled oneof members are ignored; malformed required
+binary keys/signatures fail closed.
+
+This is a message-boundary adapter only. No Yellowstone endpoint/client,
+continuous capture, RAW/SQLite persistence, backfill, or financial execution
+is enabled. Bank-aware pre/post pairing remains deferred until the tracker is
+integrated with the timeline and tested against competing banks.

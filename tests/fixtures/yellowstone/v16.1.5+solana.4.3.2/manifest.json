@@ -1,0 +1,41 @@
+{
+  "provider": "rpcpool/yellowstone-grpc",
+  "protocol_tag": "v16.1.5+solana.4.3.2",
+  "schema_path": "yellowstone-grpc-proto/proto/geyser.proto",
+  "schema_blob_sha": "d0f96616d515c978a07b16e6409c7706f4429a5a",
+  "schema_url": "https://github.com/rpcpool/yellowstone-grpc/blob/v16.1.5%2Bsolana.4.3.2/yellowstone-grpc-proto/proto/geyser.proto",
+  "fixture_encoding": "base64-encoded serialized geyser.SubscribeUpdate protobuf wire messages",
+  "wire_compatibility_note": "Tests deserialize these bytes using a minimal descriptor subset mirroring exact field numbers, enum values, and scalar wire types in the pinned upstream geyser.proto. The production adapter accepts generated Yellowstone protobuf objects.",
+  "fixtures": {
+    "account_update.b64": {
+      "base64": "EqwBCqIBCiABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fIBDwu3waICAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/IAAoADIQAQIA/2FjY291bnQtZGF0YThNQkAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/EMDEByCpRg==",
+      "sha256": "829f401362fbdc1b156c3416a13179dda2bd3cf4678a17615d1544e3130d8b22",
+      "bytes": 175
+    },
+    "account_startup.b64": {
+      "base64": "El0KVQogAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAQARogICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8gACgAMgdzdGFydHVwOE4QwcQHGAE=",
+      "sha256": "bdc49550a2d0927ae56ec2322d9896aace469efbef8da05196fea85e1f145570",
+      "bytes": 95
+    },
+    "slot_created_bank.b64": {
+      "base64": "Gg0IwMQHEL/EBxgFKKlG",
+      "sha256": "90ed7958d3d855f2966083c0f814708f674f0fa361d3566a8bb8f6f6d0ed356f",
+      "bytes": 15
+    },
+    "slot_dead.b64": {
+      "base64": "GhEIwMQHGAYiCWRlYWQgZm9yaw==",
+      "sha256": "a303c0479822a874e3e1a84e098da7038b50e06e6495c6ed0b9d5b39adc7dd90",
+      "bytes": 19
+    },
+    "block_meta.b64": {
+      "base64": "Oi4IwMQHEg9ibG9ja2hhc2gtY2hpbGQwv8QHOhBibG9ja2hhc2gtcGFyZW50UKlG",
+      "sha256": "e33d73394786470f55b016dc1c265a150cbd354260ca70cca79190886b5061c2",
+      "bytes": 48
+    },
+    "entry_update_parent.b64": {
+      "base64": "ah8IwMQHEKlGGL/EByISAG9wYXF1ZS1wYXJlbnQtaWT/",
+      "sha256": "f137631e5e7b0469ea7baba866e8eff602b7f9ac01a1b76fcbef0e75831dc32e",
+      "bytes": 33
+    }
+  }
+}

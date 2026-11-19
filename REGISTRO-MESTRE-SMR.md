@@ -2204,3 +2204,27 @@ Implementar adapter de fronteira para mensagens protobuf Yellowstone (ou mapping
 - PR #23 permanece OPEN/DRAFT, sem merge, mergeable; head na atualização deste registro: `0c662e00c8161a708eda7e5fbf40ac2a96b6783e`; base `feat/damm-v2-referral-transfer-attribution`.
 - `main` permanece intacta em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 - Próxima ação aprovada pelo plano: implementar adapter de fronteira para protobuf Yellowstone com fixtures versionadas e mensagens binárias reais; não conectar endpoint, não persistir RAW/SQLite e não usar a timeline para decisões financeiras. Depois, integrar o tracker de bancos à reconstrução de pre/post com testes de forks concorrentes.
+
+
+## 283. Adapter de fronteira Yellowstone protobuf — 19/11/2026
+
+### Implementação preparada na branch da PR23
+- Novo `src/smart_money_radar/data_sources/geyser_proto_adapter.py`: converte mensagens protobuf decodificadas para os contratos provider-neutral existentes.
+- Eventos suportados no dispatcher `SubscribeUpdate.update_oneof`: Account, Slot, BlockMeta e EntryUpdateParent. Ping/pong, transactions, block e entry comum ficam fora do escopo deste adapter.
+- Account: valida pubkey/owner com 32 bytes e assinatura opcional com 64 bytes; converte essas identidades binárias para Base58; preserva `data` como bytes; transporta `slot`, `write_version`, `bank_id`, `is_startup` e ausência de `txn_signature`.
+- Slot: mapeia enum numérico SlotStatus e preserva parent, bank_id e dead_error opcionais.
+- BlockMeta: preserva blockhash, parent_slot, parent_blockhash e bank_id.
+- EntryUpdateParent: preserva parent_block_id como bytes opacos.
+- source_id estável, stream_id de conexão e stream_sequence são fornecidos pelo chamador; o adapter não inventa ordem nem faz reconnect/replay.
+- Dependência protobuf adicionada para desserialização e testes wire-level.
+
+### Schema e fixtures versionados
+- Schema fixado em rpcpool/yellowstone-grpc tag `v16.1.5+solana.4.3.2`, arquivo `yellowstone-grpc-proto/proto/geyser.proto`, Git blob SHA `d0f96616d515c978a07b16e6409c7706f4429a5a`.
+- Manifesto: `tests/fixtures/yellowstone/v16.1.5+solana.4.3.2/manifest.json`.
+- Fixtures protobuf serializadas/desserializadas cobrem account update, startup, SLOT_CREATED_BANK, SLOT_DEAD, BlockMeta e EntryUpdateParent; hashes SHA-256 são verificados no teste.
+- O descriptor de teste é um subconjunto wire-compatible com os field numbers, enum values e wire types do schema fixado. O adapter de produção recebe os objetos gerados pelo cliente Yellowstone, sem importar o descriptor de teste.
+
+### Limites preservados
+- Sem endpoint Yellowstone/Geyser, cliente gRPC, captura contínua, reconnect/replay automático, RAW/SQLite, backfill ou operações on-chain.
+- Sem promoção de commitment/canonicalidade. Sem integração do BankLineageTracker à timeline; pareamento pre/post bank-aware continua bloqueado até essa integração e testes de forks concorrentes.
+- A validação CI desta revisão será registrada após a execução no novo HEAD; até lá, os testes novos ainda não são considerados aprovados.

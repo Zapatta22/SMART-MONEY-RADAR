@@ -319,7 +319,7 @@ No provider connection or financial execution is authorized by this document.
 - Eventos RAW sem uma entrega com sequência conhecida são ignorados na timeline e contabilizados no checkpoint; RAW permanece preservado.
 
 ### Próxima etapa
-Definir e implementar recuperação/backfill e checkpoints de projeção mais granulares, com cobertura auditável e reconciliação de eventos sem sequência. Não conectar provider nem declarar fork canônico por heurística.
+Integrar o checkpoint granular por fonte ao commit bem-sucedido do rebuild da timeline, de modo que uma interrupção entre projeção e checkpoint apenas deixe o checkpoint atrasado; em paralelo, definir uma política auditável para RAW sem sequência sem inventar ordem. Manter o full rebuild como fallback e continuar offline.
 
 
 ## Offline recovery and backfill state store — 19/11/2026

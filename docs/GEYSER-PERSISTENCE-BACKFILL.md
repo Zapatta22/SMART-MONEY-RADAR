@@ -264,3 +264,28 @@ Still not implemented:
 - live Yellowstone/Helius client, original protobuf wire-byte capture boundary, provider connection, credentials, continuous capture, or financial/on-chain execution.
 
 No provider connection or financial execution is authorized by this document.
+
+
+## Implementação offline da projeção persistente de account writes — 19/11/2026
+
+### Implementação
+- Criado `src/smart_money_radar/storage/geyser_account_write_projection.py`.
+- Criado `tests/test_geyser_account_write_projection.py`.
+- Classe: `SQLiteGeyserAccountWriteProjection`; API principal: `rebuild()`, `get_checkpoint()` e `list_writes()`.
+- A projeção compartilha o arquivo dedicado `smr_geyser.sqlite`; não reutiliza `smr_events.sqlite`.
+- Materializa somente eventos `event_kind=account` com `payload_encoding=normalized_json`. Outros tipos e encodings são contabilizados como ignorados, não reinterpretados.
+- Preserva `event_id`, source, pubkey, slot, write_version, bank_id, is_startup, txn_signature, lamports, owner, executable, rent_epoch, schema_version e os dados binários em Base64. Calcula também tamanho e SHA-256 dos bytes decodificados.
+- A tabela `geyser_account_writes` é uma projeção derivada; o RAW continua sendo a fonte autoritativa.
+- Checkpoint separado em `geyser_projection_checkpoints`, com nome/versão da projeção, geração, contagem de eventos fonte, contagem projetada/ignoradas, maior event_id observado e horário da reconstrução.
+- Reconstrução integral e atômica: lê o conjunto RAW de account/normalized_json, valida e materializa, substitui a projeção e atualiza checkpoint dentro da mesma transação SQLite. Registro malformado aborta a transação e mantém a projeção/checkpoint anteriores.
+- Reconstrução integral foi escolhida deliberadamente nesta versão: um cursor incremental baseado em event_id poderia perder eventos RAW que chegassem tardiamente ou por backfill com chave lexical anterior ao cursor. O campo source_max_event_id é diagnóstico, não cursor incremental.
+
+### Testes e CI
+- Seis testes novos cobrem materialização e preservação dos bytes, reconstrução idempotente/versionada, chegada tardia, contagem de eventos ignorados, rollback em RAW normalizado malformado e separação do checkpoint de transporte.
+- CI #1693 — run `44516277804`, push, commit `b62e8660b4bc32c9d921e5fcf09bdfdb428fbb67`: completed/success; **550/550 testes OK** em 4,216 s; `python -m compileall -q src tests` aprovado.
+
+### Limites preservados
+- Projeção offline; nenhum cliente gRPC, stream Yellowstone/Helius, captura wire, backfill real ou serviço foi conectado.
+- Não cria ainda timeline persistente, estado canônico de forks, transições pre/post, checkpoint incremental de projeção ou rotina de rebuild após reinício.
+- Reconstrução integral carrega os registros elegíveis em memória e mantém transação de escrita durante a operação; desempenho deverá ser medido antes de escolher estratégia incremental segura.
+- A projeção não converte estado de conta em swap, BUY/SELL, sinal ou autorização de execução.

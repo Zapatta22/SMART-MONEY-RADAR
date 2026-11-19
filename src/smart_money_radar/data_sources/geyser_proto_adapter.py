@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from smart_money_radar.data_sources.geyser_transaction_updates import (\n    NormalizedTransactionObservation,\n    normalize_transaction_update,\n)\nfrom smart_money_radar.data_sources.geyser_account_updates import (
+from smart_money_radar.data_sources.geyser_transaction_updates import (
+    NormalizedTransactionObservation,
+    normalize_transaction_update,
+)
+from smart_money_radar.data_sources.geyser_account_updates import (
     NormalizedAccountUpdate,
     normalize_account_update,
 )
@@ -156,11 +160,25 @@ def adapt_entry_update_parent(
 
 
 def adapt_transaction_update(
-    message: Any, *, source_id: str, stream_id: str, stream_sequence: int,\n    raw_message_bytes: bytes | None = None,\n) -> NormalizedTransactionObservation:\n    """Convert SubscribeUpdateTransaction and preserve transport provenance."""\n    return normalize_transaction_update(\n        message, source_id=source_id, stream_id=stream_id,\n        stream_sequence=stream_sequence, raw_message_bytes=raw_message_bytes,\n    )\n\n\ndef adapt_subscribe_update(\n    message: Any, *, source_id: str, stream_id: str, stream_sequence: int,\n    raw_message_bytes: bytes | None = None\n) -> (
+    message: Any, *, source_id: str, stream_id: str, stream_sequence: int,
+    raw_message_bytes: bytes | None = None,
+) -> NormalizedTransactionObservation:
+    """Convert SubscribeUpdateTransaction and preserve transport provenance."""
+    return normalize_transaction_update(
+        message, source_id=source_id, stream_id=stream_id,
+        stream_sequence=stream_sequence, raw_message_bytes=raw_message_bytes,
+    )
+
+
+def adapt_subscribe_update(
+    message: Any, *, source_id: str, stream_id: str, stream_sequence: int,
+    raw_message_bytes: bytes | None = None
+) -> (
     NormalizedAccountUpdate
     | NormalizedSlotUpdate
     | NormalizedBlockMeta
     | NormalizedEntryUpdateParent
+    | NormalizedTransactionObservation
     | None
 ):
     """Dispatch supported SubscribeUpdate oneof members.
@@ -171,7 +189,13 @@ def adapt_transaction_update(
     which_oneof = getattr(message, "WhichOneof", None)
     if not callable(which_oneof):
         raise TypeError("mensagem deve ser SubscribeUpdate protobuf com WhichOneof")
-    kind = which_oneof("update_oneof")\n    if kind == "transaction":\n        return adapt_transaction_update(\n            getattr(message, kind), source_id=source_id, stream_id=stream_id,\n            stream_sequence=stream_sequence, raw_message_bytes=raw_message_bytes,\n        )\n    adapters = {
+    kind = which_oneof("update_oneof")
+    if kind == "transaction":
+        return adapt_transaction_update(
+            getattr(message, kind), source_id=source_id, stream_id=stream_id,
+            stream_sequence=stream_sequence, raw_message_bytes=raw_message_bytes,
+        )
+    adapters = {
         "account": adapt_account_update,
         "slot": adapt_slot_update,
         "block_meta": adapt_block_meta,

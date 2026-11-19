@@ -9,6 +9,7 @@ transaction while reading the RAW snapshot and replacing the projection.
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 import binascii
 from datetime import datetime, timezone
 import hashlib
@@ -84,13 +85,17 @@ class SQLiteGeyserAccountWriteProjection:
                 );
             """)
 
+    @contextmanager
     def _connect(self):
         connection = sqlite3.connect(self.database_path, timeout=30.0)
-        connection.execute("PRAGMA busy_timeout = 30000")
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute("PRAGMA synchronous = FULL")
-        return connection
+        try:
+            connection.execute("PRAGMA busy_timeout = 30000")
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute("PRAGMA synchronous = FULL")
+            yield connection
+        finally:
+            connection.close()
 
     @staticmethod
     def _decode_account(row):

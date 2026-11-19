@@ -5,7 +5,9 @@ from pathlib import Path
 
 from smart_money_radar.data_sources.geyser_account_updates import NormalizedAccountUpdate
 from smart_money_radar.data_sources.geyser_ingestion import ingest_normalized_event
-from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+from smart_money_radar.storage.geyser_raw_store import (
+    RawDeliveryInput, RawEventInput, SQLiteGeyserRawStore,
+)
 from smart_money_radar.storage.geyser_recovery_store import SQLiteGeyserRecoveryStore
 from smart_money_radar.storage.geyser_account_timeline_projection import (
     PROJECTION_NAME as TIMELINE_PROJECTION_NAME,
@@ -144,6 +146,33 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         rows = self.audit.list_deliveries()
         self.assertEqual(len(rows), 2)
         self.assertNotEqual(rows[0]["event_id"], rows[1]["event_id"])
+        self.assertEqual(
+            [row["classification"] for row in rows],
+            ["UNSEQUENCED_UNRESOLVED", "UNSEQUENCED_UNRESOLVED"],
+        )
+        self.assertEqual([row["witness_delivery_ids"] for row in rows], [[], []])
+
+    def test_identical_received_timestamp_does_not_reconcile_distinct_raw_events(self):
+        received_at = "2026-11-19T12:00:00+00:00"
+        for event_id, payload in (("event-a", b"payload-a"), ("event-b", b"payload-b")):
+            self.raw.ingest(
+                RawEventInput(
+                    event_id=event_id,
+                    source_id="source-a",
+                    event_kind="account",
+                    schema_version="geyser-v16",
+                    payload_encoding="normalized_json",
+                    payload_bytes=payload,
+                ),
+                RawDeliveryInput(
+                    stream_id="stream-a",
+                    stream_sequence=None,
+                    received_at=received_at,
+                ),
+            )
+        self.audit.rebuild()
+        rows = self.audit.list_deliveries()
+        self.assertEqual(len(rows), 2)
         self.assertEqual(
             [row["classification"] for row in rows],
             ["UNSEQUENCED_UNRESOLVED", "UNSEQUENCED_UNRESOLVED"],

@@ -42,3 +42,10 @@ O valor bruto da transferência de referral deve ser exatamente `EvtSwap2.swap_r
 ## Limites
 
 O resultado continua `ATTRIBUTED`, nunca `MATCHED`. Esta camada não valida os deltas de token accounts/vaults, não reconcilia as transfer fees de referral, não cria SwapObservation e não produz BUY/SELL. A reconciliação econômica deve combinar EvtSwap2, input/output/referral transfers, Token-2022 withheld e deltas agregados por conta sem dividir arbitrariamente operações sequenciais.
+
+## Validações fail-closed adicionais
+
+- Somente `TRANSFER_CHECKED` e `TRANSFER_CHECKED_WITH_FEE` são aceitos para atribuição com mint/decimals.
+- `TRANSFER_CHECKED_WITH_FEE` exige Token-2022 e `0 <= fee_amount_raw <= amount_raw`; qualquer fee em tipo comum é rejeitada.
+- Amount bruto deve ser inteiro u64 positivo. Transferência de referral de valor zero não é atribuída; quando `referral_fee == 0`, nenhuma transferência é exigida.
+- Mesmo com essas validações, `ATTRIBUTED` não significa igualdade econômica: a taxa de transferência e os deltas ainda precisam ser reconciliados em módulo posterior.

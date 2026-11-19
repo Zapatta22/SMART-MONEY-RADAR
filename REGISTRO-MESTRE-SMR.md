@@ -1873,3 +1873,12 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - DAMM v2 pode atribuir TransferCheckedWithFee por CPI, mas permanece `ATTRIBUTED` com revisão de fee obrigatória; não há MATCHED econômico. Não se deve promover essa atribuição a observação.
 - Próxima ação: sincronizar PR #21 com o head atualizado do PR #18 por merge commit controlado e executar CI combinado antes de integrar.
 - Nenhuma RPC/Helius, importação histórica, escrita SQLite, checkpoint ou execução financeira foi realizada. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+## 259. CI combinado PR #21 + PR #18 aprovado — 19/11/2026
+
+- Branch `feat/token2022-transfer-checked-with-fee` sincronizada com a base `feat/token2022-transfer-fee-state-decoder` por merge commit `635c7fb86af18cabd4375717672b5f20a30e9449`; a base `9f6896ad6a73bebf86d72cdda58cf53a2e351b08` é ancestral do resultado.
+- Compare da árvore sincronizada: `ahead_by=21`, `behind_by=0`; GitHub informa `mergeable=true`.
+- CI combinado: runs `44441569790` (push) e `44441576528` (PR), ambos SUCCESS; logs confirmam **380 testes OK** e `python -m compileall -q src tests`.
+- Os testes validam parser raw/parsed, fee<=gross, Token-2022 exclusivo, reconciliação de deltas spendable, output líquido e construção de SwapDomainBundle com evidência bruta/fee/líquida.
+- PR #21 pode sair de Draft e ser integrada à base intermediária `feat/token2022-transfer-fee-state-decoder`; depois validar CI no merge commit.
+- A variante TransferCheckedWithFee não habilita por si só a reconciliação DAMM v2; nela permanece atribuição estrutural com revisão de taxa obrigatória.

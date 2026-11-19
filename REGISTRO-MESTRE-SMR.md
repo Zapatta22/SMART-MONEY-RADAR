@@ -2228,3 +2228,12 @@ Implementar adapter de fronteira para mensagens protobuf Yellowstone (ou mapping
 - Sem endpoint Yellowstone/Geyser, cliente gRPC, captura contínua, reconnect/replay automático, RAW/SQLite, backfill ou operações on-chain.
 - Sem promoção de commitment/canonicalidade. Sem integração do BankLineageTracker à timeline; pareamento pre/post bank-aware continua bloqueado até essa integração e testes de forks concorrentes.
 - A validação CI desta revisão será registrada após a execução no novo HEAD; até lá, os testes novos ainda não são considerados aprovados.
+
+
+## 284. Validação do adapter protobuf Yellowstone — 19/11/2026
+
+- CI #1617, run `44456501557`, no commit de implementação `060f922ccd6b3852e4415f62227d0c983b16c81d`: completed/success; **502/502 testes OK** em 4,064 s; `compileall -q src tests` concluído com sucesso.
+- O CI #1618 (evento pull_request) foi iniciado para o mesmo HEAD; a validação de referência já aprovada é o CI #1617 de push no mesmo SHA.
+- PR #23 permanece OPEN/DRAFT, `merged=false`, `mergeable=true`; HEAD de implementação `060f922ccd6b3852e4415f62227d0c983b16c81d`, base `feat/damm-v2-referral-transfer-attribution`.
+- `main` permanece intacta em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma integração/merge foi feita.
+- Próxima etapa: integrar `BankLineageTracker` à timeline com reconstrução pre/post condicionada à relação pai/filho de bancos verificada; cobrir forks concorrentes, updates fora de ordem, replay/reconnect e rollback exato. Ainda sem endpoint Geyser, captura contínua ou persistência RAW/SQLite.

@@ -2146,3 +2146,13 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - PR #23 continua OPEN/DRAFT, mergeable e sem merge; base `feat/damm-v2-referral-transfer-attribution`. `main` continua em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 - Limites importantes: timeline somente em memória; sem adapter protobuf Yellowstone oficial; sem commitment/blockhash/parent slot/fork identity; rollback é entrada explícita de um tracker externo, não detecção automática. Nenhuma conexão RPC/Helius, RAW, SQLite ou operação on-chain foi executada.
 - Próxima etapa: revisar o contrato do adapter Yellowstone com o schema oficial e definir como transportar commitment, blockhash/parent slot e sinais de rollback/replay sem confundir write_version com ordenação de instruções. Depois disso, desenhar baseline/backfill persistente antes de qualquer integração de provider. Não conectar serviço pago nem alterar SQLite/RAW sem autorização.
+
+
+## 280. Revisão do schema oficial Yellowstone — 19/11/2026
+
+- Revisada a definição oficial `yellowstone-grpc-proto/proto/geyser.proto` do projeto rpcpool/yellowstone-grpc: https://github.com/rpcpool/yellowstone-grpc/blob/master/yellowstone-grpc-proto/proto/geyser.proto.
+- Além de `slot`, `write_version` e `txn_signature`, `SubscribeUpdateAccount` contém `is_startup` e `bank_id` opcional; `SubscribeUpdateSlot` contém `parent`, `status`, `dead_error` e `bank_id` opcional. O enum `SlotStatus` inclui `SLOT_DEAD` e `SLOT_CREATED_BANK`.
+- O schema atual também define `SubscribeUpdateEntryUpdateParent`, que invalida dados do `cleared_bank_id` e informa `parent_slot`/ `parent_block_id`; a atualização `SLOT_CREATED_BANK` informa o banco substituto. `SubscribeUpdateBlock` fornece `blockhash`, `parent_slot` e `parent_blockhash`.
+- Implicação: rollback apenas por limiar de slot é insuficiente para distinguir forks/branches. A timeline implementada continua conservadora e só executa rollback quando recebe sinal externo explícito; ainda não resolve bank lineage automaticamente.
+- Próxima etapa de arquitetura: estender o envelope canônico para preservar `is_startup` e `bank_id`; normalizar slot lifecycle e invalidações de bank; associar account updates a block/bank lineage sem usar `write_version` como índice de instrução ou assumir canonicalidade por ordem de chegada. Só depois habilitar pareamento entre bancos distintos quando a relação pai/filho estiver demonstrada.
+- Nenhum código foi alterado nesta revisão documental; sem adapter protobuf, RPC/Helius, RAW ou SQLite.

@@ -1882,3 +1882,12 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - Os testes validam parser raw/parsed, fee<=gross, Token-2022 exclusivo, reconciliação de deltas spendable, output líquido e construção de SwapDomainBundle com evidência bruta/fee/líquida.
 - PR #21 pode sair de Draft e ser integrada à base intermediária `feat/token2022-transfer-fee-state-decoder`; depois validar CI no merge commit.
 - A variante TransferCheckedWithFee não habilita por si só a reconciliação DAMM v2; nela permanece atribuição estrutural com revisão de taxa obrigatória.
+
+## 260. Merge PR #21 e início da atribuição de referral DAMM v2 — 19/11/2026
+
+- PR #21 CLOSED/MERGED na base intermediária `feat/token2022-transfer-fee-state-decoder`.
+- Merge commit: `30ad85a374c7a35b07fda092c81e4978e5050aca`.
+- CI do merge commit: run `44441714786`, job `135283892091`, SUCCESS; **380 testes OK** e compileall aprovado.
+- A base TransferCheckedWithFee está integrada em branch intermediária; `main` permanece intacta.
+- Próxima dependência: PR #22, atribuição da transferência de referral DAMM v2. Fonte oficial `ix_p_swap.rs` confirma que a transferência referral sai do vault determinado por `FeeMode`, usa `swap_result.referral_fee` como valor bruto e ocorre antes da emissão de `EvtSwap2`.
+- Revisão atual adiciona validação de tipo, amount u64 positivo, programa Token-2022 obrigatório para TransferCheckedWithFee, fee não superior ao bruto e rejeição de fee em transferências comuns. O resultado continua somente `ATTRIBUTED`, sem reconciliação econômica.

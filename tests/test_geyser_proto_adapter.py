@@ -103,6 +103,7 @@ def _protobuf_update_class():
     transaction_update = msg("SubscribeUpdateTransaction")
     fld(transaction_update, "transaction", 1, T.TYPE_MESSAGE, ".geyser.SubscribeUpdateTransactionInfo")
     fld(transaction_update, "slot", 2, T.TYPE_UINT64)
+    fld(transaction_update, "bank_id", 3, T.TYPE_UINT64)
     msg("SubscribeUpdatePing")
     update = msg("SubscribeUpdate")
     update.oneof_decl.add(name="update_oneof")
@@ -190,6 +191,7 @@ class YellowstoneProtoAdapterTests(unittest.TestCase):
         signature = bytes(range(64))
         update = message.transaction
         update.slot = 123457
+        update.bank_id = 9001
         info = update.transaction
         info.signature = signature
         info.is_vote = True
@@ -211,6 +213,7 @@ class YellowstoneProtoAdapterTests(unittest.TestCase):
         )
         self.assertEqual(item.transaction_signature, _b58(signature))
         self.assertEqual(item.slot, 123457)
+        self.assertEqual(item.bank_id, 9001)
         self.assertEqual(item.transaction_index, 19)
         self.assertTrue(item.is_vote)
         self.assertEqual(item.transaction_payload, info.transaction.SerializeToString(deterministic=True))

@@ -3361,3 +3361,25 @@ Revisão das dependências:
 - PRs #21–#25 continuam OPEN/DRAFT, mergeable, sem reviews/threads registrados e sem merge. A cadeia continua empilhada em ordem #21 → #22 → #23 → #24 → #25.
 
 Progresso estimado da revisão técnica: **85%**. Conclusão estimada do módulo: **92%**. A fixture única com swaps positivos simultâneos DAMM v2 + Raydium CPMM continua como lacuna explícita. Próxima ação: fechar a revisão técnica da PR #25 e da cadeia, incluindo compatibilidade dos contratos e revisão final dos checks; não fazer merge sem autorização.
+
+
+## 231. Delimitação de escopo e validação após remoção do decoder roteado experimental — 19/11/2026
+
+Na revisão final dos arquivos da PR #25, foi encontrado `data_sources/routed_venue_swap_decoder.py`, um decoder experimental de PumpSwap/Meteora DLMM que:
+- não possuía teste dedicado no PR;
+- não tinha referência nos pontos de entrada revisados (`cli.py`, `WalletMonitor`, pipeline DAMM v2, resolver Token-2022 e validador Mainnet);
+- podia construir bundle DLMM mesmo sem associação única de `Swap2Evt`, usando transferência como evidência alternativa;
+- não integrava o fluxo coordenado/persistido desta PR e ampliava o escopo para o módulo seguinte.
+
+Para preservar a regra de fechar DAMM v2 + Raydium CPMM antes de iniciar PumpSwap/DLMM, o arquivo foi removido da branch atual. Nenhuma dependência do pipeline corrente foi encontrada nos pontos de entrada revisados. O trabalho futuro de PumpSwap/DLMM permanece adiado e deve ter módulo, contratos, fixtures e testes próprios.
+
+Commit de remoção: `74ba9146797f93af52939ff669fa4a07d03b9070`.
+
+Validação após remoção:
+- CI #1356, run `44430148964`, SUCCESS no commit `74ba9146797f93af52939ff669fa4a07d03b9070`.
+- Suíte: 538 testes executados, todos aprovados.
+- `python -m compileall -q src tests`: aprovado.
+- A lista de arquivos da PR #25 foi conferida novamente; `routed_venue_swap_decoder.py` não consta mais.
+- PR #25 continua OPEN/DRAFT, mergeable=true, base #24, head `74ba9146797f93af52939ff669fa4a07d03b9070`; nenhuma alteração na `main`.
+
+Progresso estimado: módulo **92%**, revisão técnica **90%**. Permanecem: revisão final de detalhes não centrais da PR #25, avaliação/decisão sobre fixture única com swaps positivos simultâneos DAMM v2 + CPMM e revisão da cadeia de merge em ordem. Nenhuma PR foi mergeada; não fazer merge sem autorização explícita.

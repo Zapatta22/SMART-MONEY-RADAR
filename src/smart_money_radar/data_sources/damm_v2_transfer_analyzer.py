@@ -239,6 +239,16 @@ def analyze_damm_v2_transfer_evidence(
         for transfer, expected_mint, expected_program, label, must_be_positive in expected:
             if transfer.program_id != expected_program:
                 invalid.append(f"programa token diverge da conta de {label}")
+            if (
+                isinstance(transfer.amount_raw, bool)
+                or not isinstance(transfer.amount_raw, int)
+                or not 0 < transfer.amount_raw <= (1 << 64) - 1
+            ):
+                invalid.append(f"quantidade bruta da transferência de {label} é inválida")
+            if transfer.instruction_type not in {
+                "TRANSFER_CHECKED", "TRANSFER_CHECKED_WITH_FEE"
+            }:
+                invalid.append(f"tipo de transferência de {label} não suportado")
             if transfer.mint is None or transfer.decimals is None:
                 invalid.append(f"mint/decimals ausentes na transferência de {label}")
             elif transfer.mint != expected_mint:
@@ -247,11 +257,14 @@ def analyze_damm_v2_transfer_evidence(
                 invalid.append(f"quantidade bruta da transferência de {label} não é positiva")
             if transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE":
                 if (
-                    isinstance(transfer.fee_amount_raw, bool)
+                    transfer.program_id != TOKEN_2022_PROGRAM_ID
+                    or isinstance(transfer.fee_amount_raw, bool)
                     or not isinstance(transfer.fee_amount_raw, int)
                     or not 0 <= transfer.fee_amount_raw <= transfer.amount_raw
                 ):
                     invalid.append(f"fee inválida na transferência de {label}")
+            elif transfer.fee_amount_raw is not None:
+                invalid.append(f"fee incompatível com tipo da transferência de {label}")
 
         if referral_transfer is not None:
             if referral_transfer.source_account != referral_vault:

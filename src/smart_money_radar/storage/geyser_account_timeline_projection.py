@@ -20,7 +20,7 @@ from smart_money_radar.data_sources.geyser_account_timeline import AccountUpdate
 from smart_money_radar.data_sources.geyser_bank_lineage import (
     BankKey, NormalizedBlockMeta, NormalizedEntryUpdateParent, NormalizedSlotUpdate,
 )
-from smart_money_radar.data_sources.geyser_event_identity import derive_event_identity
+from smart_money_radar.storage.geyser_recovery_store import SQLiteGeyserRecoveryStore
 
 
 PROJECTION_NAME = "geyser_account_timeline"
@@ -210,7 +210,7 @@ class SQLiteGeyserAccountTimelineProjection:
             connection.execute("BEGIN IMMEDIATE")
             rows = connection.execute("""
                 SELECT e.event_id,e.source_id,e.event_kind,e.schema_version,
-                       e.payload_encoding,e.payload_bytes,d.stream_id,d.stream_sequence
+                       e.payload_encoding,e.payload_bytes,d.stream_id,d.stream_sequence,d.delivery_id
                 FROM geyser_raw_events e
                 JOIN geyser_raw_deliveries d ON d.delivery_id=(
                     SELECT MIN(d2.delivery_id) FROM geyser_raw_deliveries d2
@@ -224,14 +224,21 @@ class SQLiteGeyserAccountTimelineProjection:
             timelines = {}
             replayed = 0
             skipped = source_count - len(rows)
+            replayed_by_source = {}
+            account_event_ids = {}
             for row in rows:
                 event = self._decode_event(row)
                 if event is None:
                     skipped += 1
                     continue
                 replayed += 1
+                replayed_by_source[row[1]] = replayed_by_source.get(row[1], 0) + 1
                 timeline = timelines.setdefault(row[1], AccountUpdateTimeline())
                 if isinstance(event, NormalizedAccountUpdate):
+                    account_event_ids[(
+                        event.source, event.pubkey, event.slot, event.bank_id,
+                        event.write_version, event.is_startup, event.event_fingerprint,
+                    )] = row[0]
                     timeline.add(event)
                 elif isinstance(event, NormalizedSlotUpdate):
                     timeline.add_slot_update(event)
@@ -249,7 +256,10 @@ class SQLiteGeyserAccountTimelineProjection:
             for timeline in timelines.values():
                 for record in timeline.timeline_records():
                     update = record.update
-                    event_id = self._event_id_for(update, rows)
+                    event_id = account_event_ids[(
+                        update.source, update.pubkey, update.slot, update.bank_id,
+                        update.write_version, update.is_startup, update.event_fingerprint,
+                    )]
                     account_rows.append((
                         event_id, update.source, update.pubkey, update.slot,
                         update.write_version, update.bank_id, update.txn_signature,
@@ -331,21 +341,84 @@ class SQLiteGeyserAccountTimelineProjection:
                  skipped_count=excluded.skipped_count,completed_at=excluded.completed_at
             """, (PROJECTION_NAME,PROJECTION_VERSION,generation,source_count,replayed,
                   len(account_rows),len(bank_rows),skipped,completed_at))
+            source_stats = connection.execute("""
+                SELECT e.source_id,COUNT(DISTINCT e.event_id),
+                       COUNT(DISTINCT d.delivery_id),COALESCE(MAX(d.delivery_id),0)
+                FROM geyser_raw_events e
+                LEFT JOIN geyser_raw_deliveries d ON d.event_id=e.event_id
+                GROUP BY e.source_id
+            """).fetchall()
+            transport_state = {}
+            for source_id, _, _, _ in source_stats:
+                checkpoint_rows = connection.execute("""
+                    SELECT baseline_kind,interrupted FROM geyser_transport_checkpoints
+                    WHERE source_id=?
+                """, (source_id,)).fetchall()
+                open_gaps = connection.execute("""
+                    SELECT COUNT(*) FROM geyser_transport_gaps
+                    WHERE source_id=? AND status='OPEN'
+                """, (source_id,)).fetchone()[0]
+                open_anomalies = connection.execute("""
+                    SELECT COUNT(*) FROM geyser_transport_anomalies
+                    WHERE source_id=? AND status='OPEN'
+                """, (source_id,)).fetchone()[0]
+                transport_state[source_id] = (
+                    checkpoint_rows, open_gaps, open_anomalies
+                )
             connection.commit()
+
+        # The derived generation is durable before any recovery checkpoint moves.
+        # If this second phase is interrupted, checkpoints safely lag and rebuild
+        # can be repeated; they are never advanced ahead of the projection.
+        recovery = SQLiteGeyserRecoveryStore(self.database_path)
+        timeline_gap_counts = {
+            source_id: len(timeline.gaps) for source_id, timeline in timelines.items()
+        }
+        projection_checkpoints = []
+        for source_id, event_count, delivery_count, last_delivery_id in source_stats:
+            checkpoint_rows, open_gaps, open_anomalies = transport_state[source_id]
+            skipped_source = event_count - replayed_by_source.get(source_id, 0)
+            declared = bool(checkpoint_rows) and all(
+                baseline == "adapter_declared" for baseline, _ in checkpoint_rows
+            )
+            transport_interrupted = (
+                any(bool(interrupted) for _, interrupted in checkpoint_rows)
+                or open_gaps > 0 or open_anomalies > 0
+            )
+            timeline_interrupted = timeline_gap_counts.get(source_id, 0) > 0
+            interrupted = bool(
+                skipped_source or transport_interrupted or timeline_interrupted
+            )
+            if not checkpoint_rows:
+                coverage = "UNKNOWN"
+            elif not declared:
+                coverage = "UNKNOWN"
+            elif interrupted:
+                coverage = "PARTIAL"
+            else:
+                coverage = "COMPLETE"
+            source_rows = [row for row in rows if row[1] == source_id]
+            last_event_id = source_rows[-1][0] if source_rows else None
+            projection_checkpoints.append(
+                recovery.record_projection_checkpoint(
+                    projection_name=PROJECTION_NAME,
+                    projection_version=PROJECTION_VERSION,
+                    source_id=source_id,
+                    generation=generation,
+                    last_delivery_id=last_delivery_id,
+                    last_event_id=last_event_id,
+                    source_delivery_count=delivery_count,
+                    projected_event_count=replayed_by_source.get(source_id, 0),
+                    skipped_unsequenced_count=skipped_source,
+                    input_coverage_status=coverage,
+                    continuity_interrupted=interrupted,
+                )
+            )
         return {"generation":generation,"source_event_count":source_count,
                 "replayed_event_count":replayed,"account_write_count":len(account_rows),
-                "bank_count":len(bank_rows),"skipped_count":skipped,"completed_at":completed_at}
-
-    @staticmethod
-    def _event_id_for(update, rows):
-        # Recompute the versioned logical identity, including account state bytes.
-        for row in rows:
-            if row[1] != update.source or row[2] != "account" or row[4] != "normalized_json":
-                continue
-            identity = derive_event_identity(update, schema_version=row[3])
-            if identity.event_id == row[0]:
-                return row[0]
-        raise ValueError("não foi possível associar escrita à identidade RAW")
+                "bank_count":len(bank_rows),"skipped_count":skipped,
+                "source_checkpoint_count":len(projection_checkpoints),
+                "completed_at":completed_at}
 
     def get_checkpoint(self):
         with self._connect() as connection:

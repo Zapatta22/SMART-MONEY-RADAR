@@ -3322,3 +3322,20 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - O serializador agora preserva também metadados protobuf presentes cuja serialização válida seja vazia (`b""`); ausência de meta continua distinguida de meta presente e vazia.
 - HEAD atual da branch de trabalho: `8780bab8319df3b36968042596566f4558f9e0d1`.
 - PR #37 permanece OPEN/DRAFT, destino `feat/token2022-transfer-checked-with-fee`; o primeiro CI no HEAD anterior falhou no fixture de dispatch. Aguardando execução/resultado no HEAD corrigido; não declarar CI aprovado.
+
+
+### Validação final da PR #39 — 19/11/2026
+- PR #37 foi fechada sem merge por ter sido supersedida após correção do fixture de dispatch; PR #38 foi fechada sem merge para que a validação fosse executada no commit que também inclui o teste protobuf wire-compatible. Nenhuma dessas PRs alterou a branch-base.
+- PR ativa: #39, https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/39, OPEN/DRAFT, base `feat/token2022-transfer-checked-with-fee`, head `feat/geyser-transaction-observation-final`.
+- HEAD de código/testes validado: `0d507b60c034a15112aae48244300a4a595d8343`.
+- CI run `44618347330`, job `135892970258`: SUCCESS.
+- Logs: `Ran 617 tests in 4.763s`; etapa `python -m compileall -q src tests` concluída SUCCESS.
+- O teste protobuf adicional percorre o envelope externo `SubscribeUpdate`, wrapper `SubscribeUpdateTransaction`, TransactionInfo, assinatura, slot, índice, Transaction, TransactionStatusMeta e bytes wire fornecidos.
+- A comparação confirma que a branch de trabalho está 20 commits à frente e 0 atrás da branch-base no merge base `f688d290115ada8067ea0b1465076ff99f2e5f7c`.
+- A comparação de `main` com o SHA previamente verificado `5060bc65ddf181a4736fdb662c44c3fec0dd7259` retornou identical: main permanece intacta.
+- Esta atualização do Registro Mestre é documental e posterior ao HEAD de código/testes validado; não altera código nem testes. Não declarar CI executado no commit documental resultante sem nova execução.
+
+### Estado e próxima etapa
+- Contrato inicial de observação de transações Yellowstone implementado e validado em CI.
+- Ainda falta: sequenciador compartilhado real para todas as mensagens SubscribeUpdate; integração de ordering_domain_id com account updates; captura de wire bytes na camada de transporte; persistência RAW; reconexão/gap/replay; decodificação integral de instruções/CPI; vínculo com transaction_order e snapshots históricos.
+- PR #39 permanece Draft e sem merge. A integração na branch Token-2022 e qualquer merge para `main` dependem de autorização expressa do usuário.

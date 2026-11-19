@@ -78,11 +78,28 @@ def _protobuf_update_class():
         ("parent_slot", 3, T.TYPE_UINT64), ("parent_block_id", 4, T.TYPE_BYTES),
     ):
         fld(entry_parent, n, i, t)
+    transaction_payload = msg("Transaction")
+    transaction_payload.field.add(
+        name="signatures", number=1, type=T.TYPE_BYTES, label=T.LABEL_REPEATED
+    )
+    fld(transaction_payload, "message", 2, T.TYPE_BYTES)
+    transaction_meta = msg("TransactionStatusMeta")
+    fld(transaction_meta, "fee", 1, T.TYPE_UINT64)
+    transaction_info = msg("SubscribeUpdateTransactionInfo")
+    fld(transaction_info, "signature", 1, T.TYPE_BYTES)
+    fld(transaction_info, "is_vote", 2, T.TYPE_BOOL)
+    fld(transaction_info, "transaction", 3, T.TYPE_MESSAGE, ".geyser.Transaction")
+    fld(transaction_info, "meta", 4, T.TYPE_MESSAGE, ".geyser.TransactionStatusMeta")
+    fld(transaction_info, "index", 5, T.TYPE_UINT64)
+    transaction_update = msg("SubscribeUpdateTransaction")
+    fld(transaction_update, "transaction", 1, T.TYPE_MESSAGE, ".geyser.SubscribeUpdateTransactionInfo")
+    fld(transaction_update, "slot", 2, T.TYPE_UINT64)
     update = msg("SubscribeUpdate")
     update.oneof_decl.add(name="update_oneof")
     for n, i, typ in (
         ("account", 2, "SubscribeUpdateAccount"), ("slot", 3, "SubscribeUpdateSlot"),
         ("block_meta", 7, "SubscribeUpdateBlockMeta"),
+        ("transaction", 4, "SubscribeUpdateTransaction"),
         ("entry_update_parent", 13, "SubscribeUpdateEntryUpdateParent"),
     ):
         fld(update, n, i, T.TYPE_MESSAGE, ".geyser." + typ, 0)
@@ -155,6 +172,34 @@ class YellowstoneProtoAdapterTests(unittest.TestCase):
             ("blockhash-child", 123455, "blockhash-parent"),
         )
         self.assertEqual(parent.parent_block_id, b"\x00opaque-parent-id\xff")
+
+    def test_transaction_update_uses_pinned_protobuf_shape_and_preserves_wire(self):
+        message = _UPDATE()
+        signature = bytes(range(64))
+        update = message.transaction
+        update.slot = 123457
+        info = update.transaction
+        info.signature = signature
+        info.is_vote = True
+        info.index = 19
+        info.transaction.signatures.append(signature)
+        info.transaction.message = b"solana-message"
+        info.meta.fee = 5000
+        raw = message.SerializeToString(deterministic=True)
+
+        item = adapt_subscribe_update(
+            message, source_id="yellowstone-validator-a",
+            stream_id="connection-a", ordering_domain_id="solana-ordering-a",
+            stream_sequence=101, raw_message_bytes=raw,
+        )
+        self.assertEqual(item.transaction_signature, _b58(signature))
+        self.assertEqual(item.slot, 123457)
+        self.assertEqual(item.transaction_index, 19)
+        self.assertTrue(item.is_vote)
+        self.assertEqual(item.transaction_payload, info.transaction.SerializeToString(deterministic=True))
+        self.assertEqual(item.meta_payload, info.meta.SerializeToString(deterministic=True))
+        self.assertEqual(item.raw_payload, raw)
+        self.assertEqual(item.raw_payload_provenance, "WIRE")
 
     def test_unhandled_or_empty_oneof_is_ignored(self):
         self.assertIsNone(adapt_subscribe_update(

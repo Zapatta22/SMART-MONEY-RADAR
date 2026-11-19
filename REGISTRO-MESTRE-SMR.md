@@ -3151,3 +3151,31 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 ### Próxima ação
 - Fazer revisão integrada focada da PR #23 no novo HEAD `5e61f7ac45d4ac205082b3cf638746d7b9359874`, com atenção às interfaces entre DAMM v2, SolanaTransactionEvidenceBundle, Token-2022 snapshots e Timeline/finality Geyser.
 - Apresentar achados e decisão técnica antes de qualquer merge da PR #23. `main` permanece intocada.
+
+## 311. Revalidação focada da PR #23 após integração PR #36 — 19/11/2026
+
+### Snapshot e evidências
+- Código integrado revisado no merge commit da PR #36: `5e61f7ac45d4ac205082b3cf638746d7b9359874`.
+- PR #23 permaneceu OPEN/DRAFT e não mergeada; branch de destino `feat/damm-v2-referral-transfer-attribution`.
+- CI pós-merge no commit `5e61f7ac45d4ac205082b3cf638746d7b9359874`: runs `44616027232` e `44616038524`, ambos SUCCESS; em ambos, Run unit tests e Compile source and tests SUCCESS.
+- Compare da PR #23: 305 commits ahead, 0 behind, merge base `0567eb9c4981ba6ffc33e98a402292130667760a`.
+- GitHub reportou PR #23 mergeable=true após atualização de estado; continua Draft.
+- HEAD documental posterior do Registro Mestre: `c4514e42c10b8a2a39bdefe25db7537f877393a3`. Esse commit altera apenas este registro; CI de código comprovado permanece no merge commit `5e61f7ac...`.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+### Revalidação dos achados anteriores
+- O gate de replay agora exclui qualquer delivery cuja tupla `(source_id, stream_id, stream_sequence)` tenha anomalia histórica, sem reabilitação por status RESOLVED.
+- Identidades de evento RAW com conflito registrado são excluídas da Timeline derivada.
+- SHA-256 é recalculado sobre os bytes persistidos exatos antes de decodificação; divergência aborta a transação e preserva a geração anterior.
+- Replay integral ordena por source/stream/sequence, permitindo inserir sequência tardia dentro da mesma stream sem comparar números de sequência entre streams.
+- Quatro testes de regressão específicos cobrem os casos anteriores; CI do merge commit concluiu com sucesso.
+- Os dois bloqueadores de integridade da revisão da PR #23 e o achado de replay tardio foram resolvidos no snapshot integrado.
+
+### Decisão e limites
+- Revisão focada pós-integração: os bloqueadores previamente registrados para a Timeline persistida foram eliminados; não foi identificado bloqueio novo decorrente da integração da PR #36.
+- A PR #23 pode avançar para a etapa de decisão de integração, mas permanece OPEN/DRAFT. Esta conclusão não executa aprovação formal no GitHub nem merge.
+- Ainda não existe adapter/provider live integrado, ingestão mainnet contínua, pipeline operacional de snapshots históricos, geração de SwapObservation/BUY/SELL ou execução financeira. A aprovação da camada offline não deve ser confundida com prontidão operacional do SMR.
+- Nenhuma alteração de código foi feita durante esta revalidação; somente este Registro Mestre foi atualizado.
+
+### Próxima ação
+- Apresentar ao usuário a decisão técnica e aguardar autorização expressa separada antes de marcar a PR #23 como Ready for review ou fazer merge na branch-base. `main` continua protegida e não autorizada para integração.

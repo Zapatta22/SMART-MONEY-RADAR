@@ -29,3 +29,12 @@ A transition requires both its prestate bank and poststate bank to be provider-r
 ## Validation scope
 
 Unit tests establish deterministic fail-closed behavior for commitment progression, ancestor finality, conflicts, and timeline eligibility. They do not establish correctness of a live provider integration or production consensus.
+
+## Transition provenance and legacy compatibility
+
+Every `AccountStateTransition` carries an explicit `evidence_classification`:
+
+- `BANK_PROVIDER_REPORTED_FINALIZED`: both bank-scoped states and every explicitly linked ancestor passed the bank usability/finality gates. This remains a provider-reported status, not independent proof of consensus or provider authenticity.
+- `LEGACY_UNSCOPED_UNVERIFIED`: historical linear pairing where account updates have no `bank_id`. This classification preserves compatibility and observability only; it is not commitment-verified, must not be promoted to `VERIFIED`, and must be rejected by consumers that require finalized bank evidence.
+
+No consumer may infer the bank-scoped classification from slot numbers, delivery order, or legacy continuity. A future operational adapter must explicitly require `BANK_PROVIDER_REPORTED_FINALIZED` and separately implement the provider trust controls described above.

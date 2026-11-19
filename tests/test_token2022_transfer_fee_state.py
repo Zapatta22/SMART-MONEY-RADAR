@@ -4,6 +4,7 @@ from smart_money_radar.data_sources.token2022_transfer_fee_state import (
     ACCOUNT_TYPE_ACCOUNT, ACCOUNT_TYPE_MINT, decode_transfer_fee_amount,
     decode_transfer_fee_amount_delta, decode_transfer_fee_config,
     decode_transfer_fee_config_optional,
+    decode_transfer_fee_config_mutation_instruction,
 )
 
 
@@ -206,6 +207,46 @@ class TransferFeeStateDecoderTests(unittest.TestCase):
         value = decode_transfer_fee_config_optional(mint_data([tlv(1, config())]))
         self.assertIsNotNone(value)
         self.assertEqual(value.fee_for_epoch(100).basis_points, 50)
+
+
+    def test_decode_set_transfer_fee_instruction(self):
+        data = bytes([26, 5]) + (250).to_bytes(2, "little") + (1234).to_bytes(8, "little")
+        result = decode_transfer_fee_config_mutation_instruction(data)
+        self.assertEqual(result.kind, "SET_TRANSFER_FEE")
+        self.assertEqual(result.transfer_fee_basis_points, 250)
+        self.assertEqual(result.maximum_fee, 1234)
+
+    def test_decode_initialize_transfer_fee_config_instruction(self):
+        data = (
+            bytes([26, 0]) + bytes(4) + bytes(4)
+            + (100).to_bytes(2, "little") + (999).to_bytes(8, "little")
+        )
+        result = decode_transfer_fee_config_mutation_instruction(data)
+        self.assertEqual(result.kind, "INITIALIZE_TRANSFER_FEE_CONFIG")
+        self.assertEqual(result.transfer_fee_basis_points, 100)
+        self.assertEqual(result.maximum_fee, 999)
+
+    def test_decode_initialize_transfer_fee_config_with_authority(self):
+        data = (
+            bytes([26, 0]) + (1).to_bytes(4, "little") + bytes(32)
+            + bytes(4) + (75).to_bytes(2, "little") + (500).to_bytes(8, "little")
+        )
+        result = decode_transfer_fee_config_mutation_instruction(data)
+        self.assertEqual(result.kind, "INITIALIZE_TRANSFER_FEE_CONFIG")
+        self.assertEqual(result.transfer_fee_basis_points, 75)
+
+    def test_transfer_fee_mutation_decoder_ignores_other_instruction_families(self):
+        self.assertIsNone(decode_transfer_fee_config_mutation_instruction(bytes([25, 0])))
+        self.assertIsNone(decode_transfer_fee_config_mutation_instruction(bytes([26, 1])))
+
+    def test_transfer_fee_mutation_decoder_rejects_malformed_init(self):
+        with self.assertRaisesRegex(ValueError, "COption"):
+            decode_transfer_fee_config_mutation_instruction(bytes([26, 0, 2, 0, 0, 0]))
+
+    def test_transfer_fee_mutation_decoder_rejects_invalid_basis_points(self):
+        data = bytes([26, 5]) + (10_001).to_bytes(2, "little") + (1).to_bytes(8, "little")
+        with self.assertRaisesRegex(ValueError, "excede 10000"):
+            decode_transfer_fee_config_mutation_instruction(data)
 
 if __name__ == "__main__":
     unittest.main()

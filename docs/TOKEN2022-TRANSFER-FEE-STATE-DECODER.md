@@ -38,3 +38,5 @@ Além do TLV, a decodificação valida:
 - Token account: estado Initialized ou Frozen; tags COption de delegate, is_native e close authority iguais a 0 ou 1.
 - Comprimento total de 355 bytes é rejeitado por colidir com o tamanho de Multisig.
 - Somente tipos ExtensionType definidos no commit oficial fixado são aceitos; tipos desconhecidos falham fechados.
+
+O resultado expõe `extension_types` (todos os tipos TLV conhecidos presentes). O consumidor deve inspecionar essa lista e bloquear extensões que não estejam cobertas pelo fluxo econômico; em particular, este decoder não interpreta extensões confidenciais de fee, transfer hooks ou outros mecanismos. O decoder também não valida o owner do account no runtime; o chamador deve comprovar que mint/token account pertence ao Token-2022 Program antes de usar o resultado.

@@ -1,6 +1,11 @@
 """Strict offline decoder for Token-2022 TransferFee extensions."""
 from dataclasses import dataclass
 
+from smart_money_radar.data_sources.solana_token_transfer_decoder import (
+    TOKEN_2022_PROGRAM_ID,
+    SolanaInstructionInventory,
+)
+
 MINT_BASE_LENGTH = 82
 TOKEN_ACCOUNT_BASE_LENGTH = 165
 ACCOUNT_TYPE_OFFSET = 165
@@ -35,6 +40,14 @@ class TransferFeeConfigState:
     def fee_for_epoch(self, epoch: int) -> TransferFeeRate:
         _u64(epoch, "epoch")
         return self.newer_transfer_fee if epoch >= self.newer_transfer_fee.epoch else self.older_transfer_fee
+
+
+@dataclass(frozen=True)
+class TransferFeeConfigInitInventory:
+    mint: str
+    initialization_positions: tuple[tuple[int, int], ...]
+    complete: bool
+    issues: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -247,4 +260,117 @@ def decode_transfer_fee_config_mutation_instruction(
         kind="INITIALIZE_TRANSFER_FEE_CONFIG" if subtag == 0 else "SET_TRANSFER_FEE",
         transfer_fee_basis_points=basis_points,
         maximum_fee=maximum_fee,
+    )
+
+
+def collect_transfer_fee_config_init_positions(
+    instruction_inventory: SolanaInstructionInventory,
+    mint: str,
+) -> TransferFeeConfigInitInventory:
+    """Collects all InitializeTransferFeeConfig positions for one mint.
+
+    Position is (outer_instruction_index, inner_instruction_index); -1 denotes
+    a top-level instruction. The inventory must cover all outer and CPI
+    instructions. SetTransferFee is validated but does not change the active
+    fee for the current epoch in the pinned Token-2022 implementation.
+    """
+    if not isinstance(instruction_inventory, SolanaInstructionInventory):
+        raise TypeError("instruction_inventory inválido")
+    if not isinstance(mint, str) or not mint:
+        raise ValueError("mint inválido")
+
+    issues = list(instruction_inventory.issues)
+    if not instruction_inventory.complete:
+        issues.append("inventário de instruções Solana incompleto")
+    positions = []
+
+    known_non_rate_mutations = {1, 2, 3, 4}
+    for instruction in instruction_inventory.instructions:
+        if instruction.program_id != TOKEN_2022_PROGRAM_ID:
+            continue
+        if instruction.accounts is None:
+            issues.append(
+                f"accounts Token-2022 não resolvidas em "
+                f"{instruction.instruction_index}/{instruction.inner_instruction_index}"
+            )
+            continue
+        if not instruction.accounts or instruction.accounts[0] != mint:
+            continue
+
+        position = (
+            instruction.instruction_index,
+            -1 if instruction.inner_instruction_index is None
+            else instruction.inner_instruction_index,
+        )
+        if instruction.data is not None:
+            data = instruction.data
+            if not data:
+                issues.append(f"data Token-2022 vazia em {position}")
+                continue
+            if data[0] != 26:
+                continue
+            if len(data) < 2:
+                issues.append(f"TransferFeeExtension truncada em {position}")
+                continue
+            subtag = data[1]
+            if subtag == 0:
+                try:
+                    mutation = decode_transfer_fee_config_mutation_instruction(data)
+                except (TypeError, ValueError) as exc:
+                    issues.append(f"InitializeTransferFeeConfig inválida em {position}: {exc}")
+                    continue
+                if mutation is None or mutation.kind != "INITIALIZE_TRANSFER_FEE_CONFIG":
+                    issues.append(f"InitializeTransferFeeConfig não decodificada em {position}")
+                    continue
+                positions.append(position)
+            elif subtag == 5:
+                try:
+                    mutation = decode_transfer_fee_config_mutation_instruction(data)
+                except (TypeError, ValueError) as exc:
+                    issues.append(f"SetTransferFee inválida em {position}: {exc}")
+                    continue
+                if mutation is None or mutation.kind != "SET_TRANSFER_FEE":
+                    issues.append(f"SetTransferFee não decodificada em {position}")
+            elif subtag not in known_non_rate_mutations:
+                issues.append(f"subtag TransferFeeExtension desconhecida {subtag} em {position}")
+            continue
+
+        parsed_type = (instruction.parsed_type or "").lower().replace("_", "")
+        if parsed_type == "initializetransferfeeconfig":
+            info = instruction.parsed_info or {}
+            basis_points = info.get("transferFeeBasisPoints")
+            maximum_fee = info.get("maximumFee")
+            if (
+                isinstance(basis_points, bool) or not isinstance(basis_points, int)
+                or not 0 <= basis_points <= 10_000
+                or isinstance(maximum_fee, bool) or not isinstance(maximum_fee, int)
+                or not 0 <= maximum_fee <= U64_MAX
+            ):
+                issues.append(f"InitializeTransferFeeConfig parsed inválida em {position}")
+                continue
+            positions.append(position)
+        elif parsed_type == "settransferfee":
+            info = instruction.parsed_info or {}
+            basis_points = info.get("transferFeeBasisPoints")
+            maximum_fee = info.get("maximumFee")
+            if (
+                isinstance(basis_points, bool) or not isinstance(basis_points, int)
+                or not 0 <= basis_points <= 10_000
+                or isinstance(maximum_fee, bool) or not isinstance(maximum_fee, int)
+                or not 0 <= maximum_fee <= U64_MAX
+            ):
+                issues.append(f"SetTransferFee parsed inválida em {position}")
+        elif parsed_type not in {
+            "transfercheckedwithfee",
+            "withdrawwithheldtokensfrommint",
+            "withdrawwithheldtokensfromaccounts",
+            "harvestwithheldtokenstomint",
+        }:
+            issues.append(f"tipo parsed Token-2022 não reconhecido para mint em {position}")
+
+    return TransferFeeConfigInitInventory(
+        mint=mint,
+        initialization_positions=tuple(sorted(positions)),
+        complete=not issues,
+        issues=tuple(issues),
     )

@@ -236,14 +236,15 @@ def analyze_damm_v2_transfer_evidence(
             ))
 
         invalid = []
-        for transfer, expected_mint, expected_program, label, must_be_positive in expected:
+        for transfer, expected_mint, expected_program, label, _must_be_positive in expected:
             if transfer.program_id != expected_program:
                 invalid.append(f"programa token diverge da conta de {label}")
-            if (
-                isinstance(transfer.amount_raw, bool)
-                or not isinstance(transfer.amount_raw, int)
-                or not 0 < transfer.amount_raw <= (1 << 64) - 1
-            ):
+            amount_valid = (
+                not isinstance(transfer.amount_raw, bool)
+                and isinstance(transfer.amount_raw, int)
+                and 0 < transfer.amount_raw <= (1 << 64) - 1
+            )
+            if not amount_valid:
                 invalid.append(f"quantidade bruta da transferência de {label} é inválida")
             if transfer.instruction_type not in {
                 "TRANSFER_CHECKED", "TRANSFER_CHECKED_WITH_FEE"
@@ -253,11 +254,10 @@ def analyze_damm_v2_transfer_evidence(
                 invalid.append(f"mint/decimals ausentes na transferência de {label}")
             elif transfer.mint != expected_mint:
                 invalid.append(f"mint da transferência de {label} diverge da conta")
-            if must_be_positive and transfer.amount_raw <= 0:
-                invalid.append(f"quantidade bruta da transferência de {label} não é positiva")
             if transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE":
                 if (
                     transfer.program_id != TOKEN_2022_PROGRAM_ID
+                    or not amount_valid
                     or isinstance(transfer.fee_amount_raw, bool)
                     or not isinstance(transfer.fee_amount_raw, int)
                     or not 0 <= transfer.fee_amount_raw <= transfer.amount_raw

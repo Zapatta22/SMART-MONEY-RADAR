@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 import sqlite3
 import tempfile
 import unittest
@@ -195,6 +196,61 @@ class GeyserAccountTimelineProjectionTests(unittest.TestCase):
             recovery.get_projection_checkpoint(PROJECTION_NAME,PROJECTION_VERSION,self.source)["generation"],
             previous_recovery["generation"],
         )
+
+
+    def test_raw_identity_conflict_excludes_event_from_timeline(self):
+        result = self.add(self.account(100, 1, 1))
+        with sqlite3.connect(self.db) as connection:
+            payload_hash = connection.execute(
+                "SELECT payload_sha256 FROM geyser_raw_events WHERE event_id=?",
+                (result.event_id,),
+            ).fetchone()[0]
+            connection.execute(
+                """INSERT INTO geyser_raw_conflicts
+                (event_id,source_id,existing_sha256,incoming_sha256,incoming_payload,
+                 detected_at,reason)
+                VALUES (?,?,?,?,?,?,?)""",
+                (
+                    result.event_id,self.source,payload_hash,"f" * 64,b"conflicting-payload",
+                    "2026-11-19T17:00:00+00:00","test identity conflict",
+                ),
+            )
+
+        summary = self.projection.rebuild()
+        self.assertEqual(summary["account_write_count"], 0)
+        self.assertEqual(self.projection.list_account_writes(), [])
+
+    def test_open_transport_anomaly_skips_first_delivery_for_later_eligible_replay(self):
+        self.raw.register_stream(self.source, "stream-b", 9)
+        self.add(replace(self.account(99, 1, 9), stream_id="stream-b"))
+        first = self.add(self.account(100, 2, 1))
+        self.assertEqual(first.status, "inserted")
+        with sqlite3.connect(self.db) as connection:
+            first_delivery = connection.execute(
+                "SELECT delivery_id FROM geyser_raw_deliveries WHERE event_id=?",
+                (first.event_id,),
+            ).fetchone()[0]
+            connection.execute(
+                """INSERT INTO geyser_transport_anomalies
+                (source_id,stream_id,stream_sequence,delivery_id,reason,status,detected_at)
+                VALUES (?,?,?,?,?,'OPEN',?)""",
+                (
+                    self.source,"stream-a",1,first_delivery,"test open anomaly",
+                    "2026-11-19T17:00:00+00:00",
+                ),
+            )
+
+        replay = self.add(replace(self.account(100, 2, 10), stream_id="stream-b"))
+        self.assertEqual(replay.status, "duplicate")
+        self.assertEqual(replay.event_id, first.event_id)
+
+        summary = self.projection.rebuild()
+        self.assertEqual(summary["account_write_count"], 2)
+        writes = self.projection.list_account_writes("acct")
+        target = next(write for write in writes if write["slot"] == 100)
+        self.assertEqual(target["continuity_baseline"], 0)
+        self.assertEqual(target["baseline"], 0)
+
 
 
 if __name__ == "__main__":

@@ -402,6 +402,31 @@ class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
                 [_swap()], _pair(), _deltas(), monitored_wallet=""
             )
 
+    def test_rejects_transfer_checked_with_fee_under_non_token2022_program(self):
+        transfers = _pair()
+        transfers[0] = SolanaTokenTransfer(
+            **{
+                **transfers[0].__dict__,
+                "instruction_type": "TRANSFER_CHECKED_WITH_FEE",
+                "fee_amount_raw": 1,
+            }
+        )
+        result = reconcile_raydium_cpmm_swaps(
+            [_swap()], transfers, _deltas(), monitored_wallet=WALLET
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("fora dos tipos base", result.reason)
+
+    def test_rejects_fee_metadata_on_non_fee_transfer(self):
+        transfers = _pair()
+        transfers[0] = SolanaTokenTransfer(
+            **{**transfers[0].__dict__, "fee_amount_raw": 1}
+        )
+        result = reconcile_raydium_cpmm_swaps(
+            [_swap()], transfers, _deltas(), monitored_wallet=WALLET
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -481,6 +481,7 @@ class SQLiteEventStore:
             raise ValueError("Esta versão do EventStore aceita swaps apenas da chain Solana.")
         with self._connection_scope() as connection:
             with connection:
+                connection.execute("BEGIN IMMEDIATE")
                 parent = connection.execute(
                     """SELECT 1 FROM observed_transactions
                        WHERE wallet_address = ? AND signature = ?""",
@@ -488,17 +489,19 @@ class SQLiteEventStore:
                 ).fetchone()
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes do swap.")
-                existed = connection.execute(
-                    "SELECT 1 FROM swap_observations WHERE operation_id = ?", (operation_id,)
-                ).fetchone() is not None
+                existing = connection.execute(
+                    "SELECT wallet_address FROM swap_observations WHERE operation_id = ?",
+                    (operation_id,),
+                ).fetchone()
+                if existing is not None and existing[0] != observation.wallet_address:
+                    raise ValueError("operation_id já está associado a outra carteira.")
                 connection.execute(
                     """INSERT INTO swap_observations
                        (operation_id, chain, wallet_address, signature, input_mint, output_mint,
                         input_amount, output_amount, observed_at, parser_version)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(operation_id) DO UPDATE SET
-                        chain=excluded.chain, wallet_address=excluded.wallet_address,
-                        signature=excluded.signature, input_mint=excluded.input_mint,
+                        input_mint=excluded.input_mint,
                         output_mint=excluded.output_mint, input_amount=excluded.input_amount,
                         output_amount=excluded.output_amount, observed_at=excluded.observed_at,
                         parser_version=excluded.parser_version""",
@@ -524,27 +527,27 @@ class SQLiteEventStore:
                      json.dumps(list(evidence.cpi_path), separators=(",", ":")),
                      json.dumps(list(evidence.evidence), separators=(",", ":"))),
                 )
-                return not existed
+                return existing is None
 
     def get_swap_bundle(self, operation_id: str) -> dict | None:
         """Recupera contratos persistidos sem perder precisão decimal."""
         with self._connection_scope() as connection:
-            obs = connection.execute(
-                """SELECT chain, wallet_address, signature, input_mint, output_mint,
-                          input_amount, output_amount, observed_at, parser_version
-                   FROM swap_observations WHERE operation_id = ?""", (operation_id,)
-            ).fetchone()
-            if obs is None:
-                return None
-            cls = connection.execute(
-                "SELECT side, confidence, reason FROM swap_classifications WHERE operation_id = ?",
+            row = connection.execute(
+                """SELECT o.chain, o.wallet_address, o.signature, o.input_mint,
+                          o.output_mint, o.input_amount, o.output_amount, o.observed_at,
+                          o.parser_version, c.side, c.confidence, c.reason,
+                          e.program_id, e.venue, e.instruction_index, e.cpi_path_json,
+                          e.evidence_json
+                   FROM swap_observations AS o
+                   LEFT JOIN swap_classifications AS c USING (operation_id)
+                   LEFT JOIN swap_evidence AS e USING (operation_id)
+                   WHERE o.operation_id = ?""",
                 (operation_id,),
             ).fetchone()
-            ev = connection.execute(
-                """SELECT program_id, venue, instruction_index, cpi_path_json, evidence_json
-                   FROM swap_evidence WHERE operation_id = ?""", (operation_id,)
-            ).fetchone()
-        if cls is None or ev is None:
+        if row is None:
+            return None
+        obs, cls, ev = row[:9], row[9:12], row[12:]
+        if cls[0] is None or ev[0] is None:
             raise RuntimeError("Bundle de swap incompleto: classificação ou evidência ausente.")
         return {
             "observation": SwapObservation(
@@ -555,12 +558,12 @@ class SQLiteEventStore:
             ),
             "classification": SwapClassification(
                 operation_id=operation_id, side=cls[0], confidence=Decimal(cls[1]), reason=cls[2]
-            ) if cls else None,
+            ),
             "evidence": SwapEvidence(
                 operation_id=operation_id, program_id=ev[0], venue=ev[1],
                 instruction_index=ev[2], cpi_path=tuple(json.loads(ev[3])),
                 evidence=tuple(json.loads(ev[4])),
-            ) if ev else None,
+            ),
         }
 
     def get_raw_transaction(self, wallet_address: str, signature: str) -> dict | None:

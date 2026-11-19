@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -9,7 +10,9 @@ from smart_money_radar.data_sources.geyser_bank_lineage import (
     NormalizedBlockMeta, NormalizedEntryUpdateParent, NormalizedSlotUpdate,
 )
 from smart_money_radar.data_sources.geyser_ingestion import ingest_normalized_event
-from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+from smart_money_radar.storage.geyser_raw_store import (
+    RawDeliveryInput, RawEventInput, SQLiteGeyserRawStore,
+)
 from smart_money_radar.storage.geyser_recovery_store import SQLiteGeyserRecoveryStore
 from smart_money_radar.storage.geyser_account_timeline_projection import (
     PROJECTION_NAME, PROJECTION_VERSION, SQLiteGeyserAccountTimelineProjection,
@@ -143,12 +146,16 @@ class GeyserAccountTimelineProjectionTests(unittest.TestCase):
         self.assertEqual(checkpoint["projection_version"],PROJECTION_VERSION)
         self.assertEqual(len(self.projection.list_account_writes()),1)
 
-    def test_late_raw_event_is_included_on_full_rebuild(self):
-        self.add(self.account(100,2,2,pubkey="later"))
-        self.projection.rebuild()
-        self.add(self.account(99,1,3,pubkey="earlier"))
+    def test_late_arriving_sequence_is_replayed_in_stream_order(self):
+        self.add(self.account(100,1,1))
+        self.add(self.account(102,3,3,signature="third"))
+        self.add(self.account(101,2,2,signature="second"))
         result=self.projection.rebuild()
-        self.assertEqual(result["account_write_count"],2)
+        writes=self.projection.list_account_writes("acct")
+        self.assertEqual(result["account_write_count"],3)
+        self.assertEqual([row["slot"] for row in writes],[100,101,102])
+        self.assertEqual([row["continuity_baseline"] for row in writes],[0,0,0])
+        self.assertEqual(self.projection.list_gaps(),[])
 
     def test_stream_gap_is_persisted_and_breaks_predecessor_continuity(self):
         self.add(self.account(100,1,1))
@@ -173,6 +180,73 @@ class GeyserAccountTimelineProjectionTests(unittest.TestCase):
         self.projection.rebuild()
         self.assertEqual(len(self.projection.list_account_writes()),2)
         self.assertEqual(self.projection.list_gaps(),[])
+
+
+    def test_resolved_transport_anomaly_still_taints_every_delivery_of_sequence(self):
+        self.raw.register_stream(self.source,self.stream,1)
+        self.add(self.account(100,1,1,pubkey="first"))
+        self.add(self.account(101,1,1,pubkey="second"))
+        anomalies=self.raw.list_transport_anomalies(self.source,self.stream,status="OPEN")
+        self.assertEqual(len(anomalies),1)
+        self.raw.resolve_transport_anomaly(anomalies[0]["anomaly_id"],"revisão administrativa")
+        self.assertEqual(
+            self.raw.list_transport_anomalies(self.source,self.stream,status="OPEN"),[]
+        )
+        result=self.projection.rebuild()
+        self.assertEqual(result["account_write_count"],0)
+        self.assertEqual(self.projection.list_account_writes(),[])
+
+    def test_raw_identity_conflict_taints_original_event_from_timeline(self):
+        original=self.add(self.account(100,1,1))
+        conflict=self.raw.ingest(
+            RawEventInput(
+                event_id=original.event_id,
+                source_id=self.source,
+                event_kind="account",
+                schema_version="geyser-v16",
+                payload_encoding="normalized_json",
+                payload_bytes=b'{"payload":"conflicting identity"}',
+            ),
+            RawDeliveryInput(
+                stream_id=self.stream,stream_sequence=2,delivery_kind="live"
+            ),
+        )
+        self.assertEqual(conflict.status,"conflict")
+        result=self.projection.rebuild()
+        self.assertEqual(result["account_write_count"],0)
+        self.assertEqual(self.projection.list_account_writes(),[])
+
+    def test_valid_json_payload_mutation_fails_raw_hash_and_rolls_back_generation(self):
+        self.add(self.account(100,1,1))
+        self.projection.rebuild()
+        second=self.add(self.account(101,2,2))
+        with sqlite3.connect(self.db) as connection:
+            row=connection.execute(
+                "SELECT payload_bytes,payload_sha256 FROM geyser_raw_events WHERE event_id=?",
+                (second.event_id,),
+            ).fetchone()
+            original_digest=row[1]
+            raw=json.loads(row[0])
+            raw["payload"]["lamports"] += 1
+            mutated=json.dumps(raw,separators=(",",":")).encode()
+            self.assertNotEqual(hashlib.sha256(mutated).hexdigest(),original_digest)
+            connection.execute(
+                "UPDATE geyser_raw_events SET payload_bytes=? WHERE event_id=?",
+                (mutated,second.event_id),
+            )
+        previous=self.projection.get_checkpoint()
+        recovery=SQLiteGeyserRecoveryStore(self.db)
+        previous_recovery=recovery.get_projection_checkpoint(
+            PROJECTION_NAME,PROJECTION_VERSION,self.source
+        )
+        with self.assertRaisesRegex(ValueError,"SHA-256 RAW diverge"):
+            self.projection.rebuild()
+        self.assertEqual(len(self.projection.list_account_writes()),1)
+        self.assertEqual(self.projection.get_checkpoint()["generation"],previous["generation"])
+        self.assertEqual(
+            recovery.get_projection_checkpoint(PROJECTION_NAME,PROJECTION_VERSION,self.source)["generation"],
+            previous_recovery["generation"],
+        )
 
     def test_bad_raw_payload_rolls_back_previous_generation(self):
         self.add(self.account(100,1,1))

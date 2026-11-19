@@ -115,7 +115,7 @@ def normalize_slot_update(
     parent_slot = _optional_u64(payload.get("parent"), "parent")
     bank_id = _optional_u64(payload.get("bank_id"), "bank_id")
     status = payload.get("status")
-    if status not in SLOT_STATUSES:
+    if not isinstance(status, str) or status not in SLOT_STATUSES:
         raise ValueError("status de slot desconhecido")
     if status == "SLOT_CREATED_BANK" and bank_id is None:
         raise ValueError("SLOT_CREATED_BANK exige bank_id")
@@ -250,7 +250,8 @@ class BankLineageTracker:
             event.source_id, event.slot, event.bank_id
         )
         if event.status == "SLOT_DEAD":
-            self._dead_slots.add((event.source_id, event.slot))
+            if key is None:
+                self._dead_slots.add((event.source_id, event.slot))
             targets = (
                 [self._node(key)] if key is not None
                 else [n for k, n in self._banks.items()
@@ -296,6 +297,8 @@ class BankLineageTracker:
             return BankUpdateResult("duplicate")
         key = BankKey(event.source_id, event.slot, event.cleared_bank_id)
         node = self._node(key)
+        if node.parent_slot is not None and node.parent_slot != event.parent_slot:
+            return self._conflict(key, "parent_slot_changed", "EntryUpdateParent trouxe parent_slot incompatível")
         node.invalidated = True
         node.cleared_by_parent_update = True
         node.parent_slot = event.parent_slot
@@ -311,6 +314,8 @@ class BankLineageTracker:
         node = self._node(key)
         if node.blockhash is not None and node.blockhash != event.blockhash:
             return self._conflict(key, "blockhash_changed", "mesmo bank_id recebeu blockhash diferente")
+        if node.parent_slot is not None and node.parent_slot != event.parent_slot:
+            return self._conflict(key, "parent_slot_changed", "slot update e block metadata discordam")
         if node.parent_blockhash is not None and (
             node.parent_blockhash != event.parent_blockhash
             or node.parent_slot != event.parent_slot
@@ -367,6 +372,8 @@ class BankLineageTracker:
             current = self._banks.get(current.parent_key)
             if current is None:
                 return None
-        if current.parent_blockhash is not None and current.parent_key is None:
+        if current.parent_key is None and (
+            current.parent_blockhash is not None or current.parent_slot is not None
+        ):
             return None
         return False

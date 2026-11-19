@@ -2131,3 +2131,18 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - PR #23 continua OPEN/DRAFT, `mergeable=true`, `mergeable_state=clean`, sem merge; PR #22 permanece Draft.
 - `main` continua `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 - Próxima implementação definida: normalizador provider-neutral de Yellowstone/Geyser account updates e timeline por pubkey, preservando slot, write_version, txn_signature e stream sequence; construir pareamento pre/post, startup baseline, recuperação de lacunas/replay e descarte de forks antes de conectar Helius ou outro provider.
+
+
+## 279. Implementação inicial da timeline histórica Geyser — 19/11/2026
+
+- CI #1567 (run `44454181573`) validou o normalizador provider-neutral de account updates: **464 testes OK** e `compileall` aprovado.
+- Na branch `feat/damm-v2-economic-reconciliation`, foram adicionados:
+  - `src/smart_money_radar/data_sources/geyser_account_timeline.py`: timeline em memória por pubkey; ordenação ledger por `(slot, write_version)`; separação de transporte por `stream_id/stream_sequence`; deduplicação; conflitos de identidade; detecção de gaps/reconexão; pareamento conservador pre/post; rollback explícito com preservação de updates órfãos.
+  - `tests/test_geyser_account_timeline.py`: 12 testes para ordenação, replay, colisões, gaps, reconexão, assinatura ausente, rollback e independência entre contas.
+  - `docs/GEYSER-ACCOUNT-TIMELINE.md`: contrato, semântica e limitações.
+- CI #1571 (run `44455090010`) no commit de testes: completed/success, **476 testes OK**, compileall aprovado.
+- CI #1572 (run `44455118052`) no HEAD documental `5bd3e7f91c693dbb37563db7d874702675bd8ad1`: completed/success, **476 testes OK**, compileall aprovado.
+- Commits: timeline `68d4533b5fdc5f69004577b64536fdaff7ac0405`; testes `e3000d0d727625dc71debf54fdc6d851b1824041`; documentação `5bd3e7f91c693dbb37563db7d874702675bd8ad1`.
+- PR #23 continua OPEN/DRAFT, mergeable e sem merge; base `feat/damm-v2-referral-transfer-attribution`. `main` continua em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Limites importantes: timeline somente em memória; sem adapter protobuf Yellowstone oficial; sem commitment/blockhash/parent slot/fork identity; rollback é entrada explícita de um tracker externo, não detecção automática. Nenhuma conexão RPC/Helius, RAW, SQLite ou operação on-chain foi executada.
+- Próxima etapa: revisar o contrato do adapter Yellowstone com o schema oficial e definir como transportar commitment, blockhash/parent slot e sinais de rollback/replay sem confundir write_version com ordenação de instruções. Depois disso, desenhar baseline/backfill persistente antes de qualquer integração de provider. Não conectar serviço pago nem alterar SQLite/RAW sem autorização.

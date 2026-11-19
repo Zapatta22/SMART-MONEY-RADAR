@@ -2437,8 +2437,8 @@ Formalizar a derivação determinística de `event_id` por tipo de evento e vers
 - Integração de teste com `SQLiteGeyserRawStore`: mesmo event_id + bytes alterados gera conflito e mantém payload original imutável.
 
 ### Limites
-- O helper ainda precisa ser chamado pelo futuro coordenador de ingestão; não está acoplado ao adapter protobuf nem ao método `ingest`.
-- Nenhuma persistência normalizada, timeline persistente, continuidade/epoch ou backfill foi implantado nesta etapa.
+- Atualização pela seção 291: o helper agora é chamado pelo coordenador offline `data_sources/geyser_ingestion.py`; ainda não está acoplado automaticamente ao adapter protobuf nem a um worker de transporte.
+- Atualização pela seção 291: conteúdo normalizado já é arquivado como `normalized_json` no RAW store. Ainda faltam projeções/tabelas normalizadas dedicadas, timeline persistente, continuidade/epoch e backfill.
 - Sem endpoint/cliente Yellowstone/Helius, captura wire, credenciais, VPS, operação on-chain ou execução financeira.
 - PR #23 continua Draft e sem merge; `main` permanece intocada.
 

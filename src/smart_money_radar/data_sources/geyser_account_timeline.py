@@ -9,6 +9,13 @@ from dataclasses import dataclass
 from typing import Literal
 
 from smart_money_radar.data_sources.geyser_account_updates import NormalizedAccountUpdate
+from smart_money_radar.data_sources.geyser_bank_lineage import (
+    BankKey,
+    BankLineageTracker,
+    NormalizedBlockMeta,
+    NormalizedEntryUpdateParent,
+    NormalizedSlotUpdate,
+)
 
 
 @dataclass(frozen=True)
@@ -68,7 +75,8 @@ class AccountUpdateTimeline:
     state is unknown. A baseline is never emitted as a transaction transition.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, bank_lineage_tracker: BankLineageTracker | None = None) -> None:
+        self.bank_lineage_tracker = bank_lineage_tracker or BankLineageTracker()
         self._events: dict[str, list[_TimelineEntry]] = {}
         self._orphaned: list[NormalizedAccountUpdate] = []
         self._fingerprints: set[str] = set()
@@ -203,6 +211,18 @@ class AccountUpdateTimeline:
         self._fingerprints.add(update.event_fingerprint)
         return TimelineInsertResult("inserted", gap=gap)
 
+    def add_slot_update(self, event: NormalizedSlotUpdate):
+        """Feed a normalized Yellowstone slot lifecycle event into bank lineage."""
+        return self.bank_lineage_tracker.add_slot_update(event)
+
+    def add_block_meta(self, event: NormalizedBlockMeta):
+        """Feed block metadata; only exact parent blockhash matches create lineage."""
+        return self.bank_lineage_tracker.add_block_meta(event)
+
+    def add_entry_update_parent(self, event: NormalizedEntryUpdateParent):
+        """Invalidate the exact cleared bank without deleting its audit history."""
+        return self.bank_lineage_tracker.add_entry_update_parent(event)
+
     def events_for(self, pubkey: str) -> tuple[NormalizedAccountUpdate, ...]:
         """Return active writes for one account in ledger order."""
         return tuple(entry.update for entry in self._events.get(pubkey, ()))
@@ -220,30 +240,58 @@ class AccountUpdateTimeline:
     def transition_for(
         self, txn_signature: str, *, pubkey: str | None = None
     ) -> tuple[AccountStateTransition, ...]:
-        """Return only transitions with an observed predecessor in the same epoch.
+        """Return pre/post states only when their bank relationship is proven.
 
-        Missing txn_signature, first-seen baselines, and writes immediately after
-        a gap/reconnect/rollback are deliberately not promoted to pre/post pairs.
+        Non-bank-scoped legacy updates retain the original same-epoch linear
+        rule. Bank-scoped updates require both banks to be observed and usable.
+        Cross-bank pairs additionally require an exact verified ancestor edge
+        chain; a shared slot, parent slot number, or delivery order is not enough.
         """
         if not isinstance(txn_signature, str) or not txn_signature.strip():
             raise ValueError("txn_signature deve ser texto não vazio")
         transitions: list[AccountStateTransition] = []
         accounts = (pubkey,) if pubkey is not None else tuple(self._events)
+        tracker = self.bank_lineage_tracker
         for account in accounts:
             entries = self._events.get(account, ())
             for index, entry in enumerate(entries):
                 update = entry.update
                 if update.txn_signature != txn_signature or entry.baseline or index == 0:
                     continue
-                previous = entries[index - 1]
-                # Fork-scoped updates require a verified bank-parent chain. This
-                # linear timeline has no tracker dependency, so fail closed.
-                if update.is_startup or previous.update.is_startup:
+                if update.is_startup:
                     continue
-                if update.bank_id is not None or previous.update.bank_id is not None:
+                candidates: list[_TimelineEntry] = []
+                for previous in entries[:index]:
+                    prior = previous.update
+                    if (
+                        previous.continuity_epoch != entry.continuity_epoch
+                        or prior.is_startup
+                        or prior.ordering_key >= update.ordering_key
+                    ):
+                        continue
+                    if update.bank_id is None or prior.bank_id is None:
+                        # Never bridge a bank-scoped write to an unscoped one.
+                        if update.bank_id is None and prior.bank_id is None:
+                            candidates.append(previous)
+                        continue
+                    target_key = BankKey(update.source, update.slot, update.bank_id)
+                    prior_key = BankKey(prior.source, prior.slot, prior.bank_id)
+                    if tracker.is_bank_usable(target_key) is not True:
+                        continue
+                    if tracker.is_bank_usable(prior_key) is not True:
+                        continue
+                    if tracker.is_ancestor(prior_key, target_key) is True:
+                        candidates.append(previous)
+
+                if not candidates:
                     continue
-                if previous.continuity_epoch != entry.continuity_epoch:
+                latest_key = max(item.update.ordering_key for item in candidates)
+                latest = [item for item in candidates if item.update.ordering_key == latest_key]
+                # If more than one candidate has the same ledger key, refusing
+                # to choose is safer than depending on insertion order.
+                if len(latest) != 1:
                     continue
+                previous = latest[0]
                 transitions.append(
                     AccountStateTransition(
                         pubkey=account,

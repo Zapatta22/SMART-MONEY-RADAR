@@ -2236,3 +2236,27 @@ Implementar adapter de fronteira para mensagens protobuf Yellowstone (ou mapping
 - PR #23 permanece OPEN/DRAFT, `merged=false`, `mergeable=true`; HEAD de implementação `060f922ccd6b3852e4415f62227d0c983b16c81d`, base `feat/damm-v2-referral-transfer-attribution`.
 - `main` permanece intacta em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma integração/merge foi feita.
 - Próxima etapa: integrar `BankLineageTracker` à timeline com reconstrução pre/post condicionada à relação pai/filho de bancos verificada; cobrir forks concorrentes, updates fora de ordem, replay/reconnect e rollback exato. Ainda sem endpoint Geyser, captura contínua ou persistência RAW/SQLite.
+
+
+## 285. Integração BankLineageTracker com AccountUpdateTimeline — 19/11/2026
+
+### Implementação na branch da PR23
+- `AccountUpdateTimeline` agora recebe um `BankLineageTracker` injetável e cria um tracker próprio por padrão.
+- Adicionados métodos de ingestão `add_slot_update`, `add_block_meta` e `add_entry_update_parent`, encaminhando eventos normalizados ao tracker.
+- `transition_for(signature)` mantém o comportamento linear antigo somente quando ambos os eventos não têm bank_id. Não mistura estados com/sem bank_id.
+- Para eventos bank-scoped, exige bancos observados e utilizáveis; pares no mesmo banco usam a identidade exata (source, slot, bank_id); pares entre bancos exigem `is_ancestor(pre_bank, post_bank) == True`, estabelecido por correspondência exata de parent_slot + parent_blockhash.
+- Seleciona o estado anterior mais recente na cadeia verificada, respeitando slot/write_version; empate na chave ledger não escolhe arbitrariamente.
+- Dead bank, cleared bank e ancestrais conhecidos invalidados não podem contribuir para transições. Histórico permanece para auditoria; não é apagado.
+- Eventos de metadados podem chegar após account updates; o pareamento é reavaliado dinamicamente quando `transition_for` é chamado.
+- Adicionada `BankLineageTracker.is_bank_usable`; `is_ancestor` agora falha fechado quando encontra banco morto/inválido, ciclo ou cadeia incompleta.
+- Testes novos em `tests/test_geyser_bank_aware_timeline.py`: mesma bank, cadeia cross-bank comprovada, forks irmãos, parent_slot sem blockhash, EntryUpdateParent, ancestral morto, metadados fora de ordem, reconexão e replay.
+
+### Validação
+- CI desta revisão ainda não foi executado no novo HEAD; nenhuma aprovação é reivindicada até a conclusão do workflow.
+
+### Limites
+- Não há endpoint Yellowstone conectado, captura contínua, replay/reconnect de rede, persistência RAW/SQLite, backfill ou operações on-chain.
+- Não há promoção de commitment nem seleção de fork canônico. Transição é evidência de estados observados em banco/linhagem verificados, não decisão de compra/venda.
+
+### Próxima etapa
+Após CI aprovado, revisar a semântica de invalidação de descendants e adicionar testes para ordem de eventos e rollback exato sob forks concorrentes; só então desenhar persistência/backfill.

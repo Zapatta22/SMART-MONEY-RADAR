@@ -364,25 +364,56 @@ class BankLineageTracker:
             return "bank_invalidated"
         return "bank_observed_finalized" if node.finalized else "bank_observed_unfinalized"
 
+    def is_bank_usable(self, key: BankKey) -> bool | None:
+        """Return whether a known bank and every known ancestor are not invalidated.
+
+        An unresolved parent does not make two writes in the exact same bank
+        incomparable, but any known dead/cleared ancestor makes that bank unusable.
+        """
+        current = self._banks.get(key)
+        if current is None:
+            return None
+        visited: set[BankKey] = set()
+        while current is not None:
+            if not current.usable_for_observation:
+                return False
+            if current.key in visited:
+                return False
+            visited.add(current.key)
+            if current.parent_key is None:
+                return True
+            current = self._banks.get(current.parent_key)
+        return None
+
     def is_ancestor(self, ancestor: BankKey, descendant: BankKey) -> bool | None:
-        """True/False when the known parent chain is complete; None if incomplete."""
+        """True only for a verified parent chain; None for incomplete/invalid lineage."""
+        if ancestor.source_id != descendant.source_id:
+            return None
         if ancestor == descendant:
-            return True if ancestor in self._banks else None
+            return self.is_bank_usable(ancestor)
         current = self._banks.get(descendant)
         if current is None:
             return None
         visited: set[BankKey] = set()
-        while current.parent_key is not None:
-            if current.parent_key == ancestor:
+        while current is not None:
+            if not current.usable_for_observation or current.key in visited:
+                return None
+            visited.add(current.key)
+            parent_key = current.parent_key
+            if parent_key is None:
+                if (
+                    current.key.slot == 0
+                    and current.parent_slot is None
+                    and current.parent_blockhash is None
+                ):
+                    return False
+                return None
+            parent = self._banks.get(parent_key)
+            if parent is None:
+                return None
+            if not parent.usable_for_observation:
+                return None
+            if parent_key == ancestor:
                 return True
-            if current.parent_key in visited:
-                return None
-            visited.add(current.parent_key)
-            current = self._banks.get(current.parent_key)
-            if current is None:
-                return None
-        if current.parent_key is None:
-            if current.key.slot == 0 and current.parent_slot is None and current.parent_blockhash is None:
-                return False
-            return None
-        return False
+            current = parent
+        return None

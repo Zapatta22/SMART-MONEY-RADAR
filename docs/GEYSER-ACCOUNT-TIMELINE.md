@@ -122,3 +122,42 @@ This is a message-boundary adapter only. No Yellowstone endpoint/client,
 continuous capture, RAW/SQLite persistence, backfill, or financial execution
 is enabled. Bank-aware pre/post pairing remains deferred until the tracker is
 integrated with the timeline and tested against competing banks.
+
+
+## Bank-aware account timeline integration
+
+`AccountUpdateTimeline` now owns a provider-neutral `BankLineageTracker`
+by default (or accepts an injected tracker) and exposes event-ingestion methods
+for normalized slot lifecycle, block metadata and EntryUpdateParent messages.
+
+For bank-scoped account writes, `transition_for(signature)` now follows these
+rules:
+
+1. Both pre- and post-state writes must have an observed, non-startup bank
+   identity from the same stable source namespace.
+2. A pair within the exact same bank is eligible only while that bank and all
+   known ancestors remain usable.
+3. A pair across banks is eligible only when the pre-state bank is a verified
+   ancestor of the post-state bank through exact parent slot + parent blockhash
+   matches. Shared slot, parent slot alone, stream order and sibling forks do
+   not establish ancestry.
+4. Among verified ancestors, the latest earlier ledger write is selected. If
+   multiple candidates share the same latest ledger key, the method returns
+   no transition rather than depending on insertion order.
+5. A dead or EntryUpdateParent-cleared bank, or any known invalidated ancestor,
+   cannot contribute to a transition. Historical account updates remain in
+   the timeline for audit; they are not physically deleted.
+6. Missing lineage remains unresolved. If block metadata arrives after account
+   writes, a later call to `transition_for` may resolve the pair without
+   rewriting the account timeline.
+7. Reconnect/sequence gaps retain the existing continuity-epoch baseline rule.
+   Replay remains idempotent.
+
+The legacy slot-only rollback remains prohibited for bank-scoped histories.
+Exact fork invalidation is driven by the bank tracker and leaves old account
+updates available for audit. No commitment is inferred and no branch is
+declared canonical merely because a bank was observed or finalized.
+
+Tests in `test_geyser_bank_aware_timeline.py` cover same-bank and verified
+cross-bank transitions, sibling forks, unresolved parents, cleared/dead banks,
+invalidated ancestors, metadata arriving late, reconnect baselines and replay.

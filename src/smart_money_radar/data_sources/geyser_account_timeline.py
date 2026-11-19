@@ -359,8 +359,11 @@ class AccountUpdateTimeline:
                         write_version=update.write_version,
                         pre_state=previous.update,
                         post_state=update,
-                        evidence_classification="BANK_PROVIDER_REPORTED_FINALIZED",
-                        evidence_classification="LEGACY_UNSCOPED_UNVERIFIED",
+                        evidence_classification=(
+                            "LEGACY_UNSCOPED_UNVERIFIED"
+                            if update.bank_id is None
+                            else "BANK_PROVIDER_REPORTED_FINALIZED"
+                        ),
                     )
                 )
         return tuple(transitions)

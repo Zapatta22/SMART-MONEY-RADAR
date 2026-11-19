@@ -11,7 +11,10 @@ from smart_money_radar.data_sources.raydium_cpmm_analyzer import (
 from smart_money_radar.data_sources.raydium_cpmm_decoder import (
     RAYDIUM_CPMM_PROGRAM_ID,
 )
-from smart_money_radar.data_sources.solana_token_transfer_decoder import SolanaTokenTransfer
+from smart_money_radar.data_sources.solana_token_transfer_decoder import (
+    TOKEN_2022_PROGRAM_ID,
+    SolanaTokenTransfer,
+)
 from smart_money_radar.data_sources.raydium_cpmm_transfer_reconciliation import (
     RaydiumCpmmSwapReconciliation,
 )
@@ -82,9 +85,25 @@ def _validate_transfer_evidence(
 ) -> None:
     """Revalida no limite do domínio a transferência que sustenta o MATCHED."""
     if transfer.execution_status != "EXECUTED" or transfer.instruction_type not in {
-        "TRANSFER", "TRANSFER_CHECKED"
+        "TRANSFER", "TRANSFER_CHECKED", "TRANSFER_CHECKED_WITH_FEE"
     }:
         raise ValueError(f"Transferência de {label} não tem execução/tipo suportado.")
+    if (
+        isinstance(transfer.amount_raw, bool)
+        or not isinstance(transfer.amount_raw, int)
+        or transfer.amount_raw <= 0
+    ):
+        raise ValueError(f"Quantidade bruta da transferência de {label} é inválida.")
+    if transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE":
+        if (
+            transfer.program_id != TOKEN_2022_PROGRAM_ID
+            or isinstance(transfer.fee_amount_raw, bool)
+            or not isinstance(transfer.fee_amount_raw, int)
+            or not 0 <= transfer.fee_amount_raw <= transfer.amount_raw
+        ):
+            raise ValueError(f"Taxa explícita da transferência de {label} é inválida.")
+    elif transfer.fee_amount_raw is not None:
+        raise ValueError(f"Transferência de {label} contém taxa não suportada para seu tipo.")
     if (
         transfer.instruction_index != swap.instruction_index
         or transfer.inner_instruction_index is None
@@ -114,12 +133,6 @@ def _validate_transfer_evidence(
         raise ValueError(f"Mint da transferência de {label} diverge do mint do swap.")
     if transfer.decimals is not None and transfer.decimals != decimals:
         raise ValueError(f"Decimals da transferência de {label} divergem dos metadados do swap.")
-    if (
-        isinstance(transfer.amount_raw, bool)
-        or not isinstance(transfer.amount_raw, int)
-        or transfer.amount_raw <= 0
-    ):
-        raise ValueError(f"Quantidade bruta da transferência de {label} é inválida.")
 
 
 def build_swap_domain_bundles(
@@ -178,10 +191,17 @@ def build_swap_domain_bundles(
         )
         if any(isinstance(value, bool) or not isinstance(value, int) for value in delta_evidence):
             raise ValueError("Deltas por conta devem ser inteiros brutos.")
+        # Amounts are wallet-perspective: input is gross debit; output is
+        # spendable net credit after any Token-2022 transfer fee.
         if item.input_amount_raw != item.input_transfer.amount_raw:
             raise ValueError("Quantidade de entrada diverge da transferência selecionada.")
-        if item.output_amount_raw != item.output_transfer.amount_raw:
-            raise ValueError("Quantidade de saída diverge da transferência selecionada.")
+        output_fee = (
+            item.output_transfer.fee_amount_raw or 0
+            if item.output_transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE"
+            else 0
+        )
+        if item.output_amount_raw != item.output_transfer.amount_raw - output_fee:
+            raise ValueError("Quantidade líquida de saída diverge da transferência selecionada.")
         input_key = (
             item.input_transfer.instruction_index,
             item.input_transfer.inner_instruction_index,
@@ -246,8 +266,12 @@ def build_swap_domain_bundles(
             evidence=(
                 f"input_transfer:{item.input_transfer.instruction_index}:{item.input_transfer.inner_instruction_index}",
                 f"output_transfer:{item.output_transfer.instruction_index}:{item.output_transfer.inner_instruction_index}",
-                f"input_token_account:{accounts.input_token_account}:transfer_amount_raw={item.input_transfer.amount_raw}",
-                f"output_token_account:{accounts.output_token_account}:transfer_amount_raw={item.output_transfer.amount_raw}",
+                f"input_token_account:{accounts.input_token_account}:transfer_gross_raw={item.input_transfer.amount_raw}",
+                f"input_transfer_fee_raw:{item.input_transfer.fee_amount_raw or 0}",
+                f"output_token_account:{accounts.output_token_account}:transfer_gross_raw={item.output_transfer.amount_raw}",
+                f"output_transfer_fee_raw:{item.output_transfer.fee_amount_raw or 0}",
+                f"wallet_input_debit_raw:{item.input_amount_raw}",
+                f"wallet_output_credit_net_raw:{item.output_amount_raw}",
                 f"input_token_account_delta_raw:{item.input_token_account_delta_raw}",
                 f"output_token_account_delta_raw:{item.output_token_account_delta_raw}",
                 f"input_vault_delta_raw:{item.input_vault_delta_raw}",

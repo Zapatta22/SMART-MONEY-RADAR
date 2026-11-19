@@ -24,6 +24,12 @@ def _transfer(opcode=3, amount=1234, decimals=6):
     return _b58(data)
 
 
+def _transfer_checked_with_fee(amount=1234, decimals=6, fee=12, subdiscriminator=1):
+    data = bytes([26, subdiscriminator]) + amount.to_bytes(8, "little")
+    data += bytes([decimals]) + fee.to_bytes(8, "little")
+    return _b58(data)
+
+
 def _tx(instructions, keys=None, meta=None):
     return {
         "transaction": {
@@ -77,6 +83,77 @@ class TokenTransferDecoderTests(unittest.TestCase):
         self.assertEqual(result[0].program_name, "Token-2022")
         self.assertEqual(result[0].amount_raw, 77)
         self.assertEqual(result[0].decimals, 2)
+
+    def test_decodes_compiled_token_2022_transfer_checked_with_fee(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": TOKEN_2022_PROGRAM_ID,
+            "accounts": [0, 3, 1, 2],
+            "data": _transfer_checked_with_fee(5000, 6, 25),
+        }]))
+        self.assertEqual(len(result), 1)
+        transfer = result[0]
+        self.assertEqual(transfer.instruction_type, "TRANSFER_CHECKED_WITH_FEE")
+        self.assertEqual(transfer.source_account, "source")
+        self.assertEqual(transfer.destination_account, "destination")
+        self.assertEqual(transfer.mint, "mint")
+        self.assertEqual(transfer.amount_raw, 5000)
+        self.assertEqual(transfer.decimals, 6)
+        self.assertEqual(transfer.fee_amount_raw, 25)
+        self.assertEqual(transfer.execution_status, "EXECUTED")
+
+    def test_ignores_transfer_checked_with_fee_under_spl_program(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": SPL_TOKEN_PROGRAM_ID,
+            "accounts": [0, 3, 1, 2],
+            "data": _transfer_checked_with_fee(),
+        }]))
+        self.assertEqual(result, [])
+
+    def test_ignores_other_transfer_fee_extension_subinstructions(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": TOKEN_2022_PROGRAM_ID,
+            "accounts": [0, 3, 1, 2],
+            "data": _transfer_checked_with_fee(subdiscriminator=5),
+        }]))
+        self.assertEqual(result, [])
+
+    def test_rejects_malformed_transfer_checked_with_fee_length(self):
+        encoded = _b58(bytes([26, 1]) + (100).to_bytes(8, "little") + bytes([6]))
+        with self.assertRaisesRegex(ValueError, "19 bytes"):
+            decode_solana_token_transfers(_tx([{
+                "programId": TOKEN_2022_PROGRAM_ID,
+                "accounts": [0, 3, 1, 2],
+                "data": encoded,
+            }]))
+
+    def test_rejects_transfer_checked_with_fee_missing_accounts(self):
+        with self.assertRaisesRegex(ValueError, "pelo menos 4 contas"):
+            decode_solana_token_transfers(_tx([{
+                "programId": TOKEN_2022_PROGRAM_ID,
+                "accounts": [0, 1, 2],
+                "data": _transfer_checked_with_fee(),
+            }]))
+
+    def test_decodes_json_parsed_transfer_checked_with_fee(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": TOKEN_2022_PROGRAM_ID,
+            "parsed": {
+                "type": "transferCheckedWithFee",
+                "info": {
+                    "source": "source",
+                    "destination": "destination",
+                    "authority": "authority",
+                    "mint": "mint",
+                    "tokenAmount": {"amount": "9001", "decimals": 6},
+                    "feeAmount": "45",
+                },
+            },
+        }]))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].instruction_type, "TRANSFER_CHECKED_WITH_FEE")
+        self.assertEqual(result[0].amount_raw, 9001)
+        self.assertEqual(result[0].fee_amount_raw, 45)
+        self.assertEqual(result[0].source_format, "jsonParsed")
 
     def test_decodes_json_parsed_transfer(self):
         result = decode_solana_token_transfers(_tx([{
@@ -249,6 +326,79 @@ class TokenTransferDecoderTests(unittest.TestCase):
                 [{"programId": "router", "accounts": [], "data": "1"}],
                 meta={"err": None, "innerInstructions": [group, group]},
             ))
+
+    def test_rejects_compiled_transfer_fee_greater_than_gross_amount(self):
+        with self.assertRaisesRegex(ValueError, "excede"):
+            decode_solana_token_transfers(_tx([{
+                "programId": TOKEN_2022_PROGRAM_ID,
+                "accounts": [0, 3, 1, 2],
+                "data": _transfer_checked_with_fee(100, 6, 101),
+            }]))
+
+    def test_rejects_parsed_transfer_fee_greater_than_gross_amount(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": TOKEN_2022_PROGRAM_ID,
+            "parsed": {
+                "type": "transferCheckedWithFee",
+                "info": {
+                    "source": "source",
+                    "destination": "destination",
+                    "authority": "authority",
+                    "mint": "mint",
+                    "tokenAmount": {"amount": "100", "decimals": 6},
+                    "feeAmount": "101",
+                },
+            },
+        }]))
+        self.assertEqual(result, [])
+
+    def test_rejects_parsed_transfer_amount_outside_u64(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": SPL_TOKEN_PROGRAM_ID,
+            "parsed": {
+                "type": "transfer",
+                "info": {
+                    "source": "source",
+                    "destination": "destination",
+                    "amount": str(1 << 64),
+                },
+            },
+        }]))
+        self.assertEqual(result, [])
+
+    def test_rejects_mixed_compiled_and_parsed_account_key_shapes(self):
+        with self.assertRaisesRegex(ValueError, "mistura formatos"):
+            decode_solana_token_transfers(_tx(
+                [{
+                    "programId": TOKEN_2022_PROGRAM_ID,
+                    "accounts": [0, 3, 1, 2],
+                    "data": _transfer_checked_with_fee(),
+                }],
+                keys=[
+                    {"pubkey": "source"},
+                    "destination",
+                    "authority",
+                    "mint",
+                    TOKEN_2022_PROGRAM_ID,
+                ],
+            ))
+
+    def test_ignores_parsed_transfer_checked_with_fee_under_spl_program(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": SPL_TOKEN_PROGRAM_ID,
+            "parsed": {
+                "type": "transferCheckedWithFee",
+                "info": {
+                    "source": "source",
+                    "destination": "destination",
+                    "mint": "mint",
+                    "authority": "authority",
+                    "tokenAmount": {"amount": "100", "decimals": 6},
+                    "feeAmount": "1",
+                },
+            },
+        }]))
+        self.assertEqual(result, [])
 
 
 if __name__ == "__main__":

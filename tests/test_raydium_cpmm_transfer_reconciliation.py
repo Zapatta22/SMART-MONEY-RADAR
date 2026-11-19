@@ -255,6 +255,74 @@ class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
         self.assertIn("vault de entrada", result.reason)
         self.assertIn("não reconcilia", result.reason)
 
+    def test_reconciles_transfer_checked_with_fee_using_net_destination_credit(self):
+        transfers = _pair(
+            input_amount=100,
+            output_amount=100,
+            input_program=TOKEN_2022_PROGRAM_ID,
+            output_program=TOKEN_2022_PROGRAM_ID,
+        )
+        transfers[0] = SolanaTokenTransfer(
+            **{
+                **transfers[0].__dict__,
+                "instruction_type": "TRANSFER_CHECKED_WITH_FEE",
+                "fee_amount_raw": 10,
+            }
+        )
+        transfers[1] = SolanaTokenTransfer(
+            **{
+                **transfers[1].__dict__,
+                "instruction_type": "TRANSFER_CHECKED_WITH_FEE",
+                "fee_amount_raw": 5,
+            }
+        )
+        deltas = _deltas(
+            input_delta=-100,
+            output_delta=95,
+            input_vault_delta=90,
+            output_vault_delta=-100,
+        )
+        result = reconcile_raydium_cpmm_swaps(
+            [_swap(
+                input_program=TOKEN_2022_PROGRAM_ID,
+                output_program=TOKEN_2022_PROGRAM_ID,
+            )],
+            transfers,
+            deltas,
+            monitored_wallet=WALLET,
+        )[0]
+        self.assertEqual(result.status, "MATCHED")
+        self.assertEqual(result.input_amount_raw, 100)
+        self.assertEqual(result.output_amount_raw, 95)
+        self.assertEqual(result.input_token_account_delta_raw, -100)
+        self.assertEqual(result.output_token_account_delta_raw, 95)
+        self.assertEqual(result.input_vault_delta_raw, 90)
+        self.assertEqual(result.output_vault_delta_raw, -100)
+
+    def test_rejects_invalid_fee_amount_on_fee_checked_transfer(self):
+        transfers = _pair(
+            input_program=TOKEN_2022_PROGRAM_ID,
+            output_program=TOKEN_2022_PROGRAM_ID,
+        )
+        transfers[0] = SolanaTokenTransfer(
+            **{
+                **transfers[0].__dict__,
+                "instruction_type": "TRANSFER_CHECKED_WITH_FEE",
+                "fee_amount_raw": 101,
+            }
+        )
+        result = reconcile_raydium_cpmm_swaps(
+            [_swap(
+                input_program=TOKEN_2022_PROGRAM_ID,
+                output_program=TOKEN_2022_PROGRAM_ID,
+            )],
+            transfers,
+            _deltas(),
+            monitored_wallet=WALLET,
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("fora dos tipos base", result.reason)
+
     def test_requires_pool_vault_deltas(self):
         deltas = [item for item in _deltas() if item.token_account != INPUT_VAULT]
         result = reconcile_raydium_cpmm_swaps(
@@ -333,6 +401,31 @@ class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
             reconcile_raydium_cpmm_swaps(
                 [_swap()], _pair(), _deltas(), monitored_wallet=""
             )
+
+    def test_rejects_transfer_checked_with_fee_under_non_token2022_program(self):
+        transfers = _pair()
+        transfers[0] = SolanaTokenTransfer(
+            **{
+                **transfers[0].__dict__,
+                "instruction_type": "TRANSFER_CHECKED_WITH_FEE",
+                "fee_amount_raw": 1,
+            }
+        )
+        result = reconcile_raydium_cpmm_swaps(
+            [_swap()], transfers, _deltas(), monitored_wallet=WALLET
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("fora dos tipos base", result.reason)
+
+    def test_rejects_fee_metadata_on_non_fee_transfer(self):
+        transfers = _pair()
+        transfers[0] = SolanaTokenTransfer(
+            **{**transfers[0].__dict__, "fee_amount_raw": 1}
+        )
+        result = reconcile_raydium_cpmm_swaps(
+            [_swap()], transfers, _deltas(), monitored_wallet=WALLET
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
 
 
 if __name__ == "__main__":

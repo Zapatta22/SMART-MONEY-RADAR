@@ -81,7 +81,6 @@ Depois da reconciliação, implementar a reconstrução econômica em camada sep
 
 Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `main` remota após o merge do PR #1 como referências atuais. Separar especificado, implementado, testado, validado remotamente e produção. Não declarar coleta/fixture real concluída até existir payload RPC integral finalized, hash conferido, proveniência e revisão semântica.
 
-
 ## 11. Atualização 2026-11-17 — PR #1
 
 - Repositório: `Zapatta22/SMART-MONEY-RADAR`.
@@ -102,7 +101,6 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - Nenhuma integração parser→reconstrução econômica foi iniciada nesta etapa.
 - O SMR permanece em monitoramento/análise somente leitura, sem execução de compras ou vendas reais.
 
-
 ## 13. Atualização 2026-11-18 — PR #5 Raydium CPMM exact-output
 
 - Branch: `feat/raydium-cpmm-base-output`, criada a partir da `main` remota.
@@ -114,7 +112,6 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - GitHub Actions workflow `SMR tests` iniciou para o commit do PR (run 44221663324). No momento desta atualização, instalação estava em andamento e testes/compileall ainda pendentes; portanto, não registrar aprovação até consultar o resultado final.
 - PR #5 continua draft e não mergeado. Não alterar `main` diretamente.
 
-
 ### Complemento PR #5 — camada RPC estrutural
 
 - Acrescentados na mesma branch `src/smart_money_radar/data_sources/raydium_cpmm_analyzer.py` e `tests/test_raydium_cpmm_analyzer.py`.
@@ -122,7 +119,6 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - Escopo explicitamente limitado a `message.instructions`: não interpreta `meta.innerInstructions`/CPI, não reconstrói deltas efetivos, não gera BUY/SELL e não persiste operações.
 - CI executado no commit anterior à inclusão do analyzer: 110 testes aprovados e `compileall` aprovado. As alterações posteriores do analyzer ainda aguardam uma execução CI confirmada; não extrapolar o resultado anterior para os arquivos novos.
 - Head atual da branch: `814309c50d6b0d06c99ce3024ba16f11bbe58117`. PR #5 permanece draft, aberto e não mergeado.
-
 
 ### Revisão técnica complementar — 2026-11-18
 
@@ -132,14 +128,12 @@ Usar este registro, `REGISTRO-MESTRE-SMR-ATUALIZADO-2026-11-16-ETAPA16.md` e a `
 - Limite atual: a suíte CI de 110 testes foi aprovada no commit inicial do PR, antes dos últimos testes/refinamentos. O conector não retornou uma execução CI associada aos commits posteriores; portanto, não declarar os commits mais recentes validados por CI. A próxima verificação deve ser feita no próprio PR/Ações do GitHub antes de integrar.
 - Últimos commits da branch: testes de loaded addresses/CPI-scope `5e77c88efae577d2e9dde66be5884dcb3572a16c`; referências oficiais `9ae034d01f714a9407f1eabc2b8ccfb78686ab32`. O registro mestre também é atualizado nesta branch; a main permanece intacta.
 
-
 ### Compatibilidade adicional do analyzer — 2026-11-18
 
 - `raydium_cpmm_analyzer.py` agora aceita tanto índices numéricos (com resolução de static account keys e loaded addresses) quanto endereços já resolvidos em strings no vetor `accounts`.
 - Novo teste cobre endereços resolvidos diretamente. Documentação delimita os formatos esperados: instrução com data Base58 e lista de contas; não declara suporte genérico a todos os formatos JSON-RPC.
 - Testes explícitos mantêm a fronteira: innerInstructions/CPI continuam ignoradas nesta versão.
 - Últimos commits de código/teste/documentação: `5905922c3d579456f7d8d5e4f0a5ea7851ce84a7` (teste) e `d5b42717fd9c026b66e6d0916e4316081897ae5a` (documentação). Nenhum CI posterior foi retornado pelo conector para esses commits; a validação final continua pendente. PR #5 não foi mergeado.
-
 
 ### Auditoria de integração para a próxima fase — 2026-11-18
 
@@ -154,7 +148,6 @@ Implicação: o próximo PR após a aprovação do PR #5 deve ser uma camada sep
 
 Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, suporte a índices e pubkeys resolvidas, loaded addresses e testes explícitos que deixam CPI fora do escopo. CI completo comprovado apenas no commit inicial do PR (110 testes + compileall); alterações posteriores ainda precisam de execução CI confirmada. Não integrar até validar o head atual.
 
-
 ## 14. Atualização 2026-11-18 — PR #6: Raydium CPMM inner CPI
 
 - PR #5 passou no GitHub Actions no commit `55833d81d166dca46f8973e655b4e22b29bb9829`: workflow `SMR tests` run `44221971607`, job `test` concluído com sucesso; log confirma `Ran 121 tests`, `OK`, e etapa `python -m compileall -q src tests` concluída com sucesso. PR #5 foi marcado ready for review (aberto, mergeable, não mergeado).
@@ -166,14 +159,12 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - PR #6 deve ser aberto como draft com base em `feat/raydium-cpmm-base-output` e head `feat/raydium-cpmm-inner-cpi`. Depende da integração prévia do PR #5. Ainda não há CI para este novo código até abrir o PR.
 - Limites preservados: sem reconstrução econômica por operação, sem BUY/SELL, sem persistência dos três contratos, sem fixture real aprovada e sem execução de ordens.
 
-
 ### Refinamento de segurança da trilha CPI — 2026-11-18
 
 - Revisado o cálculo de `cpi_path`: se um item intermediário não possui `stackHeight`, o analyzer limpa a pilha de ancestrais conhecida. Instruções posteriores não serão associadas a um pai possivelmente obsoleto; ficam em fallback linear até haver hierarquia demonstrável.
 - Teste dedicado adicionado para a sequência stackHeight=2, sem stackHeight, stackHeight=3, garantindo que a terceira instrução não seja falsamente atribuída como filha da primeira.
 - Workflow `.github/workflows/smr-tests.yml` no head do PR #6 foi ajustado para permitir `pull_request` com base `feat/**`, mas o workflow executado em PR é determinado pela configuração da branch-base. Como a branch-base do PR #6 é a branch do PR #5 e ainda mantém `pull_request: branches: [main]`, não há execução PR CI confirmada para PR #6 neste momento. A alteração no workflow dentro do head do PR #6, isoladamente, não comprova execução.
 - PR #6 permanece draft e dependente do PR #5. Último commit funcional (analyzer, testes e documentação) registrado: `549c44422fa5523a16e14e61bd21931dd13a9c32`; commits posteriores atualizam somente o Registro Mestre. CI para o código novo continua pendente; não integrar.
-
 
 ### CI para PRs empilhados — ajuste 2026-11-18
 
@@ -184,7 +175,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 - Teste adicional em `tests/test_raydium_cpmm_analyzer.py`: garante que um grupo CPI com `index=1` seja associado à segunda instrução externa, sem deslocamento para o índice zero. Commit de código/teste: `578711b234033221fa89bf020bc7cdc419998863`.
 - CI do PR #6 disparado após esse commit: run `44222435172`, job `134527348957`; na última consulta estava em execução, ainda sem conclusão. Não declarar aprovação até consultar o resultado final e os logs.
-
 
 ## 15. Atualização 2026-11-18 — validação PR #6 e auditoria do PR #4
 
@@ -207,7 +197,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Ainda não há fixture real de mainnet aprovada para Raydium CPMM nem reconstrução econômica por swap. Deltas atuais são agregados por wallet/mint e não devem ser convertidos automaticamente em operações individuais.
 - Próxima fase correta: desenhar/testar a camada de reconciliação por operação (instruções externas + CPI + transferências SPL + token balance deltas e contas de pool), usando UNKNOWN/sem SwapObservation quando não houver atribuição inequívoca. Depois conectar aos contratos e à persistência já proposta no PR #4.
 
-
 ## 16. Atualização 2026-11-18 — especificação da reconstrução econômica
 
 - Criada branch de trabalho `feat/raydium-cpmm-economic-reconciliation`, baseada no head da branch do PR #6 (`feat/raydium-cpmm-inner-cpi`), sem alterar `main` nem os PRs existentes.
@@ -217,7 +206,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - A especificação identifica a camada de persistência já proposta no PR #4; não recriar tabelas nem `save_swap_bundle`.
 - Próximo trabalho de código: implementar primeiro extração tipada de transferências e deltas por token account como evidências independentes, com testes sintéticos de transfer/transferChecked, Token-2022, CPI e ambiguidades. Ainda não conectar ao armazenamento nem emitir observações até fixtures reais anonimizadas aprovadas.
 - Esta branch contém apenas a especificação até agora; ainda não há PR #7 nem CI para a nova camada.
-
 
 ### Primeiro incremento de evidências de transferência — 2026-11-18
 
@@ -232,7 +220,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Commit de código/testes validado: `0b7072a2dbc3b6c43d0a68362560cca9559265ed`. Commits posteriores atualizaram documentação e Registro Mestre. PR #7 foi marcado pronto para revisão (open, não merged), mantendo dependência do PR #6.
 - Run: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44222920649. PR: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/7.
 
-
 ### Correção semântica e CI final do decoder de transferências — 2026-11-18
 
 - Ajustado `solana_token_transfer_decoder.py` para preservar explicitamente a variante declarada pelo RPC (`TRANSFER` versus `TRANSFER_CHECKED`), sem inferi-la pela presença opcional de mint/decimals. Anotações de retorno foram alinhadas.
@@ -240,7 +227,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - CI final do código/testes: run `44223056961`, job `134529431226`, conclusão success; `Ran 141 tests`, `OK`, `compileall` aprovado.
 - Commit de código/testes validado: `aa768da7c3641b55bec0c5345fc50bb46357a23f`. Alteração posterior do Registro Mestre é somente documental.
 - PR #7 atualizado com essa evidência, open, mergeable, pronto para revisão, não merged; permanece dependente do PR #6. Link: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/7.
-
 
 ## 17. Atualização 2026-11-18 — deltas de saldo por token account
 
@@ -253,7 +239,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 - CI do PR #8 concluído com sucesso: run `44223162230`, job `134529777305`; log confirma `Ran 153 tests`, `OK`, e `python -m compileall -q src tests` concluído.
 - Commit de código/testes validado: `c84d90b68d8984b6fa2075df64228b40bdac9e0c`; commits posteriores atualizaram documentação/registro. PR #8 foi marcado pronto para revisão (open, não merged), dependente do PR #7. Link: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/8.
-
 
 ## 18. Atualização 2026-11-18 — correlator de transferências por operação CPMM
 
@@ -273,7 +258,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Commit validado no PR head: `449129f9114420e4f136c0ad081c7820d2d0e399`. PR #9 foi marcado pronto para revisão, aberto, mergeable e não merged. Link: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/9.
 - O CI também executou no commit de código `2645f85892b2e05808b95067d7dd07d532725b0b`; o PR run acima validou o head com a atualização documental do registro.
 
-
 ## 19. Atualização 2026-11-18 — builder dos contratos de domínio
 
 - Criada branch `feat/swap-domain-bundle-builder`, baseada em `feat/raydium-cpmm-transfer-reconciliation` (PR #9), sem alterar main ou integrar PRs.
@@ -289,7 +273,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - CI do PR #10 concluído com sucesso: run `44223759455`, job `134531766338`; log confirma `Ran 181 tests`, conclusão success e `python -m compileall -q src tests` aprovado.
 - Commit validado no PR head: `0b784a77dd922795674194b577c5f0f31355e478`. PR #10 foi marcado pronto para revisão, aberto, mergeable e não merged. Link: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/10.
 - Testes do builder são sintéticos. Não existe fixture mainnet real aprovada, nem integração de persistência ou execução financeira.
-
 
 ## 20. Atualização 2026-11-18 — primeira fixture mainnet real e teste de integração
 
@@ -315,7 +298,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Encontrar e coletar outra transação Raydium CPMM finalizada em que as duas token accounts do usuário tenham deltas pre/post e owner comprovado, para testar o caminho positivo `MATCHED` e o bundle BUY/SELL.
 - Alternativamente, estudar suporte explícito a token accounts temporárias somente com prova on-chain de criação, inicialização, owner, transferências e fechamento; nunca inferir a saída apenas pelo delta SOL agregado.
 - Não integrar persistência do PR #4, não declarar operação de produção e não habilitar execução financeira até existir validação positiva real e revisão independente.
-
 
 ## 21. Atualização 2026-11-18 — reconciliação dos vaults e edge case Token-2022 real
 
@@ -344,7 +326,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Manter as duas travas atuais: delta de usuário obrigatório e delta de vault obrigatório. Não afrouxar por causa de fixtures que falham.
 - Somente após fixture positiva real e revisão independente, avaliar integração do builder com a persistência já proposta no PR #4. Não fazer merge sem aprovação explícita.
 
-
 ## 22. Atualização 2026-11-18 — suporte RPC a transações Solana v1 e novos candidatos
 
 ### Coletor RPC — versão máxima 1
@@ -369,7 +350,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Encontrar uma transação CPMM v1/legacy com duas token accounts do usuário persistentes, ownership comprovado, e deltas de ambos os vaults que coincidam exatamente com as transferências decodificadas. Só essa fixture permitirá validar o caminho positivo MATCHED sem relaxar as salvaguardas atuais.
 
-
 ## 23. Atualização 2026-11-18 — novos candidatos v0/v1 e situação do caminho positivo
 
 ### Novos candidatos coletados por RPC (somente artefatos privados)
@@ -387,7 +367,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Ainda não há fixture mainnet que passe MATCHED. Isso é uma lacuna real de validação, não motivo para enfraquecer as regras.
 - Próximo passo: localizar swap token-token com contas de usuário persistentes e deltas de ambos os lados, ou analisar cuidadosamente o candidato multi-swap descrito acima sem presumir atribuição de owner/transferências.
 - Não integrar persistência nem ativar execução financeira até existir caminho positivo comprovado por fixture real.
-
 
 ## 24. Atualização 2026-11-18 — fixture real Jupiter com dois swaps CPMM
 
@@ -422,7 +401,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Procurar fixture mainnet com um swap CPMM direto token-token, sem contas intermediárias, com ambas as token accounts do usuário e ambos os vaults tendo deltas exatos que reconciliem com transferências suportadas. Manter todas as salvaguardas atuais.
 
-
 ## 25. Atualização 2026-11-18 — primeira reconciliação positiva mainnet (MATCHED)
 
 ### Mudança no decoder de deltas
@@ -448,7 +426,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Revisar se a evidência de conta intermediária e a semântica do output do primeiro CPMM são suficientes para promover a lógica para o fluxo de ingestão; em paralelo, procurar outra fixture independente com caminho positivo e mints de referência explícitos.
 - Só depois avaliar persistência usando a proposta do PR #4. Nenhuma execução de ordem foi criada.
 
-
 ## 26. Atualização 2026-11-18 — validação de SELL e triagem de candidatos independentes
 
 ### Classificação com referência explícita
@@ -470,7 +447,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Procurar outra operação CPMM token-token com duas contas de usuário persistentes e deltas/vaults conciliáveis; preferir um par sem WSOL temporário. Repetir o processo de coleta, inspeção, anonimização e teste. Não relaxar o requisito de evidência.
 - Após segunda fixture positiva independente, fazer revisão do caminho MATCHED e então considerar integração do builder à persistência proposta no PR #4.
-
 
 ## 27. Atualização 2026-11-18 — segunda fixture mainnet positiva MATCHED em rota multi-venue
 
@@ -504,7 +480,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 - Confirmação final: PR #13 permanece open e mergeable; CI run `44229203783` concluiu success após a integração das novas fixtures e documentação. Atualizações posteriores deste Registro não alteram código. Nenhum merge foi executado.
 
-
 ## 28. Atualização 2026-11-18 — pseudonimização dos identificadores públicos das fixtures
 
 ### Correção aplicada na branch do PR #13
@@ -520,14 +495,12 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - A CI precisa executar novamente os testes e `compileall` no novo head. Até essa execução, a alteração é código publicado na branch, mas não validada.
 - A remoção dos identificadores diretos reduz exposição acidental, mas não garante não reidentificação; para isso seria necessário generalizar também metadados correlacionáveis, o que alteraria o caráter exato das fixtures.
 
-
 ## 29. Atualização 2026-11-18 — ressalva de histórico Git após pseudonimização
 
 - A correção da seção 28 altera os arquivos no head atual, mas os commits anteriores da branch do PR #13 ainda preservam versões históricas das projeções e manifestos com assinatura original e fingerprint do payload bruto.
 - Nenhuma reescrita de histórico foi executada. O repositório está privado; não ampliar o acesso nem publicar artefatos antes de decidir se a história do branch precisa ser reescrita.
 - Uma reescrita exigiria reconstruir o histórico do PR com cuidado e poderia alterar os SHAs/referências dos commits. Não executar sem avaliar impacto e obter autorização explícita.
 - Mesmo com limpeza de histórico, slot, horário, mints e quantidades reais preservados podem permitir correlação com a blockchain pública.
-
 
 ## 30. Atualização 2026-11-18 — validação redundante de evidências no builder
 
@@ -551,7 +524,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - PR #13 continua aberto e não merged; head `cde1920a5aabde800dde09d38cc1f766fb2b6bb7`; base `feat/real-mainnet-cpmm-fixture`.
 - `main` não foi alterada. Nenhuma ordem, assinatura ou submissão financeira foi criada.
 
-
 ## 31. Atualização 2026-11-18 — evidências de delta preservadas no bundle
 
 ### Mudança técnica
@@ -565,7 +537,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - CI push run `44233840405` no commit `d98680b47b3cf9fbaef4f40bf84dd22a9fbc1e63`: **196 testes**, `OK`; `python -m compileall -q src tests` aprovado.
 - PR #13 continua aberto e não merged. A persistência proposta no PR #4 continua fora desta branch; não há integração de escrita no EventStore.
 
-
 ## 32. Atualização 2026-11-18 — pseudonimização da fixture negativa Token-2022
 
 - A terceira projeção do PR #13 (`raydium-cpmm-token2022-fee.json`) também foi migrada para `smr.pseudonymized-fixture.v2`.
@@ -573,7 +544,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Teste de integração usa fixture_id e valida ausência dos identificadores/fingerprint originais.
 - Slot, horário, mints e valores exatos foram mantidos para preservar o caso fail-closed de Token-2022; portanto, continua pseudonimizada e potencialmente correlacionável, não anônima.
 - CI push run `44234097307` no commit `5fe434150647c2d46177c0b89151e51abdda1a85`: **196 testes**, `OK`; `python -m compileall -q src tests` aprovado.
-
 
 ## 33. Atualização 2026-11-18 — conferência das três fixtures no head atual
 
@@ -717,7 +687,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Consultar o CI do PR #15. Se falhar, corrigir somente a causa apontada e aguardar nova execução. Se passar, revisar os contratos de retorno e ampliar consultas por período/status conforme necessário antes de avançar para integração de painel/API.
 
-
 ## 39. Atualização 2026-11-18 — serviço somente leitura para diagnósticos (PR #15)
 
 ### Implementação
@@ -736,7 +705,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Próxima ação
 - Aguardar CI do head atualizado do PR #15; se passar, revisar contrato de resposta e decidir a próxima fronteira de integração com API/painel. Se falhar, corrigir apenas a causa apontada pelo CI.
-
 
 ## 40. Atualização 2026-11-18 — resumo de leitura para futuro dashboard (PR #15)
 
@@ -757,11 +725,9 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Aguardar CI do head atualizado. Após aprovação, decidir e especificar o adaptador HTTP mínimo, incluindo autenticação local, limites de consulta e política de exposição dos dados antes de abrir qualquer porta de rede.
 
-
 ### Adendo de validação — dashboard read service
 - CI `44239180470` falhou em 1 dos 233 testes devido somente à expectativa incompleta do mock em `tests/test_dashboard_read_service.py`. O método de produção encaminhou os argumentos padrão corretos; o teste esperava apenas `wallet_address`.
 - Corrigido o teste para verificar também `since=None`, `until=None` e `top_reasons_limit=10`. Commit corretivo: `41614511bced2c6467677d9d7cb0aa7ecefa0bd0`. Aguardando novo CI; não considerar validado até sucesso.
-
 
 ## 41. Atualização 2026-11-18 — adaptador HTTP local somente leitura (PR #15)
 
@@ -779,7 +745,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Aguardar CI do head atualizado e corrigir somente falhas demonstradas. Manter PR #15 Draft e não fazer merge.
 
-
 ## 42. Continuação 2026-11-18 — comando para iniciar a API local
 
 - CI do adaptador HTTP inicial: run `44239424161` passou integralmente (job de testes e compileall).
@@ -794,7 +759,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Verificar CI do head atualizado; corrigir apenas falhas reais. Depois revisar limites de query e cobertura de erros HTTP antes de qualquer uso pelo Android.
 
-
 ## 43. Correção CI do launcher — 2026-11-18
 
 - Run `44239651757` falhou no passo `Install project`; log aponta `tomllib.TOMLDecodeError` na linha 17 do `pyproject.toml`, antes de executar testes ou compileall.
@@ -806,7 +770,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Acompanhar o workflow disparado pela correção; se a instalação passar, examinar o resultado dos testes e compileall. Se falhar, usar o log específico antes de qualquer nova alteração.
 
-
 ## 44. Proteção de volume no endpoint de auditoria — 2026-11-18
 
 - Revisão do `query_swap_reconciliation_attempts()` identificou que o EventStore exige limite positivo, mas não impõe teto máximo.
@@ -814,7 +777,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Valores menores que 1 ou maiores que 500 retornam HTTP 400; novo teste cobre `limit=501`.
 - Commits: validação HTTP `2f93d3fa5d58a6be4bcd11dfd98c8a2485a4e1a8`; teste `d3b320a7e0d06a46f72f4f3cbf83a2576df7fbdd`.
 - CI precisa validar os commits desta proteção e a correção TOML anterior.
-
 
 ## 45. CI aprovado — launcher e limite HTTP (2026-11-18)
 
@@ -827,7 +789,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Próxima ação
 - Fazer revisão final de contrato e comportamento do adaptador (incluindo bind de host loopback, lifecycle e respostas de erro), depois preparar uma estratégia segura de conexão do painel Android. Não expor a API externamente sem TLS/autorização adicional e decisão explícita.
-
 
 ## 46. Primeiro painel visual local — 2026-11-18
 
@@ -843,7 +804,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Aguardar CI do painel; corrigir apenas falhas reais. Depois avaliar no Android a melhor forma de iniciar e abrir `http://127.0.0.1:8765/` localmente.
 
-
 ## 47. CI aprovado do painel visual local — 2026-11-18
 
 - CI run `44240284448` concluído com sucesso.
@@ -856,7 +816,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Próxima ação
 - Revisar e preparar instruções de execução no Termux/Android sem ativar a API remotamente. Antes de orientar a execução real, confirmar o método de instalação/execução do pacote no ambiente do usuário e se o banco local existe; não criar um banco vazio que possa ser confundido com o histórico real.
-
 
 ## 48. Inicializador Android/Termux seguro para o painel — 2026-11-18
 
@@ -872,7 +831,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação
 - Aguardar CI; se aprovado, preparar instrução única e simples para o usuário executar no Termux, somente depois de confirmar caminho do banco real.
 
-
 ## 49. CI aprovado do inicializador Android — 2026-11-18
 
 - CI run `44240462766` concluído com sucesso no head `a8699f0388b80979de298cfa31d86f1703108ae3`.
@@ -884,7 +842,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Próxima ação
 - Antes de pedir execução no Android, confirmar existência e caminho do banco histórico real do usuário. O script aborta se não encontrar o arquivo ou as tabelas esperadas, sem modificar o banco.
-
 
 ## 50. CI final do registro e estado de prontidão do painel — 2026-11-18
 
@@ -905,7 +862,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 - Identificar, sem abrir nem modificar conteúdo, os arquivos SQLite existentes dentro da pasta do projeto Termux e seus subdiretórios. Só depois inspecionar schema em modo somente leitura e decidir se algum é o banco histórico adequado.
 - Se nenhum banco compatível existir, planejar uma etapa explícita de ingestão/persistência no EventStore antes de usar o painel. Não apresentar o painel como operacional com dados reais até essa validação.
 - Manter PR #15 e PR #14 em Draft; PR #13 e PR #4 preservados. Nenhum merge para `main`, RPC adicional, assinatura ou operação financeira autorizados por esta etapa.
-
 
 ## 51. Investigação da ausência de SQLite no Termux — 2026-11-18
 
@@ -973,7 +929,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 ### Próxima ação segura
 - Confirmar caminho atual e existência da pasta data, sem alterar arquivos. Só depois inventariar a árvore correta e verificar branch/commit local.
 
-
 ## 55. Auditoria dos manifestos de fixtures locais e requisitos para ingestão histórica — 2026-11-18
 
 ### Evidência recebida do Termux
@@ -1006,7 +961,6 @@ Estado atual do PR #5: branch contém analyzer CPMM para instruções externas, 
 
 ### Próxima ação exata
 - Inspecionar somente a estrutura dos cinco JSON RAW (sem imprimir endereços ou assinaturas), confirmar consistência com os respectivos manifestos e identificar os campos de transação disponíveis. Depois disso, definir o contrato de importação e sua cobertura por protocolo antes de qualquer criação de banco.
-
 
 ## 56. Auditoria remota dos fixtures versionados e estado de CI — 2026-11-18
 
@@ -1044,7 +998,6 @@ Três projeções pseudonimizadas versionadas foram lidas sem reproduzir valores
 - Nenhum banco criado/migrado, nenhuma importação executada, nenhuma RPC/Helius iniciada e nenhuma operação on-chain.
 - Nenhuma alteração na `main`; PR #14 e #15 preservados como Draft.
 
-
 ## 57. PR #16 — inspetor offline e privado de estrutura das fixtures — 2026-11-18
 
 ### Branch e PR
@@ -1076,7 +1029,6 @@ Novo teste `tests/test_offline_fixture_structure_inspector.py`:
 - Nenhuma importação SQLite, associação de carteira, migração, criação de DB, RPC/Helius ou operação on-chain foi realizada.
 - Após CI aprovado, a próxima ação operacional será o usuário executar o inspetor no Termux para obter contagens/estrutura sem revelar identificadores. Só então será definida a política de associação carteira↔transação e a ingestão histórica segura.
 
-
 ## 58. Revisão de segurança do inspetor e correção de vazamento potencial — 2026-11-18
 
 ### CI do primeiro corte
@@ -1100,7 +1052,6 @@ Correções aplicadas na branch:
 - PR #16 permanece Draft, aberto, não merged.
 - Nenhum dado RAW foi enviado; nenhuma execução local, RPC, banco, migração, checkpoint ou operação on-chain ocorreu.
 
-
 ## 59. Correção de teste de redação e CI — 2026-11-18
 
 - CI do head `92aeae7b392ee4329932f5e9d442b42164c2e953`: run `44248529109` falhou em um único teste novo; 247 outros testes passaram (total 248).
@@ -1108,7 +1059,6 @@ Correções aplicadas na branch:
 - Corrigido o teste para serializar com `ensure_ascii=False`, preservando a verificação de que caminho sensível não é exibido.
 - Commit corretivo: `5e02581090366a46fca6c5fe49cccaaed2099ee7`.
 - Aguardando CI para o novo head. Nenhuma alteração funcional adicional, nenhum dado local enviado, nenhuma execução de DB/RPC/on-chain.
-
 
 ## 60. CI aprovado e precisão da detecção de associação de carteira — 2026-11-18
 
@@ -1127,7 +1077,6 @@ Correções aplicadas na branch:
 
 ### Próxima ação
 CI da alteração adicional aprovado. O PR #16 permanece Draft. Próxima ação operacional: executar o inspetor local nos cinco pares RAW do Termux, apenas leitura e sem enviar dados ao GitHub. A presença do campo é apenas uma declaração no manifesto, não prova a legitimidade da associação carteira↔transação.
-
 
 ## 61. Inspeção local concluída e contrato preliminar de importação histórica — 2026-11-18
 
@@ -1157,7 +1106,6 @@ CI da alteração adicional aprovado. O PR #16 permanece Draft. Próxima ação 
 - Implementar apenas o planejador/dry-run offline, sem SQLite e sem gravações, com relatório redigido.
 - A ausência de associação explícita deve produzir `WALLET_UNASSIGNED`; não presumir que os cinco RAW pertencem a uma única carteira.
 - Antes de persistir qualquer coisa, revisar o mapeamento carteira↔transação e obter autorização específica.
-
 
 ## 62. Planejador offline de importação histórica — primeira implementação — 2026-11-18
 
@@ -1195,7 +1143,6 @@ CI da alteração adicional aprovado. O PR #16 permanece Draft. Próxima ação 
 - Após CI aprovado, orientar execução local no clone PR16 apontando para os RAW originais, sem fornecer/compartilhar mapeamento de carteira.
 - Analisar o relatório redigido. Associação e cobertura de protocolo permanecem decisões humanas; nenhuma persistência está autorizada.
 
-
 ## 63. CI aprovado do planejador offline — 2026-11-18
 
 - Head validado: `0c493b51fc98f5453f5b3763b0aeee48631464a6`.
@@ -1205,7 +1152,6 @@ CI da alteração adicional aprovado. O PR #16 permanece Draft. Próxima ação 
 - PR #16 continua Draft, aberto, não merged, mergeable; `main` intacta.
 - Próxima ação: executar o planejador no clone PR16 contra os RAW originais, sem mapa de carteiras inicialmente. Isso deve retornar `WALLET_UNASSIGNED` para os cinco casos e confirmar o relatório local sem expor identificadores.
 - Não criar/abrir SQLite, não enviar RAW nem mapa ao GitHub, não importar, não migrar, não avançar checkpoint, não iniciar RPC/Helius ou execução on-chain.
-
 
 ## 64. Dry-run local confirmado e teste de imutabilidade reforçado — 2026-11-18
 
@@ -1225,7 +1171,6 @@ CI da alteração adicional aprovado. O PR #16 permanece Draft. Próxima ação 
 - Não inferir carteira por owner, fee payer, signatário ou posição em accountKeys.
 - Persistência, criação/migração SQLite, RPC/Helius e operações on-chain continuam não autorizadas.
 
-
 ## 65. Auditoria offline de cobertura de protocolos — implementação iniciada 2026-11-18
 
 - CI do teste de imutabilidade do planejador (run `44250215068`, #376) concluiu com sucesso. Os passos de testes unitários e compileall passaram.
@@ -1236,7 +1181,6 @@ CI da alteração adicional aprovado. O PR #16 permanece Draft. Próxima ação 
 - Commits: auditor `d7f32ecd3648ebbdbe78a84a8cb6715e15542d16`; testes iniciais `3248d5466fb12845d0ca34943af8fce08bac6af0`; hardening contra symlink `8276e610ecb39fe7d60a2327407d2bc6a799183e`; expectativa de teste corrigida `04ae970ec73f82aaf9166ac3cbfd9e53c94ccb52`.
 - CI do novo auditor: run `44250502846` (#381), concluído com sucesso; **259 testes unitários OK** e compileall aprovado. O CI cobre o commit funcional `04ae970ec73f82aaf9166ac3cbfd9e53c94ccb52`; o head atual posterior é documental.
 - Próximo passo: executar auditor localmente contra os cinco RAW originais e avaliar o relatório redigido antes de qualquer importação. Não associar carteiras por heurística, não criar DB, não usar RPC/Helius e não avançar checkpoints.
-
 
 ## 66. Auditoria local de cobertura dos cinco RAW — 2026-11-18
 
@@ -1269,7 +1213,6 @@ Cada decoder deve começar com contrato estrutural e fixtures de teste; depois r
 ### Próximo passo
 Revisar instruções/contas e evidências de CPI do payload de DAMM v2 de forma redigida, definir o contrato do decoder e testes antes de implementar. Não iniciar importação, persistência, criação/migração SQLite, RPC/Helius, checkpoint ou execução on-chain.
 
-
 ## 67. Fingerprints redigidos de instruções de venue — implementação em validação
 
 - Evoluído tools/audit_solana_protocol_coverage.py para emitir venue_instruction_profiles apenas para venues registradas e Jupiter como agregador.
@@ -1280,7 +1223,6 @@ Revisar instruções/contas e evidências de CPI do payload de DAMM v2 de forma 
 - Commits: auditor c75a16234d08f1bae2061c784da6a474789994bd; teste 1ebc04eb625028d67a53e17b4bfac4e8d9efb613; correção de bytes zero/Base58 no auditor 6ac99dbb32fa35771b3c3113fbc1c42c50f6a56d; correção equivalente no teste ab6a09522d4347f53e474082188cd926e90872a3.
 - CI run 44251053718 (#393), commit funcional `ab6a09522d4347f53e474082188cd926e90872a3`: concluído com sucesso, 259 testes unitários OK e compileall aprovado.
 - Próximo passo: após CI, atualizar clone PR16 e executar novamente o auditor nos cinco RAW. Os fingerprints vão permitir especificar decoders DAMM v2, AMM v4, DLMM e roteamento Jupiter sem expor payload sensível.
-
 
 ## 68. Fingerprints locais e validação documental inicial do Meteora DAMM v2 — 2026-11-18
 
@@ -1334,7 +1276,6 @@ Revisar instruções/contas e evidências de CPI do payload de DAMM v2 de forma 
 - Atualizar o clone PR16 e executar o auditor nos cinco RAW locais. Confirmar se os eventos DAMM v2 reportam event_discriminator_hex=bd4233a826507599, event_name=EvtSwap2, tamanho 196 e uma conta.
 - Se a confirmação ocorrer, registrar EvtSwap2 como evento CPI confirmado, mas não contar evento e instrução top-level como dois swaps. Ainda será necessário reconciliar transferências e deltas por operação antes de criar SwapObservation.
 - Nenhum RAW foi enviado ao GitHub; nenhuma importação, SQLite, RPC/Helius, checkpoint ou operação on-chain foi executada.
-
 
 ## 70. CI da identificação Event CPI DAMM v2 — 2026-11-18
 
@@ -1464,7 +1405,6 @@ PR #16 permanece Draft, aberto, não merged; `main` intacta. Nenhum RAW foi envi
 ### Próxima etapa técnica
 Construir uma camada de reconciliação DAMM v2 por operação, começando pela inspeção local redigida dos cinco RAW com o analisador recém-validado e, depois, definindo vínculos conservadores entre instrução/evento, transferências SPL/Token-2022 e deltas de token accounts. Tratar transfer-fee de Token-2022 explicitamente; não reutilizar automaticamente o reconciliador CPMM nem produzir `SwapObservation` enquanto os papéis de contas e quantidades não estiverem comprovados.
 
-
 ## 76. Validação do auditor de associação DAMM v2 nos cinco RAW e início do mapeamento de contas (18/11/2026)
 
 ### Auditor local validado
@@ -1493,7 +1433,6 @@ Executar no Termux o teste `test_damm_v2_accounts.py` e compileall após fast-fo
 
 PR #16 segue Draft, aberto e não merged; `main` intacta. Nenhum RAW foi enviado ao GitHub; nenhuma importação, SQLite, RPC/Helius, checkpoint, trade ou operação on-chain foi executada.
 
-
 ## 77. Correção e validação do mapeador de contas DAMM v2 (18/11/2026)
 
 - A primeira execução local de `test_damm_v2_accounts.py` revelou erro em `_base58_encode()`: a contagem de bytes zero iniciais usava uma sequência literal incorreta, fazendo a codificação do pool do EvtSwap2 divergir da conta pool da instrução.
@@ -1504,7 +1443,6 @@ PR #16 segue Draft, aberto e não merged; `main` intacta. Nenhum RAW foi enviado
 - O mapeador agora está validado nos testes específicos e no compileall. Isso não comprova reconciliação econômica: transferências SPL/Token-2022, deltas de token accounts/vaults e taxas Token-2022 ainda não foram correlacionados por operação.
 - Próxima etapa: estudar a atribuição conservadora das transferências e dos deltas a cada swap DAMM v2, sem reutilizar automaticamente o reconciliador CPMM e sem criar `SwapObservation` antes de evidência econômica completa.
 - PR #16 continua Draft, aberto e não merged; base `feat/reconciliation-diagnostics`; `main` intacta. Nenhum RAW foi enviado ao GitHub; nenhuma importação, criação/migração SQLite, RPC/Helius, checkpoint, trade ou operação on-chain foi executada.
-
 
 ## 78. Atribuição conservadora de transferências DAMM v2 (18/11/2026)
 
@@ -1525,7 +1463,6 @@ PR #16 segue Draft, aberto e não merged; `main` intacta. Nenhum RAW foi enviado
 - Próxima etapa: decoder conservador de deltas pre/post por accountIndex, rejeitando snapshots ausentes, duplicados, mint/decimals divergentes e contas sem correspondência; depois correlacionar quatro contas (user input, input vault, output vault, user output) com as transferências atribuídas.
 - PR #16 permanece Draft, aberto, não merged; base `feat/reconciliation-diagnostics`; `main` intacta. Nenhuma importação, SQLite, RPC/Helius, checkpoint, trade ou operação on-chain foi executada.
 
-
 ## 79. Decoder conservador de deltas pre/post de token accounts (18/11/2026)
 
 - Adicionados `src/smart_money_radar/data_sources/solana_token_balance_delta_decoder.py` e `tests/test_solana_token_balance_delta_decoder.py`.
@@ -1539,7 +1476,6 @@ PR #16 segue Draft, aberto e não merged; `main` intacta. Nenhum RAW foi enviado
 - Validação local no Termux e auditoria redigida nos cinco RAW ainda pendentes.
 - Próxima etapa: adicionar auditor offline redigido para observar cobertura/completude dos snapshots reais e, depois, reconciliar por swap somente quando as quatro contas necessárias tiverem deltas inequívocos. Deltas são transacionais e podem agregar várias operações; contas/vaults reutilizados entre swaps ou transferências externas devem bloquear atribuição individual.
 - PR #16 permanece Draft, aberto, não merged; base `feat/reconciliation-diagnostics`; `main` intacta. Nenhuma importação, SQLite, RPC/Helius, checkpoint, trade ou operação on-chain foi executada.
-
 
 ## 80. Auditoria redigida de cobertura dos quatro deltas DAMM v2 (18/11/2026)
 
@@ -1556,13 +1492,11 @@ PR #16 segue Draft, aberto e não merged; `main` intacta. Nenhum RAW foi enviado
 - Próximo passo após CI: validar os testes no Termux e executar o auditor sobre os cinco RAW. Não promover cobertura de quatro deltas a reconciliação econômica sem comparar valores brutos/líquidos com transferências e EvtSwap2, contabilizar fees e provar exclusividade por operação.
 - PR #16 permanece Draft, aberto, não merged; `main` intacta. Nenhuma importação, SQLite, RPC/Helius, checkpoint, trade ou operação on-chain foi executada.
 
-
 ### Correção de integração dos testes e CI subsequente
 - O primeiro CI que incluiu o teste novo falhou por ModuleNotFoundError: a função de cobertura estava definida no script tools/, enquanto o teste a importava como módulo de data_sources.
 - Correção: extraída a função para src/smart_money_radar/data_sources/damm_v2_delta_coverage_audit.py; o script CLI agora importa essa função compartilhada.
 - Commits corretivos: módulo 5afcbb9c39d57e3b0b424bb1f1cbffc0f797b2da; refatoração CLI a3034ad69da208d2f33fa306a733ad72ee603e25.
 - Novo CI para o head corretivo: run 44257098656 (#469), ainda in_progress na última consulta. Não declarar aprovação até conclusão.
-
 
 ## 81. Validação local da cobertura de deltas DAMM v2 nos cinco RAW (18/11/2026)
 
@@ -1594,7 +1528,6 @@ Antes de implementar reconciliação econômica, especificar os invariantes por 
 
 PR #16 permanece Draft, aberto e não integrado; `main` intacta.
 
-
 ## Especificação de reconciliação econômica DAMM v2 (18/11/2026)
 - Criado docs/DAMM-V2-RECONCILIACAO-ECONOMICA.md no commit 3199cca4d14bf22e0934a2688423f32c91a0f136.
 - Formalizados parâmetros ExactIn, PartialFill e ExactOut; distinção entre limites solicitados e efeitos executados; campos EvtSwap2 preservados sem presumir equações ainda não verificadas.
@@ -1621,7 +1554,6 @@ PR #16 permanece Draft, aberto e não integrado; `main` intacta.
 
 - Matriz de FeeMode documentada na seção 12.10: collect_fee_mode + direção definem fees_on_input, fees_on_token_a e o mint/vault de cobrança; referral_fee é transferido separadamente e split_fees registra protocol_fee líquido de referral. Reconciliador deverá validar a transferência referral quando has_referral.
 
-
 ## 82. PR #17 — aritmética pura de taxas DAMM v2 / Token-2022 (18/11/2026)
 
 - Confirmada sincronização local PR16: `HEAD=0d951fc`, branch `feat/offline-fixture-inspector`, acompanhando `origin`, árvore limpa.
@@ -1634,7 +1566,6 @@ PR #16 permanece Draft, aberto e não integrado; `main` intacta.
 - CI do PR #17 ainda não apareceu na consulta inicial; não declarar testes aprovados até workflow terminar. Clone local PR17 ainda não foi criado nem sincronizado.
 - PR #16 permanece Draft e não integrado; PR #17 permanece Draft e não integrado; `main` intacta. Nenhum RAW foi alterado/enviado. Nenhuma importação, SQLite, RPC/Helius, checkpoint ou operação on-chain.
 - Próxima ação: acompanhar CI do PR #17; corrigir falhas e então sincronizar branch PR17 no Termux para executar os 17 testes focais e a suíte completa. Após validação, avançar para decodificação explícita de TransferFeeConfig/TransferFeeAmount e depois reconciliador econômico fail-closed.
-
 
 ## 83. Validação local e CI do PR #17 — aritmética de taxas DAMM v2 / Token-2022 (18/11/2026)
 
@@ -1662,7 +1593,6 @@ PR #17 continua Draft, aberto e não integrado; PR #16 continua Draft e não int
 ### Próxima etapa técnica
 Implementar, isoladamente e com testes sintéticos, o decoder de estado Token-2022 (`TransferFeeConfig` e `TransferFeeAmount`), incluindo seleção da taxa aplicável ao epoch histórico e validação de bytes/offsets. Não iniciar reconciliador nem persistência até essa camada ser revisada.
 
-
 ## 84. Bloqueio de evidência CPI não confiável na reconciliação CPMM (18/11/2026)
 
 - Correção autorizada pelo usuário para o finding da auditoria de integração: o decoder já marcava `SolanaTokenTransfer.cpi_path_valid=False` após `stackHeight` ausente/inconsistente, mas dois consumidores aceitavam a transferência sem consultar o indicador.
@@ -1674,7 +1604,6 @@ Implementar, isoladamente e com testes sintéticos, o decoder de estado Token-20
 - Escopo: nenhuma alteração em `main`, RAW fixtures, banco de dados, imports de dados, RPC/Helius, checkpoints, persistência ou operações on-chain. PR #17 permanece Draft e não integrado; PR #18 não foi alterado.
 - Efeito colateral de integração identificado, sem alteração no PR #18: como sua branch foi criada sobre o antigo head do PR #17 (`58606137e3d096e19b34eb84bae604101c07fef`), a comparação atual mostra PR #18 divergente da nova base: 16 commits à frente e 6 atrás; `mergeable=false`. Nenhum rebase/update foi executado nele.
 - Próxima ação: decidir e executar separadamente a atualização/rebase da branch do PR #18 para incorporar a nova base do PR #17, mantendo ambos em Draft e sem merge.
-
 
 ## 85. PR #18 — decoder de estado TransferFee Token-2022 (18/11/2026)
 
@@ -1692,7 +1621,6 @@ Implementar, isoladamente e com testes sintéticos, o decoder de estado Token-20
 ### Próxima ação
 Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte completa, compileall, HEAD e status. Corrigir qualquer falha antes de ampliar o decoder ou iniciar reconciliação econômica.
 
-
 ### Validação local e CI do PR #18 — 18/11/2026
 
 - Clone separado confirmado em `$HOME/SMART-MONEY-RADAR-PR18`, branch `feat/token2022-transfer-fee-state-decoder`, HEAD local `0d2b906`, árvore limpa e sincronizada com origin.
@@ -1703,14 +1631,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Foram observados ResourceWarnings não fatais em testes preexistentes de HTTP/SQLite; não houve falha. Isso não comprova ausência de vazamentos e não foi escopo corrigido nesta etapa.
 - Conclusão: PR18 tem validação local e CI aprovados para o head atual. Continua Draft, aberto e não integrado. Nenhuma integração autorizada.
 
-
 ### Revisão defensiva adicional do decoder PR #18
 - Revisão do código identificou que o parser verificava AccountType e TLV, mas não validava explicitamente os bytes de padding do Mint entre o fim da base de 82 bytes e o AccountType no offset 165.
 - Corrigido `decode_transfer_fee_config()` para rejeitar qualquer byte não zero nesse intervalo.
 - Adicionado teste negativo `test_rejects_nonzero_mint_padding`.
 - Atualizada a documentação do decoder. Commits de correção: `409574205c9fafd971e75dde60385e04e88b62c6` (código), `204a4ae54cdf32dd9245534915da84b90c334ace` (teste), `3f7c9eb75ff292ef29b9adf3d1a227f219293a83` (documentação).
 - Os resultados prévios 12/12 focais, 339 testes e CI #490/#491 referem-se ao código anterior à correção. A nova versão ainda requer validação local e CI. Não considerar o head novo validado.
-
 
 ### Auditoria de compatibilidade TLV do PR #18 — 18/11/2026
 
@@ -1723,7 +1649,6 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - A validação CI #495 (340 testes) refere-se ao head anterior e8b30976efe36de2878efec79b8d25035ac3efbc; não valida estas alterações novas.
 - Estado: aguardando CI no novo head. PR permanece Draft, aberto e não integrado.
 
-
 ### CI corretivo da compatibilidade TLV — 18/11/2026
 
 - Primeira execução após os novos testes: run 44264725856 (#499), falhou em 2 testes focais porque os literais binários foram gravados com barras invertidas duplicadas; os testes não estavam fornecendo os bytes pretendidos.
@@ -1732,7 +1657,6 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Novo CI do PR: run 44264858445 (#503), evento pull_request, associado ao head ab6d994ddf2e7adf86039c3a4bf3ba4bce9b2888; estado observado: queued.
 - A execução #499 não deve ser usada como validação final. A execução #495 (340 testes) valida apenas o head anterior e8b3097.
 - Próxima ação: consultar o resultado do run #503, confirmar todos os testes e compileall, depois revisar novamente o diff completo e a mergeability do PR. Não integrar nem remover o estado Draft nesta etapa.
-
 
 ### Validação CI após correção TLV — resultado confirmado
 
@@ -1751,7 +1675,6 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI do merge commit `c04fafcfd50b810b56cacbf1f110d703f29b8c10`: workflow `SMR tests`, run #515 (`44266493751`), **success**; `Run unit tests` e `Compile source and tests` concluídos com sucesso.
 - Próxima ação: revisar o diff integrado do PR #18 e confirmar se a mergeability permanece estável; não retirar Draft nem integrar sem autorização.
 
-
 ## 86. Atualização documental final do PR #18 — sincronização e CI (18/11/2026)
 
 - PR #18 permanece aberto, Draft e não integrado; branch `feat/token2022-transfer-fee-state-decoder`, base `feat/damm-v2-economic-fee-math`.
@@ -1764,7 +1687,6 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Nenhuma alteração em `main`, RAW fixtures, banco de dados, imports, RPC/Helius, checkpoints ou operações on-chain. PR #17 e PR #18 continuam Draft e não integrados.
 - A descrição do PR #18 foi alinhada aos resultados atuais nesta mesma atualização. Próxima decisão permanece separada: revisão/decisão formal sobre retirar Draft e eventual integração; nenhum merge está autorizado ou executado por esta atualização documental.
 
-
 ## 87. CI da atualização documental final do PR #18 — 18/11/2026
 
 - O commit documental `5e1448e13f7ec45878409ccc6c31b37066087f64` atualizou a seção 86 e alinhou a descrição do PR #18.
@@ -1772,7 +1694,6 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI GitHub Actions `SMR tests`, run #518 (`44267390443`), associado exatamente ao commit `5e1448e13f7ec45878409ccc6c31b37066087f64`: **completed/success**. Job `test`, etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso.
 - PR #18 continua aberto, Draft e não integrado. PR #17 continua aberto, Draft e não integrado. `main` permanece intacta.
 - Nenhuma alteração de código foi feita nesta atualização documental. Nenhuma fixture RAW, banco de dados, importação, RPC/Helius, checkpoint ou operação on-chain foi tocada.
-
 
 ## 88. Confirmação final do CI #519 e estado do PR #18 — 18/11/2026
 
@@ -1783,7 +1704,6 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - PR #18 permanece aberto, Draft e não integrado; PR #17 permanece aberto, Draft e não integrado. `main` permanece intacta.
 - Esta confirmação não representa validação com fixture RAW mainnet, reconciliação econômica de swap, execução em tempo real ou prontidão operacional. Nenhum RPC/Helius, banco, importação, checkpoint, fixture RAW ou operação on-chain foi executado.
 
-
 ## 89. CI do registro atualizado — 18/11/2026
 
 - O commit documental `e316669fdceb3cee7e31e55808d272ccbf3ef58f` registrou o resultado final do CI #519 e o compare de PR #18.
@@ -1791,7 +1711,6 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - A comparação permanece em **21 commits à frente, 0 atrás** do head da base PR #17; merge base igual ao head da base.
 - PR #17 e PR #18 continuam abertos, Draft e não integrados. `main` permanece intacta.
 - CI aprovado valida a suíte automatizada e compileall do repositório nesse commit; não substitui validação com fixtures RAW mainnet, nem demonstra reconciliação econômica DAMM v2 ou operação realtime.
-
 
 ## 90. Preparação da próxima camada — Meteora DAMM v2 EvtSwap2 (18/11/2026)
 
@@ -1804,7 +1723,6 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Escopo da próxima camada: decoder offline e fail-closed do evento; associação ao swap externo somente com caminho CPI confiável. Sem reconciliação econômica, classificação BUY/SELL, persistência, RPC, RAW ou operação on-chain.
 - PR #17 e PR #18 permanecem Draft, abertos e não integrados; `main` permanece intacta.
 
-
 ## 91. Correção de rota: decoder EvtSwap2 já existia; PR #20 encerrado sem merge (18/11/2026)
 
 - Auditoria do repositório revelou que a implementação do evento DAMM v2 já existe em `src/smart_money_radar/data_sources/damm_v2_decoder.py`, fixada em `MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f99868ba8e`.
@@ -1814,6 +1732,20 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Issue #19 foi renomeada para auditar e avançar a reconciliação econômica DAMM v2 usando os módulos existentes.
 - Próximo trabalho correto: auditar invariantes de ponta a ponta entre `EvtSwap2`, transferências atribuídas, taxas Token-2022 por epoch e deltas de token accounts/vaults por operação. Não criar outro decoder.
 - Nenhuma alteração em `main`, RAW fixtures, banco, imports, RPC/Helius, checkpoints ou operações on-chain.
+
+
+## 92. Token-2022 TransferCheckedWithFee decodificado e testado — 18/11/2026
+
+- Issue #19 foi refinada para suportar `TransferCheckedWithFee` antes da reconciliação econômica DAMM v2.
+- Criado PR #21, Draft, branch `feat/token2022-transfer-checked-with-fee`, base PR #18.
+- `solana_token_transfer_decoder.py` agora reconhece opcode Token-2022 26 + subdiscriminador 1, layout de 19 bytes, contas source/mint/destination/authority, amount u64, decimals u8 e fee u64; registra `instruction_type=TRANSFER_CHECKED_WITH_FEE` e `fee_amount_raw`.
+- A variante só é reconhecida sob Token-2022. Outros subdiscriminadores permanecem ignorados. A variante jsonParsed só é aceita quando feeAmount está presente.
+- `raydium_cpmm_transfer_reconciliation.py` trata o débito da origem pelo bruto e o crédito spendable do destino como `amount - fee`; `output_amount_raw` representa o valor líquido recebido pela carteira.
+- A primeira execução CI #535 (`44269711111`) detectou um erro no teste de taxa inválida: a validação ocorria tarde demais e lançava ValueError. Corrigido no commit `931d82744a350bf94c4293b819f13497cb630830`, movendo a validação para o limite de entrada da reconciliação.
+- CI #537 (`44269793991`) no HEAD `931d82744a350bf94c4293b819f13497cb630830`: **completed/success**; 352 testes aprovados e compileall aprovado.
+- A taxa declarada em TransferCheckedWithFee é validada pelo próprio programa Token-2022 contra o epoch corrente; em transação executada com sucesso, o destino recebe amount-fee em saldo spendable e o withheld fica na extensão TransferFeeAmount. O decoder não infere epoch nem consulta estado de mint.
+- Limites: TransferChecked padrão com taxa implícita continua sem fee explícita e deve falhar fechado se os deltas não reconciliarem. A atribuição DAMM v2 permanece ATTRIBUTED, não MATCHED; reconciliação econômica DAMM v2 ainda não foi implementada.
+- Sem RPC/Helius, RAW fixtures, SQLite, checkpoints ou operações on-chain. PR #17, #18 e #21 permanecem Draft e não integrados; PR #20 foi fechado sem merge por duplicar decoder já existente. `main` intacta.
 
 
 ## 250. Integração das dependências CPMM e segurança do painel local — 19/11/2026
@@ -1927,3 +1859,26 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - O CI inclui o decoder de estado Token-2022 estrito e a base de aritmética DAMM v2/Token-2022, além do painel e diagnósticos read-only.
 - PR #18 pode sair de Draft e ser integrada à base intermediária `feat/damm-v2-economic-fee-math`; depois validar o CI do merge commit.
 - Limite mantido: decoder não valida owner on-chain, não escolhe epoch automaticamente, não associa withheld amount a transferência nem reconcilia economicamente.
+
+
+
+## 258. PR #21 — TransferCheckedWithFee e semântica bruta/líquida — 19/11/2026
+
+- PR #21 continua OPEN/DRAFT; base `feat/token2022-transfer-fee-state-decoder`, head `feat/token2022-transfer-checked-with-fee`.
+- Fonte oficial Token-2022 fixada em `solana-program/token-2022@875693f53c77534b46f0d06bdf781430870f8177`: opcode 26 (`TransferFeeExtension`), subdiscriminador 1 (`TransferCheckedWithFee`), layout compilado de 19 bytes; contas source, mint, destination, authority.
+- Decoder reconhece a variante somente sob Token-2022, preserva bruto e fee, rejeita fee maior que bruto, valores fora de u64 e mistura de formatos em accountKeys.
+- Reconciliador Raydium valida que a taxa explícita pertence ao Token-2022; a origem é debitada pelo bruto e o destino recebe líquido (`gross - fee`), reconciliado com os deltas spendable.
+- Foi corrigido o construtor de domínio: antes rejeitava saída líquida porque comparava com o bruto da instrução. Agora aceita a variante com taxa, revalida fee/programa, compara saída líquida e registra bruto, taxa, débito bruto e crédito líquido na evidência.
+- CI do head funcional atualizado do PR #21: run `44441367861`, job `135282737800`, SUCCESS; **363 testes OK** e `python -m compileall -q src tests` aprovado. Commits posteriores foram somente documentação.
+- DAMM v2 pode atribuir TransferCheckedWithFee por CPI, mas permanece `ATTRIBUTED` com revisão de fee obrigatória; não há MATCHED econômico. Não se deve promover essa atribuição a observação.
+- Próxima ação: sincronizar PR #21 com o head atualizado do PR #18 por merge commit controlado e executar CI combinado antes de integrar.
+- Nenhuma RPC/Helius, importação histórica, escrita SQLite, checkpoint ou execução financeira foi realizada. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+## 259. CI combinado PR #21 + PR #18 aprovado — 19/11/2026
+
+- Branch `feat/token2022-transfer-checked-with-fee` sincronizada com a base `feat/token2022-transfer-fee-state-decoder` por merge commit `635c7fb86af18cabd4375717672b5f20a30e9449`; a base `9f6896ad6a73bebf86d72cdda58cf53a2e351b08` é ancestral do resultado.
+- Compare da árvore sincronizada: `ahead_by=21`, `behind_by=0`; GitHub informa `mergeable=true`.
+- CI combinado: runs `44441569790` (push) e `44441576528` (PR), ambos SUCCESS; logs confirmam **380 testes OK** e `python -m compileall -q src tests`.
+- Os testes validam parser raw/parsed, fee<=gross, Token-2022 exclusivo, reconciliação de deltas spendable, output líquido e construção de SwapDomainBundle com evidência bruta/fee/líquida.
+- PR #21 pode sair de Draft e ser integrada à base intermediária `feat/token2022-transfer-fee-state-decoder`; depois validar CI no merge commit.
+- A variante TransferCheckedWithFee não habilita por si só a reconciliação DAMM v2; nela permanece atribuição estrutural com revisão de taxa obrigatória.

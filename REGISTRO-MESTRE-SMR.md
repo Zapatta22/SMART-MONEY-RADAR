@@ -2708,3 +2708,43 @@ Evitar que o chamador monte manualmente `contexts`, `transfers`, `evidence` e `b
 
 ### Próxima etapa
 Criar fixture sintético de ponta a ponta que percorra factory -> associação -> contexts -> transfer evidence -> reconciliação econômica, incluindo snapshots históricos quando aplicável. O teste deve provar o caso RECONCILED e os bloqueios para assinatura/slot/payload divergentes antes de qualquer integração operacional.
+
+
+## 298. Fixture positivo end-to-end DAMM v2 e integridade do bundle — 19/11/2026
+
+### Fixture sintético positivo
+- Criado payload RPC sintético com swap DAMM v2 na instrução externa, duas transferências Token-2022 descendentes e EvtSwap2 descendente.
+- A instrução DAMM usa 14 contas resolvidas pelo account-key table.
+- Transfer input: bruto 100, fee explícita 5, crédito líquido 95.
+- Transfer output: bruto 90, fee 0, crédito líquido 90.
+- EvtSwap2 fixture consistente: included input 95, bruto input 100, output 90 e net output 90.
+- Snapshots pre/post incluem as quatro token accounts e owners esperados: carteira monitorada nos lados do usuário e pool authority nos vaults.
+- O teste atravessa a factory real: payload -> inventário -> transfer decoders -> balance deltas -> swap/EvtSwap2 association -> resolved accounts -> context -> transfer evidence -> bundle-only economic reconciler.
+- Resultado observado: `RECONCILED`, uma operação, quatro expected account deltas. Withheld fee e mint fee config permanecem `EXPECTED_NOT_VERIFIED`, corretamente sem alegação de verificação TLV.
+
+### Fixture negativo econômico
+- Alterada a quantidade post do token account do usuário de 900 para 901 sem mudar transfer/event evidence.
+- O reconciliador retorna `INCOMPLETE` por divergência de delta; nenhuma promoção indevida para RECONCILED.
+
+### Endurecimento de integridade do bundle
+- Durante a criação dos testes de identidade foi identificado que `dataclasses.replace()` preservava o token privado de factory e permitia substituir campos do bundle, inclusive signature/slot/hash e evidências, sem perder o token.
+- Corrigido com snapshot interno de referências imutáveis aos componentes produzidos pela factory; o wrapper verifica que identidade, inventário, transfers, balance deltas, associações, contexts, transfer evidence e issues são exatamente os objetos selados na construção.
+- Testes negativos confirmam bloqueio ao substituir assinatura, slot, payload SHA-256, transfers, contexts ou balance deltas.
+- Proteção é integridade de contrato contra recomposição acidental/uso normal de dataclasses; não é fronteira criptográfica contra código hostil com acesso introspectivo ao mesmo processo Python.
+
+### CI
+- HEAD de código validado: `1c9e6da69bf573f03b61d7da809fb8c6220affc3`.
+- Workflow `SMR tests`, run `44601942485`, job `135835372820`: SUCCESS.
+- 588 testes em 4,511 s; `python -m compileall -q src tests` aprovado.
+- A execução anterior no HEAD `22ba642eadfcc5b06d3e73b07b5443d72a007a75` também passou com 587 testes e provou os dois novos cenários end-to-end; a validação atual acrescenta os testes de substituição do bundle.
+- CI valida fixtures/unit tests e compilação; não comprova tráfego mainnet, estado TLV real ou integração provider.
+
+### Estado e pendências
+- PR #34 permanece Draft, aberta e sem merge; main intacta.
+- A fixture positiva econômica agora existe e passa.
+- Continuam pendentes snapshots históricos de mint/withheld com proveniência independente e validação temporal; especialmente teste de verificação TLV realista.
+- Ainda faltam testes dedicados de divergência de source_id dentro de um envelope de origem comum e auditoria final do diff completo antes de considerar PR pronta.
+- Não ligar a adapter RPC operacional nem execução financeira nesta etapa.
+
+### Próxima ação
+Revisar e formalizar o contrato de proveniência dos snapshots históricos de mint/withheld, incluindo vínculo inequívoco de source, assinatura, slot, ordem e referências pre/post; adicionar testes negativos de mistura e só então avaliar uma fixture positiva com fee state verificado.

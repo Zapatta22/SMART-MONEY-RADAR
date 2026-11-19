@@ -9,7 +9,7 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | Módulo | B/I/O | Marcos | Evidência disponível | Critério para fechar o módulo |
 |---|---|---:|---|---|
 | A. Infraestrutura e persistência | 1/0/0 | 33,3% | Na main há SQLite, checkpoints, backup/replay e CI. As PRs #40 e #42 revisam persistência de swaps, concorrência, migração e replay. | Integrar persistência de swaps no caminho normal. Validar migração e recuperação no ambiente operacional e observabilidade estruturada. |
-| B. Monitoramento Solana | 1/0/0 | 33,3% | Na main há RPC e WebSocket para monitoramento e coleta. As PRs #43–#53 integram captura TLS, auditoria, replay, projeção SQLite, evidência Yellowstone, reconciliação DAMM v2 e comprovação de índice no bloco. | Validar receptor, sequência compartilhada, persistência, reconexão, lacunas, duplicatas e replay com eventos do provider. |
+| B. Monitoramento Solana | 1/0/0 | 33,3% | Na main há RPC e WebSocket para monitoramento e coleta. As PRs #43–#55 integram captura TLS, auditoria, replay, projeção SQLite, evidência Yellowstone, reconciliação DAMM v2 e comprovação de índice no bloco. | Validar receptor, sequência compartilhada, persistência, reconexão, lacunas, duplicatas e replay com eventos do provider. |
 | C. Interpretação econômica | 1/0/0 | 33,3% | Na main há contratos de swap e parser conservador. As branches CPMM/DAMM v2 têm decodificadores, reconciliação e fixtures. | Integrar CPI, CPMM, DAMM v2, Token-2022 e wSOL. Validar evidência de BUY/SELL e rejeição da ambiguidade. |
 | D. Launch Radar | 0/0/0 | 0% | Catálogo de programas na main. | Integrar detecção de mints e pools, liquidez, permissões, concentração, volume, preço e sinais de fraude. |
 | E. Smart Money Radar | 1/0/0 | 33,3% | Monitor de carteiras com backfill e testes na main. | Validar histórico, acumulação, atividade coordenada e classificação de sinais com evidência. |
@@ -25,7 +25,7 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 - A PR #26 está aberta contra `feat/damm-v2-economic-reconciliation`. O histórico de #26 já contém #27 (rebuild com memória limitada) e #28 (elegibilidade de entregas) por meio da #30. A PR #29 segue aberta, mas sua árvore difere da #26 apenas nos registros e na documentação da política RAW. Conferir o delta residual antes de promover.
 - A PR #31 trata sequências anômalas e a #33, conflitos de linhagem. Ambas apontam para `feat/damm-v2-economic-reconciliation`. A #32 exclui sequências historicamente comprometidas e aponta para a branch da #26. Os três heads estão fora da história da #39.
 - A PR #39 está em Draft sobre `feat/token2022-transfer-checked-with-fee`; sua história já alcança `main` e `d08c146` (#23). A suíte offline da #39 tem 617 testes. Os campos de fonte, stream, domínio e sequência são declarados pelo chamador. A correção de proveniência verifica conteúdo protobuf, enquanto autenticação da origem e continuidade exigem o receptor compartilhado. Índice da transação no bloco e sequência de transporte têm finalidades distintas. A presença de meta, inclusive protobuf vazio, significa presença do campo. A evidência para classificação requer verificações adicionais.
-- A revisão do Yellowstone parte da #39. A #44 adiciona schema SQLite v3 e armazenamento dos envelopes por entrega com verificação de SHA-256 no replay. A #45 reconstrói a timeline em memória a partir da sequência compartilhada entre conta, transação, slot e controle, preservando o baseline por conexão. A #46 materializa a timeline de contas e seu checkpoint atomicamente no SQLite, preservando a referência ao frame de origem. A #47 reutiliza os decodificadores Solana para derivar evidência do replay. A #48 vincula transições elegíveis no mesmo snapshot. A #49 expõe a inspeção local em modo somente leitura. A #50 implementa captura TLS com reconexão limitada e foi exercitada em loopback. A #51 usa o reconciliador econômico existente após verificar finalidade reportada pelo banco. A #52 comprova o índice da transação com um bloco íntegro da mesma captura. A #53 verifica o withheld Token-2022 por estados adjacentes no mesmo banco e pela conferência dos saldos disponíveis. A validação com provider externo segue pendente.
+- A revisão do Yellowstone parte da #39. A #44 adiciona schema SQLite v3 e armazenamento dos envelopes por entrega com verificação de SHA-256 no replay. A #45 reconstrói a timeline em memória a partir da sequência compartilhada entre conta, transação, slot e controle, preservando o baseline por conexão. A #46 materializa a timeline de contas e seu checkpoint atomicamente no SQLite, preservando a referência ao frame de origem. A #47 reutiliza os decodificadores Solana para derivar evidência do replay. A #48 vincula transições elegíveis no mesmo snapshot. A #49 expõe a inspeção local em modo somente leitura. A #50 implementa captura TLS com reconexão limitada e foi exercitada em loopback. A #51 usa o reconciliador econômico existente após verificar finalidade reportada pelo banco. A #52 comprova o índice da transação com um bloco íntegro da mesma captura. A #53 verifica o withheld Token-2022 por estados adjacentes no mesmo banco e pela conferência dos saldos disponíveis. As PRs #54 e #55 verificam a configuração histórica do mint no epoch informado e entregam os snapshots ao cálculo de referral. A validação com provider externo segue pendente.
 
 ## Verificações executadas localmente
 
@@ -47,12 +47,14 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | `9b863e5` (#51) | 652 testes aprovados. Reconciliação DAMM v2 após finalidade reportada, bloqueio em banco morto e taxas históricas ainda sem verificação. |
 | `e62fa2c` (#52) | 653 testes aprovados. Índice comprovado no bloco completo e rejeição de bloco filtrado, meta incompatível e hash divergente. |
 | `a026a11` (#53) | 653 testes aprovados. Withheld verificado em estados de transações adjacentes, ausência de prova conserva a marcação anterior e delta divergente bloqueia. |
+| `62af8dd` (#54) | 655 testes aprovados. Verificação de taxa conforme prestate adjacente e epoch derivado; outro epoch com taxa divergente bloqueia. |
+| `43fdaa3` (#55) | 655 testes aprovados. A integração entrega snapshots e epoch à reconciliação inicial e preserva a verificação final. |
 
 Validação operacional pendente. Permanecem pendentes a captura de eventos Yellowstone, recuperação ponta a ponta com provider, carga em volume representativo e implantação.
 
 ## Próxima tarefa prioritária
 
-Validar a captura das PRs #50–#53 com um endpoint Yellowstone autorizado que entregue transações, contas, slots, metadados e blocos completos. Para verificar a configuração histórica da taxa do mint, comprovar o prestate do mint e o epoch da transação. O withheld já pode ser verificado offline quando existe um par adjacente e completo, com o schema e a finalidade reportada pelo provedor.
+Validar as PRs #50–#55 com um endpoint Yellowstone autorizado e um getEpochSchedule arquivado da mesma rede. Capturar transações, contas, slots, metadados e blocos completos da mesma sessão. Exercitar um swap DAMM v2, preferencialmente com referral, e registrar a cobertura real dos estados adjacentes exigidos pelos verificadores de taxa.
 
 A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguida da aplicação das correções nas branches descendentes da integração #14.
 
@@ -74,6 +76,8 @@ A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguid
 | [#51](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/51) | `codex/smr-yellowstone-damm-reconciliation` | `9b863e5` | `bca6838` (#50) |
 | [#52](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/52) | `codex/smr-yellowstone-block-order` | `e62fa2c` | `9b863e5` (#51) |
 | [#53](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/53) | `codex/smr-yellowstone-withheld-history` | `a026a11` | `e62fa2c` (#52) |
+| [#54](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/54) | `codex/smr-yellowstone-mint-history` | `62af8dd` | `a026a11` (#53) |
+| [#55](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/55) | `codex/smr-yellowstone-referral-history` | `43fdaa3` | `62af8dd` (#54) |
 
 Use o SHA exibido no resumo do GitHub Actions para vincular a validação ao commit. Inicie a retomada pela tarefa prioritária acima.
 

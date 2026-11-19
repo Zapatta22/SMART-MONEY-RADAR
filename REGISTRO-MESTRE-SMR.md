@@ -2628,7 +2628,7 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 - Base: branch `feat/damm-v2-economic-reconciliation`, commit `4a517ca15499746ddd3f5522f112c80aaac1433b` (HEAD confirmado na consulta de 19/11/2026).
 - Criado `src/smart_money_radar/data_sources/solana_transaction_evidence_bundle.py`.
 - Criado `tests/test_solana_transaction_evidence_bundle.py`.
-- `build_solana_transaction_evidence_bundle()` recebe um único payload RPC e `source_id`; calcula SHA-256 sobre JSON canonicalizado e executa internamente os decoders de inventário de instruções, transfers SPL/Token-2022 e deltas pre/post.
+- `build_solana_transaction_evidence_bundle()` recebe um único payload RPC e `source_id`; valida assinatura Solana em Base58 com 64 bytes, calcula SHA-256 sobre JSON canonicalizado e executa internamente os decoders de inventário de instruções, transfers SPL/Token-2022 e deltas pre/post.
 - A identidade do inventário é comparada com a assinatura e o slot do envelope.
 - Resultados incompletos dos decoders são preservados; `structurally_complete` permanece falso quando inventário ou deltas estão incompletos.
 - A camada é apenas de evidência: não classifica BUY/SELL, não reconcilia economia e não autoriza execução.
@@ -2637,13 +2637,13 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 - Payload válido e hash determinístico.
 - Wrapper padrão RPC `result`.
 - `source_id` ausente.
-- Assinatura ausente.
+- Assinatura ausente ou que não seja Base58 de 64 bytes.
 - Slot ausente/inválido, incluindo boolean.
 - Evidência de delta incompleta preservada como inelegível.
 - Payload não JSON rejeitado em vez de gerar hash de representação arbitrária.
 
 ### Estado e limites
-- Commits iniciais da branch: contrato `263c119d6f7fb6195e214062229096da629ae359`; testes `febb9ec60d5465077f1fe292ae11023644ddd67f`; Registro Mestre `68bee4a5952b45a1e3e5bfb0ab6a2dc9463972fe` (substituído pelo commit documental subsequente).
+- Commits da branch incluem contrato inicial `263c119d6f7fb6195e214062229096da629ae359`, testes `febb9ec60d5465077f1fe292ae11023644ddd67f`, validação de assinatura `8599339ea1e30c3c21db44a0f2607c45aa6920dd` e fixture de assinatura válida `aafa0fe6f52001d7382b86650395669f73d996a1`.
 - Registro Mestre atualizado nesta branch; validação CI ainda não consultada nesta atualização.
 - Ainda não existe integração deste envelope com `reconcile_damm_v2_economic_batch()`, contexts DAMM v2 ou snapshots históricos.
 - Ainda não há prova tipada de associação de contexts/eventos DAMM v2 ao envelope; essa integração deve ser uma etapa seguinte, com testes de mistura de assinatura, slot, fonte e payload.

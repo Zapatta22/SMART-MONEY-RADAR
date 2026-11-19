@@ -104,3 +104,12 @@ Movimentos externos que atinjam as mesmas token accounts também podem provocar 
 - `SetTransferFee` não é tratado como alteração da taxa ativa no epoch corrente: no código Token-2022 fixado, a nova taxa é agendada para `current_epoch + 2` e a taxa ativa anterior é preservada em `older_transfer_fee`. A escolha older/newer continua feita por `fee_for_epoch(transaction_epoch)`.
 - O adapter ainda precisa percorrer instruções externas e CPI, decodificar o programa Token-2022, resolver a conta mint e construir o inventário completo por mint. Sem inventário completo, falha fechado.
 - Fonte de referência: `solana-program/token-2022@875693f53c77534b46f0d06bdf781430870f8177`, `interface/src/extension/transfer_fee/instruction.rs` e `program/src/extension/transfer_fee/processor.rs`.
+
+
+## Scanner de instruções externas e CPI
+
+- `decode_solana_instruction_inventory(raw_transaction)` produz inventário ordenado de instruções externas e inner/CPI, com program ID, contas resolvidas, bytes de dados/parsed type e posição outer/inner.
+- O inventário é incompleto se `meta.innerInstructions` estiver ausente, a transação tiver falhado, program ID/account index não puder ser resolvido ou dados Token-2022 relevantes não puderem ser decodificados.
+- `collect_transfer_fee_config_init_positions(inventory, mint)` percorre instruções Token-2022 cuja primeira conta é o mint, reconhece `InitializeTransferFeeConfig` e retorna posições `(outer_index, inner_index)`; `-1` representa instrução externa.
+- `SetTransferFee` é validada, mas não entra na lista de inicialização porque agenda taxa futura e preserva a taxa ativa no epoch corrente. Sub-tags desconhecidas para a extensão causam inventário incompleto.
+- O resultado `TransferFeeConfigInitInventory` fornece diretamente `initialization_positions` e `complete` para preencher o snapshot do mint. O adapter ainda precisa ligar essa saída ao coletor de snapshots históricos e ao cálculo do epoch.

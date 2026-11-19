@@ -2843,3 +2843,10 @@ Auditar o diff completo da PR #34 e verificar se o contrato de snapshots, o bund
 
 ### Próxima etapa
 Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. Não promover FINALIZED a VERIFIED operacional até implementar confiança/autenticação do provider.
+
+
+### CI inicial e atualização dos fixtures — PR #35
+- Primeira execução `SMR tests`, run `44609714040`, job `135862746101`: FAILURE em 603 testes; 5 falhas estavam em `tests/test_geyser_bank_aware_timeline.py`, que ainda esperava transições com bancos apenas observados.
+- A falha confirmou a alteração semântica pretendida: os cenários positivos antigos precisavam declarar `SLOT_FINALIZED` nos bancos relevantes.
+- Fixtures atualizados para finalizar bancos e ancestrais nos casos positivos; adicionado teste de que `SLOT_DEAD` posterior revoga a elegibilidade mesmo após finalização.
+- Novo CI ainda pendente. Nenhum resultado de sucesso pode ser declarado até consulta ao run do HEAD atualizado.

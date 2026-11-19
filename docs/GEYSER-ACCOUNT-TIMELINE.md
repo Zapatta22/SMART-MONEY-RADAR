@@ -81,3 +81,7 @@ is in-memory, provider-scoped, and does not declare a bank canonical merely
 because it is processed or finalized; higher-level commitment policy and
 fork-resolution policy remain separate. No RAW/SQLite persistence, RPC, or
 Helius integration is part of this change.
+
+- O campo `source` de `NormalizedAccountUpdate` deve receber o mesmo namespace estável usado como `source_id` nos eventos de slot/block/parent. O identificador não deve mudar em cada reconexão; `stream_id` pode mudar.
+- A chave `ordering_key` agora contém somente `(slot, write_version)`; `stream_sequence` não desempata nem altera a ordem do ledger. Quando bancos diferentes compartilham o mesmo slot, a ordem linear é deliberadamente insuficiente.
+- `is_ancestor` só retorna `False` quando a cadeia observada chega à raiz conhecida (slot 0); cadeia incompleta retorna `None`.

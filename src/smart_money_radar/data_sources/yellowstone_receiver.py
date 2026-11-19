@@ -1,0 +1,61 @@
+"""Offline receiver for a single Yellowstone SubscribeUpdate transport session."""
+
+from collections.abc import Callable, Iterator
+
+from google.protobuf.message import DecodeError, Message
+
+from smart_money_radar.data_sources.geyser_ingestion import NormalizedGeyserEvent
+from smart_money_radar.data_sources.geyser_proto_adapter import adapt_subscribe_update
+from smart_money_radar.data_sources.geyser_transaction_updates import NormalizedTransactionObservation
+from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore, WireFrameReceipt
+
+
+class YellowstoneFrameReceiver:
+    """Journal complete protobuf frames in the connection's sequence domain."""
+
+    def __init__(
+        self, store: SQLiteGeyserRawStore, decode: Callable[[bytes], Message], *,
+        source_id: str, stream_id: str, ordering_domain_id: str, initial_sequence: int,
+    ) -> None:
+        store.register_frame_stream(source_id, stream_id, ordering_domain_id, initial_sequence)
+        self._store = store
+        self._decode = decode
+        self._source_id = source_id
+        self._stream_id = stream_id
+        self._ordering_domain_id = ordering_domain_id
+
+    def receive(self, payload: bytes, *, stream_sequence: int) -> WireFrameReceipt:
+        """Capture a frame at its assigned coordinate, including frames rejected by decoding."""
+        if not isinstance(payload, bytes):
+            raise TypeError("payload deve ser bytes")
+        kind = None
+        try:
+            message = self._decode(payload)
+            selected = message.WhichOneof("update_oneof")
+            if selected is not None:
+                adapt_subscribe_update(
+                    message, source_id=self._source_id, stream_id=self._stream_id,
+                    ordering_domain_id=self._ordering_domain_id, stream_sequence=stream_sequence,
+                )
+                kind = selected
+        except (DecodeError, ValueError):
+            pass
+        return self._store.append_wire_frame(
+            source_id=self._source_id, stream_id=self._stream_id,
+            ordering_domain_id=self._ordering_domain_id, stream_sequence=stream_sequence,
+            payload=payload, frame_kind=kind,
+        )
+
+    def replay(
+        self,
+    ) -> Iterator[tuple[int, NormalizedGeyserEvent | NormalizedTransactionObservation | None]]:
+        """Decode a consistent stream snapshot, including coordinates of control frames."""
+        for sequence, payload in self._store.iter_wire_frames(
+            self._source_id, self._stream_id, self._ordering_domain_id,
+        ):
+            event = adapt_subscribe_update(
+                self._decode(payload), source_id=self._source_id, stream_id=self._stream_id,
+                ordering_domain_id=self._ordering_domain_id, stream_sequence=sequence,
+                raw_message_bytes=payload,
+            )
+            yield sequence, event

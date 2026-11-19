@@ -219,7 +219,29 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
             store.register_stream("yellowstone-mainnet", "stream-a", 1)
         store.close()
 
-    def test_existing_schema_v1_database_upgrades_to_v2(self):
+    def test_schema_v2_migration_preserves_logical_raw_and_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "smr_geyser.sqlite"
+            store = SQLiteGeyserRawStore(path)
+            original = self.event()
+            store.register_stream(original.source_id, "stream-a", 7)
+            store.ingest(original, self.delivery(7))
+            checkpoint = store.get_transport_checkpoint(original.source_id, "stream-a")
+            store.close()
+            with sqlite3.connect(path) as connection:
+                connection.execute("DROP TABLE geyser_wire_frames")
+                connection.execute("DROP TABLE geyser_frame_streams")
+                connection.execute("DELETE FROM geyser_schema_migrations WHERE version = 3")
+
+            upgraded = SQLiteGeyserRawStore(path)
+            self.assertEqual(upgraded.get_transport_checkpoint(original.source_id, "stream-a"), checkpoint)
+            self.assertEqual(upgraded.get_raw_event(original.event_id)["payload_bytes"], original.payload_bytes)
+            upgraded.register_frame_stream(original.source_id, "stream-b", "domain-b", 0)
+            self.assertEqual(list(upgraded.iter_wire_frames(original.source_id, "stream-b", "domain-b")), [])
+            self.assertEqual(upgraded.integrity_check(), ["ok"])
+            upgraded.close()
+
+    def test_existing_schema_v1_database_upgrades_to_current(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "smr_geyser.sqlite"
             store = SQLiteGeyserRawStore(path)
@@ -229,7 +251,9 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
                 connection.execute("DROP TABLE geyser_transport_anomalies")
                 connection.execute("DROP TABLE geyser_transport_gaps")
                 connection.execute("DROP TABLE geyser_transport_checkpoints")
-                connection.execute("DELETE FROM geyser_schema_migrations WHERE version = 2")
+                connection.execute("DROP TABLE geyser_wire_frames")
+                connection.execute("DROP TABLE geyser_frame_streams")
+                connection.execute("DELETE FROM geyser_schema_migrations WHERE version > 1")
                 connection.commit()
             finally:
                 connection.close()
@@ -240,7 +264,7 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
                 version = connection.execute(
                     "SELECT MAX(version) FROM geyser_schema_migrations"
                 ).fetchone()[0]
-            self.assertEqual(version, 2)
+            self.assertEqual(version, SQLiteGeyserRawStore.SCHEMA_VERSION)
             self.assertEqual(upgraded.integrity_check(), ["ok"])
             upgraded.close()
 

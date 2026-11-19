@@ -1,12 +1,11 @@
 """Dedicated SQLite persistence for immutable Geyser RAW events and deliveries.
 
-This first persistence slice is intentionally offline: it accepts bytes and
-stable event identities supplied by a future transport adapter. It does not
-connect to Yellowstone, decode protobufs, normalize events, or advance stream
-checkpoints.
+Logical events and exact transport envelopes have independent storage and
+continuity. This offline store does not connect to Yellowstone.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -32,6 +31,27 @@ def _sequence(value: int | None, field: str) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{field} deve ser inteiro não negativo ou None")
     return value
+
+
+def _frame_sequence(value: int) -> int:
+    sequence = _sequence(value, "stream_sequence")
+    if sequence is None or sequence > (1 << 63) - 1:
+        raise ValueError("stream_sequence fora do intervalo inteiro do SQLite")
+    return sequence
+
+
+@dataclass(frozen=True)
+class WireFrameReceipt:
+    frame_id: int
+    payload_sha256: str
+    status: str
+    contiguous_sequence: int
+    last_seen_sequence: int
+    tainted: bool
+
+    @property
+    def interrupted(self) -> bool:
+        return self.tainted or self.contiguous_sequence != self.last_seen_sequence
 
 
 @dataclass(frozen=True)
@@ -73,7 +93,7 @@ class SQLiteGeyserRawStore:
     recorded, including conflicting deliveries.
     """
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, database_path: Path | str) -> None:
         self.database_path = str(database_path)
@@ -213,6 +233,181 @@ class SQLiteGeyserRawStore:
                         VALUES (2, CURRENT_TIMESTAMP);
                     COMMIT;
                 """)
+
+            if current < 3:
+                connection.executescript("""
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE IF NOT EXISTS geyser_frame_streams (
+                        source_id TEXT NOT NULL,
+                        stream_id TEXT NOT NULL,
+                        ordering_domain_id TEXT NOT NULL,
+                        initial_sequence INTEGER NOT NULL,
+                        contiguous_sequence INTEGER NOT NULL,
+                        last_seen_sequence INTEGER NOT NULL,
+                        tainted INTEGER NOT NULL DEFAULT 0 CHECK(tainted IN (0,1)),
+                        PRIMARY KEY(source_id, stream_id),
+                        UNIQUE(source_id, ordering_domain_id)
+                    );
+                    CREATE TABLE IF NOT EXISTS geyser_wire_frames (
+                        frame_id INTEGER PRIMARY KEY,
+                        source_id TEXT NOT NULL,
+                        stream_id TEXT NOT NULL,
+                        stream_sequence INTEGER NOT NULL CHECK(stream_sequence >= 0),
+                        frame_kind TEXT,
+                        payload_bytes BLOB NOT NULL,
+                        payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256) = 64),
+                        status TEXT NOT NULL CHECK(status IN
+                            ('accepted','duplicate','collision','invalid','before_baseline')),
+                        received_at TEXT NOT NULL,
+                        FOREIGN KEY(source_id, stream_id)
+                            REFERENCES geyser_frame_streams(source_id, stream_id)
+                    );
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_geyser_wire_accepted
+                        ON geyser_wire_frames(source_id, stream_id, stream_sequence)
+                        WHERE status = 'accepted';
+                    INSERT OR IGNORE INTO geyser_schema_migrations(version, applied_at)
+                        VALUES (3, CURRENT_TIMESTAMP);
+                    COMMIT;
+                """)
+
+    def register_frame_stream(
+        self, source_id: str, stream_id: str, ordering_domain_id: str, initial_sequence: int
+    ) -> None:
+        """Bind a transport connection to a fresh ordering domain before capture."""
+        source_id = _text(source_id, "source_id")
+        stream_id = _text(stream_id, "stream_id")
+        ordering_domain_id = _text(ordering_domain_id, "ordering_domain_id")
+        initial = _frame_sequence(initial_sequence)
+        with self._connection() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """SELECT stream_id, ordering_domain_id, initial_sequence
+                   FROM geyser_frame_streams WHERE source_id = ?
+                   AND (stream_id = ? OR ordering_domain_id = ?)""",
+                (source_id, stream_id, ordering_domain_id),
+            ).fetchall()
+            if rows:
+                if rows != [(stream_id, ordering_domain_id, initial)]:
+                    raise ValueError("stream ou domínio já associado a outro baseline")
+                return
+            connection.execute(
+                """INSERT INTO geyser_frame_streams
+                   (source_id, stream_id, ordering_domain_id, initial_sequence,
+                    contiguous_sequence, last_seen_sequence) VALUES (?, ?, ?, ?, ?, ?)""",
+                (source_id, stream_id, ordering_domain_id, initial, initial - 1, initial - 1),
+            )
+
+    def append_wire_frame(
+        self, *, source_id: str, stream_id: str, ordering_domain_id: str,
+        stream_sequence: int, payload: bytes, frame_kind: str | None,
+    ) -> WireFrameReceipt:
+        """Archive a delivery and atomically update its transport continuity."""
+        sequence = _frame_sequence(stream_sequence)
+        if not isinstance(payload, bytes):
+            raise TypeError("payload deve ser bytes")
+        if frame_kind is not None:
+            _text(frame_kind, "frame_kind")
+        digest = hashlib.sha256(payload).hexdigest()
+        coordinate = (source_id, stream_id, sequence)
+        with self._connection() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            stream = connection.execute(
+                """SELECT initial_sequence, contiguous_sequence, last_seen_sequence, tainted
+                   FROM geyser_frame_streams
+                   WHERE source_id = ? AND stream_id = ? AND ordering_domain_id = ?""",
+                (source_id, stream_id, ordering_domain_id),
+            ).fetchone()
+            if stream is None:
+                raise ValueError("stream e domínio precisam ser registrados antes da captura")
+            initial, contiguous, last_seen, tainted = stream
+            prior = connection.execute(
+                """SELECT payload_bytes, payload_sha256, frame_kind FROM geyser_wire_frames
+                   WHERE source_id = ? AND stream_id = ? AND stream_sequence = ?
+                   AND status = 'accepted'""",
+                coordinate,
+            ).fetchone()
+            if sequence < initial:
+                status = "before_baseline"
+            elif frame_kind is None:
+                status = "invalid"
+            elif prior is None:
+                status = "accepted"
+            elif prior == (payload, digest, frame_kind):
+                status = "duplicate"
+            else:
+                status = "collision"
+            delivery = connection.execute(
+                """INSERT INTO geyser_wire_frames
+                   (source_id, stream_id, stream_sequence, payload_bytes, payload_sha256,
+                    frame_kind, status, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (*coordinate, payload, digest, frame_kind, status,
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            if status == "accepted" and sequence == contiguous + 1:
+                for (candidate,) in connection.execute(
+                    """SELECT stream_sequence FROM geyser_wire_frames
+                       WHERE source_id = ? AND stream_id = ? AND stream_sequence >= ?
+                       AND status = 'accepted' ORDER BY stream_sequence""",
+                    coordinate,
+                ):
+                    if candidate != contiguous + 1:
+                        break
+                    contiguous = candidate
+            last_seen = max(last_seen, sequence)
+            tainted = bool(tainted or status in {"collision", "invalid", "before_baseline"})
+            connection.execute(
+                """UPDATE geyser_frame_streams SET contiguous_sequence = ?,
+                   last_seen_sequence = ?, tainted = ? WHERE source_id = ? AND stream_id = ?""",
+                (contiguous, last_seen, int(tainted), source_id, stream_id),
+            )
+            return WireFrameReceipt(delivery.lastrowid, digest, status, contiguous, last_seen, tainted)
+
+    def get_wire_frame(self, frame_id: int) -> bytes | None:
+        """Read exact persisted bytes and verify their digest before returning them."""
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT payload_bytes, payload_sha256 FROM geyser_wire_frames WHERE frame_id = ?",
+                (frame_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        payload, digest = row
+        if not isinstance(payload, bytes) or hashlib.sha256(payload).hexdigest() != digest:
+            raise ValueError("SHA-256 do frame persistido diverge")
+        return payload
+
+    def iter_wire_frames(
+        self, source_id: str, stream_id: str, ordering_domain_id: str,
+    ) -> Iterator[tuple[int, bytes]]:
+        """Replay one uninterrupted domain from a consistent read snapshot."""
+        with self._connection() as connection, connection:
+            connection.execute("BEGIN")
+            stream = connection.execute(
+                """SELECT initial_sequence, contiguous_sequence, last_seen_sequence, tainted
+                   FROM geyser_frame_streams
+                   WHERE source_id = ? AND stream_id = ? AND ordering_domain_id = ?""",
+                (source_id, stream_id, ordering_domain_id),
+            ).fetchone()
+            if stream is None:
+                raise ValueError("stream e domínio desconhecidos")
+            initial, contiguous, last_seen, tainted = stream
+            if tainted or contiguous != last_seen:
+                raise ValueError("stream interrompido ou com anomalia histórica")
+            rows = connection.execute(
+                """SELECT stream_sequence, payload_bytes, payload_sha256
+                   FROM geyser_wire_frames WHERE source_id = ? AND stream_id = ?
+                   AND status = 'accepted' ORDER BY stream_sequence""",
+                (source_id, stream_id),
+            )
+            expected = initial
+            for sequence, payload, digest in rows:
+                if (sequence != expected or sequence > contiguous or not isinstance(payload, bytes)
+                        or hashlib.sha256(payload).hexdigest() != digest):
+                    raise ValueError("integridade dos frames persistidos diverge")
+                yield sequence, payload
+                expected += 1
+            if expected != contiguous + 1:
+                raise ValueError("sequência persistida está incompleta")
 
     def register_stream(
         self, source_id: str, stream_id: str, initial_sequence: int

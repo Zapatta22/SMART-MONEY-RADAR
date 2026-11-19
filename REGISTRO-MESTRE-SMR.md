@@ -2125,9 +2125,9 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 
 ## 278. CI final da cadeia de snapshots históricos — 19/11/2026
 
-- HEAD da PR #23: `0ce2bf7e2e6811afd3eca8c3d7f44a982cc30a6e`.
-- CI #1562 (`44449119065`) no HEAD atual: completed/success, **451 testes OK**, compileall aprovado.
-- A atualização do Registro Mestre e descrição da PR após CI #1561 foram documentais; nenhum código/teste mudou.
+- HEAD funcional/documental da PR #23 após sincronização de continuidade: `ee95cd298a1704391b3b62245dbf4fc410eefe64`.
+- CI #1562 (`44449119065`) e CI #1563 (`44449252412`) no HEAD validado: completed/success, **451 testes OK**, compileall aprovado.
+- O último ajuste após CI #1561 foi documental; nenhum código/teste mudou após a suíte de 451 testes.
 - PR #23 continua OPEN/DRAFT, `mergeable=true`, `mergeable_state=clean`, sem merge; PR #22 permanece Draft.
 - `main` continua `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 - Próxima implementação definida: normalizador provider-neutral de Yellowstone/Geyser account updates e timeline por pubkey, preservando slot, write_version, txn_signature e stream sequence; construir pareamento pre/post, startup baseline, recuperação de lacunas/replay e descarte de forks antes de conectar Helius ou outro provider.

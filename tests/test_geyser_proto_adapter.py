@@ -347,6 +347,39 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
             separate_source = self.receiver(store, source="validator-b")
             self.assertFalse(separate_source.receive(raw, stream_sequence=40).interrupted)
 
+    def test_timeline_replay_preserves_account_coordinates_across_non_account_frames(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        self.addCleanup(store.close)
+        receiver = self.receiver(store)
+        message = _parse("account_update")
+        receiver.receive(message.SerializeToString(), stream_sequence=40)
+
+        ping = _UPDATE()
+        ping.ping.SetInParent()
+        receiver.receive(self.transaction_frame(), stream_sequence=41)
+        receiver.receive(ping.SerializeToString(), stream_sequence=42)
+        receiver.receive(_parse("slot_created_bank").SerializeToString(), stream_sequence=43)
+
+        message.account.slot += 1
+        message.account.account.write_version += 1
+        receiver.receive(message.SerializeToString(), stream_sequence=44)
+        timeline = receiver.rebuild_account_timeline()
+        writes = timeline.timeline_records()
+        self.assertEqual([record.update.stream_sequence for record in writes], [40, 44])
+        self.assertEqual([record.continuity_epoch for record in writes], [0, 0])
+        self.assertEqual(timeline.gaps, ())
+
+        receiver.receive(message.SerializeToString(), stream_sequence=46)
+        with self.assertRaisesRegex(ValueError, "interrompido"):
+            receiver.rebuild_account_timeline()
+
+        reconnected = self.receiver(store, stream="connection-b", domain="domain-b")
+        reconnected.receive(message.SerializeToString(), stream_sequence=40)
+        records = reconnected.rebuild_account_timeline().timeline_records()
+        self.assertEqual(len(records), 1)
+        self.assertTrue(records[0].baseline)
+        self.assertEqual(records[0].update.stream_id, "connection-b")
+
     def test_malformed_frame_remains_auditable_and_taints_domain(self):
         store = SQLiteGeyserRawStore(":memory:")
         self.addCleanup(store.close)

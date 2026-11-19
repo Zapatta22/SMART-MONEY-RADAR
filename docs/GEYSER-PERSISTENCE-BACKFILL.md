@@ -425,7 +425,13 @@ stream e domínio dentro da mesma fonte.
 O replay confere os hashes dentro de um snapshot SQLite e produz a sequência
 com eventos decodificados ou a posição do frame de controle. Consumidores
 devem concluir a leitura antes de publicar projeções ou checkpoints, pois
-uma falha de integridade pode surgir no decorrer do cursor. A próxima camada
-deve vincular esse replay à ingestão lógica e aplicar a continuidade por
-domínio ao reconstruir a timeline. Receptores e fornecedores de rede ainda
-precisam de validação operacional.
+uma falha de integridade pode surgir no decorrer do cursor. A próxima camada deve vincular esse replay às projeções SQLite e à ingestão
+lógica. Receptores e fornecedores de rede ainda precisam de validação
+operacional.
+
+A reconstrução offline da timeline lê um domínio por vez. Frames de transação,
+controle e metadados ocupam suas posições originais sem gerar lacunas
+artificiais entre updates de conta. Eventos de slot e banco alimentam o tracker
+de linhagem existente. A timeline só é devolvida após a validação de todos
+os envelopes do snapshot. A primeira observação de outra conexão passa a
+ser um baseline independente.

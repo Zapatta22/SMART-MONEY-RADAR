@@ -2647,3 +2647,43 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 - `main` não foi alterada.
 - Nenhum provedor foi conectado; desenvolvimento offline.
 - Próxima ação: revisão técnica da implementação e da semântica dos estados, depois testes adicionais de borda e escala da auditoria/rebuild. Não fazer merge sem autorização.
+
+
+## 297. Revisão de borda e versionamento da auditoria RAW sem sequência — 19/11/2026
+
+### Revisão e decisões confirmadas
+- Revisada a política oficial e a implementação da PR #26.
+- Confirmado que a chave de reconciliação é `event_id + source_id + payload_sha256`; `stream_id` não participa da identidade. Isso é intencional: uma testemunha sequenciada em outra stream pode reconciliar a entrega, mas sua sequência não é transferida.
+- Confirmado que a timeline permanece separada e só seleciona deliveries sequenciadas; auditoria reconciliada não injeta uma segunda ocorrência na timeline.
+- Não foi identificado defeito na regra central de reconciliação durante esta revisão.
+
+### Ajustes implementados na branch da PR #26
+- Adicionada tabela `geyser_unsequenced_delivery_audit_schema_migrations`, com registro da versão inicial 1 e bloqueio de abertura por código com versão de schema superior à suportada.
+- Ampliados os testes de auditoria para cobrir:
+  - fontes diferentes sem reconciliação;
+  - eventos distintos no mesmo slot e em chegadas adjacentes;
+  - deliveries diferentes com timestamp de recebimento idêntico;
+  - múltiplas deliveries sem sequência preservadas individualmente;
+  - múltiplas testemunhas sequenciadas, com lista completa de IDs;
+  - evento inicialmente não resolvido que se torna reconciliado após chegada posterior da testemunha e novo rebuild;
+  - exclusão de evento sem sequência da timeline e contabilização no checkpoint de recovery;
+  - registro da versão da migração.
+- O teste de reconciliação tardia agora executa rebuild antes e depois da chegada da testemunha.
+- Total atual do arquivo de testes: 14 métodos de teste específicos.
+
+### Commits da revisão
+- `33e8a5c7f0de5f91e26d716f6c25301e27b34ab6` — registro de migração versionada.
+- `eec9e512f0cf256d2fa8dcfe790fef3fc64a92cd` — testes adicionais de borda e isolamento da timeline.
+- `4d71af82f1b7823f5849d85b3fbc171b8ee19edd` — teste de timestamp de recebimento idêntico.
+- `75548693dcdcf75be4484ebd09f62d731663a73b` — teste de testemunha tardia e lista completa de testemunhas.
+- HEAD conhecido da branch: `75548693dcdcf75be4484ebd09f62d731663a73b`.
+
+### Validação e limites
+- Os arquivos foram gravados diretamente na branch `feat/geyser-unsequenced-raw-audit`; nenhuma alteração foi feita em `main).
+- A consulta de execuções CI para o HEAD atual não retornou workflow run. Portanto, **os novos testes e compileall ainda não estão comprovados como executados/aprovados**. Não declarar CI verde nesta revisão.
+- Não foi executado benchmark de escala; o rebuild continua materializando deliveries e estruturas auxiliares em memória.
+- PR #26 continua Draft, aberta e sem merge; PR #23 continua como branch base não integrada.
+- Nenhum provider, RPC, VPS, credencial ou execução on-chain foi conectado.
+
+### Próxima ação
+Obter execução verificável dos 14 testes novos, da suíte completa e de `python -m compileall -q src tests`; corrigir qualquer falha antes de considerar a PR pronta. Depois, revisar o versionamento e o desempenho com dados representativos. Não fazer merge sem autorização.

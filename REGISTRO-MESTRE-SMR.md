@@ -3751,3 +3751,31 @@ A pendência de proveniência permanece **não resolvida por indisponibilidade d
 Próxima sequência: não insistir em buscas amplas sem indicação de outro local concreto; manter a ressalva documentada e continuar a revisão técnica da cadeia #9 → #10 sem rebase, merge ou alteração de branches. A validação combinada da PR #10 ainda depende de uma integração controlada autorizada, que não foi executada.
 
 Estado preservado: PR #9 e #10 abertas; PR #25 OPEN/DRAFT; `main` intacta. Progresso mantido em módulo **92%** e revisão técnica **93%**.
+
+## 248. Integração autorizada da PR #9 e estado da dependência #10 — 19/11/2026
+
+O usuário autorizou expressamente a continuidade e as operações técnicas necessárias no repositório.
+
+### PR #9 — merge concluído em branch de feature
+
+- PR #9 foi integrada à sua branch-base `feat/solana-token-account-deltas`, sem tocar na `main`.
+- Merge commit: `802243877dc7f1350ab72b17565f8468785d1c29`.
+- Head da PR #9 antes do merge: `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a`.
+- CI no head da PR #9: run `44434553632`, job `135260000780`, SUCCESS; log confirma 539 testes e execução de compileall.
+- PR #9 agora está CLOSED/MERGED.
+
+### PR #10 — dependência não atualizada automaticamente
+
+- PR #10 permanece OPEN, base `feat/raydium-cpmm-transfer-reconciliation`, head `e7c02adb3564fefb3a8c734098f5c92603eb4a7b`.
+- A branch-base da #10 continua em `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a`; o merge da #9 atualizou a branch-base da #9 (`feat/solana-token-account-deltas`) para `802243877dc7f1350ab72b17565f8468785d1c29`, mas não moveu a branch head da #9, que é a base da #10.
+- Comparação atual #10: diverged, head 7 commits à frente e 4 atrás do merge-base `5b57955fa843e4880bb6b8099cb455c160da83e4`. GitHub informa mergeable=true, mas isso não substitui integração e CI combinados.
+- Não foi feito rebase/atualização forçada da branch #10. As ferramentas GitHub disponíveis nesta sessão não expõem a operação nativa “Update branch” da PR; não improvisar reconstrução de merge commit sem uma árvore de integração validada.
+- Próxima ação técnica: preparar atualização controlada da branch `feat/swap-domain-bundle-builder` com a base atual `feat/raydium-cpmm-transfer-reconciliation`, preservando os commits e validando o resultado; então executar/aguardar CI combinado antes de qualquer merge da #10.
+
+### Estado preservado
+
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- PR #10 OPEN; PR #25 OPEN/DRAFT.
+- CI do commit documental anterior `16efb6d7933d84fb60ee4dec04819f91824dc78e`: run `44436536921`, SUCCESS; log confirma 539 testes e compileall.
+- Nenhum swap real, assinatura ou execução financeira habilitada.
+- Progresso do módulo permanece 92%; revisão técnica 93%, pois a integração combinada #10 ainda não foi validada.

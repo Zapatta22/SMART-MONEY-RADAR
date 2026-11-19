@@ -208,6 +208,22 @@ class BankAwareAccountTimelineTests(unittest.TestCase):
         timeline.add(late_ancestor)
         self.assertEqual(timeline.transition_for("target-after-gap"), ())
 
+    def test_cleared_ancestor_invalidates_descendant_pre_post_chain(self):
+        timeline = AccountUpdateTimeline()
+        timeline.add_block_meta(_block(100, 10, "parent-hash", 99, "grandparent-hash"))
+        timeline.add_block_meta(_block(101, 11, "child-hash", 100, "parent-hash", 2))
+        timeline.add(_account(100, 10, "before", 1, write_version=10))
+        timeline.add(_account(101, 11, "target", 2, write_version=11))
+        cleared = normalize_entry_update_parent(
+            {
+                "slot": 100, "cleared_bank_id": 10,
+                "parent_slot": 99, "parent_block_id": b"opaque-cleared-parent",
+            },
+            source_id="validator-A", stream_id="stream-1", stream_sequence=3,
+        )
+        timeline.add_entry_update_parent(cleared)
+        self.assertEqual(timeline.transition_for("target"), ())
+
 
 if __name__ == "__main__":
     unittest.main()

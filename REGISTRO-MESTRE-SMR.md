@@ -3030,3 +3030,52 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - PR #23 permanece aberta/Draft, com destino `feat/damm-v2-referral-transfer-attribution`; não foi mergeada.
 - `main` verificada após o merge: permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 - Próxima ação: revisar a integração da PR #23 no seu destino configurado, sem alterar `main` e sem merge sem autorização explícita.
+
+
+## 308. Revisão técnica da PR #23 após integração PR #34/#35 — 19/11/2026
+
+### Snapshot revisado e CI
+- PR #23: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/23
+- Título: Reconcile DAMM v2 swap economics against token account deltas.
+- Estado durante a revisão: OPEN/DRAFT, mergeable=true, sem merge.
+- Branch head: `feat/damm-v2-economic-reconciliation`, snapshot revisado `8735ff4bd54b801925146df34825ee353efea54c`.
+- Branch base: `feat/damm-v2-referral-transfer-attribution`, HEAD `0567eb9c4981ba6ffc33e98a402292130667760a`.
+- Compare entre branch base e head: 298 commits à frente, 0 atrás; merge base igual ao HEAD da base.
+- CI no HEAD exato `8735ff4bd54b801925146df34825ee353efea54c`: workflow `SMR tests`, run `44613829010`, job `135876655534`, SUCCESS.
+- Log do job confirma 606 testes aprovados em 4,859s e `python -m compileall -q src tests` aprovado.
+- CI comprova suíte automatizada e compilação no snapshot; não comprova provider live, ingestão mainnet nem integridade operacional em produção.
+
+### Achados bloqueadores para aprovação técnica
+1. **Timeline persistida não aplica taint histórico de anomalias de transporte.**
+   - Em `src/smart_money_radar/storage/geyser_account_timeline_projection.py`, `rebuild()` seleciona a primeira delivery sequenciada de cada evento RAW (`MIN(delivery_id)` com `stream_sequence IS NOT NULL`) e reproduz o evento sem consultar a elegibilidade da sequência em `geyser_transport_anomalies`.
+   - A consulta de anomalias abertas é usada posteriormente apenas para calcular o checkpoint/coverage; não remove do replay os eventos afetados.
+   - Assim, uma sequência reutilizada por eventos distintos ou marcada por conflito de identidade pode deixar o primeiro evento da sequência dentro da Timeline, inclusive se a anomalia for posteriormente RESOLVED. O status administrativo RESOLVED não deve reabilitar evidência histórica.
+   - `AccountUpdateTimeline.transition_for()` não recebe a auditoria de anomalias de transporte; a classificação de banco/finality, por si só, não compensa a falta desse gate.
+   - Correção necessária: construir a projeção a partir de deliveries elegíveis segundo auditoria histórica por sequência, preservando taint mesmo após resolução administrativa; nenhuma sequência afetada pode fornecer transição elegível. Adicionar testes de colisão de sequência, conflito RAW, resolução administrativa posterior e ausência de transição para todas as deliveries afetadas.
+
+2. **A projeção não valida o SHA-256 armazenado do payload RAW antes de decodificar.**
+   - O SELECT de `rebuild()` lê `payload_bytes`, mas não seleciona `payload_sha256`; `_decode_event()` valida envelope/campos e Base64, mas não recalcula o digest contra o hash persistido.
+   - Um payload normalizado alterado para outro JSON ainda estruturalmente válido pode ser projetado apesar de divergir do hash registrado na linha RAW.
+   - O teste atual `test_bad_raw_payload_rolls_back_previous_generation` cobre Base64 inválido, mas não mutação válida que preserve a estrutura.
+   - Correção necessária: verificar SHA-256 dos bytes exatos antes de qualquer decode/projeção e falhar sem substituir a geração anterior; adicionar teste com alteração semântica válida e hash original preservado.
+
+### Achado de consistência/replay a resolver
+3. **Replay em ordem de chegada não recupera uma lacuna preenchida tardiamente.**
+   - A projeção ordena por `delivery_id`; `AccountUpdateTimeline.add()` classifica uma sequência menor/igual à última observada como conflito.
+   - O RAW store permite que a chegada tardia de uma sequência ausente feche a lacuna do checkpoint de transporte, mas o rebuild continua vendo a ordem de chegada e pode manter conflito/gap na Timeline.
+   - Exemplo a cobrir: sequência 1, depois 3, depois chegada tardia da 2. Definir explicitamente se backfill/replay pode reconstruir a ordem lógica pela sequência dentro do mesmo stream; se não puder, documentar a perda de elegibilidade como política, sem declarar continuidade completa. Não misturar streams/domínios diferentes.
+
+### Pontos aprovados nesta revisão
+- Bundle Solana vincula inventory, transfers e balance deltas ao mesmo payload canonicalizado e não produz classificação BUY/SELL.
+- Reconciliação DAMM v2 agrega deltas por token account e falha fechado diante de transferências não atribuídas que afetem contas do swap.
+- Snapshot de mint/withheld exige proveniência, hashes, assinatura/slot/ordem e ordering_domain_id compatíveis.
+- Estado withheld permanece EXPECTED_NOT_VERIFIED até conferência de TLV pre/post; VERIFIED depende de snapshots vinculados.
+- Política de finality preserva a distinção entre declaração PROVIDER_REPORTED_FINALIZED e prova criptográfica independente.
+- Storage RAW e recovery permanecem offline; nenhum adapter/provider live foi encontrado nesta etapa.
+
+### Decisão da revisão e estado
+- **PR #23 não aprovada para merge neste snapshot.** CI verde e mergeable=true não resolvem os achados de integridade acima.
+- Nenhum arquivo de produção foi alterado nesta revisão.
+- Registro Mestre atualizado nesta seção para preservar os achados e evitar reauditoria.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhum merge, retarget ou alteração de main foi executado.
+- Próxima ação recomendada: corrigir os dois bloqueadores de integridade em branch de trabalho, adicionar testes de regressão, validar CI no novo HEAD e então repetir a revisão focada. O achado de replay tardio deve ser resolvido/documentado antes de qualquer promoção operacional.

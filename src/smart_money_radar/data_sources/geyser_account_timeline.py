@@ -256,7 +256,11 @@ class AccountUpdateTimeline:
             entries = self._events.get(account, ())
             for index, entry in enumerate(entries):
                 update = entry.update
-                if update.txn_signature != txn_signature or entry.baseline or index == 0:
+                if (
+                    update.txn_signature != txn_signature
+                    or index == 0
+                    or (entry.baseline and update.bank_id is None)
+                ):
                     continue
                 if update.is_startup:
                     continue

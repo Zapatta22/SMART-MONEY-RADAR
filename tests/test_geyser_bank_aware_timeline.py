@@ -171,6 +171,19 @@ class BankAwareAccountTimelineTests(unittest.TestCase):
         timeline.add(target)
         self.assertEqual(timeline.transition_for("legacy-target"), ())
 
+    def test_account_updates_arriving_out_of_ledger_order_reconcile_after_sorting(self):
+        timeline = AccountUpdateTimeline()
+        timeline.add_block_meta(_block(100, 10, "parent-hash", 99, "grandparent-hash"))
+        timeline.add_block_meta(_block(101, 11, "child-hash", 100, "parent-hash", 2))
+        # The child/post-state arrives first. Its baseline flag must not prevent
+        # pairing once an earlier ancestor write arrives in the same continuity epoch.
+        timeline.add(_account(101, 11, "target", 1, write_version=11))
+        self.assertEqual(timeline.transition_for("target"), ())
+        timeline.add(_account(100, 10, "before", 2, write_version=10))
+        result = timeline.transition_for("target")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].pre_state.txn_signature, "before")
+
 
 if __name__ == "__main__":
     unittest.main()

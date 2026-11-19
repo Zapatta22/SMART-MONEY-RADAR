@@ -6,9 +6,11 @@ decode economic meaning, classify BUY/SELL, or authorize execution.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 from typing import Any
+
+from google.protobuf.message import DecodeError
 
 U64_MAX = (1 << 64) - 1
 _BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -38,10 +40,7 @@ def _serialize(message: Any, field: str) -> bytes:
     serialize = getattr(message, "SerializeToString", None)
     if not callable(serialize):
         raise TypeError(f"{field} deve ser uma mensagem protobuf serializável")
-    try:
-        value = serialize(deterministic=True)
-    except TypeError:
-        value = serialize()
+    value = serialize(deterministic=True)
     if not isinstance(value, bytes):
         raise ValueError(f"{field} não produziu bytes protobuf")
     return value
@@ -85,6 +84,30 @@ class NormalizedTransactionObservation:
     def evidence_complete(self) -> bool:
         return self.meta_payload is not None
 
+def bind_transaction_wire(
+    observation: NormalizedTransactionObservation, message: Any, wire: bytes
+) -> NormalizedTransactionObservation:
+    """Bind captured bytes to the protobuf object received from the same delivery."""
+    if not isinstance(wire, bytes) or not wire:
+        raise ValueError("raw_message_bytes deve conter bytes protobuf não vazios")
+    decoded = type(message)()
+    parse = getattr(decoded, "ParseFromString", None)
+    if not callable(parse):
+        raise TypeError("A validação de RAW exige ParseFromString no protobuf.")
+    try:
+        parse(wire)
+    except DecodeError as exc:
+        raise ValueError("raw_message_bytes não contém um protobuf válido.") from exc
+    if decoded != message:
+        raise ValueError("raw_message_bytes diverge da mensagem protobuf.")
+    return replace(
+        observation,
+        raw_payload=wire,
+        raw_payload_provenance="WIRE",
+        payload_sha256=hashlib.sha256(wire).hexdigest(),
+    )
+
+
 def normalize_transaction_update(message: Any, *, source_id: str, stream_id: str,
                                  ordering_domain_id: str, stream_sequence: int,
                                  raw_message_bytes: bytes | None = None) -> NormalizedTransactionObservation:
@@ -116,16 +139,13 @@ def normalize_transaction_update(message: Any, *, source_id: str, stream_id: str
     transaction_payload = _serialize(transaction, "transaction")
     meta = getattr(info, "meta", None) if _has_field(info, "meta") else None
     meta_payload = None if meta is None else _serialize(meta, "transaction.meta")
-    if raw_message_bytes is not None:
-        if not isinstance(raw_message_bytes, bytes) or not raw_message_bytes:
-            raise ValueError("raw_message_bytes deve conter bytes protobuf não vazios")
-        raw_payload, provenance = raw_message_bytes, "WIRE"
-    else:
-        raw_payload = _serialize(message, "SubscribeUpdateTransaction")
-        provenance = "PROTOBUF_DETERMINISTIC_RESERIALIZATION"
-    return NormalizedTransactionObservation(
+    raw_payload = _serialize(message, "SubscribeUpdateTransaction")
+    observation = NormalizedTransactionObservation(
         transaction_signature=signature, slot=slot, source_id=source_id, stream_id=stream_id,
         ordering_domain_id=ordering_domain_id, stream_sequence=stream_sequence, transaction_index=transaction_index, is_vote=is_vote,
         transaction_payload=transaction_payload, meta_payload=meta_payload, raw_payload=raw_payload,
-        raw_payload_provenance=provenance, payload_sha256=hashlib.sha256(raw_payload).hexdigest(),
+        raw_payload_provenance="PROTOBUF_DETERMINISTIC_RESERIALIZATION", payload_sha256=hashlib.sha256(raw_payload).hexdigest(),
     )
+    if raw_message_bytes is not None:
+        return bind_transaction_wire(observation, message, raw_message_bytes)
+    return observation

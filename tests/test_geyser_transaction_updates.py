@@ -46,11 +46,6 @@ class NormalizeTransactionUpdateTests(unittest.TestCase):
         self.assertEqual(item.ordering_key, ("provider-a", "domain-a", 42))
         self.assertTrue(item.evidence_complete)
 
-    def test_exact_wire_bytes_are_distinguished_from_reserialization(self):
-        item = normalize_transaction_update(SubscribeUpdateTransaction(_valid_info()), source_id="provider-a", stream_id="conn-a", ordering_domain_id="domain-a", stream_sequence=1, raw_message_bytes=b"exact-wire-frame")
-        self.assertEqual(item.raw_payload, b"exact-wire-frame")
-        self.assertEqual(item.raw_payload_provenance, "WIRE")
-
     def test_missing_meta_is_preserved_and_marks_evidence_incomplete(self):
         item = normalize_transaction_update(SubscribeUpdateTransaction(_valid_info(meta=None)), source_id="provider-a", stream_id="conn-a", ordering_domain_id="domain-a", stream_sequence=2)
         self.assertIsNone(item.meta_payload)
@@ -75,9 +70,9 @@ class NormalizeTransactionUpdateTests(unittest.TestCase):
             normalize_transaction_update(SubscribeUpdateTransaction(_valid_info()), source_id="provider-a", stream_id="conn-a", ordering_domain_id="domain-a", stream_sequence=-1)
 
     def test_adapter_dispatches_transaction_update(self):
-        item = adapt_subscribe_update(SubscribeUpdate(SubscribeUpdateTransaction(_valid_info())), source_id="provider-a", stream_id="conn-a", ordering_domain_id="domain-a", stream_sequence=9, raw_message_bytes=b"wire-transaction")
+        item = adapt_subscribe_update(SubscribeUpdate(SubscribeUpdateTransaction(_valid_info())), source_id="provider-a", stream_id="conn-a", ordering_domain_id="domain-a", stream_sequence=9)
         self.assertEqual(item.transaction_index, 17)
-        self.assertEqual(item.raw_payload, b"wire-transaction")
-        self.assertEqual(item.raw_payload_provenance, "WIRE")
+        self.assertEqual(item.raw_payload, b"serialized-update")
+        self.assertEqual(item.raw_payload_provenance, "PROTOBUF_DETERMINISTIC_RESERIALIZATION")
 
 if __name__ == "__main__": unittest.main()

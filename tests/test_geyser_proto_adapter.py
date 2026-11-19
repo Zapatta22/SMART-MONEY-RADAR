@@ -82,9 +82,10 @@ def _protobuf_update_class():
     transaction_payload.field.add(
         name="signatures", number=1, type=T.TYPE_BYTES, label=T.LABEL_REPEATED
     )
-    fld(transaction_payload, "message", 2, T.TYPE_BYTES)
+    msg("Message")
+    fld(transaction_payload, "message", 2, T.TYPE_MESSAGE, ".geyser.Message")
     transaction_meta = msg("TransactionStatusMeta")
-    fld(transaction_meta, "fee", 1, T.TYPE_UINT64)
+    fld(transaction_meta, "fee", 2, T.TYPE_UINT64)
     transaction_info = msg("SubscribeUpdateTransactionInfo")
     fld(transaction_info, "signature", 1, T.TYPE_BYTES)
     fld(transaction_info, "is_vote", 2, T.TYPE_BOOL)
@@ -96,6 +97,7 @@ def _protobuf_update_class():
     fld(transaction_update, "slot", 2, T.TYPE_UINT64)
     update = msg("SubscribeUpdate")
     update.oneof_decl.add(name="update_oneof")
+    update.field.add(name="filters", number=1, type=T.TYPE_STRING, label=T.LABEL_REPEATED)
     for n, i, typ in (
         ("account", 2, "SubscribeUpdateAccount"), ("slot", 3, "SubscribeUpdateSlot"),
         ("block_meta", 7, "SubscribeUpdateBlockMeta"),
@@ -183,9 +185,14 @@ class YellowstoneProtoAdapterTests(unittest.TestCase):
         info.is_vote = True
         info.index = 19
         info.transaction.signatures.append(signature)
-        info.transaction.message = b"solana-message"
+        info.transaction.message.SetInParent()
         info.meta.fee = 5000
         raw = message.SerializeToString(deterministic=True)
+
+        # Field order may differ on the wire from deterministic serialization.
+        raw += b"\x0a\x00"
+        message.filters.append("")
+        self.assertNotEqual(raw, message.SerializeToString(deterministic=True))
 
         item = adapt_subscribe_update(
             message, source_id="yellowstone-validator-a",
@@ -200,6 +207,24 @@ class YellowstoneProtoAdapterTests(unittest.TestCase):
         self.assertEqual(item.meta_payload, info.meta.SerializeToString(deterministic=True))
         self.assertEqual(item.raw_payload, raw)
         self.assertEqual(item.raw_payload_provenance, "WIRE")
+
+    def test_transaction_update_rejects_unrelated_or_malformed_wire(self):
+        message = _UPDATE()
+        signature = bytes(range(64))
+        message.transaction.slot = 10
+        info = message.transaction.transaction
+        info.signature = signature
+        info.transaction.signatures.append(signature)
+        raw = message.SerializeToString()
+        message.transaction.slot = 11
+
+        for payload, error in ((raw, "diverge"), (b"\xff", "protobuf válido")):
+            with self.subTest(payload=payload), self.assertRaisesRegex(ValueError, error):
+                adapt_subscribe_update(
+                    message, source_id="validator", stream_id="connection",
+                    ordering_domain_id="ordering", stream_sequence=1,
+                    raw_message_bytes=payload,
+                )
 
     def test_unhandled_or_empty_oneof_is_ignored(self):
         self.assertIsNone(adapt_subscribe_update(

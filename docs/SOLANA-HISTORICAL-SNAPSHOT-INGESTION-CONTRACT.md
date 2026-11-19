@@ -125,11 +125,11 @@ A implementação inicial em `geyser_transaction_updates.py` normaliza o wrapper
 
 - valida assinatura de 64 bytes e exige igualdade com a primeira assinatura contida no objeto Transaction;
 - preserva slot do wrapper, índice de transação quando disponível, flag de vote, bytes serializados de Transaction e bytes serializados de TransactionStatusMeta;
-- preserva ausência de meta como evidência incompleta; não inventa metadados;
+- preserva ausência de meta como evidência incompleta. Um campo presente, inclusive vazio, indica apenas presença de meta;
 - exige `source_id`, `stream_id`, `ordering_domain_id` e `stream_sequence` explícitos;
 - o receptor deve atribuir a sequência monotônica a cada mensagem SubscribeUpdate recebida, antes da dispatch por tipo. Não usar contadores separados para transaction/account/slot;
 - `ordering_domain_id` precisa ser o mesmo domínio declarado para os account updates que serão correlacionados. Esta implementação ainda não cria o sequenciador nem persiste a observação no RAW;
-- quando o transporte fornece `raw_message_bytes`, os bytes e seu SHA-256 são preservados como proveniência `WIRE`. Sem esses bytes, a implementação registra apenas uma serialização protobuf determinística, explicitamente identificada como `PROTOBUF_DETERMINISTIC_RESERIALIZATION`, que não pode ser apresentada como wire RAW original;
+- quando o transporte fornece `raw_message_bytes`, o adaptador decodifica os bytes e exige que o resultado corresponda à mensagem no mesmo nível protobuf (`SubscribeUpdate` na dispatch, `SubscribeUpdateTransaction` na chamada direta). Os bytes exatos e seu SHA-256 são então preservados como proveniência `WIRE`. A correspondência verifica conteúdo, e a captura e autenticação continuam sob responsabilidade do receptor. Sem esses bytes, a implementação registra apenas uma serialização protobuf determinística, explicitamente identificada como `PROTOBUF_DETERMINISTIC_RESERIALIZATION`, que não pode ser apresentada como wire RAW original;
 - a observação normalizada não atribui `transaction_order`, não decodifica instruções/CPI, não constrói snapshots e não classifica BUY/SELL.
 
 A camada permanece offline e provider-neutral. A próxima integração deve provar que o mesmo sequenciador, domínio e persistência RAW abrangem transaction e account updates, incluindo reconnect/gap/replay, antes de snapshots históricos se tornarem elegíveis.

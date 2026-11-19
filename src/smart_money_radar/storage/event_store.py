@@ -371,17 +371,54 @@ class SQLiteEventStore:
         )
 
     def mark_processed(self, wallet_address: str, signature: str) -> None:
-        """Marca uma transação como concluída somente após todo o pipeline terminar."""
+        """Marca a transação como concluída sem regredir o checkpoint por replay antigo."""
         if not wallet_address.strip() or not signature.strip():
             raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
         with self._connection_scope() as connection:
             with connection:
                 parent = connection.execute(
-                    "SELECT 1 FROM observed_transactions WHERE wallet_address = ? AND signature = ?",
+                    """SELECT slot, observed_at FROM observed_transactions
+                       WHERE wallet_address = ? AND signature = ?""",
                     (wallet_address, signature),
                 ).fetchone()
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes de marcar como processada.")
+
+                current = connection.execute(
+                    """SELECT observed.slot, observed.observed_at
+                       FROM wallet_checkpoints AS checkpoint
+                       LEFT JOIN observed_transactions AS observed
+                         ON observed.wallet_address = checkpoint.wallet_address
+                        AND observed.signature = checkpoint.signature
+                       WHERE checkpoint.wallet_address = ?""",
+                    (wallet_address,),
+                ).fetchone()
+                if current is not None:
+                    new_slot, new_observed_at = parent
+                    current_slot, current_observed_at = current
+                    # A recuperação de uma assinatura antiga pode terminar depois
+                    # de assinaturas mais novas. Ela deve ser marcada como processada,
+                    # mas nunca pode mover o cursor para trás. Em slots iguais não há
+                    # índice de transação disponível neste armazenamento; manter o
+                    # checkpoint atual é a escolha conservadora.
+                    if current_slot is not None and (
+                        new_slot is None or new_slot <= current_slot
+                    ):
+                        connection.execute(
+                            """INSERT OR IGNORE INTO processed_signatures
+                               (wallet_address, signature) VALUES (?, ?)""",
+                            (wallet_address, signature),
+                        )
+                        return
+                    if current_slot is None and current_observed_at is not None and (
+                        new_observed_at is None or new_observed_at <= current_observed_at
+                    ):
+                        connection.execute(
+                            """INSERT OR IGNORE INTO processed_signatures
+                               (wallet_address, signature) VALUES (?, ?)""",
+                            (wallet_address, signature),
+                        )
+                        return
                 self._mark_processed_in_connection(connection, wallet_address, signature)
 
     def save_swap_bundle(

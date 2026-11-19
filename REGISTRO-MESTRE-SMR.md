@@ -3244,3 +3244,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #1341 (run 44426812812) SUCCESS no commit be76e5a1cd0cf2e7b61672d2bc4b637bdb891860: 535 testes em 3,937s; o teste novo está aprovado e compileall concluído.
 - Combinando esta evidência com Mainnet workflow #89, há validação do caminho positivo de ambos os adaptadores no mesmo WalletMonitor: DAMM v2 com dois bundles reais Mainnet e provas cross-venue; Raydium CPMM com fixture Mainnet pseudonimizada e bundle MATCHED. O teste DAMM + CPMM em uma mesma transação com swaps simultâneos de ambos os programas ainda não foi demonstrado por fixture única; a coordenação sequencial, o bloqueio e cada caminho positivo foram testados separadamente.
 - Head atual PR #25: be76e5a1cd0cf2e7b61672d2bc4b637bdb891860. PR segue OPEN/DRAFT, base feat/damm-v2-swap-domain-adapter; nenhuma alteração na main.
+
+
+## 227. Sincronização da ancestralidade da PR #25 — 19/11/2026
+
+- Auditoria dos dois commits que estavam ausentes na ancestralidade da PR #25: d3f4b50710734e366c2afeb86374103aade81007 (restauração do import multilinha do decoder nos testes) e 58a19750672851a79e59d4cdfc953a37870e7769 (importação de SQLiteEventStore no teste do adaptador). A árvore da PR #25 já continha ambos os ajustes funcionais; a divergência era histórica/ancestral.
+- Criado commit de merge explícito 1f2167162a1f61cf35b817f12678fda90273e0fd, com pais 40f0aa1d488c08819e8d3158f81557adf037c279 e 58a19750672851a79e59d4cdfc953a37870e7769. Atualização da branch feat/damm-v2-transaction-pipeline feita como fast-forward do novo commit, usando expected head 40f0aa1d; sem force push e sem alteração na main.
+- Comparação posterior: feat/damm-v2-swap-domain-adapter...feat/damm-v2-transaction-pipeline = ahead 502, behind 0. A divergência de 2 commits foi eliminada.
+- PR #25 permanece OPEN/DRAFT e não mergeada. No momento da atualização, o campo mergeable retornou false (estado transitório após mudança do head); verificar novamente após os checks. Não houve reviews registradas nas PRs #21–#25.
+- CI #1343 (run 44428050448) disparado automaticamente para o novo HEAD 1f2167162a1f61cf35b817f12678fda90273e0fd; no momento deste registro, estava IN_PROGRESS, com instalação concluída e suíte de testes em execução. Resultado ainda não conhecido; não declarar validação pós-sincronização até conclusão SUCCESS.
+- A main continua intacta em 5060bc65ddf181a4736fdb662c44c3fec0dd7259. Nenhuma ordem, assinatura de transação ou gravação em banco de produção foi executada.
+- Próxima ação: aguardar e inspecionar CI #1343; se SUCCESS, atualizar a descrição da PR e prosseguir com revisão final da cadeia. Se falhar, diagnosticar apenas a falha nova, sem repetir validações anteriores sem necessidade.

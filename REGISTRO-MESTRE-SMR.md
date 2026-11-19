@@ -2891,3 +2891,25 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 
 ### Próxima ação
 - Propor alteração mínima de contrato para rotular transições legadas como não verificadas e adicionar teste de regressão para conflito histórico de ancestral. Manter PR #35 Draft e sem merge até nova CI e revisão.
+
+
+## 303. Correções da auditoria PR #35 — implementação — 19/11/2026
+
+### Alterações implementadas na branch da PR #35
+- `AccountStateTransition` agora carrega `evidence_classification` explícito:
+  - `BANK_PROVIDER_REPORTED_FINALIZED` para transições bank-scoped que passaram os gates de usabilidade e finalização de ambos os bancos e ancestrais explicitamente ligados.
+  - `LEGACY_UNSCOPED_UNVERIFIED` para pareamento linear legado sem `bank_id`; preserva compatibilidade, mas não é evidência finalizada nem pode ser promovido a `VERIFIED`.
+- Docstrings e `docs/GEYSER-COMMITMENT-FINALITY-POLICY.md` esclarecem que consumidores que exigem evidência finalizada devem aceitar explicitamente apenas `BANK_PROVIDER_REPORTED_FINALIZED`.
+- Teste positivo verifica classificação bank-scoped.
+- Novo teste prova que transição sem `bank_id` retorna `LEGACY_UNSCOPED_UNVERIFIED`.
+- Novo teste de regressão constrói cadeia pai/filho finalizada, confirma inicialmente a transição e depois injeta blockhash conflitante no ancestral; a identidade ancestral é contaminada e a transição do descendente deixa de ser retornada.
+- Arquivos alterados: `src/smart_money_radar/data_sources/geyser_account_timeline.py`, `tests/test_geyser_bank_aware_timeline.py`, `docs/GEYSER-COMMITMENT-FINALITY-POLICY.md` e este Registro Mestre.
+
+### Estado de validação
+- Alterações gravadas na branch `fix/geyser-finalized-evidence-gate` por commits sequenciais.
+- Último commit de código/documentação antes deste registro será conferido com HEAD da PR e CI.
+- Não declarar testes aprovados até consultar CI no HEAD exato.
+- PR #35 permanece Draft e sem merge; `main` permanece intacta.
+
+### Próxima ação
+- Conferir diff completo e iniciar CI da PR #35; examinar resultados e corrigir qualquer falha antes de nova revisão de segurança.

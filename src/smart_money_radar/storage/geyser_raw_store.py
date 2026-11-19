@@ -345,12 +345,15 @@ class SQLiteGeyserRawStore:
                     (source_id, stream_id, start, end, received_at),
                 )
 
-        open_anomalies = connection.execute(
+        # A resolved anomaly is administratively closed, not proof that its
+        # historical sequence is trustworthy. Keep the stream tainted until a
+        # separate evidence-backed repair procedure exists.
+        historical_anomalies = connection.execute(
             "SELECT COUNT(*) FROM geyser_transport_anomalies "
-            "WHERE source_id = ? AND stream_id = ? AND status = 'OPEN'",
+            "WHERE source_id = ? AND stream_id = ?",
             (source_id, stream_id),
         ).fetchone()[0]
-        interrupted = bool(missing_ranges or open_anomalies)
+        interrupted = bool(missing_ranges or historical_anomalies)
         connection.execute(
             "UPDATE geyser_transport_checkpoints SET contiguous_sequence = ?, "
             "last_seen_sequence = ?, interrupted = ?, updated_at = ? "
@@ -448,9 +451,11 @@ class SQLiteGeyserRawStore:
                         "resolved_at = ?, resolution_note = ? WHERE anomaly_id = ?",
                         (now, resolution_note, anomaly_id),
                     )
-                    remaining = connection.execute(
+                    # RESOLVED closes the administrative record only. Historical
+                    # sequence taint remains until an evidence-backed repair exists.
+                    historical = connection.execute(
                         "SELECT COUNT(*) FROM geyser_transport_anomalies "
-                        "WHERE source_id = ? AND stream_id = ? AND status = 'OPEN'",
+                        "WHERE source_id = ? AND stream_id = ?",
                         (row[0], row[1]),
                     ).fetchone()[0]
                     gaps = connection.execute(
@@ -461,7 +466,7 @@ class SQLiteGeyserRawStore:
                     connection.execute(
                         "UPDATE geyser_transport_checkpoints SET interrupted = ? "
                         "WHERE source_id = ? AND stream_id = ?",
-                        (int(bool(remaining or gaps)), row[0], row[1]),
+                        (int(bool(historical or gaps)), row[0], row[1]),
                     )
 
     @staticmethod

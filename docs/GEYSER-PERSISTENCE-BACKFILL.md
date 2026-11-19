@@ -231,7 +231,7 @@ The offline transport checkpoint/gap slice is also implemented in PR #23:
 - `contiguous_sequence` advances only through sequences with durable delivery rows. A later sequence creates explicit missing ranges, is retained, and does not move the contiguous checkpoint across the gap;
 - out-of-order arrivals can close a gap only after every sequence from the baseline through the observed high-water mark is present. Superseded and resolved gap records remain auditable;
 - replay of the same event at the same sequence is idempotent for continuity. A different event reusing a sequence, an unidentifiable RAW identity conflict, or a sequence before the declared baseline creates an open transport anomaly and interrupts the checkpoint;
-- anomalies require an explicit resolution note; resolving an anomaly does not clear the interrupted flag while any gap or other open anomaly remains;
+- anomalies require an explicit resolution note; `RESOLVED` closes only the administrative record and does not rehabilitate the affected `(source_id, stream_id, stream_sequence)`. Historical anomaly evidence permanently taints that sequence for derived projections; the transport checkpoint remains interrupted while any historical anomaly or open gap exists. A future repair must be a separate evidence-backed procedure and must not erase the original anomaly;
 - RAW event, delivery, gap/anomaly evidence, and transport checkpoint update share the same SQLite transaction. A forced gap-write failure test proves that RAW, delivery, and checkpoint changes all roll back together;
 - transport checkpoints are scoped by `(source_id, stream_id)`; reconnects must use a new stream_id. This store does not infer sequence-reset semantics.
 
@@ -368,8 +368,8 @@ Definir uma política auditável para RAW sem sequência sem inventar ordem, e m
 
 ### Coverage policy applied by the timeline projection
 
-- `COMPLETE`: every observed stream for the source has an adapter-declared baseline, no transport checkpoint is interrupted, no open transport gaps/anomalies exist, no timeline continuity gap exists, and no input event was skipped.
-- `PARTIAL`: declared baseline exists, but the projection observes a gap, interruption, anomaly, or skipped input.
+- `COMPLETE`: every observed stream for the source has an adapter-declared baseline, no transport checkpoint is interrupted, no open transport gaps, no historical transport anomalies, no timeline continuity gap, and no input event was skipped.
+- `PARTIAL`: declared baseline exists, but the projection observes a gap, interruption, any historical transport anomaly (including administratively resolved anomalies), or skipped input.
 - `UNKNOWN`: no stream checkpoint exists or any stream still uses the first-observed-unverified baseline.
 - This is transport/input continuity coverage only. It is not proof that a provider supplied the complete historical slot range; historical backfill coverage remains a separate backfill-job assertion.
 - Events without a sequenced delivery remain in immutable RAW and are counted as skipped; they are not assigned a fabricated order or inserted into the timeline.
@@ -386,3 +386,23 @@ Definir uma política auditável para RAW sem sequência sem inventar ordem, e m
 - RAW events without sequence remain preserved but are not projected. A provider-specific reconciliation policy is still needed; no sequence is invented.
 - Coverage COMPLETE means continuity from declared stream baselines, not completeness of provider history or a requested backfill slot range.
 - Offline only: no provider client, RPC, Helius/Yellowstone endpoint, credentials, service, VPS, or live backfill was connected.
+
+## Integração do transporte Yellowstone
+
+A integração da auditoria RAW com a observação de transações preserva a
+validação SHA-256 da timeline, a exclusão histórica de sequências anômalas
+e o estado de conflito de linhagem. O receptor e a migração do RAW para
+transações são a próxima entrega.
+
+- Persistir o envelope wire exato por delivery. O envelope pode incluir filtros
+  e outros metadados de transporte que variam entre entregas do mesmo evento.
+  Manter a identidade lógica do evento e o hash do envelope em campos distintos.
+- Vincular a sequência ao mesmo source, stream e domínio de ordenação para
+  todos os frames antes de selecionar o adaptador. A reconexão inicia uma
+  fronteira explícita. Replays verificados preservam a coordenada original.
+- Registrar frames de controle ou não projetáveis no cursor de transporte.
+  Eles ocupam posição na sequência e não devem produzir falsos gaps entre
+  updates de conta. Um frame ausente ou divergente deve preservar o bloqueio.
+- Testar a migração a partir do schema atual e a sequência conta, transação,
+  controle e conta, seguida de colisão, gap e reconexão. Validar o mesmo SHA-256
+  após reiniciar o receptor e reconstruir a projeção.

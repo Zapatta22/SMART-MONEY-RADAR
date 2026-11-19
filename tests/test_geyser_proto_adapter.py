@@ -492,11 +492,12 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
             output = StringIO()
             with patch("smart_money_radar.cli.HeliusSettings.from_environment",
                        side_effect=AssertionError("offline")), redirect_stdout(output):
-                main(args)
+                main([*args, "--damm-wallet", "fixture-wallet"])
             report = json.loads(output.getvalue())
             self.assertEqual(report["wire_sha256"], receipt.payload_sha256)
             self.assertTrue(report["structurally_complete"])
             self.assertEqual(report["account_transitions"], [])
+            self.assertEqual(report["damm_v2"]["status"], "INCOMPLETE")
             self.assertEqual(hashlib.sha256(database.read_bytes()).hexdigest(), before)
 
             with self.assertRaisesRegex(SystemExit, "nenhuma transação"):
@@ -588,6 +589,82 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         self.assertEqual([call.kwargs["max_frames"] for call in capture.call_args_list], [10, 7])
         self.assertEqual([call.kwargs["timeout"] for call in capture.call_args_list], [20, 17])
         wait.assert_called_once_with(1)
+
+    def test_reconciles_damm_economics_only_after_finalized_wire_bank(self):
+        from smart_money_radar.data_sources.solana_token_transfer_decoder import _decode_base58
+        from test_solana_transaction_evidence_bundle import _damm_complete_transaction
+
+        payload = _damm_complete_transaction()["result"]
+        rpc_message = payload["transaction"]["message"]
+        names = rpc_message["accountKeys"]
+        unique = list(dict.fromkeys(names))
+        addresses = {}
+        for index, name in enumerate(unique, start=1):
+            try:
+                decoded = _decode_base58(name)
+            except ValueError:
+                decoded = b""
+            addresses[name] = decoded if len(decoded) == 32 else bytes([index]) * 32
+
+        frame = _UPDATE.FromString(self.transaction_frame())
+        tx = frame.transaction
+        tx.bank_id = 10
+        info = tx.transaction
+        message = info.transaction.message
+        message.header.num_required_signatures = 1
+        message.account_keys.extend(addresses.values())
+
+        def indices(values):
+            return bytes(unique.index(names[value]) for value in values)
+
+        outer, = rpc_message["instructions"]
+        message.instructions.add(
+            program_id_index=unique.index(outer["programId"]),
+            accounts=indices(outer["accounts"]), data=_decode_base58(outer["data"]),
+        )
+        inner = info.meta.inner_instructions.add(index=0)
+        for item in payload["meta"]["innerInstructions"][0]["instructions"]:
+            inner.instructions.add(
+                program_id_index=unique.index(item["programId"]), accounts=indices(item["accounts"]),
+                data=_decode_base58(item["data"]), stack_height=item["stackHeight"],
+            )
+        info.meta.pre_balances.extend([100] * len(unique))
+        info.meta.post_balances.extend([100] * len(unique))
+        wallet = _b58(bytes([99]) * 32)
+        for field, rows in (
+            (info.meta.pre_token_balances, payload["meta"]["preTokenBalances"]),
+            (info.meta.post_token_balances, payload["meta"]["postTokenBalances"]),
+        ):
+            for row in rows:
+                entry = field.add(
+                    account_index=indices([row["accountIndex"]])[0], mint=_b58(addresses[row["mint"]]),
+                    owner=wallet if row["owner"] == "wallet" else _b58(addresses[row["owner"]]),
+                )
+                entry.ui_token_amount.amount = row["uiTokenAmount"]["amount"]
+                entry.ui_token_amount.decimals = row["uiTokenAmount"]["decimals"]
+
+        slot = _UPDATE()
+        slot.slot.slot = tx.slot
+        slot.slot.bank_id = tx.bank_id
+        slot.slot.status = 2
+        store = SQLiteGeyserRawStore(":memory:")
+        self.addCleanup(store.close)
+        receiver = self.receiver(store)
+        receiver.receive(frame.SerializeToString(), stream_sequence=40)
+        evidence = receiver.transaction_evidence_at(40)
+        self.assertEqual(evidence.reconcile_damm_v2(monitored_wallet=wallet).status, "INCOMPLETE")
+        receiver.receive(slot.SerializeToString(), stream_sequence=41)
+        evidence = receiver.transaction_evidence_at(40)
+        result = evidence.reconcile_damm_v2(monitored_wallet=wallet)
+        self.assertEqual(result.status, "RECONCILED", result.reason)
+        self.assertEqual(result.operation_count, 1)
+        self.assertEqual(result.withheld_fee_status, "EXPECTED_NOT_VERIFIED")
+        self.assertEqual(result.mint_fee_config_status, "EXPECTED_NOT_VERIFIED")
+
+        slot.slot.status = 6
+        receiver.receive(slot.SerializeToString(), stream_sequence=42)
+        invalidated = receiver.transaction_evidence_at(40)
+        self.assertEqual(invalidated.reconcile_damm_v2(monitored_wallet=wallet).status, "INCOMPLETE")
 
     def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
         descriptors = descriptor_pb2.FileDescriptorSet()

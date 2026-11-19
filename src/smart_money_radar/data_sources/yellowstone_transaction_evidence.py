@@ -4,12 +4,14 @@ from dataclasses import dataclass
 
 from google.protobuf.message import Message
 
+from smart_money_radar.data_sources.damm_v2_economic_reconciliation import DammV2EconomicReconciliation
 from smart_money_radar.data_sources.geyser_account_timeline import AccountStateTransition
 from smart_money_radar.data_sources.geyser_proto_adapter import _base58_encode
 from smart_money_radar.data_sources.geyser_transaction_updates import NormalizedTransactionObservation
 from smart_money_radar.data_sources.solana_transaction_evidence_bundle import (
     SolanaTransactionEvidenceBundle,
     build_solana_transaction_evidence_bundle,
+    reconcile_solana_transaction_damm_v2_bundle,
 )
 
 
@@ -21,6 +23,18 @@ class YellowstoneTransactionEvidence:
     bundle: SolanaTransactionEvidenceBundle
     transaction_accounts: frozenset[str]
     account_transitions: tuple[AccountStateTransition, ...] = ()
+    provider_reported_finalized: bool = False
+
+    def reconcile_damm_v2(self, *, monitored_wallet: str) -> DammV2EconomicReconciliation:
+        """Reconcile archive-derived economics without claiming historical fee verification."""
+        if not self.provider_reported_finalized:
+            return DammV2EconomicReconciliation(
+                "INCOMPLETE", len(self.bundle.damm_v2_associations), (),
+                "evidência estrutural ou finalidade do banco Yellowstone insuficiente",
+            )
+        return reconcile_solana_transaction_damm_v2_bundle(
+            self.bundle, monitored_wallet=monitored_wallet,
+        )
 
 
 def _instruction(item: Message) -> dict:

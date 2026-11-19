@@ -171,3 +171,14 @@ schema, e valida o snapshot antes de emitir JSON com hashes, diagnóstico dos
 decodificadores e proveniência das transições. A inspeção usa exclusivamente
 o arquivo local e o descriptor. Um domínio interrompido, uma assinatura
 ambígua ou uma sequência sem transação produz erro.
+
+### Reconciliação econômica DAMM v2
+
+Acrescente `--damm-wallet ENDERECO_SOLANA` à inspeção do journal para obter
+o resultado da reconciliação e os estados de verificação das taxas. O
+comando exige evidência estruturada e o banco da transação com finalidade
+reportada na mesma captura. Um banco morto ou um banco sem finalidade deixa
+a reconciliação incompleta. O resultado pode reconciliar transferências e
+deltas da transação com taxas históricas ainda marcadas como
+`EXPECTED_NOT_VERIFIED`. Este caminho não usa sequência de transporte como
+ordem no bloco, nem cria snapshots históricos.

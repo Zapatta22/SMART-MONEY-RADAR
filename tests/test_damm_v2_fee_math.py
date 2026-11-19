@@ -82,9 +82,12 @@ class AmmFeeMathTests(unittest.TestCase):
         self.assertEqual(amm_fee_excluded_amount(123, 0), (123, 0))
         self.assertEqual(amm_fee_included_amount(123, 0), (123, 0))
 
-    def test_rejects_fee_at_or_above_denominator(self):
+    def test_excluded_fee_supports_full_rate_but_included_fee_rejects_it(self):
+        self.assertEqual(
+            amm_fee_excluded_amount(123, DAMM_FEE_DENOMINATOR), (0, 123)
+        )
         with self.assertRaises(ValueError):
-            amm_fee_excluded_amount(1, DAMM_FEE_DENOMINATOR)
+            amm_fee_excluded_amount(1, DAMM_FEE_DENOMINATOR + 1)
         with self.assertRaises(ValueError):
             amm_fee_included_amount(1, DAMM_FEE_DENOMINATOR)
 

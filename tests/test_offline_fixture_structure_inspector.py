@@ -98,7 +98,7 @@ class OfflineFixtureStructureInspectorTests(unittest.TestCase):
         report = inspect_manifest(secret_path, 1)
         rendered = json.dumps(report, ensure_ascii=False)
         self.assertFalse(report["integrity_valid"])
-        self.assertIn("manifesto inacessível", rendered)
+        self.assertIn("manifesto ou payload inacessível", rendered)
         self.assertNotIn(str(secret_path), rendered)
         self.assertNotIn("WalletSignatureMustNotLeak", rendered)
 

@@ -1,5 +1,5 @@
 # SMART MONEY RADAR (SMR) — REGISTRO MESTRE
-Última atualização: 2026-11-17 — PR #1 validado e integrado à main
+Última atualização: 2026-11-19 — continuidade e integração bank-aware da PR #23 em validação isolada
 
 ## 1. Estado executivo
 
@@ -2252,7 +2252,6 @@ Implementar adapter de fronteira para mensagens protobuf Yellowstone (ou mapping
 - Testes novos em `tests/test_geyser_bank_aware_timeline.py`: mesma bank, cadeia cross-bank comprovada, forks irmãos, parent_slot sem blockhash, EntryUpdateParent, ancestral morto, metadados fora de ordem, reconexão e replay.
 
 ### Validação
-- CI desta revisão ainda não foi executado no novo HEAD; nenhuma aprovação é reivindicada até a conclusão do workflow.
 
 ### Limites
 - Não há endpoint Yellowstone conectado, captura contínua, replay/reconnect de rede, persistência RAW/SQLite, backfill ou operações on-chain.
@@ -2260,3 +2259,32 @@ Implementar adapter de fronteira para mensagens protobuf Yellowstone (ou mapping
 
 ### Próxima etapa
 Após CI aprovado, revisar a semântica de invalidação de descendants e adicionar testes para ordem de eventos e rollback exato sob forks concorrentes; só então desenhar persistência/backfill.
+
+
+## 286. Validação final da integração bank-aware e proteção de forks — 19/11/2026
+
+### Estado final do código
+- Commit funcional/documental validado: `d5b21774e8210096dc5c41e842c3c2d0a9434054`.
+- `AccountUpdateTimeline` integra o `BankLineageTracker` por padrão ou por injeção; recebe Slot, BlockMeta e EntryUpdateParent através de métodos explícitos.
+- Transição bank-scoped exige banco pre e post observado/utilizável, mesma fonte estável e:
+  - identidade exata do mesmo banco; ou
+  - cadeia ancestral verificada por parent_slot + parent_blockhash exatos.
+- A seleção do pre-state escolhe a escrita anterior mais recente na cadeia verificada; não escolhe entre candidatos empatados.
+- Forks irmãos, parent_slot sem blockhash, bancos mortos, bancos limpos por EntryUpdateParent e descendants ligados a ancestrais mortos/invalidados não geram transição.
+- Histórico invalidado permanece disponível para auditoria; nenhuma exclusão física nem rollback global por slot é usada para histórico com bank_id.
+- Account writes fora de ordem podem ser reconciliados após ordenação por (slot, write_version), desde que cheguem na mesma continuity epoch e a linhagem prove a relação.
+- Gap/reconnect cria continuity baseline. Um update ancestral atrasado não atravessa essa fronteira; a reconstrução só retoma a partir do novo baseline.
+- Testes adicionados em `tests/test_geyser_bank_aware_timeline.py`, cobrindo same-bank, cross-bank, forks irmãos, parent metadata incompleta, EntryUpdateParent, SLOT_DEAD, ancestor invalidation, late metadata, account updates fora de ordem, replay, reconnect, gap e rollback exato.
+
+### Validação CI comprovada
+- CI #1633 — run `44457364018`, push no HEAD funcional: completed/success; **515/515 testes OK** em 4,058 s; `python -m compileall -q src tests` aprovado.
+- CI #1634 — run `44457372356`, pull_request no mesmo HEAD: completed/success; **515/515 testes OK** em 4,107 s; compileall aprovado.
+- CI intermediário #1621/#1622 encontrou dois problemas nas fixtures de teste (replay com estado alterado e write_version repetido no reconnect); as fixtures foram corrigidas. As execuções #1625–#1634 passaram; os dois últimos runs acima validam o HEAD final.
+
+### Estado GitHub e segurança
+- PR #23: OPEN, Draft, `merged=false`, `mergeable=true`; HEAD `d5b21774e8210096dc5c41e842c3c2d0a9434054`; base `feat/damm-v2-referral-transfer-attribution`.
+- `main` intacta: `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Nenhum merge.
+- Nenhum endpoint Yellowstone/Helius conectado; sem captura contínua, reconnect/replay de rede, RAW/SQLite, backfill ou execução on-chain/financeira.
+
+### Próxima etapa
+Desenhar o contrato de persistência histórica e backfill (RAW imutável + timeline derivada), incluindo chaves de idempotência, checkpoints por source/stream, retenção de eventos órfãos e reconstrução após reinício. Antes de qualquer conexão real, revisar como o adapter de transporte fornecerá stream_sequence e eventos de reconnect/discard-bank. Nenhum provider pago deve ser contratado/conectado sem autorização.

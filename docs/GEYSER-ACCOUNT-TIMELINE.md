@@ -120,8 +120,8 @@ binary keys/signatures fail closed.
 
 This is a message-boundary adapter only. No Yellowstone endpoint/client,
 continuous capture, RAW/SQLite persistence, backfill, or financial execution
-is enabled. Bank-aware pre/post pairing remains deferred until the tracker is
-integrated with the timeline and tested against competing banks.
+is enabled. Bank-aware pre/post pairing is integrated in the section below and is
+validated against competing banks and explicit invalidation signals.
 
 
 ## Bank-aware account timeline integration
@@ -161,3 +161,23 @@ declared canonical merely because a bank was observed or finalized.
 Tests in `test_geyser_bank_aware_timeline.py` cover same-bank and verified
 cross-bank transitions, sibling forks, unresolved parents, cleared/dead banks,
 invalidated ancestors, metadata arriving late, reconnect baselines and replay.
+
+
+### Out-of-order writes and continuity baselines
+
+For bank-scoped updates, the first write ever observed for an account is not
+permanently treated as an unchangeable baseline: if an earlier ledger write
+arrives later in the same continuity epoch and is proven to be on the target
+bank's ancestor chain, the pair can be reconstructed after ledger sorting.
+This supports out-of-order delivery without using stream sequence as ledger
+order.
+
+A reconnect or stream gap is different. The first subsequent write for each
+known account is marked as a continuity baseline. A late-arriving ancestor
+write cannot bypass that boundary or restore a pre-state across a missing
+stream segment. Pairing may resume only from the new baseline to a later
+contiguous write in the same epoch.
+
+Exact invalidation is tested at both the cleared bank and a descendant whose
+known parent chain passes through that bank. Such descendants are not usable
+for pre/post reconstruction after the ancestor is cleared or marked dead.

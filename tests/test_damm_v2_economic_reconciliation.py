@@ -340,7 +340,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             ])
         )
         self.assertEqual(result.status, "INCOMPLETE")
-        self.assertIn("não está explícita", result.reason)
+        self.assertIn("exige epoch/slot/ordem", result.reason)
 
     def test_reconciles_referral_transfer_with_explicit_token_2022_fee(self):
         context = _context(event=_event(referral_fee=5, has_referral=True))

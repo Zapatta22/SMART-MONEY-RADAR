@@ -54,3 +54,12 @@ Movimentos externos que atinjam as mesmas token accounts também podem provocar 
 - O resultado expõe `expected_withheld_fee_deltas`: para cada transferência Token-2022, bruto menos crédito spendable é registrado como aumento esperado de withheld na conta destino.
 - `withheld_fee_status=EXPECTED_NOT_VERIFIED` significa que o delta foi derivado e conciliado com o saldo base, mas o TLV `TransferFeeAmount.withheld_amount` pre/post ainda não foi lido e comparado. `NOT_REQUIRED` significa que não houve fee retida esperada.
 - Não inferir epoch nem taxa histórica a partir do estado atual do mint. A próxima camada deve receber snapshots históricos comprovados do mint e das token accounts, validar o epoch aplicável e comparar o delta real de withheld por conta.
+
+
+## Decoder de withheld pre/post
+
+- `token2022_transfer_fee_state.decode_transfer_fee_amount_delta(pre_account_data, post_account_data)` decodifica o TLV `TransferFeeAmount` em ambos os snapshots e retorna delta assinado (positivo, zero ou negativo, por exemplo após harvest).
+- A função exige a extensão nos dois lados e o mesmo conjunto de extensões. Não trata extensão ausente como zero.
+- O decoder valida bytes/TLV, mas não prova que os bytes são snapshots imediatamente antes/depois da transação. A proveniência temporal, assinatura, slot e ordenação devem ser garantidos pelo coletor.
+- O resultado do reconciliador DAMM ainda mantém `withheld_fee_status=EXPECTED_NOT_VERIFIED` até que os deltas TLV observados sejam ligados à mesma transação e comparados com `expected_withheld_fee_deltas`.
+- `getTransaction` com `preTokenBalances/postTokenBalances` não substitui os bytes TLV pre/post da token account; o valor spendable e o withheld extension são campos distintos.

@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Sequence
 
 from smart_money_radar.data_sources.damm_v2_decoder import METEORA_DAMM_V2_PROGRAM_ID
+from smart_money_radar.data_sources.damm_v2_fee_math import resolve_damm_fee_mode
 from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
     DammV2EconomicReconciliation,
 )
@@ -159,7 +160,47 @@ def build_damm_v2_swap_domain_bundles(
             raise ValueError("evidência de transferências diverge da associação")
         input_transfer = item.input_transfer
         output_transfer = item.output_transfer
-        for transfer in (input_transfer, output_transfer):
+        referral_transfer = item.referral_transfer
+        referral_fee = event.swap_result.referral_fee
+        if event.has_referral and referral_fee > 0 and referral_transfer is None:
+            raise ValueError("transferência referral obrigatória não está presente no bundle")
+        if not event.has_referral and (referral_fee != 0 or referral_transfer is not None):
+            raise ValueError("transferência/referral_fee incompatível com has_referral")
+        if referral_transfer is not None:
+            fee_mode = resolve_damm_fee_mode(
+                event.collect_fee_mode, event.trade_direction, event.has_referral
+            )
+            if fee_mode.fees_on_token_a:
+                referral_vault = accounts.token_a_vault
+                referral_mint = accounts.token_a_mint
+                referral_program = accounts.token_a_program
+            else:
+                referral_vault = accounts.token_b_vault
+                referral_mint = accounts.token_b_mint
+                referral_program = accounts.token_b_program
+            if (
+                referral_transfer.execution_status != "EXECUTED"
+                or referral_transfer.source_account != referral_vault
+                or referral_transfer.destination_account != accounts.referral_token_account
+                or referral_transfer.mint != referral_mint
+                or referral_transfer.program_id != referral_program
+                or referral_transfer.amount_raw != referral_fee
+                or referral_fee <= 0
+            ):
+                raise ValueError("evidência da transferência referral diverge do EvtSwap2/FeeMode")
+            if referral_transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE" and (
+                isinstance(referral_transfer.fee_amount_raw, bool)
+                or not isinstance(referral_transfer.fee_amount_raw, int)
+                or isinstance(referral_transfer.amount_raw, bool)
+                or not isinstance(referral_transfer.amount_raw, int)
+                or not 0 <= referral_transfer.fee_amount_raw <= referral_transfer.amount_raw
+            ):
+                raise ValueError("fee explícita da transferência referral é inválida")
+
+        transfers_to_validate = [input_transfer, output_transfer]
+        if referral_transfer is not None:
+            transfers_to_validate.append(referral_transfer)
+        for transfer in transfers_to_validate:
             if (
                 transfer.cpi_path_valid is not True
                 or transfer.instruction_index != association.instruction_index
@@ -264,6 +305,15 @@ def build_damm_v2_swap_domain_bundles(
             )
             for transfer in reconciliation.cross_venue_transfers
         )
+        referral_evidence = ()
+        if referral_transfer is not None:
+            referral_evidence = (
+                f"referral_transfer:{referral_transfer.instruction_index}:{referral_transfer.inner_instruction_index}",
+                f"referral_transfer_accounts:{referral_transfer.source_account}->{referral_transfer.destination_account}",
+                f"referral_transfer_mint:{referral_transfer.mint}",
+                f"referral_transfer_gross_raw:{referral_transfer.amount_raw}",
+                f"referral_transfer_fee_raw:{referral_transfer.fee_amount_raw or 0}",
+            )
         evidence = SwapEvidence(
             operation_id=operation_id,
             program_id=METEORA_DAMM_V2_PROGRAM_ID,
@@ -276,7 +326,7 @@ def build_damm_v2_swap_domain_bundles(
                 "lote completo reconciliado contra deltas pre/post e lifecycle wSOL quando aplicável",
                 "propriedade das token accounts confirmada por snapshots ou ATA lifecycle para a carteira monitorada",
                 "input_amount representa débito bruto; output_amount representa crédito líquido",
-            ) + fee_absence_evidence + cross_venue_evidence,
+            ) + referral_evidence + fee_absence_evidence + cross_venue_evidence,
         )
         bundles.append(DammV2SwapDomainBundle(observation, classification, evidence))
 

@@ -73,7 +73,7 @@ class SQLiteGeyserRawStore:
     recorded, including conflicting deliveries.
     """
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, database_path: Path | str) -> None:
         self.database_path = str(database_path)
@@ -168,6 +168,292 @@ class SQLiteGeyserRawStore:
                         VALUES (1, CURRENT_TIMESTAMP);
                     COMMIT;
                 """)
+            if current < 2:
+                connection.executescript("""
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE geyser_transport_checkpoints (
+                        source_id TEXT NOT NULL,
+                        stream_id TEXT NOT NULL,
+                        initial_sequence INTEGER NOT NULL CHECK(initial_sequence >= 0),
+                        contiguous_sequence INTEGER NOT NULL,
+                        last_seen_sequence INTEGER NOT NULL,
+                        baseline_kind TEXT NOT NULL CHECK(baseline_kind IN
+                            ('adapter_declared','first_observed_unverified')),
+                        interrupted INTEGER NOT NULL DEFAULT 0 CHECK(interrupted IN (0,1)),
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY(source_id, stream_id)
+                    );
+                    CREATE TABLE geyser_transport_gaps (
+                        gap_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        source_id TEXT NOT NULL,
+                        stream_id TEXT NOT NULL,
+                        missing_from INTEGER NOT NULL CHECK(missing_from >= 0),
+                        missing_to INTEGER NOT NULL CHECK(missing_to >= missing_from),
+                        status TEXT NOT NULL CHECK(status IN ('OPEN','RESOLVED','SUPERSEDED')),
+                        detected_at TEXT NOT NULL,
+                        resolved_at TEXT
+                    );
+                    CREATE INDEX idx_geyser_transport_gaps_open
+                        ON geyser_transport_gaps(source_id, stream_id, status, missing_from);
+                    CREATE TABLE geyser_transport_anomalies (
+                        anomaly_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        source_id TEXT NOT NULL,
+                        stream_id TEXT NOT NULL,
+                        stream_sequence INTEGER NOT NULL CHECK(stream_sequence >= 0),
+                        delivery_id INTEGER NOT NULL REFERENCES geyser_raw_deliveries(delivery_id),
+                        reason TEXT NOT NULL,
+                        status TEXT NOT NULL CHECK(status IN ('OPEN','RESOLVED')),
+                        detected_at TEXT NOT NULL,
+                        resolved_at TEXT,
+                        resolution_note TEXT
+                    );
+                    CREATE INDEX idx_geyser_transport_anomalies_open
+                        ON geyser_transport_anomalies(source_id, stream_id, status, stream_sequence);
+                    INSERT INTO geyser_schema_migrations(version, applied_at)
+                        VALUES (2, CURRENT_TIMESTAMP);
+                    COMMIT;
+                """)
+
+    def register_stream(
+        self, source_id: str, stream_id: str, initial_sequence: int
+    ) -> dict:
+        """Declare the first expected sequence before ingesting a new stream."""
+        source_id = _text(source_id, "source_id")
+        stream_id = _text(stream_id, "stream_id")
+        initial_sequence = _sequence(initial_sequence, "initial_sequence")
+        if initial_sequence is None:
+            raise ValueError("initial_sequence é obrigatório")
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as connection:
+            with connection:
+                existing = connection.execute(
+                    "SELECT initial_sequence, baseline_kind FROM geyser_transport_checkpoints "
+                    "WHERE source_id = ? AND stream_id = ?", (source_id, stream_id)
+                ).fetchone()
+                if existing is not None:
+                    if existing[0] != initial_sequence or existing[1] != "adapter_declared":
+                        raise ValueError("stream já possui baseline incompatível")
+                else:
+                    deliveries = connection.execute(
+                        "SELECT COUNT(*) FROM geyser_raw_deliveries "
+                        "WHERE source_id = ? AND stream_id = ?", (source_id, stream_id)
+                    ).fetchone()[0]
+                    if deliveries:
+                        raise ValueError("não é possível declarar baseline após ingestão")
+                    connection.execute(
+                        "INSERT INTO geyser_transport_checkpoints "
+                        "(source_id, stream_id, initial_sequence, contiguous_sequence, "
+                        "last_seen_sequence, baseline_kind, interrupted, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, 'adapter_declared', 0, ?)",
+                        (source_id, stream_id, initial_sequence, initial_sequence - 1,
+                         initial_sequence - 1, now),
+                    )
+        return self.get_transport_checkpoint(source_id, stream_id)
+
+    def _record_transport_sequence(
+        self, connection: sqlite3.Connection, *, source_id: str, stream_id: str,
+        sequence: int | None, delivery_id: int, event_id: str | None, received_at: str,
+    ) -> None:
+        if sequence is None:
+            return
+        checkpoint = connection.execute(
+            "SELECT initial_sequence, contiguous_sequence, last_seen_sequence, baseline_kind "
+            "FROM geyser_transport_checkpoints WHERE source_id = ? AND stream_id = ?",
+            (source_id, stream_id),
+        ).fetchone()
+        if checkpoint is None:
+            connection.execute(
+                "INSERT INTO geyser_transport_checkpoints "
+                "(source_id, stream_id, initial_sequence, contiguous_sequence, "
+                "last_seen_sequence, baseline_kind, interrupted, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 'first_observed_unverified', 0, ?)",
+                (source_id, stream_id, sequence, sequence - 1, sequence - 1, received_at),
+            )
+            initial_sequence = sequence
+        else:
+            initial_sequence = checkpoint[0]
+
+        if sequence < initial_sequence:
+            self._record_transport_anomaly(
+                connection, source_id, stream_id, sequence, delivery_id,
+                "sequence_before_declared_baseline", received_at,
+            )
+        else:
+            prior_ids = {
+                row[0] for row in connection.execute(
+                    "SELECT DISTINCT event_id FROM geyser_raw_deliveries "
+                    "WHERE source_id = ? AND stream_id = ? AND stream_sequence = ? "
+                    "AND delivery_id != ?",
+                    (source_id, stream_id, sequence, delivery_id),
+                ).fetchall()
+            }
+            if prior_ids and (event_id is None or any(value != event_id for value in prior_ids)):
+                self._record_transport_anomaly(
+                    connection, source_id, stream_id, sequence, delivery_id,
+                    "sequence_reused_for_different_event", received_at,
+                )
+
+        rows = connection.execute(
+            "SELECT DISTINCT stream_sequence FROM geyser_raw_deliveries "
+            "WHERE source_id = ? AND stream_id = ? AND stream_sequence IS NOT NULL "
+            "AND stream_sequence >= ? ORDER BY stream_sequence",
+            (source_id, stream_id, initial_sequence),
+        ).fetchall()
+        seen = [int(row[0]) for row in rows]
+        last_seen = max(seen) if seen else initial_sequence - 1
+        contiguous = initial_sequence - 1
+        missing_ranges = []
+        cursor = initial_sequence
+        for value in seen:
+            if value < cursor:
+                continue
+            if value > cursor:
+                missing_ranges.append((cursor, value - 1))
+            else:
+                contiguous = value
+            cursor = value + 1
+
+        open_rows = connection.execute(
+            "SELECT gap_id, missing_from, missing_to FROM geyser_transport_gaps "
+            "WHERE source_id = ? AND stream_id = ? AND status = 'OPEN'",
+            (source_id, stream_id),
+        ).fetchall()
+        current_ranges = set(missing_ranges)
+        old_ranges = {(row[1], row[2]) for row in open_rows}
+        for gap_id, start, end in open_rows:
+            if (start, end) not in current_ranges:
+                status = "RESOLVED" if not missing_ranges else "SUPERSEDED"
+                connection.execute(
+                    "UPDATE geyser_transport_gaps SET status = ?, resolved_at = ? "
+                    "WHERE gap_id = ?", (status, received_at, gap_id)
+                )
+        for start, end in missing_ranges:
+            if (start, end) not in old_ranges:
+                connection.execute(
+                    "INSERT INTO geyser_transport_gaps "
+                    "(source_id, stream_id, missing_from, missing_to, status, detected_at) "
+                    "VALUES (?, ?, ?, ?, 'OPEN', ?)",
+                    (source_id, stream_id, start, end, received_at),
+                )
+
+        open_anomalies = connection.execute(
+            "SELECT COUNT(*) FROM geyser_transport_anomalies "
+            "WHERE source_id = ? AND stream_id = ? AND status = 'OPEN'",
+            (source_id, stream_id),
+        ).fetchone()[0]
+        interrupted = bool(missing_ranges or open_anomalies)
+        connection.execute(
+            "UPDATE geyser_transport_checkpoints SET contiguous_sequence = ?, "
+            "last_seen_sequence = ?, interrupted = ?, updated_at = ? "
+            "WHERE source_id = ? AND stream_id = ?",
+            (contiguous, last_seen, int(interrupted), received_at, source_id, stream_id),
+        )
+
+    @staticmethod
+    def _record_transport_anomaly(
+        connection: sqlite3.Connection, source_id: str, stream_id: str,
+        sequence: int, delivery_id: int, reason: str, received_at: str,
+    ) -> None:
+        exists = connection.execute(
+            "SELECT 1 FROM geyser_transport_anomalies WHERE source_id = ? AND stream_id = ? "
+            "AND stream_sequence = ? AND reason = ? AND status = 'OPEN'",
+            (source_id, stream_id, sequence, reason),
+        ).fetchone()
+        if exists is None:
+            connection.execute(
+                "INSERT INTO geyser_transport_anomalies "
+                "(source_id, stream_id, stream_sequence, delivery_id, reason, status, detected_at) "
+                "VALUES (?, ?, ?, ?, ?, 'OPEN', ?)",
+                (source_id, stream_id, sequence, delivery_id, reason, received_at),
+            )
+
+    def get_transport_checkpoint(self, source_id: str, stream_id: str) -> dict | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT source_id, stream_id, initial_sequence, contiguous_sequence, "
+                "last_seen_sequence, baseline_kind, interrupted, updated_at "
+                "FROM geyser_transport_checkpoints WHERE source_id = ? AND stream_id = ?",
+                (source_id, stream_id),
+            ).fetchone()
+        if row is None:
+            return None
+        keys = ("source_id", "stream_id", "initial_sequence", "contiguous_sequence",
+                "last_seen_sequence", "baseline_kind", "interrupted", "updated_at")
+        result = dict(zip(keys, row))
+        result["interrupted"] = bool(result["interrupted"])
+        return result
+
+    def list_transport_gaps(
+        self, source_id: str, stream_id: str, *, status: str | None = None
+    ) -> list[dict]:
+        with self._connection() as connection:
+            if status is None:
+                rows = connection.execute(
+                    "SELECT gap_id, missing_from, missing_to, status, detected_at, resolved_at "
+                    "FROM geyser_transport_gaps WHERE source_id = ? AND stream_id = ? "
+                    "ORDER BY gap_id", (source_id, stream_id)
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT gap_id, missing_from, missing_to, status, detected_at, resolved_at "
+                    "FROM geyser_transport_gaps WHERE source_id = ? AND stream_id = ? "
+                    "AND status = ? ORDER BY gap_id", (source_id, stream_id, status)
+                ).fetchall()
+        keys = ("gap_id", "missing_from", "missing_to", "status", "detected_at", "resolved_at")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def list_transport_anomalies(
+        self, source_id: str, stream_id: str, *, status: str | None = None
+    ) -> list[dict]:
+        with self._connection() as connection:
+            sql = (
+                "SELECT anomaly_id, stream_sequence, delivery_id, reason, status, "
+                "detected_at, resolved_at, resolution_note FROM geyser_transport_anomalies "
+                "WHERE source_id = ? AND stream_id = ?"
+            )
+            params: tuple = (source_id, stream_id)
+            if status is not None:
+                sql += " AND status = ?"
+                params += (status,)
+            rows = connection.execute(sql + " ORDER BY anomaly_id", params).fetchall()
+        keys = ("anomaly_id", "stream_sequence", "delivery_id", "reason", "status",
+                "detected_at", "resolved_at", "resolution_note")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def resolve_transport_anomaly(self, anomaly_id: int, resolution_note: str) -> None:
+        if isinstance(anomaly_id, bool) or not isinstance(anomaly_id, int) or anomaly_id <= 0:
+            raise ValueError("anomaly_id deve ser inteiro positivo")
+        resolution_note = _text(resolution_note, "resolution_note")
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as connection:
+            with connection:
+                row = connection.execute(
+                    "SELECT source_id, stream_id, status FROM geyser_transport_anomalies "
+                    "WHERE anomaly_id = ?", (anomaly_id,)
+                ).fetchone()
+                if row is None:
+                    raise KeyError(anomaly_id)
+                if row[2] == "OPEN":
+                    connection.execute(
+                        "UPDATE geyser_transport_anomalies SET status = 'RESOLVED', "
+                        "resolved_at = ?, resolution_note = ? WHERE anomaly_id = ?",
+                        (now, resolution_note, anomaly_id),
+                    )
+                    remaining = connection.execute(
+                        "SELECT COUNT(*) FROM geyser_transport_anomalies "
+                        "WHERE source_id = ? AND stream_id = ? AND status = 'OPEN'",
+                        (row[0], row[1]),
+                    ).fetchone()[0]
+                    gaps = connection.execute(
+                        "SELECT COUNT(*) FROM geyser_transport_gaps "
+                        "WHERE source_id = ? AND stream_id = ? AND status = 'OPEN'",
+                        (row[0], row[1]),
+                    ).fetchone()[0]
+                    connection.execute(
+                        "UPDATE geyser_transport_checkpoints SET interrupted = ? "
+                        "WHERE source_id = ? AND stream_id = ?",
+                        (int(bool(remaining or gaps)), row[0], row[1]),
+                    )
 
     @staticmethod
     def _validate_event(event: RawEventInput) -> None:
@@ -213,6 +499,11 @@ class SQLiteGeyserRawStore:
                         (event.event_id, event.source_id, stream_id, sequence,
                          delivery.delivery_kind, received_at),
                     )
+                    self._record_transport_sequence(
+                        connection, source_id=event.source_id, stream_id=stream_id,
+                        sequence=sequence, delivery_id=cursor.lastrowid,
+                        event_id=event.event_id, received_at=received_at,
+                    )
                     return RawIngestResult("inserted", event.event_id, cursor.lastrowid, digest)
 
                 same_content = (
@@ -229,6 +520,11 @@ class SQLiteGeyserRawStore:
                         "stream_sequence, delivery_kind, received_at) VALUES (?, ?, ?, ?, ?, ?)",
                         (event.event_id, event.source_id, stream_id, sequence,
                          delivery.delivery_kind, received_at),
+                    )
+                    self._record_transport_sequence(
+                        connection, source_id=event.source_id, stream_id=stream_id,
+                        sequence=sequence, delivery_id=cursor.lastrowid,
+                        event_id=event.event_id, received_at=received_at,
                     )
                     return RawIngestResult("duplicate", event.event_id, cursor.lastrowid, digest)
 
@@ -247,6 +543,11 @@ class SQLiteGeyserRawStore:
                     "VALUES (NULL, ?, ?, ?, ?, ?, ?)",
                     (event.source_id, stream_id, sequence, delivery.delivery_kind,
                      received_at, conflict_id),
+                )
+                self._record_transport_sequence(
+                    connection, source_id=event.source_id, stream_id=stream_id,
+                    sequence=sequence, delivery_id=cursor.lastrowid,
+                    event_id=None, received_at=received_at,
                 )
                 return RawIngestResult(
                     "conflict", None, cursor.lastrowid, digest, conflict_id

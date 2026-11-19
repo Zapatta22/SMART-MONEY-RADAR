@@ -3171,3 +3171,28 @@ Precedência e efeito:
 - Não há falha nova indicada por esta rodada. A evidência é de CI/benchmark sintético, não de execução operacional em ambiente real.
 - Próxima etapa: preparar a incorporação permanente de forma controlada, definindo a cadeia de branches/PRs e evitando duplicação de commits e seções do Registro Mestre. Manter PR #29 como candidata temporária até essa decisão.
 - Não fazer merge de #26, #27, #28 ou #29 sem autorização explícita e específica do usuário.
+
+
+## 311. CI e benchmark confirmados após atualização documental da seção 310 — 19/11/2026
+
+### CI do commit documental 6a40966c64d5c2c52a8e82fb1f77a7e3af4a681e
+- Workflow **SMR tests**, run ID `44582752853`, run #1829: SUCCESS.
+- Job `test`: SUCCESS; log confirma `Ran 593 tests in 5.298s`, resultado `OK`; etapa `python -m compileall -q src tests` também SUCCESS.
+- Workflow **Geyser audit benchmark**, run ID `44582752878`, run #46: SUCCESS.
+- Job `benchmark`: SUCCESS; execução sintética e upload do artefato concluídos.
+- Os dois workflows foram disparados para o commit `6a40966c64d5c2c52a8e82fb1f77a7e3af4a681e`. Como PR #29 é uma PR aberta, o runner fez checkout do merge ref temporário `7fb9353b70bdde58fcaaa4570cf9d7ed1ae40552`, que combina esse HEAD com a base PR #26; a execução corresponde à validação da PR, não a um merge na branch base.
+
+### Artefato da execução
+- Artefato `geyser-audit-benchmark-results`, ID `14560140889`, SHA-256 `f9d2d172325b98a96e874113a813210838cdc3f98dd68ac16995ffda3dac83a0`; ZIP baixado e JSON interno inspecionado.
+- Escala principal: 100.000 eventos lógicos / 200.000 deliveries; rebuild 5,757790 s; throughput 34.735,55 deliveries/s; pico RSS do worker 28,93 MiB; TEMP SQLite 24.399.872 bytes; tracemalloc 0,60 MiB.
+- Classificações: 100.000 `SEQUENCED` e 100.000 `UNSEQUENCED_RECONCILED`; contagens RAW preservadas; `integrity_check=["ok"]`.
+- Fanout alto: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,212787 s; pico RSS 28,93 MiB; TEMP SQLite 2.088.960 bytes; todas as 10.000 testemunhas preservadas; `integrity_check=["ok"]`.
+- Escalas 2.000, 20.000, 100.000 e 200.000 deliveries passaram com classificações esperadas, contagens RAW preservadas e integridade SQLite OK.
+- Comparação TEMP em 100.000 eventos: DEFAULT 5,800909 s / 28,98 MiB RSS; FILE 5,803232 s / 28,95 MiB; MEMORY 5,751945 s / 53,28 MiB. A diferença temporal de MEMORY é pequena e não compensa o aumento de aproximadamente 24,3 MiB de RSS; manter DEFAULT/file-backed.
+- Limites: benchmark sintético em runner Linux/GitHub Actions. RSS/VmHWM mede a vida útil do worker; TEMP pages × page size mede alocação lógica SQLite, não bytes físicos escritos. Não extrapolar diretamente para Termux, VPS ou produção.
+
+### Estado e próxima ação
+- A atualização documental da seção 310 foi validada por 593 testes, compileall e benchmark no fluxo da PR #29.
+- PR #29 continua OPEN/DRAFT, `merged=false`, `mergeable=true`; branch `integration/geyser-pr27-pr28`. PRs originais #26, #27 e #28 continuam sem merge.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Nenhum merge foi executado; nenhum provider/RPC/credencial/VPS/dado real/execução on-chain foi conectado.
+- Próxima etapa: decidir e preparar a estratégia de incorporação permanente das PRs #27 e #28 na cadeia baseada em #26, sem duplicar commits ou documentação. A PR #29 permanece apenas como validação temporária; não mergear sem autorização explícita.

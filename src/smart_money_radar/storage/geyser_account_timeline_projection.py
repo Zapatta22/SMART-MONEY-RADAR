@@ -343,9 +343,11 @@ class SQLiteGeyserAccountTimelineProjection:
                   len(account_rows),len(bank_rows),skipped,completed_at))
             source_stats = connection.execute("""
                 SELECT e.source_id,COUNT(DISTINCT e.event_id),
-                       COUNT(DISTINCT d.delivery_id),COALESCE(MAX(d.delivery_id),0)
+                       (SELECT COUNT(*) FROM geyser_raw_deliveries d
+                        WHERE d.source_id=e.source_id),
+                       (SELECT COALESCE(MAX(delivery_id),0) FROM geyser_raw_deliveries d
+                        WHERE d.source_id=e.source_id)
                 FROM geyser_raw_events e
-                LEFT JOIN geyser_raw_deliveries d ON d.event_id=e.event_id
                 GROUP BY e.source_id
             """).fetchall()
             transport_state = {}

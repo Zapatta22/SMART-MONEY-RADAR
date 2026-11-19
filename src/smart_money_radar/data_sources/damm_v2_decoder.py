@@ -33,6 +33,7 @@ class DammV2SwapInstruction:
     amount_1: int
     swap_mode: SwapMode
     legacy_exact_in: bool
+    trailing_padding: bytes = b""
 
 
 @dataclass(frozen=True)
@@ -105,9 +106,15 @@ def decode_damm_v2_instruction(
     if len(data) < 8:
         raise ValueError("instruction data menor que o discriminador")
     discriminator = data[:8]
+    trailing_padding = b""
     if discriminator == SWAP_DISCRIMINATOR:
-        if len(data) != SWAP_DATA_LENGTH:
-            raise ValueError(f"swap exige {SWAP_DATA_LENGTH} bytes")
+        if not SWAP_DATA_LENGTH <= len(data) <= SWAP_DATA_LENGTH + 8:
+            raise ValueError(
+                f"swap exige {SWAP_DATA_LENGTH} bytes e aceita até 8 bytes de padding zero"
+            )
+        trailing_padding = data[SWAP_DATA_LENGTH:]
+        if any(trailing_padding):
+            raise ValueError("swap contém padding extra não nulo")
         amount_0 = _read_uint(data, 8, 8, "amount_in")
         amount_1 = _read_uint(data, 16, 8, "minimum_amount_out")
         mode: SwapMode = "EXACT_IN"
@@ -128,7 +135,7 @@ def decode_damm_v2_instruction(
         return None
     if amount_0 == 0:
         raise ValueError("amount_0/amount_in deve ser maior que zero")
-    return DammV2SwapInstruction(name, amount_0, amount_1, mode, legacy)
+    return DammV2SwapInstruction(name, amount_0, amount_1, mode, legacy, trailing_padding)
 
 
 def decode_damm_v2_evt_swap2(

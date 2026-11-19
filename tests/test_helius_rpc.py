@@ -63,6 +63,36 @@ class HeliusRpcTests(unittest.TestCase):
             },
         )
 
+    def test_rejects_mismatched_json_rpc_response_id(self) -> None:
+        source = HeliusDataSource(
+            self.settings,
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                {"jsonrpc": "2.0", "id": 999, "result": {"solana-core": "wrong-request"}}
+            ),
+        )
+        with self.assertRaisesRegex(HeliusRpcError, "ID incompatível"):
+            source.get_version()
+
+    def test_rejects_boolean_json_rpc_response_id(self) -> None:
+        source = HeliusDataSource(
+            self.settings,
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                {"jsonrpc": "2.0", "id": True, "result": {"solana-core": "invalid-id"}}
+            ),
+        )
+        with self.assertRaisesRegex(HeliusRpcError, "ID incompatível"):
+            source.get_version()
+
+    def test_rejects_missing_json_rpc_version(self) -> None:
+        source = HeliusDataSource(
+            self.settings,
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                {"id": 1, "result": {"solana-core": "missing-version"}}
+            ),
+        )
+        with self.assertRaisesRegex(HeliusRpcError, "versão JSON-RPC"):
+            source.get_version()
+
     def test_rpc_error_does_not_include_api_key_in_error_text(self) -> None:
         def fake_opener(request: Request, timeout: float) -> FakeResponse:
             return FakeResponse(
@@ -100,10 +130,57 @@ class HeliusRpcTests(unittest.TestCase):
             },
         )
 
+    def test_signatures_request_rejects_item_without_signature(self) -> None:
+        source = HeliusDataSource(
+            self.settings,
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                {"jsonrpc": "2.0", "id": 1, "result": [{"err": None}]}
+            ),
+        )
+        with self.assertRaisesRegex(HeliusRpcError, "sem assinatura válida"):
+            source.get_signatures_for_address("public-wallet")
+
+    def test_signatures_request_rejects_duplicate_signatures(self) -> None:
+        source = HeliusDataSource(
+            self.settings,
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": [
+                        {"signature": "duplicate-signature", "err": None},
+                        {"signature": "duplicate-signature", "err": None},
+                    ],
+                }
+            ),
+        )
+        with self.assertRaisesRegex(HeliusRpcError, "assinatura duplicada"):
+            source.get_signatures_for_address("public-wallet")
+
     def test_signatures_request_rejects_invalid_limit(self) -> None:
         source = HeliusDataSource(self.settings, opener=lambda *_args, **_kwargs: None)
         with self.assertRaises(ValueError):
             source.get_signatures_for_address("public-wallet", limit=1001)
+
+    def test_signatures_request_rejects_boolean_limit(self) -> None:
+        source = HeliusDataSource(self.settings, opener=lambda *_args, **_kwargs: None)
+        with self.assertRaisesRegex(ValueError, "inteiro"):
+            source.get_signatures_for_address("public-wallet", limit=True)
+
+    def test_signatures_request_rejects_invalid_pagination_cursor(self) -> None:
+        source = HeliusDataSource(self.settings, opener=lambda *_args, **_kwargs: None)
+        with self.assertRaisesRegex(ValueError, "before"):
+            source.get_signatures_for_address("public-wallet", before=" ")
+
+    def test_transaction_request_rejects_empty_signature(self) -> None:
+        source = HeliusDataSource(self.settings, opener=lambda *_args, **_kwargs: None)
+        with self.assertRaisesRegex(ValueError, "assinatura Solana"):
+            source.get_transaction(" ")
+
+    def test_activity_request_rejects_boolean_limit(self) -> None:
+        source = HeliusDataSource(self.settings, opener=lambda *_args, **_kwargs: None)
+        with self.assertRaisesRegex(ValueError, "inteiro"):
+            source.get_activity("public-wallet", limit=True)
 
 
 if __name__ == "__main__":

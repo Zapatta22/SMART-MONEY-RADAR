@@ -45,6 +45,30 @@ class DammV2DecoderTests(unittest.TestCase):
         self.assertEqual(decoded.swap_mode, "EXACT_IN")
         self.assertTrue(decoded.legacy_exact_in)
 
+    def test_legacy_swap_accepts_only_bounded_zero_padding(self):
+        for padding in (b"\x00", bytes(8)):
+            data = SWAP_DISCRIMINATOR + u64(123) + u64(456) + padding
+            decoded = decode_damm_v2_instruction(
+                METEORA_DAMM_V2_PROGRAM_ID, data
+            )
+            self.assertEqual(decoded.instruction_name, "swap")
+            self.assertEqual(decoded.amount_0, 123)
+            self.assertEqual(decoded.amount_1, 456)
+            self.assertEqual(decoded.trailing_padding, padding)
+
+    def test_legacy_swap_rejects_nonzero_or_oversized_padding(self):
+        with self.assertRaisesRegex(ValueError, "não nulo"):
+            decode_damm_v2_instruction(
+                METEORA_DAMM_V2_PROGRAM_ID,
+                SWAP_DISCRIMINATOR + u64(123) + u64(456) + b"\x01",
+            )
+        with self.assertRaisesRegex(ValueError, "padding zero"):
+            decode_damm_v2_instruction(
+                METEORA_DAMM_V2_PROGRAM_ID,
+                SWAP_DISCRIMINATOR + u64(123) + u64(456) + bytes(9),
+            )
+
+
     def test_decodes_swap2_exact_out_without_reversing_fields(self):
         data = SWAP2_DISCRIMINATOR + u64(700) + u64(900) + bytes((2,))
         decoded = decode_damm_v2_instruction(METEORA_DAMM_V2_PROGRAM_ID, data)

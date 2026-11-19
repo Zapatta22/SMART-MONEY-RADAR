@@ -60,6 +60,7 @@ def process_raydium_cpmm_observation(
     signature: str,
     reference_mints: tuple[str, ...] | list[str] = (),
     observed_at: datetime | None = None,
+    advance_checkpoint: bool = True,
 ) -> RaydiumCpmmPipelineResult:
     """Arquiva, reconcilia e persiste uma transação Solana observada.
 
@@ -77,17 +78,22 @@ def process_raydium_cpmm_observation(
         raise ValueError("signature é obrigatória.")
     if not isinstance(reference_mints, (tuple, list)):
         raise TypeError("reference_mints deve ser uma lista ou tupla.")
+    if not isinstance(advance_checkpoint, bool):
+        raise TypeError("advance_checkpoint deve ser bool.")
     timestamp = observed_at or datetime.now(timezone.utc)
     payload = _rpc_payload(raw_transaction)
     transaction = payload.get("transaction")
     signatures = transaction.get("signatures") if isinstance(transaction, dict) else None
-    if signatures is not None:
-        if (
-            not isinstance(signatures, list)
-            or any(not isinstance(item, str) or not item for item in signatures)
-            or signature not in signatures
-        ):
-            raise ValueError("A assinatura informada não corresponde às assinaturas do payload RPC.")
+    if (
+        not isinstance(signatures, list)
+        or not signatures
+        or any(not isinstance(item, str) or not item for item in signatures)
+        or len(set(signatures)) != len(signatures)
+        or signatures[0] != signature
+    ):
+        raise ValueError(
+            "A assinatura informada não corresponde à primeira assinatura única do payload RPC."
+        )
 
     try:
         normalized = normalize_transaction(
@@ -116,17 +122,17 @@ def process_raydium_cpmm_observation(
 
     meta = payload.get("meta")
     if isinstance(meta, dict) and meta.get("err") is not None:
-        store.mark_processed(wallet_address, signature)
+        store.mark_processed(wallet_address, signature, advance_checkpoint=advance_checkpoint)
         return RaydiumCpmmPipelineResult(
-            "failed_on_chain", signature, 0, 0, 0, 0, True
+            "failed_on_chain", signature, 0, 0, 0, 0, advance_checkpoint
         )
 
     try:
         swaps = decode_raydium_cpmm_swaps(payload)
         if not swaps:
-            store.mark_processed(wallet_address, signature)
+            store.mark_processed(wallet_address, signature, advance_checkpoint=advance_checkpoint)
             return RaydiumCpmmPipelineResult(
-                "no_cpmm_swaps", signature, 0, 0, 0, 0, True
+                "no_cpmm_swaps", signature, 0, 0, 0, 0, advance_checkpoint
             )
 
         transfers = decode_solana_token_transfers(payload)
@@ -139,6 +145,29 @@ def process_raydium_cpmm_observation(
         matched = [
             item for item in reconciliations if item.status == "MATCHED"
         ]
+        swap_keys = [
+            (
+                swap.instruction_index,
+                swap.inner_instruction_index,
+                tuple(swap.cpi_path),
+            )
+            for swap in swaps
+        ]
+        reconciliation_keys = [
+            (
+                item.swap.instruction_index,
+                item.swap.inner_instruction_index,
+                tuple(item.swap.cpi_path),
+            )
+            for item in reconciliations
+        ]
+        # Equal cardinality is insufficient: duplicate reconciliation records
+        # could otherwise hide a different decoded swap with no result.
+        reconciliation_identity_mismatch = (
+            len(set(swap_keys)) != len(swap_keys)
+            or len(set(reconciliation_keys)) != len(reconciliation_keys)
+            or set(reconciliation_keys) != set(swap_keys)
+        )
 
         # Persist every decoded swap's outcome independently from positive bundles.
         # A missing reconciler result is explicit UNRESOLVED evidence, never a pass.
@@ -183,12 +212,10 @@ def process_raydium_cpmm_observation(
         store.save_swap_reconciliation_attempt(
             wallet_address, signature, audit_records
         )
-        unresolved = max(
-            0,
-            len(swaps) - len(matched),
-            len(reconciliations) - len(matched),
+        reconciliation_count_mismatch = (
+            len(reconciliations) != len(swaps)
+            or reconciliation_identity_mismatch
         )
-        reconciliation_count_mismatch = len(reconciliations) != len(swaps)
 
         bundles: list[SwapDomainBundle] = build_swap_domain_bundles(
             matched,
@@ -200,6 +227,35 @@ def process_raydium_cpmm_observation(
             parser_version=normalized.transaction.parser_version,
             reference_mints=reference_mints,
         )
+        expected_bundle_ids = {
+            build_swap_operation_id(
+                "solana", signature, item.swap.instruction_index,
+                tuple(item.swap.cpi_path),
+            )
+            for item in matched
+        }
+        actual_bundle_ids = [
+            bundle.observation.operation_id for bundle in bundles
+        ]
+        bundle_identity_mismatch = (
+            len(actual_bundle_ids) != len(set(actual_bundle_ids))
+            or set(actual_bundle_ids) != expected_bundle_ids
+            or any(
+                bundle.observation.chain != "solana"
+                or bundle.observation.wallet_address != wallet_address
+                or bundle.observation.signature != signature
+                or bundle.classification.operation_id != bundle.observation.operation_id
+                or bundle.evidence.operation_id != bundle.observation.operation_id
+                for bundle in bundles
+            )
+        )
+        unresolved = max(
+            0,
+            len(swaps) - len(matched),
+            len(reconciliations) - len(matched),
+            1 if reconciliation_identity_mismatch else 0,
+            1 if bundle_identity_mismatch else 0,
+        )
         saved = 0
         for bundle in bundles:
             if store.save_swap_bundle(
@@ -209,7 +265,12 @@ def process_raydium_cpmm_observation(
 
         # Fail closed: if a decoder result was not represented by a bundle,
         # or any reconciliation was unresolved, leave the observation replayable.
-        if unresolved or reconciliation_count_mismatch or len(bundles) != len(matched):
+        if (
+            unresolved
+            or reconciliation_count_mismatch
+            or bundle_identity_mismatch
+            or len(bundles) != len(matched)
+        ):
             return RaydiumCpmmPipelineResult(
                 "pending_reconciliation",
                 signature,
@@ -220,7 +281,7 @@ def process_raydium_cpmm_observation(
                 False,
             )
 
-        store.mark_processed(wallet_address, signature)
+        store.mark_processed(wallet_address, signature, advance_checkpoint=advance_checkpoint)
         return RaydiumCpmmPipelineResult(
             "processed",
             signature,
@@ -228,7 +289,7 @@ def process_raydium_cpmm_observation(
             len(matched),
             0,
             saved,
-            True,
+            advance_checkpoint,
         )
     except Exception as exc:
         # Preserve an explicit parse/reconstruction error and keep checkpoint

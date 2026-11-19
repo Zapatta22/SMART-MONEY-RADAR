@@ -63,6 +63,8 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any]) -> list[s
     if not isinstance(raw, list):
         raise ValueError("message.accountKeys ausente ou inválido")
     parsed = any(isinstance(item, dict) for item in raw)
+    if parsed and not all(isinstance(item, dict) for item in raw):
+        raise ValueError("message.accountKeys mistura formatos jsonParsed e compiled")
     keys: list[str] = []
     for item in raw:
         key = item.get("pubkey") if isinstance(item, dict) else item
@@ -70,7 +72,26 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any]) -> list[s
             raise ValueError("accountKeys contém chave inválida")
         keys.append(key)
     if not parsed:
-        loaded = meta.get("loadedAddresses") or {}
+        lookups = message.get("addressTableLookups", [])
+        if not isinstance(lookups, list):
+            raise ValueError("message.addressTableLookups inválido")
+        expected = {"writable": 0, "readonly": 0}
+        for lookup in lookups:
+            if not isinstance(lookup, dict):
+                raise ValueError("addressTableLookup inválido")
+            for field in ("writable", "readonly"):
+                indexes = lookup.get(field + "Indexes")
+                if not isinstance(indexes, list) or any(
+                    isinstance(index, bool) or not isinstance(index, int) or index < 0
+                    for index in indexes
+                ):
+                    raise ValueError(f"addressTableLookup.{field}Indexes inválido")
+                expected[field] += len(indexes)
+        loaded = meta.get("loadedAddresses") if meta is not None else None
+        if lookups and not isinstance(loaded, dict):
+            raise ValueError("meta.loadedAddresses ausente para mensagem com addressTableLookups")
+        if loaded is None:
+            loaded = {}
         if not isinstance(loaded, dict):
             raise ValueError("meta.loadedAddresses inválido")
         for field in ("writable", "readonly"):
@@ -79,6 +100,14 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any]) -> list[s
                 not isinstance(value, str) or not value for value in values
             ):
                 raise ValueError(f"loadedAddresses.{field} inválido")
+            if lookups and len(values) != expected[field]:
+                raise ValueError(
+                    f"loadedAddresses.{field} não corresponde à quantidade de índices da lookup table"
+                )
+            if not lookups and values:
+                raise ValueError(
+                    "meta.loadedAddresses contém endereços sem addressTableLookups"
+                )
             keys.extend(values)
     return keys
 
@@ -179,20 +208,24 @@ def analyze_damm_v2_swap_events(
     tx = payload.get("transaction")
     meta = payload.get("meta")
     if not isinstance(tx, dict) or not isinstance(meta, dict):
-        return []
+        raise ValueError("transaction/meta ausentes ou inválidos")
+    if "err" not in meta:
+        raise ValueError("meta.err ausente: execução da transação não comprovada")
     if meta.get("err") is not None:
         return []
     message = tx.get("message")
     if not isinstance(message, dict):
-        return []
-    outer = message.get("instructions", [])
+        raise ValueError("transaction.message ausente ou inválido")
+    outer = message.get("instructions")
     if not isinstance(outer, list):
-        raise ValueError("message.instructions inválido")
+        raise ValueError("message.instructions ausente ou inválido")
     keys = _account_keys(message, meta)
 
-    groups = meta.get("innerInstructions") or []
+    groups = meta.get("innerInstructions")
     if not isinstance(groups, list):
-        raise ValueError("meta.innerInstructions inválido")
+        raise ValueError(
+            "meta.innerInstructions ausente/nulo: não é possível comprovar ausência de swaps CPI"
+        )
     by_index: dict[int, list[Any]] = {}
     for group in groups:
         if not isinstance(group, dict):

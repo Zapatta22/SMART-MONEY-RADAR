@@ -9,7 +9,7 @@ from smart_money_radar.settings import HeliusSettings
 from smart_money_radar.storage.event_store import SQLiteEventStore
 
 
-def simulated_transaction() -> dict[str, object]:
+def simulated_transaction(signature: str = "simulated-signature") -> dict[str, object]:
     return {
         "blockTime": 1_730_000_000,
         "meta": {
@@ -25,6 +25,7 @@ def simulated_transaction() -> dict[str, object]:
             "innerInstructions": [],
         },
         "transaction": {
+            "signatures": [signature],
             "message": {
                 "accountKeys": [],
                 "instructions": [],
@@ -63,14 +64,76 @@ class FakeDataSource:
     async def get_transaction_async(self, signature: str) -> dict[str, object]:
         self.signatures.append(signature)
         self.stop_event.set()
-        return simulated_transaction()
+        return simulated_transaction(signature)
 
 
 class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_constructor_rejects_invalid_timing_and_backfill_parameters(self) -> None:
+        from math import nan, inf
+
+        invalid_parameters = (
+            {"initial_backoff_seconds": True},
+            {"maximum_backoff_seconds": inf},
+            {"stable_session_seconds": nan},
+            {"transaction_retry_attempts": True},
+            {"backfill_page_limit": True},
+            {"backfill_max_pages": True},
+        )
+        store = SQLiteEventStore(":memory:")
+        try:
+            for parameters in invalid_parameters:
+                with self.subTest(parameters=parameters):
+                    with self.assertRaises(ValueError):
+                        WalletMonitor(
+                            HeliusSettings(api_key="simulated-key"),
+                            object(),  # type: ignore[arg-type]
+                            store,
+                            **parameters,
+                        )
+        finally:
+            store.close()
+
+    async def test_websocket_subscription_response_requires_json_rpc_2(self) -> None:
+        monitor = WalletMonitor.__new__(WalletMonitor)
+        with self.assertRaisesRegex(RuntimeError, "versão JSON-RPC 2.0"):
+            monitor._handle_subscription_response(
+                {"id": 1, "result": 42},
+                {1: "public-wallet"},
+                {},
+            )
+
+    async def test_websocket_subscription_response_rejects_boolean_request_id(self) -> None:
+        monitor = WalletMonitor.__new__(WalletMonitor)
+        subscriptions: dict[int, str] = {}
+        monitor._handle_subscription_response(
+            {"jsonrpc": "2.0", "id": True, "result": 42},
+            {1: "public-wallet"},
+            subscriptions,
+        )
+        self.assertEqual(subscriptions, {})
+
+    async def test_websocket_subscription_response_rejects_boolean_subscription_id(self) -> None:
+        monitor = WalletMonitor.__new__(WalletMonitor)
+        subscriptions: dict[int, str] = {}
+        with self.assertRaisesRegex(RuntimeError, "ID de assinatura inteiro"):
+            monitor._handle_subscription_response(
+                {"jsonrpc": "2.0", "id": 1, "result": True},
+                {1: "public-wallet"},
+                subscriptions,
+            )
+        self.assertEqual(subscriptions, {})
+
     async def test_subscription_enriches_and_stores_transaction_without_network(self) -> None:
         stop_event = asyncio.Event()
         messages = [
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 42}),
+            json.dumps({
+                "jsonrpc": "2.0",
+                "method": "unrecognizedNotification",
+                "params": {"subscription": 42, "result": {"value": {
+                    "signature": "forged-signature", "err": None,
+                }}},
+            }),
             json.dumps(
                 {
                     "jsonrpc": "2.0",
@@ -145,11 +208,14 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
                 if self.calls < 3:
                     return None
                 stop_event.set()
-                return simulated_transaction()
+                return simulated_transaction(signature)
 
         messages = [
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 42}),
-            json.dumps({"method": "logsNotification", "params": {"subscription": 42,
+            json.dumps({
+                "jsonrpc": "2.0",
+                "method": "logsNotification",
+                "params": {"subscription": 42,
                 "result": {"value": {"signature": "retry-signature", "err": None}}}}),
         ]
         websocket = FakeWebSocket(messages, stop_event)
@@ -176,7 +242,8 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_backfills_signatures_since_persisted_checkpoint(self) -> None:
         stop_event = asyncio.Event()
-        transaction = simulated_transaction()
+        transaction = simulated_transaction("new-signature")
+        transaction["slot"] = 901
 
         class BackfillDataSource:
             def __init__(self) -> None:
@@ -184,8 +251,8 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
             async def get_signatures_for_address_async(self, wallet_address: str, **kwargs):
                 return [
-                    {"signature": "new-signature", "err": None},
-                    {"signature": "old-checkpoint", "err": None},
+                    {"signature": "new-signature", "slot": 901, "err": None},
+                    {"signature": "old-checkpoint", "slot": 900, "err": None},
                 ]
 
             async def get_transaction_async(self, signature: str):
@@ -287,6 +354,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
     async def test_websocket_notification_overlapping_backfill_is_deduplicated(self) -> None:
         stop_event = asyncio.Event()
         notification = json.dumps({
+            "jsonrpc": "2.0",
             "method": "logsNotification",
             "params": {"subscription": 42, "result": {"value": {
                 "signature": "overlap-signature", "err": None,
@@ -305,13 +373,15 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
             async def get_signatures_for_address_async(self, wallet_address: str, **kwargs):
                 return [
-                    {"signature": "overlap-signature", "err": None},
-                    {"signature": "old-checkpoint", "err": None},
+                    {"signature": "overlap-signature", "slot": 901, "err": None},
+                    {"signature": "old-checkpoint", "slot": 900, "err": None},
                 ]
 
             async def get_transaction_async(self, signature: str):
                 self.transaction_calls.append(signature)
-                return simulated_transaction()
+                transaction = simulated_transaction(signature)
+                transaction["slot"] = 901
+                return transaction
 
         import tempfile
         from pathlib import Path
@@ -339,6 +409,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 7}),
             json.dumps(
                 {
+                    "jsonrpc": "2.0",
                     "method": "logsNotification",
                     "params": {
                         "subscription": 7,
@@ -388,7 +459,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_transaction_without_recognized_events_is_archived_before_checkpoint(self) -> None:
         stop_event = asyncio.Event()
-        raw_transaction = {"meta": {"err": None}, "transaction": {"message": {"accountKeys": [], "instructions": []}}}
+        raw_transaction = {"meta": {"err": None, "innerInstructions": []}, "transaction": {"signatures": ["unclassified-signature"], "message": {"accountKeys": [], "instructions": []}}}
 
         class NoEventSource:
             async def get_transaction_async(self, signature: str):
@@ -397,7 +468,10 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
         messages = [
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": 42}),
-            json.dumps({"method": "logsNotification", "params": {"subscription": 42,
+            json.dumps({
+                "jsonrpc": "2.0",
+                "method": "logsNotification",
+                "params": {"subscription": 42,
                 "result": {"value": {"signature": "unclassified-signature", "err": None}}}}),
         ]
         websocket = FakeWebSocket(messages, stop_event)
@@ -425,7 +499,7 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
         import tempfile
         stop_event = asyncio.Event()
-        raw_transaction = {"meta": {"err": None}, "transaction": {"message": {"accountKeys": [], "instructions": []}}}
+        raw_transaction = {"meta": {"err": None, "innerInstructions": []}, "transaction": {"signatures": ["parser-error-signature"], "message": {"accountKeys": [], "instructions": []}}}
 
         class ErrorSource:
             async def get_transaction_async(self, signature: str):
@@ -458,8 +532,8 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
         class FailedOnChainSource:
             async def get_signatures_for_address_async(self, wallet_address: str, **kwargs):
                 return [
-                    {"signature": "failed-signature", "err": {"InstructionError": [0, "failed"]}},
-                    {"signature": "old-checkpoint", "err": None},
+                    {"signature": "failed-signature", "slot": 901, "err": {"InstructionError": [0, "failed"]}},
+                    {"signature": "old-checkpoint", "slot": 900, "err": None},
                 ]
 
         import tempfile
@@ -488,14 +562,14 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
 
             async def get_transaction_async(self, signature: str):
                 self.calls.append(signature)
-                return simulated_transaction()
+                return simulated_transaction(signature)
 
         import tempfile
         from pathlib import Path
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "history.sqlite3")
             store.save_observation(
-                "public-wallet", "pending-first-run", simulated_transaction(), [],
+                "public-wallet", "pending-first-run", simulated_transaction("pending-first-run"), [],
                 parse_status="no_events", parser_version="1",
                 advance_checkpoint=False,
             )
@@ -511,6 +585,166 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(store.get_checkpoint("public-wallet"), "pending-first-run")
             self.assertEqual(store.get_pending_signatures("public-wallet"), [])
 
+
+
+    async def test_existing_checkpoint_pending_replay_waits_for_rpc_ordered_cas(self) -> None:
+        stop_event = asyncio.Event()
+
+        class OrderedPendingSource:
+            def __init__(self, store):
+                self.store = store
+                self.transaction_calls = 0
+                self.checkpoint_when_rpc_started = None
+
+            async def get_transaction_async(self, signature: str):
+                self.transaction_calls += 1
+                return simulated_transaction(signature)
+
+            async def get_signatures_for_address_async(self, wallet_address: str, **kwargs):
+                self.checkpoint_when_rpc_started = self.store.get_checkpoint(wallet_address)
+                return [
+                    {"signature": "pending-after-checkpoint", "slot": 901, "err": None},
+                    {"signature": "old-checkpoint", "slot": 900, "err": None},
+                ]
+
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "history.sqlite3")
+            store.save_checkpoint("public-wallet", "old-checkpoint")
+            store.save_observation(
+                "public-wallet",
+                "pending-after-checkpoint",
+                simulated_transaction("pending-after-checkpoint"),
+                [],
+                parse_status="no_events",
+                parser_version="1",
+                advance_checkpoint=False,
+                slot=901,
+            )
+            source = OrderedPendingSource(store)
+            monitor = WalletMonitor(
+                HeliusSettings(api_key="simulated-key"), source, store,  # type: ignore[arg-type]
+            )
+
+            await monitor._backfill_wallet("public-wallet", stop_event)
+
+            self.assertEqual(source.checkpoint_when_rpc_started, "old-checkpoint")
+            self.assertEqual(store.get_checkpoint("public-wallet"), "pending-after-checkpoint")
+            self.assertTrue(store.has_processed_signature("public-wallet", "pending-after-checkpoint"))
+            self.assertEqual(store.get_pending_signatures("public-wallet"), [])
+            store.close()
+
+    async def test_damm_v2_unresolved_swap_blocks_cpmm_and_checkpoint(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import tempfile
+        from pathlib import Path
+
+        stop_event = asyncio.Event()
+
+        class Source:
+            async def get_transaction_async(self, signature: str):
+                stop_event.set()
+                return simulated_transaction(signature)
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "history.sqlite3")
+            monitor = WalletMonitor(
+                HeliusSettings(api_key="simulated-key"), Source(), store,  # type: ignore[arg-type]
+            )
+            damm_pending = SimpleNamespace(
+                ready_for_next_venue=False,
+                reconciled_swaps=0,
+                decoded_swaps=1,
+                unresolved_swaps=1,
+            )
+            with patch(
+                "smart_money_radar.services.wallet_monitor.process_damm_v2_observation",
+                return_value=damm_pending,
+            ), patch(
+                "smart_money_radar.services.wallet_monitor.process_raydium_cpmm_observation"
+            ) as cpmm:
+                result = await monitor._collect_transaction(
+                    "public-wallet", "pending-damm-signature", stop_event
+                )
+            self.assertFalse(result)
+            cpmm.assert_not_called()
+            self.assertFalse(
+                store.has_processed_signature("public-wallet", "pending-damm-signature")
+            )
+            self.assertIsNone(store.get_checkpoint("public-wallet"))
+
+
+    async def test_damm_ready_runs_cpmm_and_cpmm_owns_checkpoint_completion(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import tempfile
+        from pathlib import Path
+
+        stop_event = asyncio.Event()
+
+        class Source:
+            async def get_transaction_async(self, signature: str):
+                stop_event.set()
+                return simulated_transaction(signature)
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "history.sqlite3")
+            monitor = WalletMonitor(
+                HeliusSettings(api_key="simulated-key"), Source(), store,  # type: ignore[arg-type]
+            )
+            store.save_observation(
+                "public-wallet", "ready-signature",
+                simulated_transaction("ready-signature"), [],
+                parse_status="no_events", parser_version="1",
+                advance_checkpoint=False,
+            )
+            order: list[str] = []
+
+            def damm_ready(*_args, **_kwargs):
+                order.append("damm_v2")
+                return SimpleNamespace(
+                    ready_for_next_venue=True,
+                    reconciled_swaps=0,
+                    decoded_swaps=0,
+                    unresolved_swaps=0,
+                )
+
+            def cpmm_complete(*_args, **kwargs):
+                order.append("raydium_cpmm")
+                store.mark_processed(
+                    "public-wallet", "ready-signature",
+                    advance_checkpoint=kwargs["advance_checkpoint"],
+                )
+                return SimpleNamespace(
+                    status="no_cpmm_swaps",
+                    unresolved_swaps=0,
+                    decoded_swaps=0,
+                    saved_bundles=0,
+                )
+
+            with patch(
+                "smart_money_radar.services.wallet_monitor.process_damm_v2_observation",
+                side_effect=damm_ready,
+            ), patch(
+                "smart_money_radar.services.wallet_monitor.process_raydium_cpmm_observation",
+                side_effect=cpmm_complete,
+            ) as cpmm:
+                result = await monitor._collect_transaction(
+                    "public-wallet", "ready-signature", stop_event
+                )
+
+            self.assertTrue(result)
+            self.assertEqual(order, ["damm_v2", "raydium_cpmm"])
+            self.assertEqual(cpmm.call_args.kwargs["advance_checkpoint"], True)
+            self.assertTrue(
+                store.has_processed_signature("public-wallet", "ready-signature")
+            )
+            self.assertEqual(
+                store.get_checkpoint("public-wallet"), "ready-signature"
+            )
+            store.close()
 
 
 if __name__ == "__main__":

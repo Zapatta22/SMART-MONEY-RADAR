@@ -166,6 +166,178 @@ class TransactionParserTests(unittest.TestCase):
             [],
         )
 
+    def test_rejects_conflicting_decimal_scales_for_same_mint(self) -> None:
+        transaction = dict(self.transaction)
+        transaction["meta"] = {
+            **self.transaction["meta"],
+            "preTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-conflicting-scale",
+                    "uiTokenAmount": {"amount": "1000000", "decimals": 6},
+                },
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-conflicting-scale",
+                    "uiTokenAmount": {"amount": "100", "decimals": 2},
+                },
+            ],
+            "postTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-conflicting-scale",
+                    "uiTokenAmount": {"amount": "2000000", "decimals": 6},
+                },
+            ],
+        }
+        transaction["transaction"] = {"message": {"instructions": []}}
+
+        events = parse_transaction(transaction, self.wallet, self.signature)
+
+        self.assertEqual(events, [])
+
+    def test_rejects_decimal_scale_change_between_pre_and_post_balances(self) -> None:
+        transaction = dict(self.transaction)
+        transaction["meta"] = {
+            **self.transaction["meta"],
+            "preTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-scale-change",
+                    "uiTokenAmount": {"amount": "1000000", "decimals": 6},
+                },
+            ],
+            "postTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-scale-change",
+                    "uiTokenAmount": {"amount": "200", "decimals": 2},
+                },
+            ],
+        }
+        transaction["transaction"] = {"message": {"instructions": []}}
+
+        events = parse_transaction(transaction, self.wallet, self.signature)
+
+        self.assertEqual(events, [])
+
+    def test_invalid_owned_balance_entry_does_not_become_zero(self) -> None:
+        transaction = dict(self.transaction)
+        transaction["meta"] = {
+            **self.transaction["meta"],
+            "preTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-incomplete-before",
+                    "uiTokenAmount": {"amount": "not-a-number", "decimals": 6},
+                },
+            ],
+            "postTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-incomplete-before",
+                    "uiTokenAmount": {"amount": "2000000", "decimals": 6},
+                },
+            ],
+        }
+        transaction["transaction"] = {"message": {"instructions": []}}
+
+        self.assertEqual(
+            parse_transaction(transaction, self.wallet, self.signature),
+            [],
+        )
+
+    def test_rejects_non_integer_raw_token_amount(self) -> None:
+        transaction = dict(self.transaction)
+        transaction["meta"] = {
+            **self.transaction["meta"],
+            "preTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-fractional-raw",
+                    "uiTokenAmount": {"amount": "1.5", "decimals": 6},
+                },
+            ],
+            "postTokenBalances": [
+                {
+                    "owner": self.wallet,
+                    "mint": "mint-fractional-raw",
+                    "uiTokenAmount": {"amount": "2", "decimals": 6},
+                },
+            ],
+        }
+        transaction["transaction"] = {"message": {"instructions": []}}
+        self.assertEqual(
+            parse_transaction(transaction, self.wallet, self.signature),
+            [],
+        )
+
+    def test_rejects_duplicate_token_account_index(self) -> None:
+        transaction = dict(self.transaction)
+        transaction["meta"] = {
+            **self.transaction["meta"],
+            "preTokenBalances": [
+                {
+                    "accountIndex": 3,
+                    "owner": self.wallet,
+                    "mint": "mint-duplicate-index",
+                    "uiTokenAmount": {"amount": "1000000", "decimals": 6},
+                },
+                {
+                    "accountIndex": 3,
+                    "owner": self.wallet,
+                    "mint": "mint-duplicate-index",
+                    "uiTokenAmount": {"amount": "2000000", "decimals": 6},
+                },
+            ],
+            "postTokenBalances": [
+                {
+                    "accountIndex": 3,
+                    "owner": self.wallet,
+                    "mint": "mint-duplicate-index",
+                    "uiTokenAmount": {"amount": "3000000", "decimals": 6},
+                },
+            ],
+        }
+        transaction["transaction"] = {"message": {"instructions": []}}
+        self.assertEqual(
+            parse_transaction(transaction, self.wallet, self.signature),
+            [],
+        )
+
+    def test_rejects_account_index_reused_by_another_owner(self) -> None:
+        transaction = dict(self.transaction)
+        transaction["meta"] = {
+            **self.transaction["meta"],
+            "preTokenBalances": [
+                {
+                    "accountIndex": 4,
+                    "owner": self.wallet,
+                    "mint": "mint-cross-owner-index",
+                    "uiTokenAmount": {"amount": "1000000", "decimals": 6},
+                },
+                {
+                    "accountIndex": 4,
+                    "owner": "different-wallet",
+                    "mint": "mint-cross-owner-index",
+                    "uiTokenAmount": {"amount": "1000000", "decimals": 6},
+                },
+            ],
+            "postTokenBalances": [
+                {
+                    "accountIndex": 4,
+                    "owner": self.wallet,
+                    "mint": "mint-cross-owner-index",
+                    "uiTokenAmount": {"amount": "2000000", "decimals": 6},
+                },
+            ],
+        }
+        transaction["transaction"] = {"message": {"instructions": []}}
+        self.assertEqual(
+            parse_transaction(transaction, self.wallet, self.signature),
+            [],
+        )
+
     def test_rejects_invalid_spl_decimal_scale(self) -> None:
         transaction = dict(self.transaction)
         transaction["meta"] = {

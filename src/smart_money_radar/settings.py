@@ -1,6 +1,7 @@
 """Configuração local do SMR e proteção explícita para acesso à rede."""
 
 from dataclasses import dataclass, field
+import math
 import os
 from pathlib import Path
 from urllib.parse import urlencode
@@ -20,12 +21,19 @@ class HeliusSettings:
     request_timeout_seconds: float = 20.0
 
     def __post_init__(self) -> None:
-        if not self.api_key.strip():
-            raise SettingsError("HELIUS_API_KEY não pode estar vazia.")
-        if self.cluster not in {"mainnet", "devnet"}:
+        if not isinstance(self.api_key, str) or not self.api_key.strip():
+            raise SettingsError("HELIUS_API_KEY deve ser texto não vazio.")
+        if not isinstance(self.cluster, str) or self.cluster not in {"mainnet", "devnet"}:
             raise SettingsError("SOLANA_CLUSTER deve ser 'mainnet' ou 'devnet'.")
-        if self.request_timeout_seconds <= 0:
-            raise SettingsError("O timeout RPC deve ser positivo.")
+        timeout = self.request_timeout_seconds
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+            raise SettingsError("O timeout RPC deve ser um número finito positivo.")
+        try:
+            timeout_is_finite = math.isfinite(timeout)
+        except OverflowError:
+            timeout_is_finite = False
+        if not timeout_is_finite or timeout <= 0:
+            raise SettingsError("O timeout RPC deve ser um número finito positivo.")
 
     @property
     def http_url(self) -> str:

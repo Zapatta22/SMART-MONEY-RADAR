@@ -40,7 +40,21 @@ def parse_transaction(
         after = {}
 
     for mint in sorted(before.keys() | after.keys()):
-        delta = after.get(mint, Decimal("0")) - before.get(mint, Decimal("0"))
+        before_entry = before.get(mint)
+        after_entry = after.get(mint)
+        # None is an explicit invalid/conflicting scale; a missing key alone
+        # represents a token account created or closed during the transaction.
+        if (mint in before and before_entry is None) or (mint in after and after_entry is None):
+            continue
+        if (
+            before_entry is not None
+            and after_entry is not None
+            and before_entry[1] != after_entry[1]
+        ):
+            continue
+        before_amount = before_entry[0] if before_entry is not None else Decimal("0")
+        after_amount = after_entry[0] if after_entry is not None else Decimal("0")
+        delta = after_amount - before_amount
         if delta == 0:
             continue
         events.append(
@@ -79,32 +93,92 @@ def _timestamp(value: Any) -> datetime | None:
         return None
 
 
-def _token_balances(value: Any, wallet_address: str) -> dict[str, Decimal]:
-    balances: dict[str, Decimal] = defaultdict(Decimal)
+def _token_balances(
+    value: Any, wallet_address: str
+) -> dict[str, tuple[Decimal, int] | None]:
+    raw_balances: dict[str, Decimal] = defaultdict(Decimal)
+    decimals_by_mint: dict[str, set[int]] = defaultdict(set)
+    invalid_mints: set[str] = set()
+    account_index_to_identity: dict[int, tuple[Any, Any] | None] = {}
     if not isinstance(value, list):
         return {}
     for entry in value:
-        if not isinstance(entry, dict) or entry.get("owner") != wallet_address:
+        if not isinstance(entry, dict):
             continue
+        owner = entry.get("owner")
         mint = entry.get("mint")
+        account_index = entry.get("accountIndex")
+        if account_index is not None:
+            if (
+                isinstance(account_index, bool)
+                or not isinstance(account_index, int)
+                or account_index < 0
+            ):
+                if owner == wallet_address and isinstance(mint, str) and mint:
+                    invalid_mints.add(mint)
+                continue
+            identity = (owner, mint)
+            if account_index in account_index_to_identity:
+                previous_identity = account_index_to_identity[account_index]
+                for candidate in (previous_identity, identity):
+                    if (
+                        candidate is not None
+                        and candidate[0] == wallet_address
+                        and isinstance(candidate[1], str)
+                        and candidate[1]
+                    ):
+                        invalid_mints.add(candidate[1])
+                account_index_to_identity[account_index] = None
+            else:
+                account_index_to_identity[account_index] = identity
+        if owner != wallet_address:
+            continue
+        if not isinstance(mint, str) or not mint:
+            continue
         amount_info = entry.get("uiTokenAmount")
-        if not isinstance(mint, str) or not mint or not isinstance(amount_info, dict):
+        if not isinstance(amount_info, dict):
+            invalid_mints.add(mint)
             continue
         try:
-            raw_amount = Decimal(str(amount_info["amount"]))
+            raw_amount_value = amount_info["amount"]
+            if (
+                not isinstance(raw_amount_value, str)
+                or not raw_amount_value.isascii()
+                or not raw_amount_value.isdigit()
+            ):
+                invalid_mints.add(mint)
+                continue
+            raw_amount = Decimal(raw_amount_value)
             decimals_value = amount_info["decimals"]
             # JSON-RPC representa decimals SPL como inteiro. Não coagir strings,
             # floats ou booleanos: 6.9 truncado para 6 alteraria o saldo.
             if isinstance(decimals_value, bool) or not isinstance(decimals_value, int):
+                invalid_mints.add(mint)
                 continue
             decimals = decimals_value
             # O campo decimals do SPL Token é um u8 (0..255).
             if not 0 <= decimals <= 255 or not raw_amount.is_finite() or raw_amount < 0:
+                invalid_mints.add(mint)
                 continue
-            balances[mint] += raw_amount / (Decimal(10) ** decimals)
+            raw_balances[mint] += raw_amount
+            decimals_by_mint[mint].add(decimals)
         except (KeyError, TypeError, ValueError, InvalidOperation, OverflowError):
+            invalid_mints.add(mint)
             continue
-    return dict(balances)
+    # Uma mint deve usar a mesma escala em todas as token accounts.
+    result: dict[str, tuple[Decimal, int] | None] = {}
+    for mint in invalid_mints:
+        result[mint] = None
+    for mint, scales in decimals_by_mint.items():
+        if mint in invalid_mints or len(scales) != 1:
+            result[mint] = None
+            continue
+        decimals = next(iter(scales))
+        result[mint] = (
+            raw_balances[mint] / (Decimal(10) ** decimals),
+            decimals,
+        )
+    return result
 
 
 def _sol_transfers(

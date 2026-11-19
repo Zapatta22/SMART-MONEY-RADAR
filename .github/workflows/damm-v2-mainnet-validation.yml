@@ -1,0 +1,118 @@
+name: SMR DAMM v2 mainnet validation
+
+on:
+  push:
+    branches: ["feat/damm-v2-transaction-pipeline"]
+    paths:
+      - "tools/validate_damm_v2_mainnet.py"
+      - "tools/inspect_token_2022_transfer_fee_config.py"
+      - "tools/scan_damm_v2_multi_swap_mainnet.py"
+      - "tools/inspect_damm_v2_instruction_shapes.py"
+      - "tools/inspect_solana_transaction_position.py"
+      - "tools/audit_token2022_referral_fee_historically.py"
+      - "src/smart_money_radar/data_sources/helius_historical_account.py"
+      - "src/smart_money_radar/data_sources/solana_transaction_position.py"
+      - "src/smart_money_radar/data_sources/token2022_fee_absence_proof.py"
+      - "src/smart_money_radar/data_sources/token2022_fee_proof_resolver.py"
+      - "src/smart_money_radar/data_sources/solana_token_transfer_decoder.py"
+      - "src/smart_money_radar/data_sources/damm_v2_economic_reconciliation.py"
+      - "src/smart_money_radar/data_sources/damm_v2_swap_domain_adapter.py"
+      - "src/smart_money_radar/services/wallet_monitor.py"
+      - "src/smart_money_radar/domain/damm_v2_persistence_pipeline.py"
+      - "src/smart_money_radar/cli.py"
+      - ".github/workflows/damm-v2-mainnet-validation.yml"
+      - "src/smart_money_radar/data_sources/damm_v2_*.py"
+      - "src/smart_money_radar/data_sources/solana_token_*.py"
+      - "src/smart_money_radar/data_sources/solana_wrapped_sol_funding.py"
+  workflow_dispatch:
+    inputs:
+      signature:
+        description: "Solana mainnet transaction signature"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-mainnet-transaction:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SMR_SOLANA_RPC_URL: https://solana-rpc.publicnode.com
+      SMR_DAMM_V2_SCAN_RPC_URL: https://solana-rpc.publicnode.com
+      SMR_DAMM_V2_SIGNATURE: ${{ inputs.signature || '1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT' }}
+      SMR_HELIUS_HISTORICAL_RPC_URL: ${{ secrets.SMR_HELIUS_HISTORICAL_RPC_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Validate known real Mainnet transaction
+        continue-on-error: true
+        run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
+      - name: Validate first real shared-wSOL round-trip candidate
+        env:
+          SMR_DAMM_V2_SIGNATURE: 4cm2yJUSTzevqYAh5N9vknk2jCmocwgbrJR2s7CiPp8DPCuBBgyMqxKU6qk7F5YSdtLDTJpneRrz4TTn7odqDy6k
+        run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
+      - name: Validate second real shared-wSOL round-trip candidate
+        env:
+          SMR_DAMM_V2_SIGNATURE: 634xz2RekctQ8hSoe7h3YF5jugtNy9ADeR7c5xJCZjKNvkwoBcBKX2euswtzVLo2hzpcmPEFsRyD5NQuKw1huiPk
+        run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
+      - name: Scan recent Mainnet transactions for shared-wSOL multi-swap
+        run: PYTHONPATH=src:tools python tools/scan_damm_v2_multi_swap_mainnet.py --limit 100
+      - name: Scan recent Mainnet transactions for non-shared-wSOL multi-swap
+        run: PYTHONPATH=src:tools python tools/scan_damm_v2_multi_swap_mainnet.py --limit 100 --pages 1 --target non-shared-wsol
+      - name: Inspect first unsupported legacy swap instruction
+        env:
+          SMR_DAMM_V2_INSPECT_SIGNATURE: 5ujkLBVBSF8EcQxKAnv3ie4hc5adBUBr8GYCRdfwYcdAank2dbcoA9ustGoUKUwrDDixrkrEVTBSwHFRfET8QtQT
+        run: PYTHONPATH=src:tools python tools/inspect_damm_v2_instruction_shapes.py --signature "$SMR_DAMM_V2_INSPECT_SIGNATURE"
+      - name: Inspect second unsupported legacy swap instruction
+        env:
+          SMR_DAMM_V2_INSPECT_SIGNATURE: 4xYWgBV34xYGfm6KxRRsUKikqQoY596w9yx8S946XNLuixcYvaH3bS3wsLZpmJGaC7aQr6dpW8uirfDfXmV63aKt
+        run: PYTHONPATH=src:tools python tools/inspect_damm_v2_instruction_shapes.py --signature "$SMR_DAMM_V2_INSPECT_SIGNATURE"
+      - name: Inspect third unsupported legacy swap instruction
+        env:
+          SMR_DAMM_V2_INSPECT_SIGNATURE: 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9
+        run: PYTHONPATH=src:tools python tools/inspect_damm_v2_instruction_shapes.py --signature "$SMR_DAMM_V2_INSPECT_SIGNATURE"
+      - name: Resolve exact transaction index for blocked Token-2022 referral case
+        env:
+          SMR_POSITION_SIGNATURE: 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9
+        run: PYTHONPATH=src:tools python tools/inspect_solana_transaction_position.py --signature "$SMR_POSITION_SIGNATURE" --slot 471107341
+      - name: Audit historical Token-2022 fee for blocked referral transaction
+        if: ${{ env.SMR_HELIUS_HISTORICAL_RPC_URL != '' }}
+        env:
+          SMR_DAMM_V2_SIGNATURE: 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9
+        run: |
+          PYTHONPATH=src:tools python tools/audit_token2022_referral_fee_historically.py \
+            --signature "$SMR_DAMM_V2_SIGNATURE" \
+            --slot 471107341 \
+            --mint GgGQzgwUBcPZddt4UFULRLeJK2WFhSyFY1VavYK4MCCc \
+            --referral-account DKfXG1ojeZzCgLuMiYJq7LD1RDVgeu7NHPLmsjgTjiRF \
+            --gross-amount-raw 84396359546 \
+            --gross-amount-raw 71448140
+      - name: Validate Mainnet legacy swap with zero padding
+        env:
+          SMR_DAMM_V2_SIGNATURE: 5ujkLBVBSF8EcQxKAnv3ie4hc5adBUBr8GYCRdfwYcdAank2dbcoA9ustGoUKUwrDDixrkrEVTBSwHFRfET8QtQT
+        run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
+      - name: Diagnose second Mainnet legacy swap with zero padding
+        continue-on-error: true
+        env:
+          SMR_DAMM_V2_SIGNATURE: 4xYWgBV34xYGfm6KxRRsUKikqQoY596w9yx8S946XNLuixcYvaH3bS3wsLZpmJGaC7aQr6dpW8uirfDfXmV63aKt
+        run: PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
+      - name: Diagnose mixed Mainnet swap2 and legacy swap with zero padding
+        continue-on-error: true
+        env:
+          SMR_DAMM_V2_SIGNATURE: 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9
+        run: >-
+          PYTHONPATH=src python tools/validate_damm_v2_mainnet.py
+          --prove-no-transfer-fee-mint GgGQzgwUBcPZddt4UFULRLeJK2WFhSyFY1VavYK4MCCc
+      - name: Inspect current Token-2022 referral mint fee configuration
+        continue-on-error: true
+        run: PYTHONPATH=src:tools python tools/inspect_token_2022_transfer_fee_config.py --mint GgGQzgwUBcPZddt4UFULRLeJK2WFhSyFY1VavYK4MCCc --transaction-slot 471107341

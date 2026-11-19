@@ -44,6 +44,34 @@ def _tx(instructions, keys=None, meta=None):
 
 
 class TokenTransferDecoderTests(unittest.TestCase):
+    def test_rejects_mixed_account_key_formats(self):
+        with self.assertRaisesRegex(ValueError, "mistura formatos"):
+            decode_solana_token_transfers(_tx([], keys=[
+                {"pubkey": "parsed-key", "signer": True},
+                "compiled-key",
+            ]))
+
+    def test_rejects_loaded_addresses_without_lookup_tables(self):
+        tx = _tx([], meta={
+            "err": None,
+            "loadedAddresses": {"writable": ["unexpected"], "readonly": []},
+        })
+        with self.assertRaisesRegex(ValueError, "sem addressTableLookups"):
+            decode_solana_token_transfers(tx)
+
+    def test_rejects_loaded_address_count_mismatch(self):
+        tx = _tx([], meta={
+            "err": None,
+            "loadedAddresses": {"writable": [], "readonly": []},
+        })
+        tx["transaction"]["message"]["addressTableLookups"] = [{
+            "accountKey": "lookup-table",
+            "writableIndexes": [0],
+            "readonlyIndexes": [],
+        }]
+        with self.assertRaisesRegex(ValueError, "não corresponde à quantidade"):
+            decode_solana_token_transfers(tx)
+
     def test_decodes_compiled_transfer(self):
         result = decode_solana_token_transfers(_tx([{
             "programId": SPL_TOKEN_PROGRAM_ID,
@@ -211,7 +239,7 @@ class TokenTransferDecoderTests(unittest.TestCase):
         self.assertIsNone(result[0].decimals)
 
     def test_resolves_loaded_addresses_for_compiled_cpi(self):
-        result = decode_solana_token_transfers(_tx(
+        tx = _tx(
             [{"programId": "router", "accounts": [], "data": "1"}],
             keys=["static-0", "static-1", "static-2", "static-3"],
             meta={
@@ -230,7 +258,13 @@ class TokenTransferDecoderTests(unittest.TestCase):
                     }],
                 }],
             },
-        ))
+        )
+        tx["transaction"]["message"]["addressTableLookups"] = [{
+            "accountKey": "lookup-table",
+            "writableIndexes": [0, 1],
+            "readonlyIndexes": [0],
+        }]
+        result = decode_solana_token_transfers(tx)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].source_account, "loaded-source")
         self.assertEqual(result[0].destination_account, "loaded-destination")
@@ -256,6 +290,27 @@ class TokenTransferDecoderTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].cpi_path, (0, 0))
         self.assertEqual(result[0].stack_height, 3)
+
+    def test_retains_nested_cpi_program_ancestry(self):
+        inner = [
+            {"programId": "scopes-router", "accounts": [], "data": "1", "stackHeight": 2},
+            {"programId": "pump-swap", "accounts": [], "data": "2", "stackHeight": 3},
+            {
+                "programId": SPL_TOKEN_PROGRAM_ID,
+                "accounts": [0, 1, 2],
+                "data": _transfer(3, 8),
+                "stackHeight": 4,
+            },
+        ]
+        result = decode_solana_token_transfers(_tx(
+            [{"programId": "router", "accounts": [], "data": "1"}],
+            meta={"err": None, "innerInstructions": [{"index": 0, "instructions": inner}]},
+        ))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(
+            result[0].cpi_program_path,
+            ("router", "scopes-router", "pump-swap"),
+        )
 
     def test_uses_flat_position_without_stack_height(self):
         result = decode_solana_token_transfers(_tx(

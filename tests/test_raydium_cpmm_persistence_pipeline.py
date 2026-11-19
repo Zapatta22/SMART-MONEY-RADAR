@@ -26,7 +26,7 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self.signature = "signature-pipeline"
         self.payload = {
             "meta": {"err": None},
-            "transaction": {"message": {"accountKeys": [], "instructions": []}},
+            "transaction": {"signatures": [self.signature], "message": {"accountKeys": [], "instructions": []}},
             "blockTime": 1794960000,
             "slot": 123,
         }
@@ -87,6 +87,35 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
             evidence=("fixture-backed reconciliation",),
         )
         return SwapDomainBundle(observation, classification, evidence)
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
+    def test_backfill_mode_marks_processed_without_advancing_checkpoint(
+        self, decode, normalize
+    ):
+        self.store.save_checkpoint(self.wallet, "previous-signature")
+        normalize.return_value = self.normalized
+        decode.return_value = []
+
+        result = process_raydium_cpmm_observation(
+            self.store,
+            self.payload,
+            wallet_address=self.wallet,
+            signature=self.signature,
+            advance_checkpoint=False,
+        )
+
+        self.assertEqual(result.status, "no_cpmm_swaps")
+        self.assertFalse(result.checkpoint_advanced)
+        self.assertTrue(self.store.has_processed_signature(self.wallet, self.signature))
+        self.assertEqual(self.store.get_checkpoint(self.wallet), "previous-signature")
+        self.store.advance_checkpoint_in_order(
+            self.wallet,
+            self.signature,
+            123,
+            expected_previous_signature="previous-signature",
+        )
+        self.assertEqual(self.store.get_checkpoint(self.wallet), self.signature)
 
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
@@ -216,6 +245,56 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self.assertEqual(metadata["parse_error"], "ValueError")
 
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    def test_rejects_missing_primary_signature_before_persistence(self, normalize):
+        payload = {
+            **self.payload,
+            "transaction": {
+                "message": {"accountKeys": [], "instructions": []},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "primeira assinatura"):
+            process_raydium_cpmm_observation(
+                self.store, payload, wallet_address=self.wallet,
+                signature=self.signature,
+            )
+        normalize.assert_not_called()
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    def test_rejects_secondary_signature_before_persistence(self, normalize):
+        payload = {
+            **self.payload,
+            "transaction": {
+                "signatures": ["primary-signature", self.signature],
+                "message": {"accountKeys": [], "instructions": []},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "primeira assinatura"):
+            process_raydium_cpmm_observation(
+                self.store, payload, wallet_address=self.wallet,
+                signature=self.signature,
+            )
+        normalize.assert_not_called()
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    def test_rejects_duplicate_signatures_before_persistence(self, normalize):
+        payload = {
+            **self.payload,
+            "transaction": {
+                "signatures": [self.signature, self.signature],
+                "message": {"accountKeys": [], "instructions": []},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "primeira assinatura"):
+            process_raydium_cpmm_observation(
+                self.store, payload, wallet_address=self.wallet,
+                signature=self.signature,
+            )
+        normalize.assert_not_called()
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
     def test_rejects_signature_mismatch_before_persistence(self, normalize):
         payload = {
             **self.payload,
@@ -232,6 +311,54 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         normalize.assert_not_called()
         self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
 
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_solana_token_transfers")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_token_account_balance_deltas")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.reconcile_raydium_cpmm_swaps")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.build_swap_domain_bundles")
+    def test_duplicate_reconciliation_cannot_hide_missing_swap_identity(
+        self, build, reconcile, deltas, transfers, decode, normalize
+    ):
+        swap_a = self._swap()
+        swap_b = SimpleNamespace(
+            instruction_index=1,
+            inner_instruction_index=None,
+            cpi_path=(1,),
+        )
+        normalize.return_value = self.normalized
+        decode.return_value = [swap_a, swap_b]
+        transfers.return_value = [object()]
+        deltas.return_value = [object()]
+        reconcile.return_value = [
+            SimpleNamespace(
+                swap=swap_a, status="MATCHED", reason="Duplicate result A-1."
+            ),
+            SimpleNamespace(
+                swap=swap_a, status="MATCHED", reason="Duplicate result A-2."
+            ),
+        ]
+        build.return_value = [self._bundle(), self._bundle()]
+
+        result = process_raydium_cpmm_observation(
+            self.store, self.payload, wallet_address=self.wallet,
+            signature=self.signature,
+        )
+
+        self.assertEqual(result.status, "pending_reconciliation")
+        self.assertGreaterEqual(result.unresolved_swaps, 1)
+        self.assertFalse(result.checkpoint_advanced)
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+        attempts = self.store.get_swap_reconciliation_attempts(
+            self.wallet, self.signature
+        )
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual(
+            [item["status"] for item in attempts],
+            ["MATCHED", "MATCHED", "UNRESOLVED"],
+        )
+        self.assertEqual(attempts[-1]["instruction_index"], 1)
 
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
     @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
@@ -264,6 +391,44 @@ class RaydiumCpmmPersistencePipelineTests(unittest.TestCase):
         self.assertEqual(len(attempts), 1)
         self.assertEqual(attempts[0]["status"], "UNRESOLVED")
         self.assertIn("não retornou resultado", attempts[0]["reason"])
+
+
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.normalize_transaction")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_raydium_cpmm_swaps")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_solana_token_transfers")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.decode_token_account_balance_deltas")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.reconcile_raydium_cpmm_swaps")
+    @patch("smart_money_radar.domain.raydium_cpmm_persistence_pipeline.build_swap_domain_bundles")
+    def test_duplicate_bundle_identity_cannot_cover_two_matched_swaps(
+        self, build, reconcile, deltas, transfers, decode, normalize
+    ):
+        swap_a = self._swap()
+        swap_b = SimpleNamespace(
+            instruction_index=1,
+            inner_instruction_index=None,
+            cpi_path=(1,),
+        )
+        normalize.return_value = self.normalized
+        decode.return_value = [swap_a, swap_b]
+        transfers.return_value = [object()]
+        deltas.return_value = [object()]
+        reconcile.return_value = [
+            SimpleNamespace(swap=swap_a, status="MATCHED", reason="Matched A."),
+            SimpleNamespace(swap=swap_b, status="MATCHED", reason="Matched B."),
+        ]
+        # A faulty builder returns A twice and omits B while preserving cardinality.
+        build.return_value = [self._bundle(), self._bundle()]
+
+        result = process_raydium_cpmm_observation(
+            self.store, self.payload, wallet_address=self.wallet,
+            signature=self.signature,
+        )
+
+        self.assertEqual(result.status, "pending_reconciliation")
+        self.assertGreaterEqual(result.unresolved_swaps, 1)
+        self.assertFalse(result.checkpoint_advanced)
+        self.assertFalse(self.store.has_processed_signature(self.wallet, self.signature))
+
 
 
 if __name__ == "__main__":

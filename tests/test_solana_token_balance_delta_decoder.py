@@ -46,15 +46,51 @@ class SolanaTokenBalanceDeltaDecoderTests(unittest.TestCase):
         self.assertEqual(delta.delta_raw, -275)
         self.assertEqual(delta.decimals, 6)
 
+    def test_rejects_mixed_account_key_formats(self):
+        tx = _tx([], [], keys=[
+            {"pubkey": "parsed-key", "signer": True},
+            "compiled-key",
+        ])
+        result = decode_solana_token_account_balance_deltas(tx)
+        self.assertFalse(result.complete)
+        self.assertIn("ACCOUNT_KEYS_INVALID", [issue.code for issue in result.issues])
+
     def test_resolves_loaded_addresses(self):
         tx = _tx([_entry(3)], [_entry(3, amount="120")],
                  keys=["static-0", "static-1", "static-2"])
+        tx["transaction"]["message"]["addressTableLookups"] = [{
+            "accountKey": "lookup-table",
+            "writableIndexes": [0],
+            "readonlyIndexes": [],
+        }]
         tx["meta"]["loadedAddresses"] = {
             "writable": ["loaded-token-account"],
             "readonly": [],
         }
         result = decode_solana_token_account_balance_deltas(tx)
         self.assertEqual(result.deltas[0].token_account, "loaded-token-account")
+
+    def test_rejects_loaded_addresses_without_lookup_tables(self):
+        tx = _tx([], [])
+        tx["meta"]["loadedAddresses"] = {
+            "writable": ["unexpected"],
+            "readonly": [],
+        }
+        result = decode_solana_token_account_balance_deltas(tx)
+        self.assertFalse(result.complete)
+        self.assertIn("ACCOUNT_KEYS_INVALID", [issue.code for issue in result.issues])
+
+    def test_rejects_loaded_address_count_mismatch(self):
+        tx = _tx([], [])
+        tx["transaction"]["message"]["addressTableLookups"] = [{
+            "accountKey": "lookup-table",
+            "writableIndexes": [0],
+            "readonlyIndexes": [],
+        }]
+        tx["meta"]["loadedAddresses"] = {"writable": [], "readonly": []}
+        result = decode_solana_token_account_balance_deltas(tx)
+        self.assertFalse(result.complete)
+        self.assertIn("ACCOUNT_KEYS_INVALID", [issue.code for issue in result.issues])
 
     def test_failed_transaction_has_no_deltas(self):
         tx = _tx([_entry(1)], [_entry(1, amount="90")])

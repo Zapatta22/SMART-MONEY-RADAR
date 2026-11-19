@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -50,6 +52,135 @@ class SQLiteEventStoreTests(unittest.TestCase):
         self.assertEqual(store.get_checkpoint("wallet-a"), "signature-a")
         store.close()
 
+    def test_mark_processed_can_defer_checkpoint_for_ordered_backfill(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        wallet = "wallet-deferred"
+        store.save_checkpoint(wallet, "previous-signature")
+        payload = {
+            "slot": 900, "meta": {"err": None},
+            "transaction": {"signatures": ["next-signature"], "message": {"instructions": []}},
+        }
+        normalized = normalize_transaction(payload, wallet, "next-signature")
+        store.save_observation(
+            wallet, "next-signature", payload, list(normalized.activity_events),
+            parse_status=normalized.transaction.parse_status,
+            parser_version=normalized.transaction.parser_version,
+            normalized_observation=normalized,
+            advance_checkpoint=False,
+        )
+
+        store.mark_processed(wallet, "next-signature", advance_checkpoint=False)
+
+        self.assertTrue(store.has_processed_signature(wallet, "next-signature"))
+        self.assertEqual(store.get_checkpoint(wallet), "previous-signature")
+        store.advance_checkpoint_in_order(
+            wallet, "next-signature", 900,
+            expected_previous_signature="previous-signature",
+        )
+        self.assertEqual(store.get_checkpoint(wallet), "next-signature")
+        store.close()
+
+    def test_failed_on_chain_backfill_persists_rpc_slot_for_checkpoint(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        store.save_observation(
+            "wallet-failed", "failed-signature", None, [],
+            parse_status="failed_on_chain", parser_version="1",
+            slot=900,
+        )
+        self.assertEqual(store.get_checkpoint("wallet-failed"), "failed-signature")
+        with store._connection_scope() as connection:
+            row = connection.execute(
+                "SELECT slot FROM wallet_checkpoints WHERE wallet_address = ?",
+                ("wallet-failed",),
+            ).fetchone()
+        self.assertEqual(row[0], 900)
+        store.close()
+
+    def test_checkpoint_does_not_regress_when_transactions_arrive_out_of_slot_order(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        wallet = "wallet-slot-order"
+        newer_payload = {
+            "slot": 500, "meta": {"err": None},
+            "transaction": {"signatures": ["sig-new"], "message": {"instructions": []}},
+        }
+        older_payload = {
+            "slot": 450, "meta": {"err": None},
+            "transaction": {"signatures": ["sig-old"], "message": {"instructions": []}},
+        }
+        newer = normalize_transaction(newer_payload, wallet, "sig-new")
+        older = normalize_transaction(older_payload, wallet, "sig-old")
+        store.save_observation(
+            wallet, "sig-new", newer_payload, list(newer.activity_events),
+            parse_status=newer.transaction.parse_status,
+            parser_version=newer.transaction.parser_version,
+            normalized_observation=newer,
+        )
+        store.save_observation(
+            wallet, "sig-old", older_payload, list(older.activity_events),
+            parse_status=older.transaction.parse_status,
+            parser_version=older.transaction.parser_version,
+            normalized_observation=older,
+        )
+        store.mark_processed(wallet, "sig-old")
+        self.assertEqual(store.get_checkpoint(wallet), "sig-new")
+        self.assertTrue(store.has_processed_signature(wallet, "sig-old"))
+        self.assertTrue(store.has_processed_signature(wallet, "sig-new"))
+        store.close()
+
+    def test_ordered_backfill_advances_same_slot_only_from_expected_predecessor(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        wallet = "wallet-same-slot"
+        store.save_checkpoint(wallet, "sig-base")
+        for signature in ("sig-first", "sig-second"):
+            payload = {
+                "slot": 800, "meta": {"err": None},
+                "transaction": {"signatures": [signature], "message": {"instructions": []}},
+            }
+            normalized = normalize_transaction(payload, wallet, signature)
+            store.save_observation(
+                wallet, signature, payload, list(normalized.activity_events),
+                parse_status=normalized.transaction.parse_status,
+                parser_version=normalized.transaction.parser_version,
+                normalized_observation=normalized,
+                advance_checkpoint=False,
+            )
+        with store._connection_scope() as connection:
+            with connection:
+                connection.executemany(
+                    "INSERT INTO processed_signatures(wallet_address, signature) VALUES (?, ?)",
+                    [(wallet, "sig-first"), (wallet, "sig-second")],
+                )
+        store.advance_checkpoint_in_order(
+            wallet, "sig-first", 800, expected_previous_signature="sig-base"
+        )
+        with self.assertRaisesRegex(ValueError, "Checkpoint mudou durante o backfill"):
+            store.advance_checkpoint_in_order(
+                wallet, "sig-second", 800, expected_previous_signature="sig-base"
+            )
+        store.advance_checkpoint_in_order(
+            wallet, "sig-second", 800, expected_previous_signature="sig-first"
+        )
+        self.assertEqual(store.get_checkpoint(wallet), "sig-second")
+        store.close()
+
+    def test_checkpoint_with_known_slot_is_not_replaced_by_unknown_slot(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        wallet = "wallet-known-slot"
+        payload = {
+            "slot": 700, "meta": {"err": None},
+            "transaction": {"signatures": ["sig-known"], "message": {"instructions": []}},
+        }
+        normalized = normalize_transaction(payload, wallet, "sig-known")
+        store.save_observation(
+            wallet, "sig-known", payload, list(normalized.activity_events),
+            parse_status=normalized.transaction.parse_status,
+            parser_version=normalized.transaction.parser_version,
+            normalized_observation=normalized,
+        )
+        store.save_checkpoint(wallet, "sig-unknown")
+        self.assertEqual(store.get_checkpoint(wallet), "sig-known")
+        store.close()
+
     def test_allows_unknown_time_from_rpc(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "history.sqlite3")
@@ -87,6 +218,79 @@ class SQLiteEventStoreTests(unittest.TestCase):
             store.get_observation_metadata("wallet-a", "signature-a")["parse_status"],
             "no_events",
         )
+        store.close()
+
+    def test_save_observation_rejects_different_raw_payload_for_same_signature(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        original = {"meta": {"err": None}, "transaction": {"signatures": ["sig-a"]}}
+        conflicting = {"meta": {"err": None}, "transaction": {"signatures": ["sig-b"]}}
+        store.save_observation(
+            "wallet-a", "sig-a", original, [],
+            parse_status="no_events", parser_version="1",
+            advance_checkpoint=False,
+        )
+
+        with self.assertRaisesRegex(ValueError, "Payload RAW divergente"):
+            store.save_observation(
+                "wallet-a", "sig-a", conflicting, [],
+                parse_status="no_events", parser_version="1",
+                advance_checkpoint=False,
+            )
+
+        self.assertEqual(store.get_raw_transaction("wallet-a", "sig-a"), original)
+        self.assertFalse(store.has_processed_signature("wallet-a", "sig-a"))
+        self.assertIsNone(store.get_checkpoint("wallet-a"))
+        store.close()
+
+    def test_concurrent_divergent_raw_writes_cannot_replace_archived_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "concurrent.sqlite3")
+            try:
+                wallet = "wallet-concurrent"
+                signature = "sig-concurrent"
+                payloads = (
+                    {"meta": {"err": None}, "transaction": {"signatures": ["first"]}},
+                    {"meta": {"err": None}, "transaction": {"signatures": ["second"]}},
+                )
+                barrier = Barrier(2)
+
+                def persist(payload):
+                    barrier.wait()
+                    try:
+                        store.save_observation(
+                            wallet, signature, payload, [],
+                            parse_status="no_events", parser_version="1",
+                            advance_checkpoint=False,
+                        )
+                        return "saved"
+                    except ValueError as exc:
+                        if "Payload RAW divergente" not in str(exc):
+                            raise
+                        return "rejected"
+
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    outcomes = list(executor.map(persist, payloads))
+
+                self.assertCountEqual(outcomes, ["saved", "rejected"])
+                self.assertIn(store.get_raw_transaction(wallet, signature), payloads)
+                self.assertFalse(store.has_processed_signature(wallet, signature))
+            finally:
+                store.close()
+
+    def test_save_observation_allows_filling_missing_raw_payload(self) -> None:
+        store = SQLiteEventStore(":memory:")
+        store.save_observation(
+            "wallet-a", "sig-a", None, [],
+            parse_status="failed_on_chain", parser_version="1",
+            advance_checkpoint=False,
+        )
+        payload = {"meta": {"err": None}, "transaction": {"signatures": ["sig-a"]}}
+        store.save_observation(
+            "wallet-a", "sig-a", payload, [],
+            parse_status="no_events", parser_version="1",
+            advance_checkpoint=False,
+        )
+        self.assertEqual(store.get_raw_transaction("wallet-a", "sig-a"), payload)
         store.close()
 
     def test_save_observation_rejects_events_from_another_signature(self) -> None:
@@ -223,6 +427,52 @@ class SQLiteEventStoreTests(unittest.TestCase):
         self.assertEqual(store.get_events(wallet_address=wallet), [])
         self.assertEqual(store.get_token_deltas(wallet, "sig-fail"), [])
         store.close()
+
+    def test_migration_backfills_checkpoint_slot_from_existing_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy-checkpoint.sqlite3"
+            import sqlite3
+            connection = sqlite3.connect(path)
+            connection.executescript("""
+                CREATE TABLE wallet_checkpoints (
+                    wallet_address TEXT PRIMARY KEY,
+                    signature TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT INTO wallet_checkpoints(wallet_address, signature)
+                    VALUES ('wallet-a', 'checkpoint-sig');
+                CREATE TABLE observed_transactions (
+                    wallet_address TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    payload_json TEXT,
+                    parse_status TEXT NOT NULL,
+                    parser_version TEXT NOT NULL,
+                    parse_error TEXT,
+                    observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    chain TEXT,
+                    slot INTEGER,
+                    occurred_at TEXT,
+                    PRIMARY KEY(wallet_address, signature)
+                );
+                INSERT INTO observed_transactions(
+                    wallet_address, signature, payload_json, parse_status,
+                    parser_version, chain, slot
+                ) VALUES (
+                    'wallet-a', 'checkpoint-sig', '{"meta":{}}',
+                    'no_events', '1', 'solana', 1200
+                );
+            """)
+            connection.commit()
+            connection.close()
+
+            store = SQLiteEventStore(path)
+            with store._connection_scope() as migrated:
+                row = migrated.execute(
+                    "SELECT slot FROM wallet_checkpoints WHERE wallet_address = ?",
+                    ("wallet-a",),
+                ).fetchone()
+            self.assertEqual(row[0], 1200)
+            store.close()
 
     def test_migrates_legacy_observation_table_without_losing_rows(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -9,6 +9,10 @@ from smart_money_radar.data_sources.raydium_cpmm_transfer_reconciliation import 
 from smart_money_radar.data_sources.solana_token_balance_deltas import (
     TokenAccountBalanceDelta,
 )
+from smart_money_radar.domain.swap_bundle_builder import build_swap_domain_bundles
+from datetime import datetime, timezone
+from decimal import Decimal
+
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SPL_TOKEN_PROGRAM_ID,
     TOKEN_2022_PROGRAM_ID,
@@ -298,6 +302,61 @@ class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
         self.assertEqual(result.output_token_account_delta_raw, 95)
         self.assertEqual(result.input_vault_delta_raw, 90)
         self.assertEqual(result.output_vault_delta_raw, -100)
+
+    def test_builds_domain_bundle_for_transfer_checked_with_fee_using_net_output(self):
+        transfers = _pair(
+            input_amount=100,
+            output_amount=100,
+            input_program=TOKEN_2022_PROGRAM_ID,
+            output_program=TOKEN_2022_PROGRAM_ID,
+        )
+        transfers[0] = SolanaTokenTransfer(
+            **{
+                **transfers[0].__dict__,
+                "instruction_type": "TRANSFER_CHECKED_WITH_FEE",
+                "fee_amount_raw": 10,
+            }
+        )
+        transfers[1] = SolanaTokenTransfer(
+            **{
+                **transfers[1].__dict__,
+                "instruction_type": "TRANSFER_CHECKED_WITH_FEE",
+                "fee_amount_raw": 5,
+            }
+        )
+        deltas = _deltas(
+            input_delta=-100,
+            output_delta=95,
+            input_vault_delta=90,
+            output_vault_delta=-100,
+        )
+        reconciliation = reconcile_raydium_cpmm_swaps(
+            [_swap(
+                input_program=TOKEN_2022_PROGRAM_ID,
+                output_program=TOKEN_2022_PROGRAM_ID,
+            )],
+            transfers,
+            deltas,
+            monitored_wallet=WALLET,
+        )[0]
+        self.assertEqual(reconciliation.status, "MATCHED")
+
+        bundles = build_swap_domain_bundles(
+            [reconciliation],
+            chain="solana",
+            signature="token2022-fee-swap",
+            monitored_wallet=WALLET,
+            observed_at=datetime(2026, 11, 19, tzinfo=timezone.utc),
+            parser_version="test-token2022-fee",
+        )
+
+        self.assertEqual(len(bundles), 1)
+        self.assertEqual(bundles[0].observation.input_amount, Decimal("0.000100"))
+        self.assertEqual(bundles[0].observation.output_amount, Decimal("0.000095"))
+        self.assertIn(
+            "output_token_account: user-output:transfer_amount_raw=100".replace(" ", ""),
+            tuple(item.replace(" ", "") for item in bundles[0].evidence.evidence),
+        )
 
     def test_rejects_invalid_fee_amount_on_fee_checked_transfer(self):
         transfers = _pair(

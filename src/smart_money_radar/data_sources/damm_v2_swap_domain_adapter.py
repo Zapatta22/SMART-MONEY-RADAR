@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Sequence
 
 from smart_money_radar.data_sources.damm_v2_decoder import METEORA_DAMM_V2_PROGRAM_ID
+from smart_money_radar.data_sources.damm_v2_fee_math import resolve_damm_fee_mode
 from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
     DammV2EconomicReconciliation,
 )
@@ -17,6 +18,7 @@ from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
     DammV2SwapTransferContext,
     DammV2TransferEvidence,
 )
+from smart_money_radar.data_sources.solana_wrapped_sol_funding import NATIVE_MINT
 from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
     SolanaTokenBalanceDeltaResult,
 )
@@ -93,6 +95,7 @@ def build_damm_v2_swap_domain_bundles(
         deltas_by_account[delta.token_account] = delta
 
     bundles = []
+    seen_operation_keys: set[tuple[int, int | None, tuple[int, ...]]] = set()
     for context, item in zip(contexts, transfer_evidence):
         association = context.association
         event = association.event
@@ -135,6 +138,14 @@ def build_damm_v2_swap_domain_bundles(
             or accounts.program != METEORA_DAMM_V2_PROGRAM_ID
         ):
             raise ValueError("identidade CPI ou programa DAMM v2 inválido")
+        operation_key = (
+            association.instruction_index,
+            association.inner_instruction_index,
+            association.cpi_path,
+        )
+        if operation_key in seen_operation_keys:
+            raise ValueError("identidade de swap DAMM v2 duplicada no lote")
+        seen_operation_keys.add(operation_key)
         if item.status != "ATTRIBUTED":
             raise ValueError("transferências não estão ATTRIBUTED")
         if (
@@ -149,7 +160,47 @@ def build_damm_v2_swap_domain_bundles(
             raise ValueError("evidência de transferências diverge da associação")
         input_transfer = item.input_transfer
         output_transfer = item.output_transfer
-        for transfer in (input_transfer, output_transfer):
+        referral_transfer = item.referral_transfer
+        referral_fee = event.swap_result.referral_fee
+        if event.has_referral and referral_fee > 0 and referral_transfer is None:
+            raise ValueError("transferência referral obrigatória não está presente no bundle")
+        if not event.has_referral and (referral_fee != 0 or referral_transfer is not None):
+            raise ValueError("transferência/referral_fee incompatível com has_referral")
+        if referral_transfer is not None:
+            fee_mode = resolve_damm_fee_mode(
+                event.collect_fee_mode, event.trade_direction, event.has_referral
+            )
+            if fee_mode.fees_on_token_a:
+                referral_vault = accounts.token_a_vault
+                referral_mint = accounts.token_a_mint
+                referral_program = accounts.token_a_program
+            else:
+                referral_vault = accounts.token_b_vault
+                referral_mint = accounts.token_b_mint
+                referral_program = accounts.token_b_program
+            if (
+                referral_transfer.execution_status != "EXECUTED"
+                or referral_transfer.source_account != referral_vault
+                or referral_transfer.destination_account != accounts.referral_token_account
+                or referral_transfer.mint != referral_mint
+                or referral_transfer.program_id != referral_program
+                or referral_transfer.amount_raw != referral_fee
+                or referral_fee <= 0
+            ):
+                raise ValueError("evidência da transferência referral diverge do EvtSwap2/FeeMode")
+            if referral_transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE" and (
+                isinstance(referral_transfer.fee_amount_raw, bool)
+                or not isinstance(referral_transfer.fee_amount_raw, int)
+                or isinstance(referral_transfer.amount_raw, bool)
+                or not isinstance(referral_transfer.amount_raw, int)
+                or not 0 <= referral_transfer.fee_amount_raw <= referral_transfer.amount_raw
+            ):
+                raise ValueError("fee explícita da transferência referral é inválida")
+
+        transfers_to_validate = [input_transfer, output_transfer]
+        if referral_transfer is not None:
+            transfers_to_validate.append(referral_transfer)
+        for transfer in transfers_to_validate:
             if (
                 transfer.cpi_path_valid is not True
                 or transfer.instruction_index != association.instruction_index
@@ -178,15 +229,30 @@ def build_damm_v2_swap_domain_bundles(
 
         input_delta = deltas_by_account.get(input_transfer.source_account)
         output_delta = deltas_by_account.get(output_transfer.destination_account)
-        if (
-            input_delta is None
-            or output_delta is None
-            or input_delta.owner != monitored_wallet
-            or output_delta.owner != monitored_wallet
-        ):
+        lifecycle_owners = {
+            lifecycle.token_account: lifecycle.owner_wallet
+            for lifecycle in reconciliation.wrapped_sol_lifecycles
+        }
+        input_owner = (
+            input_delta.owner if input_delta is not None
+            else lifecycle_owners.get(input_transfer.source_account)
+        )
+        output_owner = (
+            output_delta.owner if output_delta is not None
+            else lifecycle_owners.get(output_transfer.destination_account)
+        )
+        if input_owner != monitored_wallet or output_owner != monitored_wallet:
             raise ValueError("propriedade das token accounts não confirma a carteira monitorada")
-        if input_delta.mint != accounts.input_mint or output_delta.mint != accounts.output_mint:
-            raise ValueError("mints dos deltas da carteira divergem do swap")
+        if input_delta is None:
+            if accounts.input_mint != NATIVE_MINT:
+                raise ValueError("delta de input ausente sem evidência lifecycle wSOL")
+        elif input_delta.mint != accounts.input_mint:
+            raise ValueError("mint do delta input da carteira diverge do swap")
+        if output_delta is None:
+            if accounts.output_mint != NATIVE_MINT:
+                raise ValueError("delta de output ausente sem evidência lifecycle wSOL")
+        elif output_delta.mint != accounts.output_mint:
+            raise ValueError("mint do delta output da carteira diverge do swap")
 
         input_amount = _amount_decimal(
             event.included_transfer_fee_amount_in,
@@ -219,6 +285,35 @@ def build_damm_v2_swap_domain_bundles(
             confidence=Decimal("0"),
             reason="ativo-base/quote não foi definido pela política de classificação",
         )
+        fee_absence_evidence = tuple(
+            (
+                f"Token-2022 transfer fee comprovadamente zero para mint {proof.mint}; "
+                f"signature={proof.signature}; slot={proof.transaction_slot}; "
+                f"transaction_index={proof.transaction_index}; "
+                f"snapshot_slot={proof.current_snapshot_slot}; {proof.basis}"
+            )
+            for proof in reconciliation.transfer_fee_absence_proofs
+        )
+        cross_venue_evidence = tuple(
+            (
+                f"cross-venue CPI transfer outer={transfer.outer_instruction_index} "
+                f"inner={transfer.inner_instruction_index}; "
+                f"path={' > '.join(transfer.cpi_program_path)}; "
+                f"{transfer.source_account}->{transfer.destination_account}; "
+                f"mint={transfer.mint}; gross={transfer.amount_raw}; "
+                f"net={transfer.net_amount_raw}; fee={transfer.fee_amount_raw}"
+            )
+            for transfer in reconciliation.cross_venue_transfers
+        )
+        referral_evidence = ()
+        if referral_transfer is not None:
+            referral_evidence = (
+                f"referral_transfer:{referral_transfer.instruction_index}:{referral_transfer.inner_instruction_index}",
+                f"referral_transfer_accounts:{referral_transfer.source_account}->{referral_transfer.destination_account}",
+                f"referral_transfer_mint:{referral_transfer.mint}",
+                f"referral_transfer_gross_raw:{referral_transfer.amount_raw}",
+                f"referral_transfer_fee_raw:{referral_transfer.fee_amount_raw or 0}",
+            )
         evidence = SwapEvidence(
             operation_id=operation_id,
             program_id=METEORA_DAMM_V2_PROGRAM_ID,
@@ -228,10 +323,10 @@ def build_damm_v2_swap_domain_bundles(
             evidence=(
                 "EvtSwap2 associado estruturalmente ao swap",
                 "transferências input/output atribuídas e executadas",
-                "lote completo reconciliado contra deltas pre/post",
-                "propriedade das token accounts confirmada para a carteira monitorada",
+                "lote completo reconciliado contra deltas pre/post e lifecycle wSOL quando aplicável",
+                "propriedade das token accounts confirmada por snapshots ou ATA lifecycle para a carteira monitorada",
                 "input_amount representa débito bruto; output_amount representa crédito líquido",
-            ),
+            ) + referral_evidence + fee_absence_evidence + cross_venue_evidence,
         )
         bundles.append(DammV2SwapDomainBundle(observation, classification, evidence))
 

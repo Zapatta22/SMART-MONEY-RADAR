@@ -9,6 +9,9 @@ from collections.abc import Sequence
 from smart_money_radar.data_sources.helius import HeliusDataSource
 from smart_money_radar.domain.models import Wallet
 from smart_money_radar.services.wallet_monitor import WalletMonitor
+from smart_money_radar.data_sources.token2022_fee_proof_resolver import (
+    resolve_token2022_no_fee_proofs,
+)
 from smart_money_radar.settings import HeliusSettings, SettingsError
 from smart_money_radar.storage.event_store import SQLiteEventStore
 
@@ -63,7 +66,10 @@ def _run_monitor(
 ) -> None:
     wallets = [Wallet(address=address) for address in addresses]
     event_store = SQLiteEventStore(settings.database_path)
-    monitor = WalletMonitor(settings, source, event_store)
+    monitor = WalletMonitor(
+        settings, source, event_store,
+        token2022_fee_proof_resolver=resolve_token2022_no_fee_proofs,
+    )
     stop_event = asyncio.Event()
     loop = asyncio.new_event_loop()
     for signal_name in (signal.SIGINT, signal.SIGTERM):

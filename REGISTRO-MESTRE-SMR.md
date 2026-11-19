@@ -1964,3 +1964,1832 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #593, #598, #602 e #612 indicam indisponibilidade pré-etapas recorrente; não repetir retries automáticos.
 - Validação runtime do PR #24 continua pendente. A suíte 374/374 e compileall aprovados anteriormente pertencem ao HEAD de código/teste do PR #23 (`d6142ba...`), não cobrem o adaptador novo.
 - PR #24 permanece aberto, Draft e sem merge, empilhado sobre PR #23. Nenhuma alteração na `main`, banco persistente, RAW, checkpoints, RPC/Helius ou estado on-chain.
+
+
+## 104. Orquestrador transacional DAMM v2 — PR #25 (18/11/2026)
+
+- Criada branch `feat/damm-v2-transaction-pipeline` a partir do HEAD PR #24 `c67a574cc29b090842aebe08dd4018b282df9b85`.
+- Criado PR #25, Draft, base `feat/damm-v2-swap-domain-adapter`, HEAD inicial `0fe1b1c1b851ccd9c33938d8ae62c39e8133bc20`; três arquivos próprios.
+- Novo módulo `src/smart_money_radar/data_sources/damm_v2_transaction_pipeline.py` encadeia: validação do payload e execução; associação swap/Event CPI; resolução da instrução externa/inner e account keys/loaded addresses; resolução de contas; decodificação de transferências; atribuição CPI; snapshots de token accounts; reconciliação econômica em lote; adaptador para os três contratos de domínio.
+- O pipeline rejeita o lote inteiro se existir swap/evento não associado, ambiguidade, transferência não atribuída, snapshot incompleto, divergência econômica ou erro de estrutura. Estados públicos: `NO_DAMM_V2_SWAPS`, `REJECTED`, `RECONCILED`.
+- O pipeline não chama `transaction_parser.py` nem `normalize_transaction`, não persiste EventStore, não avança checkpoint, não chama RPC/Helius e não executa ações on-chain. A classificação de domínio continua `UNKNOWN`.
+- Criados testes sintéticos para transação sem swap DAMM v2, estado de execução ausente, transação falha, metadados ausentes e campos obrigatórios.
+- Documentação: `docs/DAMM-V2-TRANSACTION-PIPELINE.md`.
+- CI #615 (run `44311776265`) e #616 (run `44311887367`) terminaram failure antes de etapas. Jobs `134827468470` e `134827833045` retornaram `steps=[]`; logs BlobNotFound. Não há evidência de checkout, unittest ou compileall. Não classificar como falha de código nem aprovação; não repetir retries sem diagnóstico do runner.
+- Comparação PR #25 contra PR #24: 3 commits à frente, 0 atrás; três arquivos próprios (266 linhas pipeline, 82 testes, 39 docs).
+- Validação runtime do PR #25 permanece pendente. Nenhuma fixture RAW mainnet prova ainda o caminho completo de swap DAMM v2.
+- PR #25 permanece Draft, aberto e sem merge; PR #24 permanece Draft e é a base. `main` intacta; sem alteração em RAW persistente, SQLite persistente, checkpoints, RPC/Helius ou estado on-chain.
+- Próximo trabalho: obter validação executável do código e criar fixture RAW mainnet auditada; depois, avaliar integração controlada do pipeline com normalização/parser, sem promover BUY/SELL até haver regra de ativo-base/quote comprovada.
+
+
+## 105. Persistência DAMM v2 e bloqueio de checkpoint no WalletMonitor — PR #25 (18/11/2026)
+
+- Continuação do PR #25 na branch `feat/damm-v2-transaction-pipeline`, ainda Draft e baseado no PR #24.
+- Criado `src/smart_money_radar/domain/damm_v2_persistence_pipeline.py`: envolve o pipeline transacional DAMM v2, arquiva a observação normalizada, persiste bundles reconciliados e registra tentativas de reconciliação no `SQLiteEventStore`.
+- O adaptador de persistência **não avança checkpoint** em nenhum caminho. Em transação falha on-chain, delega o fluxo ao pipeline CPMM existente, que já trata esse estado.
+- O `WalletMonitor._collect_transaction` agora executa DAMM v2 antes de Raydium CPMM. Se DAMM v2 retornar pendência, o processamento CPMM é bloqueado e o checkpoint permanece intacto. Se não houver swap DAMM v2 ou o lote for reconciliado, o fluxo segue para CPMM, que permanece coordenador final do checkpoint nesta etapa.
+- Idempotência de bundles continua garantida por `SQLiteEventStore.save_swap_bundle`; retries de transação não devem duplicar bundles já gravados.
+- Testes adicionados:
+  - `tests/test_damm_v2_persistence_pipeline.py`: observação sem swap arquivada sem checkpoint, transação falha delegada sem checkpoint e assinatura divergente rejeitada antes de persistir.
+  - `tests/test_wallet_monitor.py`: cenário em que DAMM v2 permanece pendente; confirma que CPMM não é chamado e checkpoint não avança.
+- Documentação `docs/DAMM-V2-TRANSACTION-PIPELINE.md` atualizada com persistência e coordenação do checkpoint.
+- CI após as alterações anteriores (#620–#623) continuou falhando sem etapas executadas; run #624 (`44312969425`) também terminou sem runner/steps. Não há evidência de unittest ou compileall via CI. Não fazer retries repetidos sem correção do runner.
+- **Validação runtime destes novos arquivos e integração ainda pendente**; os testes sintéticos foram adicionados, mas não foram executados nesta sessão.
+- PR #25 permanece Draft e sem merge. `main` intacta; sem alteração de RAW persistente, SQLite persistente, checkpoints locais, RPC/Helius ou estado on-chain.
+- Próxima etapa: validar a nova integração em ambiente executável; depois ampliar testes para erro de persistência e recuperação idempotente, antes de promover integração adicional a outros venues.
+
+
+## 106. Endurecimento do pipeline e verificação de assinatura — PR #25 (18/11/2026)
+
+- `process_damm_v2_transaction` agora valida, quando presente no payload RPC, que a assinatura informada consta em `transaction.signatures`; payload divergente é `REJECTED`.
+- O pipeline exige cardinalidade exata entre swaps reconciliados e bundles de domínio; divergência não pode retornar `RECONCILED`.
+- Adicionado teste negativo para assinatura divergente.
+- O adaptador de persistência conta rejeições estruturais sem swap decodificado como pendência não resolvida, evitando mensagem enganosa de 0/0 swaps concluídos.
+- Logs do `WalletMonitor` agora expõem total de pendências DAMM v2 além da contagem de swaps reconciliados.
+- Runs CI #627–#633 permanecem sem steps executados; #633 (`44313351764`) também terminou failure com `steps=[]`. Não há evidência de execução de testes ou compileall. Não repetir retries.
+- Nenhuma validação runtime do PR #25 foi comprovada ainda; alterações de persistência e coordenação do monitor precisam de execução no Termux antes de qualquer merge.
+- PR #25 permanece Draft, sem merge; `main` intacta.
+
+
+## 107. Auditoria negativa de swap DAMM v2 e replay — PR #25 (18/11/2026)
+
+- Adicionado cenário sintético que contém uma associação swap + `EvtSwap2` estruturalmente MATCHED, mas inventário de contas inválido (menos de 14 contas).
+- O teste percorre o adaptador de persistência real até a falha de resolução de contas e verifica que:
+  - o resultado permanece `pending_reconciliation`;
+  - o swap é contabilizado como não resolvido;
+  - uma tentativa `INCOMPLETE` é gravada no SQLite `:memory:`;
+  - a assinatura permanece em `get_pending_signatures`;
+  - nenhum checkpoint é avançado.
+- Corrigido o pipeline para preservar associações e evidências intermediárias quando uma etapa posterior rejeita a transação; sem isso, a persistência perdia o swap que precisava auditar.
+- Corrigido helper Base58 do teste para contar bytes zero iniciais sem escape ambíguo.
+- CI #639–#642 sem execução de etapas; #642 (`44313722273`) também terminou com job sem steps. Nenhum teste/compileall foi executado pelo runner.
+- PR #25 continua Draft; validação runtime do teste sintético e integração ainda depende de Termux ou runner funcional.
+
+
+## 108. Preservação de RAW em erro de normalização e fail-closed abrangente — PR #25 (18/11/2026)
+
+- O orquestrador transacional agora captura exceções inesperadas de estágio como `REJECTED`, preservando associações, contextos, transferências, snapshots e reconciliação já produzidos.
+- O adaptador de persistência arquiva payload RAW com `parse_status=parse_error` quando a normalização falha, registra o tipo da exceção e mantém checkpoint intacto para replay.
+- Teste adicional simula erro de normalização e exige RAW arquivado, estado `parse_error` e ausência de assinatura processada.
+- Teste de inventário inválido verifica fila de replay e tentativa `INCOMPLETE` persistida em SQLite `:memory:`.
+- CI mais recente observado antes deste registro (#645) falhou sem etapas; runs posteriores a cada commit seguem indisponíveis sem evidência de execução de testes.
+- Nenhum teste runtime foi executado nesta sessão; PR #25 permanece Draft, sem merge, e `main` intacta.
+
+
+## 109. Estado de CI após integração do monitor — PR #25 (18/11/2026)
+
+- CI #646–#652 continua sem executar testes. Último run observado: #652 (`44314028359`), job `134835287722`, status failure com `steps=null`; consulta de steps retorna lista vazia. Não há logs disponíveis.
+- O padrão é indisponibilidade do runner/artefato de log, não evidência de falha de unittest ou compileall. Nenhum retry adicional foi disparado.
+- PR #25 permanece Draft, aberto, sem merge; `main` intacta.
+
+
+## 110. Coletor dedicado para fixture RAW mainnet DAMM v2 — PR #25 (18/11/2026)
+
+- Identificado no catálogo versionado `data/fixtures/candidates/solana_mainnet_candidates.json` um candidato específico Meteora DAMM v2:
+  `1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT`, slot reportado 451432630.
+- Criado `tools/collect_damm_v2_fixture.py`, que seleciona exatamente um candidato DAMM v2 no catálogo e usa o `RpcFixtureCollector` existente para obter `getTransaction` finalized/JSON.
+- O coletor grava RAW e manifesto local em `data/fixtures/raw/damm-v2/`, com SHA-256; não envia fixture ao GitHub, não anonimiza, não importa SQLite e não avança checkpoint.
+- Criado `tests/test_damm_v2_fixture_collector.py` para confirmar seleção única e rejeitar catálogo ausente/ambíguo.
+- Documentado comando Termux com endpoint RPC somente leitura em `docs/DAMM-V2-TRANSACTION-PIPELINE.md`.
+- A fixture ainda não foi coletada nesta sessão; a transação candidata não foi tratada como evidência RAW até o retorno do RPC e validação de hash/estrutura.
+
+
+## 111. Bloqueio fail-closed quando metadados CPI estão ausentes — PR #25 (18/11/2026)
+
+- Auditoria estática identificou uma lacuna crítica: o pipeline podia interpretar meta.innerInstructions ausente ou nulo como lista vazia, pois o analyzer usa meta.get("innerInstructions") or [].
+- Em Solana, innerInstructions null/ausente não comprova que não houve CPI. Como DAMM v2 pode ser chamado por agregadores, esse cenário poderia produzir falsamente NO_DAMM_V2_SWAPS, liberar o pipeline CPMM e avançar checkpoint sem analisar o swap DAMM v2.
+- Corrigido process_damm_v2_transaction: agora exige meta.innerInstructions como lista explícita; lista vazia é aceita, campo ausente/nulo gera REJECTED e bloqueia a próxima venue/checkpoint.
+- Adicionados testes negativos para campo ausente e nulo em tests/test_damm_v2_transaction_pipeline.py.
+- Ajustados dois fixtures de tests/test_wallet_monitor.py para declarar explicitamente innerInstructions: [] nos cenários sem CPI.
+- Atualizada a documentação docs/DAMM-V2-TRANSACTION-PIPELINE.md.
+- Commits: implementação 3ca36505d11ec53bbd8dcc4f290db2db7962a5f4; testes do pipeline 455fd607e18550b39939fac60ae4a308830d1d7b; fixtures do monitor fc1541f974f932fa4f15654089e7941cc40ab270; documentação 73292b0fed108ca8a14e5cc8831abf5160b50043.
+- Esta é revisão estática/correção enviada à branch do PR #25. Ainda não há execução local ou CI confirmada para estes commits; não declarar testes aprovados até obter execução real.
+- PR #25 permanece Draft e sem merge. main, RAW persistente, SQLite persistente, checkpoints, RPC/Helius e estado on-chain não foram alterados.
+
+
+## 112. Integridade de Address Lookup Tables antes da análise CPI — PR #25 (18/11/2026)
+
+- Segunda lacuna fail-open identificada na auditoria: para transações versionadas compiladas, a análise de programIdIndex dependia de meta.loadedAddresses. Se addressTableLookups existisse e loadedAddresses estivesse ausente/incompleto, o analyzer poderia não resolver o Program ID DAMM v2 e retornar falsamente ausência de swap.
+- O pipeline agora resolve/valida accountKeys antes de chamar o analyzer.
+- Quando message.addressTableLookups é não vazio e accountKeys usa chaves compiladas, exige meta.loadedAddresses e valida writable/readonly contra a soma dos writableIndexes/readonlyIndexes das lookup tables. Índices inválidos, contagem divergente ou metadados ausentes rejeitam a transação.
+- Adicionados testes negativos para loadedAddresses ausente e cardinalidade divergente; documentação atualizada.
+- Commits: validação dcad62896dde85a244fa975daaeb72416b6d3f77; testes 1fa5c91e0378a96b5c9c81c8aaa5f9c71b476dc0; documentação e355ac5f8cff1d119ed2810635debb383cb0754f.
+- Revisão estática enviada ao PR #25. Testes runtime e compileall continuam sem execução comprovada; CI segue sem steps/logs. Não afirmar aprovação.
+- PR #25 Draft, sem merge; main, RAW persistente, SQLite persistente, checkpoints, RPC/Helius e estado on-chain preservados.
+
+
+## 113. Teste de integração da proteção CPI até a fila de replay — PR #25 (18/11/2026)
+
+- Adicionado teste no adaptador de persistência que remove meta.innerInstructions do payload e executa o caminho real de persistência com SQLite :memory:.
+- O teste exige pending_reconciliation, ready_for_next_venue=False, RAW arquivado, assinatura na fila de replay e ausência de assinatura processada/checkpoint. Assim, cobre a propagação do novo bloqueio até a fronteira que impede o WalletMonitor de liberar CPMM.
+- Teste ainda não executado em runtime; CI segue sem steps/logs. Commit do teste: ceb008d1a980290204cf4d4224c05cac4a9b98b0.
+- PR #25 Draft, sem merge; main e estado persistente preservados.
+
+
+## 114. Formato homogêneo obrigatório para accountKeys — PR #25 (18/11/2026)
+
+- Auditoria estática identificou que os helpers de resolução usavam `any(dict)` para decidir se `accountKeys` estava em formato `jsonParsed`. Uma lista mista (objetos e strings) podia ser aceita parcialmente e produzir índices/chaves inconsistentes.
+- O pipeline DAMM v2, o analyzer DAMM v2, o decodificador SPL/Token-2022 e o decodificador de deltas agora rejeitam listas que misturam objetos `jsonParsed` e strings `compiled`. A validação ocorre antes de resolver endereços/índices.
+- Testes negativos adicionados nos quatro níveis: pipeline DAMM v2 retorna `REJECTED`; analyzer e decodificador de transferências levantam `ValueError`; decodificador de deltas retorna `ACCOUNT_KEYS_INVALID`.
+- Hardening adicional do analyzer: `f8769c377b0ae533a3a68659312bbe24245958fd`; teste `e816e6be973982639691f3bb2181454d5e9992d3`.
+- Commits de implementação: `45c1372bd535c1608b348569ea8e7db53bb228b9`, `d8fa7b8c41809b9c0c701057577b58ff30e09750`, `93853ccf8e28a1e60d0b4165327aae9d1b061cea`.
+- Commits de testes: `fc40f28931eec6d247f5203ff5391c5f602c1d77`, `8a4bac2cdb57fcdeff390bd750feb7b8363ce479`, `f6b9f818a3d14941eded6b779444711fd2daabf1`.
+- Documentação atualizada. Esta alteração é revisão estática enviada à branch; nenhum teste runtime/compileall foi executado por esta ação. A CI continua sujeita à indisponibilidade pré-etapas já registrada.
+- PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.
+
+- CI no HEAD subsequente: run #691 (`44317299989`), job `134846680569`, terminou `failure`, mas steps retornou `[]` e logs retornaram `BlobNotFound`. Portanto, também não há evidência de checkout/testes/compileall; não repetir retry sem diagnóstico do runner.
+
+
+## 115. Validação ALT consistente em analyzer e decodificadores — PR #25 (18/11/2026)
+
+- Auditoria identificou que o pipeline transacional conferia cardinalidade das ALT, mas os caminhos independentes do analyzer DAMM v2, decodificador SPL/Token-2022 e decodificador de deltas apenas anexavam `loadedAddresses`, sem confrontar `addressTableLookups`.
+- Os quatro caminhos agora validam a estrutura de `addressTableLookups`, índices writable/readonly (inteiros não negativos, sem bool), presença de `meta.loadedAddresses` quando há lookup tables e cardinalidade exata por tipo.
+- Endereços carregados não vazios sem lookup tables são rejeitados para impedir deslocamento/contaminação dos índices. Campos ausentes equivalem a lista vazia somente quando a transação não declara ALT.
+- Testes negativos adicionados para ausência de lookup com endereços carregados e contagem divergente; fixtures existentes com ALT foram corrigidas para colocar `addressTableLookups` em `transaction.message`, conforme o formato Solana.
+- Implementações: analyzer `4100eeff8073bf5795b0d26a149d3f888345c88d`; transfer decoder `1e3ff7501967c8584807f5296763c0fcdeb605dc`; balance decoder `fa5e9dbfb1a6f84c3d8fe3d70e769221b68ce9f8`; pipeline `487e75b9354c6c4311f5bb846a67967623e2c88e`.
+- Testes/fixtures: pipeline `01e8ac636edd74f2dbdbf65b344e631ef07c2c18`; analyzer `e95d51f5844a1d0a33b37545fa287933590ee5e8`; transfer fixtures `7d25ffb608c2dea85d24cd3adbd2ced0247122ef`, `5c4c3224c6370bfd173d3daccbc19676b5f1737f`; balance deltas `a5434719122a4e02ed0291d1c450d85f2de31eed`.
+- Revisão estática enviada ao PR #25. Os novos testes não foram executados em runtime/compileall nesta etapa. CI não é evidência de execução se o job não iniciar steps.
+- PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.
+
+
+## 116. Vinculação obrigatória à assinatura primária da transação — PR #25 (18/11/2026)
+
+- Auditoria identificou que o pipeline aceitava ausência do campo `transaction.signatures` e também aceitava a assinatura solicitada em qualquer posição da lista. Em Solana, a assinatura que identifica a transação é a primeira da lista; aceitar uma assinatura secundária ou payload sem assinaturas enfraquece a vinculação do RAW à notificação recebida.
+- O pipeline agora exige lista de assinaturas presente, não vazia, composta apenas por strings não vazias, sem duplicatas, e exige `signatures[0] == signature`.
+- A validação duplicada mais permissiva na camada de persistência foi removida; a camada persiste o RAW/normalização e o pipeline transacional retorna REJECTED, mantendo a assinatura sem checkpoint quando a vinculação falha.
+- Testes negativos adicionados para assinaturas ausentes, assinatura solicitada apenas em posição secundária e lista com duplicatas. Fixtures de WalletMonitor atualizadas para refletir a resposta RPC Solana com assinatura primária.
+- Implementação: `f4c075ebb63efe658364b29a71c15f5fca0d8d2d`; remoção da checagem duplicada na persistência: `e419f4158a27e3177e492a63d72995bb468bb5ff`; testes do pipeline: `b5c0512ba4eb8f519b4d66ed72a7b867ded6b84a`; fixtures WalletMonitor: `ad9bc80c03f56f5e3b888838e35a1ae05ed69a1b`.
+- Revisão estática enviada ao PR #25. Testes runtime/compileall ainda não foram executados para esses commits; CI sem steps/logs não conta como validação.
+- PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.
+
+- CI do HEAD `c04cdfa910e36fccf23a66c9f220c92ffb72655d`: run #726 (`44318847758`), job `134852085527`, `steps=null` e `logs_url=null`. Falhou antes de disponibilizar etapas/logs; não há evidência de execução de unittest/compileall. Nenhum retry foi disparado.
+
+- CI do HEAD `50c64ead640aa2ae1be4eefb60dad32587114423`: run #717 (`44318265798`), job `134850068290`, falhou antes de iniciar steps (`steps=null`, `logs_url=null`). Não comprova falha nem aprovação dos testes; sem retry automático.
+
+
+## 117. Correção de fixtures e assinatura primária no coordenador CPMM — PR #25 (18/11/2026)
+
+- Auditoria dos call sites de `simulated_transaction()` em `tests/test_wallet_monitor.py` encontrou fixtures que usavam a assinatura padrão em cenários com outra assinatura solicitada. Corrigidos os retornos dos data sources para propagar o argumento `signature`; corrigido também o RAW arquivado para replay de primeira execução (`pending-first-run`).
+- Revisão da coordenação DAMM→CPMM identificou que a validação de assinatura primária estava no pipeline DAMM, mas o CPMM ainda aceitava `transaction.signatures` ausente e assinatura solicitada em posição secundária. Isso deixava um caminho independente/failed-on-chain mais permissivo.
+- O pipeline CPMM agora exige lista de assinaturas presente, não vazia, somente strings não vazias, sem duplicatas, e `signatures[0] == signature`, antes de normalizar ou persistir.
+- Adicionados testes negativos CPMM para assinaturas ausentes, secundárias e duplicadas; fixture base do teste agora contém a assinatura primária correspondente.
+- Idempotência verificada estaticamente no `SQLiteEventStore.save_swap_bundle()`: os três contratos são gravados em uma única transação SQLite, com `ON CONFLICT(operation_id) DO UPDATE`; replay após falha parcial de múltiplos bundles atualiza os já persistidos sem duplicar operações. Cada bundle é atômico; o lote completo não é uma única transação.
+- Commits desta rodada: fixtures WalletMonitor `2b53a5d5a129f38465e3d453b9c254b82694264b` e `31bde375367f54ea9348ec1d5b7b99b621b1b02f`; validação CPMM `689e8eb311b01018ad5cd3ea5154e38f1324d38f`; testes CPMM `14a0eeabfff92802f7befc93185bc579ce99ad91`.
+- Revisão estática apenas: não houve execução runtime/compileall nesta rodada; CI sem steps/logs continua sem valor probatório. PR #25 permanece Draft e sem merge; `main`, fixtures RAW, SQLite persistente, checkpoints, RPC/Helius e estado on-chain permanecem intocados.
+
+
+## 120. ID JSON-RPC estritamente inteiro — PR #25 (18/11/2026)
+
+- Hardening adicional da validação do envelope: Python considera `True == 1`; portanto, comparar apenas igualdade permitiria que resposta JSON com `id: true` fosse aceita para requisição `id: 1`.
+- O cliente agora exige ID de resposta do tipo inteiro JSON, rejeita booleanos e compara com o ID enviado.
+- Adicionado teste negativo específico para `id: true`.
+- Commits: cliente `ff1b04eaf076c91a8d84c445add6cac5320fefd7`; teste `1e9d010906bcfa065669d80641807c6b897efda8`.
+- Revisão estática; runtime/compileall pendentes. Nenhuma chamada RPC real. PR #25 Draft, sem merge e sem alterações em main/estado persistente.
+
+
+## 121. Envelope JSON-RPC do WebSocket logsSubscribe — PR #25 (18/11/2026)
+
+- Auditoria do WalletMonitor encontrou a mesma classe de coerção booleana no WebSocket: em Python, `True` pode equivaler à chave inteira `1`. IDs de requisição, IDs de assinatura e IDs de subscription recebidos em notificações agora rejeitam booleanos; identificadores precisam ser inteiros válidos.
+- Respostas de inscrição também precisam declarar `jsonrpc == "2.0"`; notificações com subscription ID inválido são ignoradas, sem associação acidental à carteira de outra inscrição.
+- Adicionados testes para versão JSON-RPC ausente, request ID booleano e subscription ID booleano.
+- Commits: WalletMonitor `5a689b522a47a4eca6402880c45b186be35ba536`, `3961a3f9d7db3ee14e41e8c289b125ec523171c1`, `252e34e7c1b5dba7fbd7f10e2e580b9f86631a9e`; testes `28383b0f737c75b67f316f6e20cf7ee5d664a693`, `ed5939f849d4e079b486e371e2591fd6d455aba2`.
+- Auditoria estática adicional de `_backfill_wallet`, `save_observation` e normalização: falhas on-chain no backfill são registradas como resultado conhecido e avançam checkpoint pelo padrão `advance_checkpoint=True`; observações pendentes são processadas antes do backfill histórico; ausência do checkpoint no limite configurado interrompe recuperação em vez de criar lacuna silenciosa. Não foi feita alteração nesses fluxos nesta rodada.
+- Sem execução runtime/compileall e sem conexão WebSocket/RPC real. PR #25 continua Draft; main, banco persistente, checkpoints e estado on-chain preservados.
+
+
+## 122. Validação fail-closed das páginas de assinaturas do backfill — PR #25 (18/11/2026)
+
+- Auditoria do caminho `getSignaturesForAddress` → `_backfill_wallet` encontrou risco de lacuna silenciosa: a fonte RPC aceitava itens sem `signature`, e o backfill ignorava esses itens intermediários enquanto podia continuar até o checkpoint e avançar.
+- `HeliusDataSource.get_signatures_for_address()` agora valida todos os itens da página antes de devolvê-la: cada item deve ser objeto com assinatura string não vazia e nenhuma assinatura pode se repetir na mesma página. Página malformada rejeita a chamada inteira; o backfill não recebe uma lista parcialmente válida.
+- Adicionados testes para item sem assinatura e duplicata na mesma página.
+- Commits: fonte `ccef35f7c217df62c7902b98be68aafa97e91885`; testes `98dc46b74ece2767451334cbc2253f407245634f`.
+- Revisão estática do backfill indica que falha de página interrompe antes do processamento/avanço subsequente; o checkpoint existente permanece como referência para nova tentativa. Sem runtime/compileall ou RPC real nesta rodada. PR #25 Draft; main e estado persistente preservados.
+
+
+## 123. Parser SPL valida representação bruta e identidade de token account — PR #25 (18/11/2026)
+
+- Auditoria adicional do parser encontrou dois riscos de saldo fabricado: `uiTokenAmount.amount` aceitava representações decimais/fracionárias que não correspondem ao campo bruto inteiro do JSON-RPC; e entradas repetidas com o mesmo `accountIndex` podiam ser somadas como se fossem token accounts distintas.
+- O parser agora exige `amount` como string ASCII de dígitos (unidades mínimas inteiras) e, quando `accountIndex` é fornecido, exige inteiro não negativo e identidade única por snapshot. Índices repetidos ou conflitantes invalidam as mints envolvidas e impedem delta.
+- Adicionados testes negativos para amount fracionário e accountIndex duplicado.
+- Commits: parser `668bdbe869eab50273a089acaecaa578dbcb8f3c`; testes `657c1175dcbbfe3e5ff9eff12f0d82f7d6187a3c`.
+- Revisão estática; runtime/compileall pendentes. Nenhum dado persistente ou RPC real foi alterado.
+
+
+## 124. Identidade um-para-um obrigatória na reconciliação CPMM — PR #25 (18/11/2026)
+
+- Auditoria encontrou um caso de falsa conclusão possível: com dois swaps decodificados A e B, um reconciliador defeituoso poderia devolver dois resultados MATCHED para A. A cardinalidade seria 2 = 2, mas B ficaria sem resultado; o pipeline anterior podia considerar a contagem suficiente e avançar checkpoint.
+- O CPMM agora compara as chaves completas `(instruction_index, inner_instruction_index, cpi_path)` entre swaps decodificados e resultados de reconciliação. Exige unicidade em ambos os conjuntos e igualdade exata entre eles. Duplicatas, identidades ausentes, extras ou duplicadas nos swaps mantêm a transação pendente.
+- A auditoria por swap continua registrando explicitamente UNRESOLVED para a instrução sem resultado.
+- Adicionado teste de regressão com dois swaps decodificados e duas respostas MATCHED duplicadas para o primeiro; o segundo é registrado UNRESOLVED e o checkpoint não avança.
+- Commits: pipeline `faa53c65eba293e81707a6c3584e2f51ab5de684`; teste `1d79b5b701f757c72ff516e36f1b17309b794ac2`.
+- Revisão estática; execução runtime/compileall pendente. PR #25 Draft; main e estado persistente preservados.
+
+
+## 125. Bundles CPMM vinculados exatamente aos swaps MATCHED — PR #25 (18/11/2026)
+
+- Após exigir identidade um-para-um na reconciliação, a auditoria avançou até o construtor/persistência de bundles. A checagem anterior de cardinalidade também não garantia que os bundles correspondiam aos swaps MATCHED: um builder poderia devolver o mesmo bundle duas vezes, omitindo outro swap, e ainda manter o mesmo tamanho da lista.
+- O pipeline agora calcula o conjunto esperado de `operation_id` diretamente dos swaps MATCHED e compara com os bundles produzidos. Exige IDs únicos, conjunto exato, chain Solana, carteira monitorada, assinatura solicitada e consistência dos operation IDs entre observation/classification/evidence. Divergência mantém a transação pendente e bloqueia checkpoint.
+- Adicionado teste de regressão com dois swaps MATCHED e builder que devolve bundle A duas vezes, omitindo B; o pipeline permanece pendente.
+- Commits: pipeline `eb45db263ca39176f12b479e0960516ad003760b`; teste `de732ebe754eeeb07eea38776986e17eb53d1f22`.
+- Revisão estática; runtime/compileall pendentes. Nenhuma gravação persistente real ou chamada RPC foi realizada.
+
+
+## 126. Identidade única por operação nos lotes DAMM v2 — PR #25 (18/11/2026)
+
+- Auditoria estendida ao caminho DAMM v2 encontrou que o reconciliador econômico e o adaptador de domínio validavam cardinalidade, mas não rejeitavam explicitamente duas entradas com a mesma identidade de instrução/CPI se os objetos de transferência fossem distintos.
+- `reconcile_damm_v2_economic_batch()` agora rejeita identidade duplicada `(instruction_index, inner_instruction_index, cpi_path)` no mesmo lote como AMBIGUOUS.
+- `build_damm_v2_swap_domain_bundles()` repete a proteção independentemente, para que o adaptador não dependa exclusivamente do reconciliador chamador.
+- Testes adicionados: reconciliação econômica com transferências distintas mas mesma identidade; adaptador com contextos duplicados.
+- Commits: reconciliação `89de7d3645aa3d86b5a5f7e258bd922b865ed14f`, mensagem alinhada a teste legado `43332c99917737fdcdaaba2f21648c7780fc912e`, teste econômico `97acda5a8cf2e9355533ae4127b322b98d0d3f91`, adaptador `c1ea1f8b64a1bd4cbbf56c45cee218172c8a5277`, teste adaptador `19828b904d453f4b4b85ea6c569970eab27f6d87`.
+- Revisão estática; runtime/compileall ainda pendentes. PR #25 Draft; main e dados persistentes preservados.
+
+
+## 127. Pipeline transacional DAMM v2 valida identidade exata dos bundles — PR #25 (18/11/2026)
+
+- Após hardening do adaptador, a camada de orquestração DAMM v2 também passou a conferir os bundles que recebe: operation IDs precisam ser únicos e coincidir exatamente com as identidades dos contextos reconciliados; observation deve corresponder à carteira/assinatura monitoradas; classification/evidence devem compartilhar o operation_id da observation.
+- Isso impede que uma implementação defeituosa/substituída do builder retorne bundles duplicados ou de outra transação mantendo apenas a cardinalidade esperada.
+- Commit: pipeline transacional `10a5836c2957ffc23555d1d2715bc6b5454522b3`.
+- A proteção é revisada estaticamente; testes runtime ainda não executados. O adaptador e reconciliador têm testes específicos de identidade duplicada registrados na seção 126.
+
+
+## 128. Colisão de accountIndex entre owners no parser SPL — PR #25 (18/11/2026)
+
+- Hardening do parser: a verificação inicial de duplicidade de `accountIndex` considerava apenas entradas cujo owner já era a carteira monitorada. Um índice duplicado em uma segunda entrada atribuída a outro owner poderia passar despercebido e deixar o primeiro saldo ser usado.
+- O parser agora acompanha identidade de accountIndex em todas as entradas do snapshot, mesmo de outros owners. Se um índice se repete, invalida a mint de qualquer entrada envolvida que pertença à carteira monitorada; também rejeita índice malformado na entrada monitorada.
+- Adicionado teste em que o mesmo accountIndex aparece para a carteira monitorada e outro owner; o delta da mint não é emitido.
+- Commits: parser `bbb5e58c34311bc3e4ee4ccbb48c7c5b75d3b768`; teste `a22fe36fffcf47719b96340b8df5adf63c2beb28`.
+- Revisão estática; runtime/compileall pendentes. Nenhum RPC real ou banco persistente alterado.
+
+
+## 129. WalletMonitor aceita somente logsNotification JSON-RPC 2.0 — PR #25 (18/11/2026)
+
+- Auditoria do dispatcher WebSocket identificou que qualquer mensagem com `params.subscription` e `params.result.value.signature` poderia ser tratada como notificação de logs, mesmo sem validar `method` ou versão JSON-RPC. Isso permitia que mensagens de outro método fossem confundidas com eventos de carteira.
+- O monitor agora só processa notificações com `jsonrpc == "2.0"` e `method == "logsNotification"`; subscription ID continua validado como inteiro não booleano.
+- Fixtures de teste atualizadas para envelopes JSON-RPC válidos; o teste de integração inclui uma mensagem de método desconhecido com assinatura forjada antes da notificação legítima e confirma que ela é ignorada.
+- Commits: dispatcher `8ad9bfd7f8bdcfe1fd539c381098f03f0501dbc1`; fixtures `a376f6a9d4024586a710ab1bafa1945a769852f9`; teste `9ed84a5083ccd4516e8eab2db824c24798ae24b8`.
+- Revisão estática; runtime/compileall pendentes. Nenhuma conexão WebSocket real foi aberta.
+
+
+## 130. Consolidação da auditoria de identidade multi-venue e WebSocket — PR #25 (18/11/2026)
+
+- CPMM: reconciliação agora exige cobertura um-para-um por identidade completa; bundles precisam corresponder exatamente ao conjunto MATCHED, sem IDs repetidos, e à carteira/assinatura da observação.
+- DAMM v2: reconciliação econômica e adaptador rejeitam identidades de swap duplicadas; a orquestração transacional verifica operation IDs únicos e conjunto exato dos contextos reconciliados antes de retornar RECONCILED.
+- WebSocket: dispatcher aceita somente `jsonrpc == "2.0"` + `method == "logsNotification"`; resposta de subscription também valida versão e IDs inteiros não booleanos. Fixtures foram atualizadas e um teste inclui mensagem de método desconhecido com assinatura forjada.
+- Commit adicional de formatação das fixtures: `b5bc5ed431ffe89f80fb1a9eb063eac171698601`.
+- Revisão estática das rotas DAMM persistence → WalletMonitor → CPMM: DAMM não avança checkpoint; pendência DAMM impede CPMM; CPMM é o único coordenador final de checkpoint; falhas/exceções deixam observação replayável. Falhas on-chain são resultado terminal conhecido e podem avançar checkpoint após validação no CPMM.
+- Nenhum teste runtime/compileall foi executado nesta rodada; nenhum RPC/WebSocket real foi acessado. PR #25 continua Draft, main e estado persistente preservados.
+
+
+## 131. Validação estrita dos argumentos do cliente Helius — PR #25 (18/11/2026)
+
+- Auditoria de API pública encontrou coerção de booleanos em limites: `True` passava por comparações numéricas e podia ser enviado como `limit=1`; também não havia validação explícita de assinatura/cursor vazios em alguns métodos.
+- `get_signatures_for_address()` agora exige carteira string não vazia, limite inteiro não booleano entre 1 e 1000 e cursores `before/until` como strings não vazias quando fornecidos.
+- `get_activity()` exige limite inteiro não booleano entre 1 e 100; `get_transaction()` exige assinatura string não vazia.
+- Testes negativos adicionados para limite booleano em paginação e histórico, cursor vazio e assinatura vazia.
+- Commits: cliente `5e3717e17ded1ed1b15e2c9e440c072fec900f4d`; testes `c3eb02a34a11c60a9564d4387aa87e638e884845`.
+- Revisão estática; unittest/compileall ainda não executados. Sem RPC real.
+
+
+## 132. Validação de tipos e timeout finito em HeliusSettings — PR #25 (18/11/2026)
+
+- Configuração aceitava timeout booleano (`True`) e valores não finitos como NaN/Infinity porque comparações `<= 0` não os rejeitam corretamente; também assumia que API key e cluster eram strings.
+- `HeliusSettings` agora exige API key string não vazia, cluster string em `mainnet/devnet` e timeout numérico finito positivo, rejeitando booleanos.
+- Testes adicionados para timeout booleano, NaN, Infinity, inteiro excessivamente grande, zero, negativo e API key de tipo inválido. Overflow ao avaliar finitude de inteiros gigantes é convertido em `SettingsError`.
+- Commits: settings `db819ced08e3dbf9f4851405b83129d0615f6b40` e `d27d604c251881750c473f820833aa03044f5330`; testes `41ca7f2af36174e829b2c4237d83774bc569cd26` e `87fc209218ed46730e5920c81ec8a5ec3750ec29`.
+- Revisão estática; unittest/compileall pendentes. Nenhuma autorização de rede ou chamada externa foi ativada.
+
+- CI do HEAD `3b0cdb82f58ac70ff9d08ebcf1e5092d25c91eeb`: workflow `SMR tests`, run #829 (`44322124291`), job `134863546972`, terminou `failure`, mas `steps=null` e `logs_url=null`; não há evidência de que instalação, unittest ou compileall tenham iniciado. Classificar como falha de infraestrutura/runner sem diagnóstico, não como falha de teste. Não disparar retry sem logs/steps.
+
+
+## 133. Validação estrita de parâmetros do WalletMonitor — PR #25 (18/11/2026)
+
+- O construtor aceitava booleanos como números em retries/backfill e valores NaN/Infinity em parâmetros temporais; `stable_session_seconds` não tinha validação explícita. Esses valores podiam gerar comportamento imprevisível ou falhas tardias em `range`, `sleep` e backfill.
+- WalletMonitor agora exige parâmetros temporais numéricos finitos (sem booleanos), backoff inicial positivo, máximo não inferior ao inicial, sessão estável e retry inicial não negativos; tentativas e limites de paginação exigem inteiros não booleanos positivos, com page limit até 1000.
+- Helper trata overflow de inteiros gigantes como valor inválido. Teste cobre backoff booleano, máximo infinito, sessão NaN, retry booleano e limites booleanos.
+- Commits: construtor `b65d6be329519f42ab13d15da1db07714f74ae66`, helper overflow `810dd2ff550c0b90f3aace95e1151ab0de768f0e`, testes `853d640238268ac85c4b4ff01f2a023d5e5ce14b`.
+- Revisão estática; unittest/compileall pendentes. Nenhum serviço remoto ativado.
+
+
+## 134. Correção sintática no teste do adaptador DAMM v2 — PR #25 (18/11/2026)
+
+- Revisão estática dos testes encontrou uma instrução `import` em `tests/test_damm_v2_swap_domain_adapter.py` contendo sequências literais `\\n` em vez de quebras de linha reais. O arquivo não era Python sintaticamente válido e poderia impedir a descoberta/execução da suíte.
+- Corrigida somente a instrução de importação; conteúdo restante preservado. Verificação posterior do conteúdo GitHub confirmou ausência de sequências literais `\\n` e import multilinha formatado corretamente.
+- Commit corretivo: `a5715de67228cee087905ca1a941fbb98943fe1c`.
+- Esta é uma correção revisada estaticamente, não uma validação runtime. `unittest` e `compileall` continuam pendentes no ambiente Termux/runner funcional.
+
+
+## 135. Corrigida ordem de validação dos bundles CPMM — PR #25 (18/11/2026)
+
+- Auditoria do caminho de persistência Raydium CPMM encontrou uso de `bundle_identity_mismatch` no cálculo de `unresolved` antes da atribuição da variável. Em qualquer caminho com swap decodificado, isso podia gerar `UnboundLocalError`, cair no tratamento de exceção e manter a observação em replay mesmo quando reconciliação e bundle fossem válidos.
+- Reordenado o fluxo: primeiro calcula a divergência de cardinalidade/identidade das reconciliações, constrói e valida os bundles (IDs únicos, conjunto exato, chain/carteira/assinatura e consistência dos três operation IDs); somente depois calcula `unresolved` e decide se pode marcar a assinatura como processada.
+- O teste já existente `test_matched_swap_is_persisted_before_checkpoint` cobre o caminho positivo MATCHED + bundle válido e deverá exercitar a variável na execução runtime.
+- Commit corretivo: `e323cb91f2d6ea6c122a9d5cb11ffe97ae5c13a5`. Revisão estática posterior confirmou `bundle_identity_mismatch` definido antes do cálculo de `unresolved`.
+- Ainda sem unittest/compileall runtime após a correção. Nenhum checkpoint, banco persistente, RPC ou estado on-chain foi alterado.
+
+## 136. Imutabilidade da evidência RAW por assinatura — PR #25 (18/11/2026)
+
+- Auditoria da persistência encontrou que `save_observation()` fazia UPSERT substituindo `payload_json` sempre que uma nova chamada trazia payload não nulo. Como a chave é `(wallet_address, signature)`, um payload divergente para a mesma assinatura poderia sobrescrever a evidência RAW original durante retry/replay.
+- Adicionada guarda transacional: se já existe payload não nulo para a mesma carteira/assinatura e o novo payload serializado diverge, a operação falha com `ValueError` antes de atualizar qualquer tabela/checkpoint. Payload originalmente nulo ainda pode ser preenchido posteriormente, preservando o fluxo de falha on-chain/reconsulta.
+- Adicionados testes para rejeitar payload conflitante sem alterar RAW/checkpoint e para permitir preencher payload inicialmente ausente.
+- Commits: fonte `360168809ba6ac79c8e0a7c55c96a6767a010b11`; testes `6aaf9be8bc6a34959d856d236f392002c16a3b5b`.
+- Revisão estática e re-leitura GitHub concluídas; runtime unittest/compileall ainda pendente. Nenhum banco persistente ou estado on-chain foi tocado.
+
+## 137. Monotonicidade do checkpoint por slot — PR #25 (18/11/2026)
+
+- Auditoria de WalletMonitor/EventStore encontrou que notificações/replays fora de ordem podiam regredir `wallet_checkpoints.signature`: o UPSERT anterior substituía o cursor sem comparar a posição da transação.
+- `wallet_checkpoints` agora recebe coluna nullable `slot`, com migração incremental para bancos existentes. `_mark_processed_in_connection()` e `save_checkpoint()` consultam o slot da observação e só substituem checkpoint quando o novo slot é estritamente maior; se ambos os slots forem desconhecidos, mantém o comportamento legado. Um slot desconhecido não substitui checkpoint com slot conhecido; transações antigas continuam registradas em `processed_signatures` sem regredir o cursor.
+- Testes adicionados para processamento fora de ordem (slot 450 depois do 500) e para impedir substituição de checkpoint conhecido por assinatura sem slot.
+- Commits: fonte `b65255e29ff8adf8cf77c3229759c91adc38a1ef`; testes `68f49b842ce0cc3b1558e7b0ba2b016286371a52`.
+- Revisão estática/releitura GitHub concluídas. Runtime unittest/compileall ainda não executados após as alterações. Banco persistente do usuário não foi aberto nem migrado nesta atividade.
+
+## 138. Slot de transações com falha no backfill — PR #25 (18/11/2026)
+
+- A monotonicidade por slot revelou um caso adjacente: o ramo de backfill para falhas on-chain arquivava `payload=None` e descartava o `slot` já fornecido por `getSignaturesForAddress`. Sem slot, uma assinatura falhada mais recente não conseguiria avançar um checkpoint que já tivesse slot conhecido.
+- `save_observation()` agora aceita `slot` explícito opcional, valida inteiro não negativo (booleans rejeitados) e rejeita divergência com o slot do envelope normalizado. O backfill transmite `item.slot` ao arquivar falhas on-chain.
+- Teste adicionado confirmando que o slot RPC de uma transação falhada fica gravado no checkpoint.
+- Commits: EventStore `548175d93e324c16ef25e7126c8550c592940703`; WalletMonitor `10f6cd9b35914e257783d55bda75f116f7a56e76`; teste `94cddbf1c506b0ece2665de4ebdf4733615519dc`.
+- Revisão estática/releitura GitHub concluídas; runtime unittest/compileall ainda pendentes.
+
+## 139. Migração dos slots de checkpoints legados — PR #25 (18/11/2026)
+
+- A coluna `wallet_checkpoints.slot` é adicionada incrementalmente; bancos já existentes podem ter `observed_transactions.slot` preenchido para a assinatura do checkpoint. Sem backfill da nova coluna, a primeira notificação antiga poderia substituir o cursor antes que o novo slot fosse conhecido.
+- Migração agora recupera o slot do registro `observed_transactions` correspondente ao checkpoint existente, sem modificar assinatura, RAW ou dados processados.
+- Teste de migração cria esquema legado com checkpoint e observação slot 1200 e confirma a recuperação do slot após inicialização.
+- Commits: fonte `d632a07d28af9613c6729ef4218bd9bbd19b8ed4`; teste `4ddcf30387afb10ed3a3f39b43c0f657459177f8`.
+- Runtime unittest/compileall ainda pendentes.
+
+## 140. Checkpoint ordenado para múltiplas transações no mesmo slot — PR #25 (18/11/2026)
+
+- A comparação estrita por slot impede regressão, mas não distingue transações diferentes no mesmo slot. Como `getSignaturesForAddress` retorna a lista em ordem cronológica reversa, o backfill já percorre `reversed(collected)` em ordem cronológica crescente.
+- Adicionado `SQLiteEventStore.advance_checkpoint_in_order()`: exige assinatura já processada, observação persistida, slot inteiro não negativo idêntico ao slot arquivado e proíbe retrocesso para slot menor; permite avançar a assinatura dentro do mesmo slot somente quando chamado pelo caminho de backfill que conhece a ordem RPC.
+- O backfill chama esse método após processar com sucesso cada assinatura e após arquivar falhas on-chain com slot válido. Slots ausentes não acionam avanço ordenado. Notificações live continuam sujeitas à regra conservadora de slot estritamente maior.
+- Teste adicionado para duas assinaturas processadas em ordem no mesmo slot, confirmando que o checkpoint termina na segunda assinatura.
+- Commits: EventStore `bba78356d91d07bb881a0f7d8205111f37442533`; WalletMonitor `b9213855505da9ea3b8850d51121464b8cebf7a2`; teste `cfbd48b4068cd1c7e9a475af8f14fe24351a2203`; guarda slot ausente `e0e50e81ae563675428c0d13f501d2ab4326c776`.
+- Revisão estática e re-leitura GitHub pendentes de fechamento; runtime unittest/compileall ainda não executados.
+
+## 141. Idempotência imutável de bundles de swap — PR #25 (18/11/2026)
+
+- Auditoria de replay/crash parcial encontrou que `save_swap_bundle()` usava `ON CONFLICT(operation_id) DO UPDATE` nos três contratos. Uma repetição com mesma identidade determinística e conteúdo divergente poderia substituir observação/classificação/evidência silenciosamente.
+- Agora, replay idêntico retorna `False` sem regravar. Replay divergente para `operation_id` existente é rejeitado por padrão e preserva os três registros. Bundle parcialmente existente também é rejeitado, sem reparo silencioso.
+- Substituição continua tecnicamente possível somente com `replace_existing=True` explícito, reservado a reprocessamento deliberado. Os pipelines normais DAMM v2/CPMM não passam esse argumento e, portanto, permanecem fail-closed.
+- Testes atualizados/adicionados: replay idêntico, conflito sem sobrescrita, substituição explícita e bundle incompleto sem reparo automático.
+- Commits: EventStore `1656aa6626fde43cea3e67e6c931edad7642cf34`; testes `000d0123d57a340f06a9a45f8fd2a2114bfbb06c` e `9f9a49cba684c288637f3f1e24573c4eca643fb6`.
+- Releitura GitHub confirmou o guard e os testes; runtime unittest/compileall ainda não executados.
+
+
+## 142. Serialização das gravações críticas SQLite — PR #25 (18/11/2026)
+
+- Auditoria de concorrência identificou que `save_observation()` e `save_swap_bundle()` consultavam o estado existente antes de obter o bloqueio de escrita SQLite. Com duas conexões/processos, ambas poderiam tomar decisões com base em leituras concorrentes antigas antes de disputar a gravação.
+- As duas operações agora iniciam a transação com `BEGIN IMMEDIATE`, obtendo o bloqueio de escrita antes da leitura de RAW/bundle e mantendo a verificação + persistência atômicas. O RAW divergente continua sendo rejeitado; bundle idêntico é no-op, divergente/incompleto é rejeitado salvo substituição explicitamente autorizada.
+- Commit: EventStore `ebc753a7c555c0390cfdf5abd280b7b73215e53b`.
+- Revisão estática no GitHub. Runtime unittest/compileall ainda pendentes; nenhum banco persistente do usuário foi aberto.
+
+## 143. Compare-and-swap para checkpoint no mesmo slot — PR #25 (18/11/2026)
+
+- A função anterior `advance_checkpoint_in_order()` validava slot não regressivo, mas aceitava qualquer assinatura processada no mesmo slot. Dois workers concorrentes poderiam ler o mesmo predecessor e depois substituir o cursor um pelo outro, perdendo a ordem RPC.
+- A função agora exige `expected_previous_signature`, inicia `BEGIN IMMEDIATE`, compara o cursor atual com o predecessor esperado e rejeita a atualização se outro worker já tiver avançado. Repetição quando o cursor já é a assinatura alvo permanece idempotente. Slot menor continua rejeitado.
+- O WalletMonitor captura o predecessor antes de processar cada item do backfill e o transmite no avanço, inclusive para falhas on-chain. O teste cobre sequência correta no mesmo slot e rejeição de tentativa concorrente obsoleta.
+- Commits: EventStore `ebc753a7c555c0390cfdf5abd280b7b73215e53b`; WalletMonitor `071444007e1feb5fa42e81dd438b969b0ea0535d`; teste `7d7d6d94ab2b3c78133f2925fc32cfb36da8e218` e ajuste de fixture `0100230332f226370e06e12a31d7c97fdaf8c7b9`.
+- Revisão estática; runtime unittest/compileall ainda pendentes. Não altera `main`, SQLite persistente, RAW ou checkpoints reais.
+
+## 144. Correção do coletor de fixture DAMM v2 — PR #25 (18/11/2026)
+
+- Revisão do script `tools/collect_damm_v2_fixture.py` encontrou que `find_damm_v2_signature()` chamava a si própria sem condição de parada e que a função `main()` estava ausente, tornando o coletor inutilizável e fazendo o teste do catálogo terminar em recursão.
+- Restaurada a função pura de seleção: exige catálogo em lista e exatamente um candidato `Meteora DAMM v2` com assinatura não vazia. Restaurado `main()`, leitura JSON do catálogo, argumentos `--candidate-file` e `--output`, diretório padrão `data/fixtures/raw/damm-v2/` e chamada ao coletor RPC somente leitura.
+- Commit: `88f56b84c9d539f4904f6f939c0b49869750c1df`.
+- Revisão estática; teste do catálogo e execução real da coleta ainda pendentes. Nenhuma chamada RPC foi realizada e nenhum RAW foi criado.
+
+
+## 145. Testes de corrida para RAW e bundles — PR #25 (18/11/2026)
+
+- Adicionados testes concorrentes com duas threads e banco SQLite em arquivo temporário. Para a mesma chave de observação, dois RAW divergentes disputados simultaneamente devem produzir exatamente uma gravação e uma rejeição por conflito, mantendo intacto o payload vencedor.
+- Para o mesmo `operation_id`, dois bundles divergentes disputados simultaneamente devem produzir uma gravação nova e uma rejeição, preservando o bundle vencedor. Isso exercita o bloqueio obtido por `BEGIN IMMEDIATE`, não apenas o comportamento sequencial.
+- Commits de teste: `98cddab2d5c3cff86c0872a949761e353dbf9030` (bundles) e `9fa31a0f6ace1ad329b16b3c9f74537d9ac2d782` (RAW); documentação `f2f2ded8b8edaa6eb2fda47a46a5f5436ace3726`.
+- Revisão estática; os testes concorrentes ainda precisam ser executados no Termux/runner funcional. Nenhum RAW ou banco persistente foi alterado.
+
+
+## 146. CI sem execução de etapas após hardening de concorrência — PR #25 (18/11/2026)
+
+- HEAD avaliado: `fcf207938d38b3099d562929802afdfbbbd1bfff`.
+- Workflow `SMR tests`, run #884 (`44328496652`), terminou `failure`; job `134886166955` terminou `failure`, mas `steps=[]` e `logs_url=null`. A consulta direta de steps também retornou lista vazia.
+- Não há evidência de checkout, instalação, unittest, compileall ou execução de qualquer comando do projeto. Portanto, o resultado não prova falha de código nem aprovação dos novos testes concorrentes.
+- Não foi disparado retry automático, pois o runner não forneceu etapas/logs para diagnóstico.
+- Próxima validação executável: atualizar clone Termux da branch `feat/damm-v2-transaction-pipeline`, rodar testes focais de EventStore, bundles, coletor e WalletMonitor; em seguida executar `compileall` e suíte completa. A fixture RAW mainnet permanece pendente e não deve ser coletada até os testes locais passarem.
+
+
+## 147. Backfill não pode avançar checkpoint antes do compare-and-swap — PR #25 (18/11/2026)
+
+- Auditoria de fluxo ponta a ponta encontrou uma lacuna na proteção recém-adicionada: `process_raydium_cpmm_observation()` chamava `mark_processed()` com avanço automático. Em slots maiores, isso atualizava o checkpoint antes de `advance_checkpoint_in_order()`; o CAS então encontrava a assinatura já como cursor atual e retornava idempotentemente, sem validar o predecessor esperado. Para slots iguais, o teste anterior não expunha esse desvio.
+- Corrigido com `mark_processed(..., advance_checkpoint=False)` e parâmetro `advance_checkpoint` no pipeline CPMM. O WalletMonitor usa esse modo somente no backfill; o WebSocket preserva o comportamento anterior. Assim, o backfill primeiro persiste a conclusão em `processed_signatures`, sem mover cursor, e depois executa o CAS ordenado.
+- Transações do backfill com slot inválido agora interrompem a recuperação explicitamente; não são silenciosamente marcadas como avanço concluído.
+- Testes adicionados: EventStore confirma processamento sem mover checkpoint e posterior CAS; pipeline CPMM confirma que modo backfill deixa cursor anterior intacto até o CAS. Commits: `d13a163`, `db89d46`, `1feaa0f`, `efdc47d`, `a551ea7`, `e9b95b5`, `7a91dab`.
+- Revisão estática no GitHub. Execução runtime ainda pendente.
+
+
+## 148. Observações pendentes não podem antecipar backfill ancorado — PR #25 (18/11/2026)
+
+- A revisão do fluxo completo encontrou que `_backfill_wallet()` processava observações pendentes já arquivadas antes de consultar `getSignaturesForAddress`. Com checkpoint preexistente, esse replay poderia marcar e avançar uma assinatura fora da sequência autoritativa, contornando o CAS.
+- Corrigido: quando há checkpoint inicial, o replay dessas observações usa `advance_checkpoint=False`; a consulta RPC subsequente determina a ordem e o avanço via CAS. Quando não existe checkpoint inicial, preserva-se o comportamento de bootstrap já coberto pelo teste de primeira execução, sem iniciar varredura histórica ampla.
+- Commit: `2084fec2ebd62722323295b2c0d88dc7dd0261f1`. Documentação atualizada.
+- Revisão estática; runtime ainda pendente.
+
+
+## 149. CI #902 repetido sem iniciar etapas — PR #25 (18/11/2026)
+
+- O push associado ao commit de código `2084fec2ebd62722323295b2c0d88dc7dd0261f1` disparou o workflow `SMR tests`, run #902 (`44329781440`).
+- O primeiro job terminou `failure` sem steps nem logs (`steps=null`, `logs_url=null`). Foi solicitado rerun específico do job; a nova tentativa também terminou `failure` sem iniciar steps e sem logs.
+- Isso não comprova falha de unittest/compileall nem aprovação. Runner/execução continua sem diagnóstico observável. Não repetir rerun em loop; manter runtime local Termux como validação executável.
+- HEAD atual do PR após atualização do Registro Mestre: `40e5db109803dce825ec2e55b35602b73894627c`.
+
+
+## 150. Verificação final de integridade do PR #25 após hardening de backfill — 18/11/2026
+
+- HEAD atual: `0781ac8c360097b8e191317363517303b99f9ac7`; PR #25 permanece aberto, Draft e sem merge.
+- GitHub confirma `mergeable=true`, `mergeable_state=unstable`; branch base é `feat/damm-v2-swap-domain-adapter`, não `main`. O PR permanece empilhado sobre essa branch-base; não fazer merge isolado sem revisar a sequência de PRs.
+- PR: 194 commits, 31 arquivos, 3.247 inserções e 87 remoções.
+- Verificação estática pós-alterações confirmou: EventStore tem bloqueios `BEGIN IMMEDIATE`; `mark_processed` aceita modo de deferimento; CPMM encaminha a opção aos três caminhos de conclusão; WalletMonitor usa deferimento no backfill, valida slot e só então chama CAS; testes e Registro Mestre estão presentes.
+- Run #902 e seu rerun falharam sem steps/logs. Nenhuma execução de unittest/compileall pode ser declarada.
+- Próxima ação operacional: atualizar clone Termux para o HEAD acima e executar primeiro os testes focais; depois suíte completa e compileall. A coleta da fixture mainnet continua bloqueada até essa validação.
+
+
+## 151. Teste de regressão para pendência arquivada com checkpoint existente — 18/11/2026
+
+- Adicionado teste assíncrono em `tests/test_wallet_monitor.py` para cenário que não estava coberto: há checkpoint anterior e uma observação pendente arquivada posterior.
+- O teste verifica que o replay preliminar da pendência não altera o checkpoint antes da consulta `getSignaturesForAddress`; em seguida a assinatura aparece na sequência RPC, é processada e o cursor avança por CAS para ela. Também confirma que a assinatura termina processada e deixa de constar como pendente.
+- Commit: `839e873017a61f869515e30268379cd9cb2bad29`.
+- Teste ainda não executado em runtime. Próxima validação continua sendo Termux; CI #902 não forneceu steps/logs.
+
+
+## 152. Semântica correta de checkpoint_advanced no modo deferido — 18/11/2026
+
+- Auditoria do novo modo `advance_checkpoint=False` encontrou que o pipeline CPMM continuava retornando `checkpoint_advanced=True` nos resultados de sucesso/no-swap/falha on-chain, embora o cursor estivesse deliberadamente parado para o CAS do WalletMonitor.
+- Corrigido: os resultados agora refletem o argumento efetivo `advance_checkpoint`; no modo deferido retornam `False`. Isso evita que consumidores interpretem processamento persistido como cursor já avançado.
+- Teste `test_backfill_mode_marks_processed_without_advancing_checkpoint` atualizado para exigir `checkpoint_advanced=False` e depois comprovar o CAS separado.
+- Commits: implementação e teste em `033f0d2de6558762b9dd42bbc37dd391598d57db`; documentação atualizada neste registro.
+- Revisão estática; execução runtime pendente.
+
+
+## 153. Correção do isolamento transacional em teste SQLite — 18/11/2026
+
+- Execução Termux após fast-forward para HEAD `9d248f053f8fe16356d0cdec6d5c3cdf90bc4ae3`: `test_event_store.py` passou (26 testes). `test_swap_persistence.py` teve 1 erro e 22 testes passaram.
+- Erro: `sqlite3.OperationalError: cannot start a transaction within a transaction` em `test_incomplete_existing_bundle_is_not_silently_repaired`.
+- Causa identificada no teste: o DELETE manual em conexão SQLite compartilhada `:memory:` não era confirmado antes da próxima chamada, que inicia `BEGIN IMMEDIATE`. Corrigido envolvendo o DELETE em `with connection:`, garantindo commit/fechamento da transação do teste.
+- Commit da correção: `c1c87ae61517eb6e1550bb257fe300c9a4ed0f62`.
+- A correção ainda não foi executada em runtime. Reexecutar `test_swap_persistence.py`; se passar, prosseguir com os três testes focais restantes e compileall.
+
+
+## 154. Validação runtime parcial e novo diagnóstico de CI — PR #25 (18/11/2026)
+
+- HEAD de referência desta atualização: `357361c6dac197fe277fc47ec2a8ae38bd591ca6`; PR #25 permanece aberto, Draft, sem merge, com base `feat/damm-v2-swap-domain-adapter`. A branch `main` permanece preservada.
+- Resultado runtime informado pelo usuário no Termux após fast-forward para esse HEAD: `test_swap_persistence.py` passou integralmente, **23 testes OK**. A execução anterior de `test_event_store.py` já havia passado com **26 testes OK**. Esses resultados são evidência runtime local para os dois módulos, não aprovação da suíte completa.
+- Ainda não há resultado runtime para `test_damm_v2_fixture_collector.py`, `test_raydium_cpmm_persistence_pipeline.py`, `test_wallet_monitor.py`, `compileall` ou suíte completa.
+- CI no HEAD: workflow `SMR tests`, run #916 (`44331026593`) terminou `failure`. A consulta do job `134895145577` retornou `steps=null` e `logs_url=null`; portanto não há evidência de checkout, instalação, unittest ou compileall. Não classificar como falha de código nem aprovação; não repetir rerun sem diagnóstico de execução.
+- Revisão GitHub confirmou que o workflow contém etapas explícitas de checkout, Python 3.12, instalação, unittest completo e compileall, mas o run #916 não expôs execução dessas etapas.
+- Próxima ação de validação: continuar a revisão estática pelo GitHub dos três módulos de teste restantes e das respectivas implementações; buscar um caminho de CI executável antes de declarar testes aprovados. A fixture RAW mainnet continua bloqueada até validação runtime focada e suíte completa. Não alterar `main` nem fazer merge do PR #25.
+
+
+## 155. Validação estrita da identidade JSON-RPC no coletor de fixtures — PR #25 (18/11/2026)
+
+- Auditoria estática do coletor `RpcFixtureCollector` identificou uma lacuna de protocolo: a resposta de `getTransaction` era aceita sem validar `jsonrpc == "2.0"` nem confirmar que o ID inteiro da resposta correspondia ao ID `1` enviado. Isso enfraquecia a correlação entre requisição e resposta usada como evidência da fixture.
+- O coletor agora rejeita versão JSON-RPC ausente/incorreta e ID ausente, divergente, booleano ou de tipo inválido antes de aceitar o campo `result`. A verificação da assinatura solicitada e do slot permanece adicional, não substituta.
+- Testes adicionados para versão ausente/1.0, ID divergente e booleano; fixture do teste de resultado nulo atualizada para incluir envelope JSON-RPC válido.
+- Commits: implementação `db7a6ade8e1ec61640a703e662a4cd64b9b9fbff`; testes `81a70ec413af112090e835c931239cfd90e0a5c6` e ajuste de cobertura `e9bdd7d2c90024267842d9f99e99e82533135401`.
+- Releitura GitHub confirmou a implementação e os testes adicionados. Runtime unittest/compileall ainda não executados para esta alteração. A consulta de runs associadas ao commit final ainda não retornou workflow; não declarar CI executado.
+- PR #25 permanece Draft, aberto e sem merge; base empilhada `feat/damm-v2-swap-domain-adapter`. A fixture RAW mainnet segue bloqueada até validação runtime focada e suíte completa.
+
+
+## 156. CI #922 sem steps após hardening do coletor RPC — PR #25 (18/11/2026)
+
+- O push de alterações no coletor e seus testes disparou o workflow `SMR tests`, run #922 (`44331723476`), associado ao PR #25 e ao commit de teste `e9bdd7d2c90024267842d9f99e99e82533135401`.
+- A consulta do job `134897601983` retornou `steps=null` e `logs_url=null`, embora o run tenha concluído como `failure`. Não há evidência de checkout, instalação, unittest ou compileall. Não classificar como falha dos testes nem aprovação.
+- Não foi disparado rerun: o padrão de falha pré-etapas permanece sem diagnóstico observável e retries repetidos não acrescentam evidência.
+- Os commits de código/teste permanecem na branch do PR; validação runtime do novo hardening JSON-RPC ainda pendente. PR #25 segue Draft, sem merge e empilhado sobre `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 157. Runner não provisionado e hardening adicional do coletor RPC — PR #25 (18/11/2026)
+
+- Consulta direta à API do GitHub para o run #922 (`44331723476`) detalhou o job `134897601983`: `runner_id=0`, `runner_name=""`, `steps=[]`, início em `15:06:18Z` e conclusão em `15:06:20Z`. A evidência é consistente com falha de alocação/inicialização do runner antes de qualquer step; não é falha demonstrada de unittest/compileall. O endpoint de logs também retornou 404 (blob inexistente). Não fazer retries em loop; a causa está fora do código de teste observável pelo repositório.
+- Auditoria do coletor `RpcFixtureCollector` encontrou que `bool` era aceito como slot por ser subtipo de `int`, versões de transação não eram validadas e a assinatura podia estar em posição secundária, repetida ou num campo `signatures` que nem fosse lista.
+- Corrigido para exigir slot inteiro não booleano e não negativo; versão `legacy` ou inteiro não booleano não negativo; objeto `transaction`; lista não vazia de assinaturas string não vazias, sem duplicatas e com a assinatura solicitada na posição primária (índice 0). Campo `error` não nulo agora é rejeitado mesmo se for um objeto vazio. O valor de versão validado é reutilizado no manifesto.
+- Testes negativos adicionados para slot booleano/negativo, versão nula/booleana/negativa/objeto e assinatura em formato incorreto, posição secundária, duplicata e item inválido.
+- Commits: implementação `6d0bd74de6b8c8c811cbe57f6273b9cd67c22bc1`; testes `14093a16d9396d4f2ef771e7ed9081b227636645`; limpeza `a0069e093c13024270d0d048387f5fa1a1aac1e8`; teste de versão nula `eb50a431163ef6c5cab4f14e125b5a605469e4db`.
+- Alterações revisadas estaticamente no GitHub. Runtime unittest/compileall ainda não executados para estes commits; CI depende de runner funcional. Fixture RAW mainnet segue bloqueada até execução runtime e revisão da fixture real.
+- PR #25 permanece aberto, Draft, sem merge, com base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 158. Reincidência de falha de provisionamento do runner — CI #932 (18/11/2026)
+
+- O commit `4f40a51518fc9b808e8e7e04eaf08c7728306fae` disparou run #932 (`44332421990`). A consulta direta ao endpoint de jobs confirmou novamente: job `134900072387`, `runner_id=0`, `runner_name=""`, `steps=[]`, início `15:09:57Z`, fim `15:09:59Z`, conclusão `failure`.
+- A repetição confirma que o workflow está sendo disparado corretamente, mas nenhum runner `ubuntu-latest` chega a ser atribuído ao job. Portanto, a falha está na alocação/infraestrutura GitHub Actions ou na disponibilidade de runner para o repositório, antes de checkout e antes de qualquer teste. Não alterar código de produção para tentar corrigir esse sintoma e não repetir retries em loop.
+- A alteração RPC recente segue validada apenas por inspeção estática no GitHub; execução runtime ainda pendente. Para runtime sem Termux, é necessário restabelecer runner GitHub Actions ou usar outro executor autorizado e conectado ao repositório.
+- PR #25 segue Draft, aberto, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 159. Coletor RPC: configuração temporal estrita e CI #933 — PR #25 (18/11/2026)
+
+- Auditoria adicional encontrou que `timeout` e `min_interval_seconds` aceitavam booleanos e valores não finitos; inteiros gigantes podiam gerar `OverflowError` dentro de `math.isfinite`. Implementado helper `_is_finite_number`, que rejeita booleanos, tipos não numéricos, NaN, infinitos e inteiros que excedem a conversão numérica segura. Timeout deve ser finito e positivo; intervalo deve ser finito e não negativo.
+- Testes negativos adicionados para timeout/intervalo booleanos, zero/negativos, NaN, infinito, string e inteiro excessivamente grande. Também foi adicionado teste garantindo que qualquer campo `error` JSON-RPC não nulo seja rejeitado, mesmo quando objeto vazio.
+- Commits: helper/configuração `0b6fd719395cca7601931e24b4b7a3ca31acae14`, robustez contra inteiro excessivo `cf801cde448f51829b3d869372231100731bd97a`, testes temporais `be869a2bc5ee7e72a0b8fbb9312a9bf645513f1e`, teste de erro RPC `6b5944551e7ae6cf8df2081b73a4b28476ee34ba`.
+- CI #933 (`44332520139`), disparado no HEAD anterior `f2541b7`, repetiu falha de job sem steps/logs. A API confirmou `runner_id=0`, `runner_name=""`, `steps=[]`, duração aproximada de 2 s. Runner `ubuntu-latest` continua sem provisionamento; testes não foram executados.
+- Código e testes do coletor foram relidos no GitHub após as alterações; revisão estática apenas. Runtime unittest/compileall ainda pendente. Não coletar fixture RAW mainnet até validação runtime.
+- PR #25 continua Draft, aberto, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 160. Revisão dos novos testes temporais e CI #942 — PR #25 (18/11/2026)
+
+- Revisão estática dos testes temporais detectou que `repr(10**10000)` no parâmetro de `subTest` poderia lançar `ValueError` pela proteção de conversão de inteiros muito grandes do Python, antes de testar o construtor. Corrigido usando rótulos descritivos estáveis para cada caso, mantendo a entrada inteira gigantesca no teste de rejeição.
+- Commit da correção do teste: `163fbbbdbe66b4fed394b855a2e06bdda4d37591`.
+- CI #942 (`44332736153`), HEAD `684917bbc4061cf08d089b2a3142c14ddb65c991`, job `134901176367`: `runner_id=0`, `runner_name=""`, `steps=[]`, duração aproximada de 4 s. Repetição do problema de provisionamento do runner, sem execução de testes. O commit de correção dos testes ocorreu depois desse run, portanto não foi coberto por ele.
+- Código e testes RPC reconsultados no GitHub após correções; revisão estática, sem runtime. Aguardar runner funcional para unittest e compileall; não coletar fixture mainnet antes disso.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 161. Limites do protocolo Solana e CI #943/#944 — PR #25 (18/11/2026)
+
+- Coletor RPC agora limita `slot` ao intervalo unsigned 64-bit (`0..2**64-1`) e restringe `version` a `"legacy"` ou `0`, coerente com `maxSupportedTransactionVersion: 0` enviado na requisição. Versões futuras/inesperadas e slots fora do domínio são rejeitados antes de persistir RAW. Testes negativos ampliados para `slot=2**64` e `version=1`.
+- Commits: implementação `cc3344690bd19a8994dea880f0541051b2e55ac3`; testes `cd4965e04460e174e17ff8b1bffc53b0a0f9266a`.
+- CI #943 (`44332831615`) e #944 (`44332856069`) foram disparados no commit `163fbbbdbe66b4fed394b855a2e06bdda4d37591`; ambos jobs falharam sem executar steps. API confirmou runner IDs `0`, nomes vazios, listas de steps vazias e duração aproximada de 3 s. São novas ocorrências do problema de provisionamento, não resultados dos testes. As alterações de limite de slot/versão ocorreram após esses runs e não foram testadas por eles.
+- Revisão estática do coletor/testes segue em andamento; runtime e compileall ainda pendentes. Não repetir reruns automáticos; não coletar fixture RAW mainnet.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 162. Documentação do coletor e CI #951 — PR #25 (18/11/2026)
+
+- `docs/DAMM-V2-TRANSACTION-PIPELINE.md` agora documenta as validações do coletor RPC: envelope JSON-RPC 2.0 e ID correspondente, rejeição de erro não nulo, assinatura primária única, slot unsigned 64-bit, versão `legacy`/0 e parâmetros temporais finitos/estritos. Commit `3fea83f58d2d84b87195b1b68f5ea723d4a2f9c7`.
+- CI #951 (`44333240301`) associado ao commit documental acima terminou failure; job `134902924895` tem `runner_id=0`, nome vazio e `steps=[]`, com duração aproximada de 3 s. Confirma que o job não chegou a executar steps. Causa operacional exata (por exemplo, disponibilidade/limite de runner) não foi exposta pela API consultável; não atribuir a quota/billing sem evidência.
+- O HEAD atual do PR foi confirmado com a implementação e testes RPC atualizados; runtime ainda não foi executado devido à ausência de runner. A revisão estática não substitui unittest/compileall.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 163. Analyzer DAMM v2 independente em fail-closed e CI #954/#955 — PR #25 (18/11/2026)
+
+- Auditoria encontrou que chamadas diretas a `analyze_damm_v2_swap_events()` podiam interpretar `innerInstructions` ausente/nulo como lista vazia e, em outros casos, retornar `[]` para transaction/meta/message/instructions ausentes ou quando `meta.err` não existia. Isso poderia confundir metadado insuficiente com ausência comprovada de swap se o analyzer fosse usado fora do pipeline transacional.
+- Analyzer agora exige `transaction` e `meta` objetos, campo explícito `meta.err`, `transaction.message` objeto, `message.instructions` lista e `meta.innerInstructions` lista. Transação com `meta.err` não nulo continua retornando lista vazia porque a falha on-chain é conhecida; metadados ausentes/nulos levantam `ValueError`.
+- Testes negativos adicionados para `meta.err` ausente, `message.instructions` ausente e `innerInstructions` ausente/nulo. Commits: implementação CPI `13e0d9b784d9106c0ca7d0e0e378bce38e3eed03`, testes CPI `ebc9018d0c6278a2471c0bf05ba4d9c8af85399f`; validação de execução/mensagem `e18445672e752a88e6e89a78cf1b71180072f505`, testes `4ff8360c908f614f9c07396c058862b7547ebd2c`; documentação `c891fe2c33af850516025f3591d76cb9f99e575e`.
+- CI #954 (`44333690855`) e #955 (`44333692330`) repetiram falha sem runner: jobs `134904496188` e `134904503144`, ambos `runner_id=0`, nomes vazios, steps vazias, ~3 s. As alterações subsequentes do analyzer/testes ocorreram depois desses runs e ainda não tiveram execução runtime.
+- Revisão estática no GitHub confirmou as novas condições e testes. Runtime unittest/compileall segue bloqueado pela ausência de runner; não declarar testes aprovados e não coletar fixture mainnet.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 164. Metadados obrigatórios do analyzer e CI #962 — PR #25 (18/11/2026)
+
+- O endurecimento do analyzer independente foi completado: ausência/invalidez de `transaction/meta`, ausência de `meta.err`, `transaction.message` inválido, `message.instructions` ausente/não-lista e `meta.innerInstructions` ausente/nulo são erros explícitos. Somente uma transação com falha on-chain comprovada (`meta.err` não nulo) retorna lista vazia de operações.
+- Testes negativos para `meta.err` e `message.instructions` ausentes foram adicionados; os testes anteriores cobrem `innerInstructions` ausente/nulo. Commits `e18445672e752a88e6e89a78cf1b71180072f505` e `4ff8360c908f614f9c07396c058862b7547ebd2c`.
+- Documentação atualizada para refletir os metadados obrigatórios do analyzer independente. Commit `e13d6f2ed68b56436e090d3f49a6aac5c6524984`.
+- CI #962 (`44333898967`), HEAD `f1b5e50ae442a49cd6fffb79c9d22b07902be7dc`, job `134905241316`: `runner_id=0`, nome vazio, `steps=[]`, ~3 s. Falha antes da execução. As alterações finais do analyzer/documentação foram posteriores e não foram executadas em runtime.
+- Revisão estática GitHub confirmada. Runtime unittest/compileall continua bloqueado por ausência de runner; não declarar testes aprovados nem coletar fixture mainnet.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 165. CI #963/#964 confirma falha pré-runner no HEAD atual — PR #25 (18/11/2026)
+
+- Run #963 (`44334123428`), commit `e13d6f2ed68b56436e090d3f49a6aac5c6524984`, e run #964 (`44334170775`), HEAD do PR `22115b529a909fd9df44884468496f41e4dc899c`, concluíram em failure antes de qualquer step.
+- Para o run #964, job `134906226864`: `runner_id=0`, `runner_name=""`, `steps=[]`, início `15:18:49Z`, conclusão `15:18:51Z`. Confirma que até o HEAD atual do PR não houve runner provisionado; nenhuma etapa de instalação, unittest ou compileall foi executada.
+- Não disparar rerun repetido. O código e os testes foram atualizados no GitHub, mas validação runtime requer que GitHub Actions consiga atribuir um runner ou que exista executor autorizado alternativo. Não coletar fixture RAW mainnet antes da validação.
+- PR #25 permanece aberto, Draft, mergeable, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 166. CI runner labels alternativos e assinatura Base58 limitada — PR #25 (18/11/2026)
+
+- Tentativa de estabilização do CI: workflow alterado de `ubuntu-latest` para `ubuntu-24.04` com timeout de 20 min (commit `bab75d8e89462ed87a27e759716566b42018fe6e`); depois para `ubuntu-slim` com timeout de 14 min, compatível com limite desse runner (commit `c1ab9cc499c6a5cd8c9d9bba1435f3762f417c48`). Documentação oficial confirma que `ubuntu-slim` é opção padrão também para repositórios privados.
+- CI #968 (`44334936768`) e #969 (`44334953397`) falharam antes de steps mesmo após pinagem em `ubuntu-slim`; run #970 (`44335052271`) no commit `63936f3df0dfb08d7913412cf5e9549d1822651a` também terminou failure com job sem steps/logs. Não há evidência de que o workflow tenha iniciado; trocar a label não resolveu.
+- Auditoria do coletor RPC identificou vetor de consumo desnecessário de CPU/memória: assinatura Base58 arbitrariamente longa era convertida em inteiro antes de verificar comprimento decodificado. Agora o validador rejeita strings com mais de 88 caracteres antes da conversão; teste negativo de 89 caracteres adicionado. Commits `63936f3df0dfb08d7913412cf5e9549d1822651a` e `005b4f16f4bd7277da42071977ef8529ff4eb2e9`.
+- A página pública GitHub Status consultada em 18/11/2026 mostra Actions operacional e nenhum incidente reportado nesse dia. Isso não exclui restrição individual da conta/repositório. Há relatos públicos recentes de outros usuários com assinatura idêntica (`runner_id=0`, nome vazio, steps vazias, logs 404), inclusive discussões que associam o comportamento a bloqueio de uso/cobrança em repositórios privados; não é possível atribuir essa causa à conta SMR sem consultar seu painel de cobrança ou anotação interna do job.
+- Próxima verificação necessária fora do acesso do conector: proprietário confirmar em Settings → Billing and licensing → Usage se o compute incluído de Actions foi esgotado ou se existe bloqueio/budget. Não adicionar método de pagamento, alterar visibilidade do repositório ou aceitar custos sem decisão expressa do usuário. Alternativa sem custo de runner hospedado: self-hosted runner, mas exigiria instalação e autorização no dispositivo do usuário.
+- Runtime unittest/compileall ainda pendente; não coletar fixture mainnet. PR #25 permanece Draft, aberto, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 167. Retorno ao runner padrão e CI #974/#975 — PR #25 (18/11/2026)
+
+- Após teste diagnóstico com `ubuntu-slim`, workflow retornou a `ubuntu-24.04` com timeout de 20 min para preservar capacidade e evitar o limite rígido de 15 min do runner slim. Commit `e267c39ae7939f122df86a8789036d0fd43ad2e7`; blob atual do workflow `d013ff5bb0f37a8004ce65ac0fd95fd53e7c58af`.
+- CI #974 (`44335188436`) e #975 (`44335201908`), ambos no HEAD `e267c39ae7939f122df86a8789036d0fd43ad2e7`, terminaram failure. Jobs `134909840361` e `134909888028` retornaram `logs_url=null` e `steps=null`; consulta individual de logs retorna 404 BlobNotFound. Não houve evidência de execução de qualquer etapa. O problema persiste com `ubuntu-latest`, `ubuntu-24.04` e `ubuntu-slim`.
+- GitHub Status consultado em 18/11/2026 informa Actions operacional e nenhum incidente reportado no dia. Isso, combinado com falhas pré-runner em múltiplos labels, desloca a hipótese principal para uma restrição de conta/compute/budget ou falha específica não exposta pelo job; a causa exata não é observável pelas permissões atuais do conector.
+- Documentação oficial: runners hospedados em repositórios privados consomem compute incluído; GitHub Free inclui US$12/mês, e, sem método de pagamento válido, o uso é bloqueado após consumir a cota. Runners auto-hospedados e runners padrão em repositórios públicos não consomem essa cota. Não tornar o repositório público nem adicionar pagamento sem consentimento explícito.
+- Próxima ação indispensável para fechar o diagnóstico: proprietário abrir Settings → Billing and licensing → Usage e conferir o consumo de GitHub Actions compute e os budgets/bloqueios. Se a cota estiver esgotada, aguardar reset ou escolher conscientemente entre método de pagamento/budget e self-hosted runner. O usuário deve enviar o valor/estado exibido; não precisa compartilhar dados de cartão.
+- Runtime unittest/compileall permanece pendente; não coletar fixture mainnet. PR #25 Draft, aberto, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 168. CI #976 e reconciliação do estado atual do PR #25 (18/11/2026)
+
+- Consulta direta à API confirma PR #25 aberto, Draft, não merged, `mergeable=true`, com HEAD `ef8289df552532137a7d88a7e176631002ef43ea` e base `feat/damm-v2-swap-domain-adapter`. A lista atual contém 34 arquivos alterados; `main` permanece fora do alvo deste PR empilhado.
+- CI #976 (`44335312235`), disparado no HEAD atual `ef8289df552532137a7d88a7e176631002ef43ea`, concluiu em failure. Job `134910278443` retornou `steps=null` e `logs_url=null`. Nenhuma etapa de checkout, instalação, unittest ou compileall foi comprovada. Isso não caracteriza falha dos testes nem aprovação.
+- A reincidência confirma que a troca entre `ubuntu-latest`, `ubuntu-24.04` e `ubuntu-slim` não resolveu a ausência de runner. Não disparar retries em loop e não alterar código de produção/workflow apenas para contornar falha pré-runner.
+- Testes runtime já comprovados pelo usuário no Termux: `test_event_store.py` (26 testes OK) e `test_swap_persistence.py` (23 testes OK), após correção de transação no teste SQLite. Não repetir esses testes sem motivo.
+- Ainda pendentes em runtime: `test_damm_v2_fixture_collector.py`, `test_raydium_cpmm_persistence_pipeline.py`, `test_wallet_monitor.py`, `test_rpc_fixture_collector.py`, `test_damm_v2_analyzer.py`, `test_damm_v2_persistence_pipeline.py`, `test_damm_v2_transaction_pipeline.py` e `python -m compileall -q src tests`. Antes de coletar fixture RAW mainnet, executar os testes restantes e revisar o resultado.
+- A causa específica do provisionamento continua não confirmada. O próximo avanço técnico confiável é executar os testes restantes em runtime no clone local do usuário ou restabelecer runner GitHub Actions. Não tornar o repositório público, não ativar pagamento e não fazer merge sem decisão expressa.
+- PR #25 segue Draft, aberto, sem merge; branch `feat/damm-v2-transaction-pipeline` continua baseada em `feat/damm-v2-swap-domain-adapter`.
+
+
+## 169. Primeiro ciclo de runtime dos testes restantes e ajuste de mensagem — PR #25 (18/11/2026)
+
+- O usuário atualizou o clone Termux até o commit `4be884d333f86d3449af3afe2ba48ba7123e38e9` (Registro Mestre seção 168) e iniciou a bateria pendente.
+- `test_damm_v2_fixture_collector.py`: 2 testes executados, OK.
+- `test_raydium_cpmm_persistence_pipeline.py`: 13 testes executados; 12 passaram e 1 falhou exclusivamente porque a asserção `assertRaisesRegex(ValueError, "não corresponde")` esperava uma expressão que não estava presente na mensagem emitida. A validação rejeitou a assinatura divergente antes da persistência, conforme esperado; não há evidência de defeito na regra de rejeição.
+- Correção aplicada diretamente na branch `feat/damm-v2-transaction-pipeline`, commit `c9a772a90a12539237899868f409f2f8f0a2836a`: mensagem agora declara explicitamente `A assinatura informada não corresponde à primeira assinatura única do payload RPC.` A regra de validação não foi enfraquecida. A presença do novo texto foi confirmada via leitura do arquivo no GitHub.
+- Como o loop do usuário foi interrompido no primeiro teste com falha, `test_wallet_monitor.py`, `test_rpc_fixture_collector.py`, `test_damm_v2_analyzer.py`, `test_damm_v2_persistence_pipeline.py`, `test_damm_v2_transaction_pipeline.py` e `compileall` ainda não foram executados nessa bateria. Reexecutar após sincronizar o novo commit; não repetir o teste já aprovado do fixture collector, salvo necessidade.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; não coletar fixture RAW mainnet antes da validação runtime completa.
+
+
+
+## 170. Correção do processamento diferido no backfill e alinhamento dos testes WalletMonitor — PR #25 (18/11/2026)
+
+- A execução runtime do usuário confirmou 3 erros e 1 falha em `test_wallet_monitor.py`, mas a saída fornecida não continha tracebacks; a execução foi interrompida durante reconexões WebSocket. Não atribuir causa ao ciclo de reconexão sem evidência.
+- Auditoria estática identificou defeito real em `src/smart_money_radar/services/wallet_monitor.py`: `_collect_transaction(..., advance_checkpoint=False)` passava o modo de checkpoint diferido ao pipeline CPMM, mas depois tratava `result.checkpoint_advanced == False` como falha de processamento. No backfill, esse valor é falso por projeto; o cursor só deve avançar depois pelo CAS ordenado com slot e assinatura da página RPC. Assim, swaps corretamente reconciliados eram indevidamente mantidos como pendentes e impediam o CAS.
+- Correção aplicada diretamente na branch do PR, commit `bcbe05d2565f9ecdf623c89084d4404d2358dcb6`: o monitor agora determina conclusão pelo status terminal (`processed`, `failed_on_chain`, `no_cpmm_swaps`) e por `unresolved_swaps == 0`, sem confundir conclusão do processamento com avanço do checkpoint. Status pendentes continuam bloqueando.
+- Alinhamento dos testes, commit `dc300604e629c80fc36addcd041bd491d8536eb2`: fixtures do backfill agora incluem slots RPC explícitos para transação nova e falha on-chain; mock DAMM do teste de bloqueio inclui `unresolved_swaps=1`, conforme o contrato real do resultado.
+- Esses commits foram aplicados no GitHub e ainda não foram validados em runtime. Próxima ação: sincronizar o clone Termux e executar primeiro apenas `test_wallet_monitor.py` com `-v` e timeout; se passar, continuar os testes pendentes restantes e `compileall`. Não coletar fixture RAW mainnet antes de concluir a validação e revisar a fixture real.
+- PR #25 permanece aberto, Draft, sem merge, base `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 171. Diagnóstico da falha de checkpoint no teste de backfill — PR #25 (18/11/2026)
+
+- A execução runtime de `test_wallet_monitor.py` confirmou que a correção do processamento diferido funcionou para os casos de falha on-chain, replay pendente e bloqueio por swap DAMM v2. Restou uma falha em `test_backfills_signatures_since_persisted_checkpoint`.
+- Causa identificada por inspeção do teste e do contrato de persistência: a página simulada de `getSignaturesForAddress` informava slot 901, mas a transação simulada de `getTransaction` não continha o campo `slot`. O normalizador persistia a observação com slot `None`; o CAS ordenado corretamente rejeitava avançar para slot 901, pois exige igualdade entre o slot da página RPC e o slot persistido.
+- Correção de teste aplicada na branch do PR: a fixture de `new-signature` agora inclui `slot = 901`, reproduzindo o campo fornecido pela resposta real de `getTransaction`. Nenhuma validação de produção foi afrouxada.
+- Commit da correção de fixture: ba3ccd0e8b1292b6b47f1312be5f4d90346a85e7.
+- Próxima validação: executar isoladamente apenas `test_backfills_signatures_since_persisted_checkpoint`. Se passar, executar `test_wallet_monitor.py` uma vez com timeout curto; investigar separadamente o teste de sobreposição se não houver resumo final. Não repetir testes já aprovados.
+- PR #25 permanece aberto, Draft, sem merge; branch `feat/damm-v2-transaction-pipeline` baseada em `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 172. Runtime aprovado para avanço do checkpoint no backfill — PR #25 (18/11/2026)
+
+- Após sincronizar o commit `c376593e20e87feda74e6b84184a14429218fe65`, o usuário executou isoladamente `tests.test_wallet_monitor.WalletMonitorTests.test_backfills_signatures_since_persisted_checkpoint`.
+- Resultado observado no Termux: `Ran 1 test ... OK`. A fixture agora fornece slot 901 tanto na página de assinaturas quanto na transação, e o checkpoint avançou para `new-signature`, conforme a asserção.
+- Isso valida em runtime o caminho específico de backfill/CAS anteriormente bloqueado. Ainda não valida a classe completa `WalletMonitor`.
+- Próxima ação: executar isoladamente `test_websocket_notification_overlapping_backfill_is_deduplicated`, pois foi o teste que impediu a bateria anterior de apresentar resumo final. Não repetir o teste de checkpoint já aprovado.
+- PR #25 permanece aberto, Draft, sem merge; branch `feat/damm-v2-transaction-pipeline` baseada em `feat/damm-v2-swap-domain-adapter`; `main` preservada.
+
+
+## 173. Correção do fixture de sobreposição WebSocket/backfill — 18/11/2026
+
+- O teste isolado `test_websocket_notification_overlapping_backfill_is_deduplicated` foi executado no Termux com limite de 20 segundos, mas não apresentou resultado final; a execução entrou em reconexões progressivas (1, 2, 4, 8 e 16 segundos). Portanto, o teste não foi considerado aprovado.
+- A inspeção do teste identificou a causa: o fixture de `get_signatures_for_address_async` não informava os slots das assinaturas e a transação simulada também não continha `slot`. O backfill exige slot inteiro válido para executar `advance_checkpoint_in_order`; sem esse dado, a recuperação falhava antes de consumir a notificação WebSocket, provocando reconexões sucessivas.
+- Correção aplicada somente ao fixture em `tests/test_wallet_monitor.py`: assinatura nova com slot 901, checkpoint anterior com slot 900 e transação simulada com `slot = 901`. Nenhuma regra de produção foi alterada.
+- Commit: `13b0c64b5ec03350f04dc2147fc9b91ecb398996` — `Fix overlap backfill test slot fixture`.
+- Estado: correção registrada no branch `feat/damm-v2-transaction-pipeline`; aguarda execução isolada no Termux. Não declarar o teste aprovado até receber saída final `OK`.
+
+
+## 174. Validação do teste de sobreposição WebSocket/backfill — 18/11/2026
+
+- Após o commit `13b0c64b5ec03350f04dc2147fc9b91ecb398996`, o usuário atualizou o Termux com fast-forward até o commit de registro anterior e executou:
+  `PYTHONPATH=src timeout 20s python -m unittest tests.test_wallet_monitor.WalletMonitorTests.test_websocket_notification_overlapping_backfill_is_deduplicated -v`
+- Resultado observado: `Ran 1 test in 0.102s` e `OK`.
+- Evidência: o cenário de notificação WebSocket concorrente com backfill concluiu sem reconexões; a correção do fixture com slots 901/900 e slot 901 na transação simulada removeu a falha que interrompia o teste.
+- O teste isolado `test_backfills_signatures_since_persisted_checkpoint` também havia passado anteriormente (seção 172).
+- Próxima validação: executar uma única vez a suíte completa `test_wallet_monitor.py`, agora que os dois casos isolados relevantes passaram. Não repetir os testes isolados já aprovados.
+
+
+## 175. Estado da execução remota de CI — 18/11/2026
+
+- Após o registro da seção 174, foi consultada a execução GitHub Actions associada ao commit `cdfbdee5baabc069bf5cfc07469b801011e49cf7`.
+- Execução `SMR tests`, run `44350299820`, run number `992`: conclusão `failure`.
+- O job `test` (ID `134963775404`) terminou como `failure`, mas a API retornou `logs_url: null` e `steps: null`; portanto, não há evidência de que os testes tenham iniciado. Isso é consistente com a falha de provisionamento de runner observada anteriormente, mas a causa raiz ainda não está confirmada.
+- O teste isolado de sobreposição WebSocket/backfill está aprovado localmente no Termux conforme seção 174. A suíte completa continua sem validação.
+- Não repetir disparos de CI sem corrigir ou esclarecer a indisponibilidade do runner. Não pedir ao usuário nova execução isolada. Próxima ação deve consolidar uma validação local única, ou resolver primeiro o provisionamento do CI; não alterar `main` nem mesclar PR #25.
+
+
+## 176. Validação consolidada em uma única execução — 18/11/2026
+
+- Para eliminar a sequência de comandos isolados no Termux, foi criado `tools/validate_pr25.sh` no branch `feat/damm-v2-transaction-pipeline`.
+- Commit: `54caae0dc6ff07f510f6fdce9361051e6bb30b00`.
+- O script verifica que o clone está no branch correto, sincroniza por `git pull --ff-only`, executa uma única vez a suíte completa `python -m unittest discover -s tests -v` com `PYTHONPATH=src` e, se a suíte passar, executa `python -m compileall -q src tests`.
+- A execução local ainda precisa ocorrer no Termux do usuário; não afirmar validação concluída antes da mensagem final de sucesso do script.
+- CI remoto permanece indisponível antes do provisionamento do runner (run 992, seção 175). Não disparar retries em loop.
+- Próxima ação operacional: uma única execução de `bash tools/validate_pr25.sh` no diretório local do projeto. O script interrompe no primeiro erro e preserva o resultado real.
+
+
+## 177. Diagnóstico e correções da validação consolidada PR #25 — 18/11/2026
+
+- O usuário executou `tools/validate_pr25.sh` no Termux. A suíte completa iniciou, mas a saída compartilhada foi truncada; foram identificados um FAIL em `test_signature_mismatch_is_rejected_before_persistence` e um ERROR em `test_adapter_bundle_round_trips_through_existing_sqlite_event_store`. A validação consolidada não passou.
+- A revisão direta dos arquivos no HEAD do PR identificou a causa do FAIL: `process_damm_v2_observation()` chamava `normalize_transaction()` e persistia a observação antes de validar que a assinatura solicitada era a assinatura primária única de `transaction.signatures`. O teste exigia rejeição antes de qualquer persistência.
+- Correção de produção aplicada: validação fail-closed da lista de assinaturas (lista presente/não vazia, strings não vazias, sem duplicatas e primeira assinatura igual à solicitada) imediatamente após extrair o payload e antes de normalização/persistência. Mensagem de erro explicita a divergência. Commit `31aa18dd98ba60609689eba4563aa8898f071f17`.
+- A revisão do ERROR confirmou que o teste de round-trip usava `SQLiteEventStore` sem importá-lo. Correção exclusiva de teste: import explícito do EventStore. Commit `ec86778b13b8fbf3a7dab184a7eddfb836053243`.
+- CI associado ao HEAD anterior: run #995 (`44351173108`) terminou failure; job `134966891758` retornou `logs_url=null` e `steps=null`. Não há evidência de execução remota dos testes.
+- As duas correções foram gravadas diretamente na branch `feat/damm-v2-transaction-pipeline`; ainda não há validação runtime posterior aos commits. PR #25 permanece aberto, Draft, sem merge; nenhuma alteração em `main`.
+- Próxima ação: sincronizar a branch e executar novamente a validação consolidada uma única vez. Não repetir testes isolados já aprovados nem coletar fixture RAW mainnet antes do resultado completo.
+
+
+## 178. Correções adicionais e CI completo aprovado no PR #25 — 18/11/2026
+
+- CI #998 (44372325999) executou 466 testes e revelou 2 erros nos testes da fixture CPMM real e 1 falha de mensagem no coletor RPC. O log completo foi consultado diretamente no GitHub.
+- Causa dos dois erros CPMM: a projeção anonimizada legada preserva meta.loadedAddresses, mas não contém message.addressTableLookups. A validação fail-closed estava correta; não foi afrouxada. O teste agora cria uma cópia em memória da projeção, expande a ordem canônica accountKeys estáticas + loaded writable + loaded readonly e remove meta.loadedAddresses dessa cópia. A fixture original, seu hash e manifesto permanecem intactos. Commit 077e17e4bc10f47581c7a86d6e49dbf316ffc6bc.
+- Causa da falha do coletor: a assinatura divergente já era rejeitada, mas a mensagem não continha a expressão esperada pelo teste. Texto ajustado para explicitar “não confere”, sem mudar a regra de validação. Commit 7c002eeec37d73bcce929aa61ca36a585edc9bc6.
+- CI #1001 (44372720945), evento pull_request, job 135043570248: checkout, instalação, 466/466 testes e compileall concluídos com sucesso. Esta é a validação integrada do PR e a evidência principal de aprovação do HEAD atual.
+- CI #1002 (44372728943), evento push, job 135043598061, reportou uma falha de mensagem no teste do coletor, embora o CI do PR #1001 tenha passado com a branch integrada. Manter a observação para reconciliação; não substituir o resultado verde do evento pull_request por esse evento push divergente.
+- Correções de assinatura e import SQLite já registradas na seção 177. Registro Mestre atualizado neste commit documental.
+- PR #25 permanece aberto, Draft, sem merge; main preservada. A fixture RAW mainnet DAMM v2 ainda não foi coletada; aprovação da suíte não equivale à validação de fixture DAMM v2 real nem autoriza execução de ordens.
+
+
+## 179. Confirmação final da CI integrada e continuidade — 18/11/2026
+
+- Após as correções da seção 178, o commit documental HEAD `3950ab575ada8b38b3870b7f9280efa87173e576` disparou CI #1004 (`44372973018`).
+- Job `135044474473` concluiu com status SUCCESS. Steps confirmados: checkout, setup Python, instalação do projeto, unittest completo (466 testes) e compileall; todos concluídos com sucesso.
+- A divergência anterior entre os eventos push e pull_request foi superada por uma execução verde posterior no HEAD atual. A CI #1004 é a evidência de validação mais recente; não há motivo para novo rerun neste momento.
+- PR #25 foi atualizado para remover a afirmação antiga de runtime pendente e registrar 466/466 + compileall aprovados. Continua aberto, Draft, base `feat/damm-v2-swap-domain-adapter`, sem merge; `main` permanece intacta.
+- Próxima ação de engenharia: revisar a rotina de coleta e obter a fixture RAW mainnet DAMM v2 localmente no Termux, verificar manifesto/hash e executar auditoria do pipeline contra a transação real. Não coletar fixture CPMM novamente nem repetir a suíte completa sem mudança de código.
+- Limite: CI verde valida testes e compilação, não comprova que o coletor já capturou fixture DAMM v2 real, nem valida execução de ordens. Sem BUY/SELL automático.
+
+## 180. Captura e auditoria de fixture real Meteora DAMM v2 — 18/11/2026
+
+- No Termux, o usuário executou `tools/collect_damm_v2_fixture.py` contra o RPC público Solana Mainnet. O coletor retornou `OK` para a assinatura `1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT`, slot `451432630`, SHA-256 `5c053e372d5bb6456e154f2025ab8c51f234941b4e521c64c66f53510c5b948e`.
+- Arquivos RAW e manifesto foram gravados localmente em `data/fixtures/raw/damm-v2/`; não foram enviados ao GitHub.
+- A primeira chamada do auditor apontou apenas diretório incorreto: o auditor procura manifestos diretamente na pasta indicada e não percorre subpastas. Reexecutado no diretório específico `data/fixtures/raw/damm-v2`, o resultado foi `valid: true`, `errors: []`, com assinatura, slot e SHA-256 correspondentes ao coletor.
+- A auditoria confirma integridade do arquivo, manifesto e coerência básica da resposta RPC; não comprova, por si só, a interpretação semântica do swap nem a reconciliação econômica pelo pipeline DAMM v2.
+- Próxima etapa: inspecionar localmente a estrutura da transação (programas/instruções, CPI, signatários e proprietários dos token accounts) e então executar o pipeline contra a fixture real com uma carteira monitorada identificada por evidência, sem inventar endereço. Não publicar RAW nem manifesto no repositório público.
+- PR #25 continua aberto e Draft, sem merge; `main` permanece preservada. Nenhuma ordem é enviada e a classificação BUY/SELL continua bloqueada até validação e política de ativo-base/quote.
+
+## 181. Validação integrada DAMM v2 real e suporte a funding Wrapped SOL — 18/11/2026
+
+- O usuário pediu que a continuação fosse feita pelo GitHub, sem nova execução manual no Termux. Foi criado `tools/validate_damm_v2_mainnet.py`, que consulta a assinatura pública diretamente no RPC Solana, identifica a única carteira em comum entre signatários e proprietários de token accounts e executa `process_damm_v2_transaction` sem persistir ou publicar o RAW.
+- Criado workflow `.github/workflows/damm-v2-mainnet-validation.yml`, com execução automática na branch de trabalho e opção manual `workflow_dispatch`. O runner baixa a transação diretamente do RPC público; nenhum arquivo RAW/manifesto local foi enviado ao GitHub.
+- Primeira execução real encontrou `MATCHED` e `ATTRIBUTED`, mas bloqueou a reconciliação: a conta wSOL de entrada tinha delta pre/post zero, enquanto a transferência SPL debitava 20.700 unidades. Diagnóstico confirmou a sequência externa: SystemProgram transfer (índice 5), SPL Token SyncNative (índice 6), DAMM v2 swap (índice 7). O saldo da conta wSOL começa e termina igual porque o funding nativo e o débito wSOL se compensam dentro da mesma transação.
+- Implementado `solana_wrapped_sol_funding.py`: reconhece somente funding wSOL demonstrado por SystemProgram::Transfer para a token account, origem igual à carteira monitorada, quantia exatamente igual à transferência de entrada, SyncNative único posterior e anterior ao swap, e delta de lamports da conta igual a zero. Casos ambíguos ou incompletos continuam fail-closed.
+- `reconcile_damm_v2_economic_batch` agora recebe o payload e a carteira monitorada do pipeline, incorpora o funding nativo comprovado no delta esperado e registra `WrappedSolFundingEvidence`. Não há bypass do delta: o débito wSOL e o crédito de funding são compensados e comparados com o delta real observado.
+- Adicionado teste unitário específico para o decodificador de funding wSOL e teste de reconciliação econômica do funding + SyncNative.
+- CI #1031 (run `44375923934`), HEAD `4efdb074ac5959ffb3e293fe1b76c3691376ebc3`: 471/471 testes aprovados e compileall aprovado.
+- Workflow de mainnet #6 (run `44375909199`), mesmo HEAD: SUCCESS. Transação assinatura `1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT`, slot `451432630`; 1 associação `MATCHED`, 1 evidência `ATTRIBUTED`, reconciliação `RECONCILED`, 1 bundle produzido. Funding wSOL: conta `FDA2o2DWbFhRHsETEzuty7M87JRLQ9XSfMowByyJr3eX`, origem carteira monitorada, amount_raw `20700`, SystemProgram index 5, SyncNative index 6, lamports delta 0. A classificação permanece `UNKNOWN` (confidence 0); não houve BUY/SELL nem ordem.
+- PR #25 continua aberto e Draft, sem merge; base `feat/damm-v2-swap-domain-adapter`; `main` preservada. A fixture RAW original e seu manifesto continuam apenas no Termux do usuário.
+- Limite: esta é uma validação real de uma transação DAMM v2, não prova cobertura de todos os modos de fee, swaps múltiplos, CPI aninhado, ALT ou variantes de funding. Próxima etapa é ampliar a cobertura com outras transações reais e testes negativos, sem liberar classificação BUY/SELL nem execução.
+
+
+## 182. Reforço dos testes de funding Wrapped SOL e CI #1034 — 18/11/2026
+
+- Commit `5384b33dab4840eeb640e2bc2743388020363bcd` adicionou seis testes negativos ao decodificador de funding wSOL: origem diferente da carteira monitorada; SyncNative após o swap; SyncNative duplicado; transferências SystemProgram duplicadas/ambíguas; ausência de snapshots de lamports; ausência de funding nativo.
+- CI #1034 (run `44376556474`), associado ao HEAD `5384b33dab4840eeb640e2bc2743388020363bcd`: job `test` concluiu SUCCESS; checkout, setup Python, instalação, testes unitários e compileall aprovados. O resultado confirma os testes no commit, mas o diff desse commit foi somente de testes; nenhuma lógica de produção foi alterada nele.
+- Revisão da reconciliação confirmou teste unitário de dois swaps sequenciais compartilhando token accounts, com agregação dos deltas e resultado RECONCILED. Isso valida a função de reconciliação em cenário sintético, mas ainda não comprova uma transação mainnet real com múltiplos swaps nem o fluxo completo pipeline→persistência para esse cenário.
+- Limite identificado: o decoder atual de funding wSOL aceita exatamente um SystemProgram::Transfer relacionado e um SyncNative único por conta, antes do swap. Mais de um funding relacionado é rejeitado como ambíguo. Não ampliar essa regra sem desenhar e testar associação inequívoca funding↔swap, especialmente quando uma conta wSOL é reutilizada.
+- Estado do PR #25 verificado: aberto, Draft, mergeable, branch `feat/damm-v2-transaction-pipeline`, HEAD `5384b33dab4840eeb640e2bc2743388020363bcd`, base `feat/damm-v2-swap-domain-adapter`; sem merge e sem alteração em `main`.
+- Próxima prioridade: testar integração completa com múltiplos swaps e funding wSOL, mantendo rejeição fail-closed para sequências não atribuíveis; em paralelo, revisar exposição de segredos/histórico agora que o repositório está público. Nenhuma credencial pode ser considerada segura apenas por não aparecer no HEAD: verificar histórico e revogar imediatamente qualquer segredo que tenha sido commitado. Não publicar fixtures RAW, manifestos locais, mapas de anonimização ou dados privados.
+- Nenhuma ordem, classificação BUY/SELL ou alteração de checkpoint foi habilitada.
+
+
+## 183. Teste de bloqueio de lote parcialmente associado — 18/11/2026
+
+- Adicionado em `tests/test_damm_v2_transaction_pipeline.py` o teste `test_mixed_matched_and_unresolved_swaps_rejects_entire_batch`.
+- O cenário injeta duas associações no pipeline: uma MATCHED e outra EVENT_MISSING. A expectativa é rejeitar o lote inteiro, preservar as duas associações para diagnóstico e não produzir contexts nem bundles. Isso protege contra processamento parcial de uma transação que contém mais de um swap candidato.
+- Commit `860a8fdebe415f944c29fbf45a78dc4b8bca5525`. CI ainda não apareceu na consulta imediatamente após o commit; aprovação pendente de confirmação explícita do workflow.
+- Busca de código público por padrões comuns encontrou no HEAD pesquisável apenas nomes de variáveis, placeholders documentados e chaves simuladas de teste; nenhum valor de credencial real foi identificado nesses resultados. Isso NÃO equivale a auditoria de todo o histórico Git, nem à confirmação do GitHub Secret Scanning. A conexão disponível não expõe API de alertas de segredo nem administração de segurança. Como o repositório é público, histórico completo e segredos eventualmente commitados ainda exigem auditoria dedicada; qualquer credencial real exposta deve ser revogada/rotacionada.
+- PR #25 permanece Draft e aberto; nenhuma alteração em main, nenhum merge e nenhuma execução financeira.
+- Próxima ação: confirmar CI do novo teste; depois priorizar integração multi-swap com funding wSOL e cobertura mainnet adicional. Não relaxar fail-closed para acelerar.
+
+
+## 184. CI dos testes de lote parcial e revisão do limite atual de funding — 18/11/2026
+
+- CI #1037 (run `44377493009`) e CI #1038 (run `44377534348`) concluíram SUCCESS. Ambas executaram checkout, setup Python, instalação, testes unitários e compileall sem falhas. #1038 validou o HEAD documental `7add283db9a0e92e66b9aee77f2987fa4cd3b9ca`, que contém o teste adicionado no commit `860a8fdebe415f944c29fbf45a78dc4b8bca5525`.
+- PR #25 segue OPEN/DRAFT, sem merge. HEAD verificado: `7add283db9a0e92e66b9aee77f2987fa4cd3b9ca`.
+- Revisão direta de `solana_wrapped_sol_funding.py`: decoder deliberadamente aceita exatamente um SystemProgram::Transfer de source_wallet para token_account, exatamente um SyncNative, ambos antes do swap, funded_amount igual ao amount_raw e delta de lamports da conta wSOL igual a zero. Outros transfers SystemProgram envolvendo a conta, duplicidade ou ambiguidade são rejeitados.
+- Decisão de segurança: não generalizar agora para vários funding transfers por conta. A relação entre funding e cada swap precisa ser inequívoca, principalmente se houver múltiplos swaps que reutilizem a mesma conta wSOL. Manter fail-closed até existir modelo de associação e fixture mainnet que demonstre essa sequência.
+- O novo teste de lote parcial comprova que uma associação MATCHED misturada com EVENT_MISSING rejeita o lote inteiro e não emite contexts/bundles. Isto é regressão sintética; não equivale a fixture mainnet multi-swap.
+- Próxima frente: cobrir a associação funding↔swap para múltiplas operações sem relaxar as condições; depois adicionar fixture mainnet multi-swap obtida localmente e auditada sem enviar RAW/manifesto ao repositório público. Auditoria de histórico Git/segredos permanece pendente; buscas no código atual não substituem secret scanning do histórico completo.
+- Nenhuma ordem, BUY/SELL, checkpoint ou merge foi habilitado.
+
+
+## 185. Correção de rastreamento: integração wSOL já existe; limite é por operação — 18/11/2026
+
+- Correção da observação preliminar feita durante a busca textual: `decode_wrapped_sol_funding` está integrado em `damm_v2_economic_reconciliation.py`, dentro da reconciliação do input quando o mint é NATIVE_MINT e os argumentos `raw_transaction` e `monitored_wallet` estão presentes. A busca anterior limitada aos arquivos do pipeline/adaptador não encontrou a chamada porque ela está na camada de reconciliação.
+- Teste existente `test_reconciles_wrapped_sol_input_funded_and_synced_before_swap` cobre o caso wSOL de uma operação. Teste `test_aggregates_sequential_swaps_sharing_the_same_token_accounts` cobre compartilhamento de contas em swaps sequenciais sem demonstrar funding wSOL compartilhado.
+- Limitação real: a reconciliação chama o decoder por operação e exige que cada input de wSOL tenha um único funding top-level cujo valor seja exatamente igual ao amount bruto daquele input. Um funding agregado ou uma conta wSOL reutilizada por várias operações não está modelado como relação de lote; o comportamento conservador atual é rejeitar divergências/ambiguidade, não repartir funding.
+- Próximo passo correto: criar teste de regressão específico para duas operações DAMM v2 que reutilizam a mesma conta wSOL e provar que nenhum funding é contado duas vezes nem repartido por suposição. Depois desenhar a associação por transação e somente então alterar produção. Não afirmar que a integração está ausente.
+- CI #1039 (run `44377757156`) SUCCESS. Commit de registro anterior `9968d3fac01bfcd3499946d02057262859b08c99` foi validado por essa execução.
+
+
+## 186. Teste de funding wSOL compartilhado entre swaps — 18/11/2026
+
+- Adicionado em `tests/test_damm_v2_economic_reconciliation.py` o teste `test_rejects_shared_wsol_account_with_multiple_funding_transfers_as_ambiguous`.
+- Cenário: duas operações DAMM v2 sequenciais usam a mesma conta wSOL; cada uma tem transferência de funding SOL e SyncNative antes dos swaps. A reconciliação deve rejeitar o caso como INCOMPLETE/ambíguo, sem produzir WrappedSolFundingEvidence e sem repartir funding automaticamente.
+- Commit do teste: `dd75e64b9bf1092af3f4e2bc76bf9cb80f177cfe`. A validação CI deste commit ainda precisa concluir.
+- Interpretação: teste caracteriza o comportamento seguro atual e impede uma falsa reconciliação. Não implementa ainda associação multi-swap; a produção continua fail-closed. Próximo passo após CI: desenhar e implementar resolução em lote que associe funding top-level a cada swap/CPI de forma inequívoca, com testes positivos e negativos.
+- Nenhuma ordem, BUY/SELL, checkpoint ou merge habilitado.
+
+
+## 187. Funding wSOL agregado por conta em lote multi-swap — 18/11/2026
+
+- Implementação em `solana_wrapped_sol_funding.py`: decoder agora aceita uma ou mais transferências top-level SystemProgram da mesma source_wallet para a mesma token_account, soma os valores, exige que todas ocorram antes de um único SyncNative e que esse SyncNative ocorra antes do primeiro swap. Rejeita transferências envolvendo a conta com origem/destino divergente, ausência/duplicidade de SyncNative, divergência de soma e delta de lamports não zero. Evidência preserva `system_transfer_indices` e índice do SyncNative.
+- Implementação em `damm_v2_economic_reconciliation.py`: agrupa inputs NATIVE_MINT por token account, soma os valores brutos e chama o decoder uma única vez por conta, antes do primeiro swap que usa essa conta. O crédito de funding agregado é aplicado uma única vez ao delta esperado, evitando duplicação por operação.
+- Teste de integração sintético atualizado: duas operações sequenciais usando a mesma conta wSOL, dois SystemProgram transfers de 100, um SyncNative antes dos swaps, total funding 200; espera RECONCILED e uma evidência com índices (0, 1). Teste unitário adicional cobre transferências múltiplas + um SyncNative. Teste de funding duplicado com soma divergente continua rejeitado.
+- Commits de produção/testes: `95c16acd2ccf43213c43f6aead192690109c8b09`, `9a555c17d708402adf705da0c7fbece9731f58dd`, `ffc82421dec327dbcec634effc11fbb261bd2f1d`, `6dbb8c51ee95388e4ac2b82efe12d51870f05d25`.
+- Estado: CI para os novos commits ainda não foi confirmada. A cobertura é sintética; não substitui fixture mainnet real de transação multi-swap wSOL. A regra deliberadamente suporta apenas um SyncNative único após todos os funding transfers e antes do primeiro swap; padrões diferentes permanecem rejeitados.
+- Nenhuma ordem, BUY/SELL, checkpoint ou merge habilitado.
+
+- Validação final da implementação: CI #1051 (run `44378721507`) SUCCESS no commit de código `6dbb8c51ee95388e4ac2b82efe12d51870f05d25`: 480 testes passaram e compileall passou. Os runs intermediários #1045/#1047/#1049 falharam enquanto a alteração estava incompleta (teste antigo ainda esperava rejeição de transferências duplicadas); o commit de teste #1051 atualizou a expectativa e confirmou a implementação integrada.
+- HEAD atual do PR após atualização documental: `83f2db22e17df2aedb39ace867957c495d3cfc47`; o commit adicional é apenas registro. PR #25 permanece OPEN/DRAFT, sem merge.
+
+
+## 188. Relatório da validação Mainnet expõe todos os funding transfers — 18/11/2026
+
+- Atualizado `tools/validate_damm_v2_mainnet.py` para emitir `system_transfer_indices` como lista completa, além do campo legado `system_transfer_index`, permitindo auditar no relatório a evidência agregada sem guardar payload RAW.
+- Commit: `848d35e123630417c8d79b5e52bb219f4495b199`. CI específico desse commit ainda não foi consultada; o núcleo de reconciliação foi validado em #1051 (480 testes + compileall) no commit `6dbb8c51ee95388e4ac2b82efe12d51870f05d25`.
+- Próxima validação de maior valor: obter fixture mainnet DAMM v2 com dois swaps e wSOL compartilhado; rodar `tools/validate_damm_v2_mainnet.py` e conferir RECONCILED, dois bundles e evidência de funding agregada. Até lá, suporte validado apenas por teste sintético.
+
+- CI #1054 (run `44378925314`) SUCCESS no commit `848d35e123630417c8d79b5e52bb219f4495b199`: 480 testes passaram e compileall passou, incluindo o relatório com a lista completa de índices de funding.
+
+
+## 189. Mainnet DAMM v2 reconciliado e endurecimento de entradas do decoder — 18/11/2026
+
+- Evidência real de Mainnet confirmada nos logs do workflow #8 (run `44378911504`, job `135065453319`) para assinatura `1z8EYinixC5GZrwVsapJ4vW9Zfdx7j7EQnGZUVPQUm72WuXz8x5SMbakwunFXHYtftGiikm3JHLgwi2BwEVLLT`, slot 451432630: status `RECONCILED`, reconciliation `RECONCILED`, um bundle emitido, funding wSOL de 20.700 lamports, SystemProgram transfer no índice 5 e SyncNative no índice 6. Classificação permanece UNKNOWN. A transação tem um swap DAMM v2; isto valida o caminho Mainnet de uma operação, não o cenário multi-swap compartilhado.
+- Decoder `solana_wrapped_sol_funding.py` endurecido para validar tipo/identidade de token account e source wallet, amount como unsigned 64-bit (bool, negativo e overflow rejeitados) e limite de instrução como inteiro não negativo (bool rejeitado).
+- Testes adicionais cobrem amount inválido/overflow e boundary booleano.
+- CI #1059 (run `44379283925`) e #1060 (run `44379296088`) SUCCESS; última execução #1060 no HEAD `226909d5213a7b355d0c185207bf23d3b7def084`: 482 testes passaram e compileall passou.
+- Próximo passo: obter fixture real Mainnet com múltiplos swaps DAMM v2 que compartilhem a mesma conta wSOL. Até essa evidência existir, suporte multi-swap está comprovado apenas sinteticamente. Nenhuma ordem, BUY/SELL ou merge foi habilitado.
+
+
+## 190. CI Mainnet passa a reagir ao decoder wSOL — 18/11/2026
+
+- Identificada lacuna de automação: workflow `.github/workflows/damm-v2-mainnet-validation.yml` não era acionado quando apenas `solana_wrapped_sol_funding.py` mudava, pois o glob anterior cobria `solana_token_*.py`, mas não o decoder wSOL.
+- Corrigido o gatilho adicionando o caminho explícito `src/smart_money_radar/data_sources/solana_wrapped_sol_funding.py`. Commit `b46010b3290239b757abbb898206f632529173fd`.
+- A mudança disparou workflow de validação Mainnet #9 (run `44379455602`), inicialmente QUEUED. CI de testes #1061 (run `44379424567`) SUCCESS, com 482 testes e compileall aprovados (HEAD anterior documental `587bea2fb7857d94406837a6c71f38c29289475b`).
+- Próxima verificação imediata: aguardar workflow #9 e confirmar novamente a transação real DAMM v2 com status RECONCILED, funding 20.700 lamports e um bundle.
+
+- Workflow Mainnet #9 (run `44379455602`) SUCCESS após incluir o decoder wSOL nos gatilhos. Reexecutou a consulta RPC da transação real e confirmou novamente `status=RECONCILED`, `reconciliation_status=RECONCILED`, funding 20.700 lamports, índices de funding reportados e 1 bundle. Isso comprova que o workflow é disparado por mudanças no decoder e que a alteração de validação não quebrou o caminho Mainnet single-swap.
+
+
+## 191. Cobertura explícita para múltiplos calls DAMM v2 `swap2` — 18/11/2026
+
+- Revisada a cobertura do analyzer após consulta ao relatório de auditoria OtterSec para Meteora DAMM v2 (versão auditada 0.1.5; relatório publicado em 2025): o sumário registra que uma verificação de swap único podia ser contornada por chamadas `swap2`, permitindo múltiplos swaps na mesma transação. Referência pública: https://resources.cryptocompare.com/asset-management/21061/1762508237558.pdf
+- O decoder já reconhecia o discriminador `SWAP2_DISCRIMINATOR`, e o analyzer trata swaps por instrução. A lacuna encontrada era de teste explícito: a cobertura sequencial existente usava apenas o discriminador legado `swap`.
+- Adicionado teste `test_keeps_two_sequential_swap2_calls_as_two_matched_operations`: duas chamadas `swap2` dentro do mesmo grupo inner, cada uma seguida do seu próprio `EvtSwap2`, devem produzir duas associações MATCHED, preservando índices, nomes e amounts.
+- CI #1065 (run `44379857442`) SUCCESS no commit `49395fef9adb181b16c024837e04615b7efd93e8`: 483 testes passaram e compileall passou.
+- Esta evidência é sintética e cobre associação estrutural de duas instruções `swap2`; não é fixture Mainnet de dois swaps, nem valida por si só funding wSOL compartilhado em Mainnet. PR #25 permanece aberto/Draft; sem merge, BUY/SELL ou execução financeira.
+- Próximo passo: localizar e validar uma transação Mainnet que contenha pelo menos duas instruções DAMM v2 `swap2` e compartilhe a conta wSOL monitorada, caso exista dentro do conjunto de transações disponíveis.
+
+
+## 192. Scanner automatizado de Mainnet para múltiplos `swap2` com wSOL compartilhado — 18/11/2026
+
+- Criado `tools/scan_damm_v2_multi_swap_mainnet.py`: consulta até 30 assinaturas finalizadas recentes do programa DAMM v2 via RPC público, busca transações com pelo menos dois `swap2` associados a eventos e executa o pipeline completo nos candidatos. Só reporta `FOUND_SHARED_WSOL_MULTI_SWAP` quando o lote está RECONCILED e uma conta wSOL de entrada é compartilhada por pelo menos duas operações com funding identificado.
+- O scanner não persiste payload RAW, não envia ordens e não altera estado financeiro. Limite configurável de 1 a 100 transações; padrão 30.
+- Workflow `.github/workflows/damm-v2-mainnet-validation.yml` atualizado para executar a validação single-swap conhecida e, em seguida, a busca limitada; timeout aumentado para 10 minutos. Gatilho de push inclui o scanner.
+- Commits: scanner `9af21dad9644f4fd2138f9d3363737602ccbf5a7`; workflow `22dd1fb7971c6aaff378d721b6c817726163c50e`.
+- CI #1068 (run `44380902804`) e workflow Mainnet #10 (run `44380915218`) iniciados no momento do registro; resultados ainda não confirmados.
+- Critério de sucesso não é apenas encontrar múltiplos swaps: é necessário obter pipeline `RECONCILED` e evidência de funding wSOL compartilhado. Ausência de candidato no lote de 30 significa apenas que a busca limitada não encontrou exemplo, não que o padrão não exista.
+- PR #25 permanece OPEN/DRAFT, sem merge. Nenhuma classificação BUY/SELL ou execução financeira habilitada.
+
+
+## 193. Primeiras transações Mainnet com dois `swap2` identificadas — 18/11/2026
+
+- Scanner Mainnet #18 (run `44381409652`) SUCCESS: 100 assinaturas finalizadas do programa DAMM v2 consultadas, sem falhas de RPC. Foram identificadas quatro transações com duas associações `swap2` MATCHED:
+  - `3TzUJxV7tGnFHgNwRmDiSpw6jUcjZ52kA7NxH7FWezVMm3MC632tKnRPZ86jPd2oNhtPtj4vbPf4gkqQBxRGHXRx` — slot 471052307.
+  - `3jYsMveuktP9k5UZ1NkyiVmQqtKs4Yfo6rGRPSc4PybzsnMdvPSZDxjwvdgjHPmbm41WDZnuqMzuXXzED99f6tyB` — slot 471052306.
+  - `2yw6Lmw6V6DFDw9vvdb9vo3WhY7jyHRK5nTsitJpt6QuDx9styWVZzX7BNfabCZbHrFuwqukTVe2TFAKyQkmWuSa` — slot 471052305.
+  - `4e2PXZqk2eHSdqRyYvy8472e7n12KC9of7M36tu1UcRULFZYB48xAUvhQBFqMzivWfShPLsx7fcU5vrFRRQrNqW3` — slot 471052305.
+- A varredura posterior #21 (run `44381547015`) também consultou 100 assinaturas sem falhas e encontrou quatro transações multi-swap recentes, slots 471052584–471052586. Todas foram rejeitadas pelo pipeline com o mesmo motivo: `reconciliação econômica INCOMPLETE: funding SOL agregado diverge do valor bruto total das transferências wSOL`.
+- A evidência comprova que transações Mainnet com múltiplos `swap2` existem, mas ainda não comprova que o padrão específico de funding compartilhado seja compatível com o decoder atual. Não relaxar validação econômica. Próximo passo: inspecionar detalhadamente uma transação candidata, incluindo instruções SystemProgram, SyncNative, transferências wSOL e deltas de saldo.
+- Foi incluído diagnóstico `pipeline_reason` no scanner e uma etapa de inspeção dedicada para a primeira candidata `78AuFWUBHsF6P8XgdzFsrz7XRuErsdcMzysRxq845zjTqQ9b7jeVcLd9obwJyL8MSJMTkV9WcRrnTPfPtgTq5UK` (slot 471052586); workflow #22 (run `44381696357`) ainda em execução no momento deste registro.
+- Scanner aceita transaction version 1, usa RPC PublicNode como endpoint primário configurado e Solana Labs como fallback; limite atual 100 assinaturas. O fluxo de validação conhecida single-swap segue aprovado.
+- CI #1068 (run `44380902804`) SUCCESS: 483 testes e compileall aprovados. PR #25 continua OPEN/DRAFT, sem merge; BUY/SELL e execução financeira permanecem desabilitados.
+
+
+## 194. Inspeção da candidata Mainnet e filtro de reutilização wSOL — 18/11/2026
+
+- Workflow Mainnet #22 (run `44381696357`) executou a inspeção detalhada da assinatura `78AuFWUBHsF6P8XgdzFsrz7XRuErsdcMzysRxq845zjTqQ9b7jeVcLd9obwJyL8MSJMTkV9WcRrnTPfPtgTq5UK`, slot 471052586. O pipeline encontrou 2 associações MATCHED e 2 transfer evidences ATTRIBUTED, mas a reconciliação permaneceu INCOMPLETE.
+- Causa observada: o primeiro swap usa a conta wSOL `GBiDcPGFHF461LfDVEDn2yX5yPVEFCi59mXdppBSME7z` como input; o segundo swap usa a conta do outro token como input e devolve wSOL à conta `GBiDc...`. Portanto, é um round-trip em sentidos opostos, não duas operações com a mesma conta wSOL como input.
+- A instrução SystemProgram observada no índice 5 transfere SOL de `GEUDKx63wXKrn7ognB2gkmy8YRNkVF1hgS4sBEg9nZVm` para `FDA2o2DWbFhRHsETEzuty7M87JRLQ9XSfMowByyJr3eX`, seguida de SyncNative no índice 6. Isso não demonstra funding da conta wSOL input `GBiDc...` pela carteira monitorada `HFvU7JH5GbWSASkdjrjhtbKKyG2bpx9Rh8ZfNH8PiciX`. A divergência de funding é corretamente rejeitada; não alterar a regra econômica para aceitar esse padrão.
+- Scanner atualizado no commit `56ef7d4a827c11b843a36bd633994deb01026283` para distinguir: (a) mesma conta wSOL reutilizada como input em duas ou mais operações; (b) conta wSOL com funding identificado. Só reportará FOUND quando ambas as condições estiverem comprovadas e o pipeline estiver RECONCILED.
+- Workflow #22 manteve a validação conhecida single-swap e o scanner de 100 assinaturas com sucesso; a etapa dedicada de inspeção da candidata retornou REJECTED como esperado (continue-on-error).
+- Próximo passo: executar a nova varredura e identificar se alguma transação Mainnet recente realmente reutiliza a mesma conta wSOL como input em múltiplos `swap2`. Não há ainda validação Mainnet desse padrão específico.
+
+
+## 195. Varredura paginada Mainnet e padrão round-trip compartilhado — 18/11/2026
+
+- Scanner Mainnet #28 (run `44382687365`, commit scanner `0c2fbfd93a50b839cdbb6cbb376e695abc1e1c69`) concluiu SUCCESS após consultar 3 páginas de 100 assinaturas: 300 transações inspecionadas, sem falhas de RPC; uma transação foi ignorada pela análise por erro de comprimento de instrução não compatível (`swap exige 24 bytes`).
+- Foram encontradas 16 transações com duas chamadas `swap2` MATCHED. As 16 mostram o mesmo padrão estrutural: o swap 1 usa uma conta wSOL como input e o swap 2 usa uma conta do token adquirido como input, devolvendo wSOL à conta original. Portanto, há reutilização da conta wSOL entre operações em sentidos opostos (round-trip), mas não duas entradas wSOL pela mesma conta.
+- Primeira candidata para inspeção detalhada: `4cm2yJUSTzevqYAh5N9vknk2jCmocwgbrJR2s7CiPp8DPCuBBgyMqxKU6qk7F5YSdtLDTJpneRrz4TTn7odqDy6k`, slot 471054827. O pipeline marcou REJECTED por divergência entre funding SOL agregado e valor bruto das transferências wSOL; ainda não é caso reconciliado e não autoriza alterar regras.
+- Scanner passou a paginar por cursor `before`, 3 páginas × 100 (limite 1–10 páginas; 1–100 por página), aceita transaction version 1, e inclui direção de input/output por swap no relatório. As falhas dos runs #25–#27 foram erros de sintaxe/encaminhamento dos argumentos de paginação, corrigidos e verificados pelo sucesso do run #28.
+- CI #1084 (run `44382709318`) SUCCESS: 483 testes e compileall aprovados.
+- Workflow Mainnet #29 (run `44382931922`) está inspecionando a candidata acima com a etapa detalhada; scanner paginado também executa. O workflow foi atualizado para apontar a assinatura `4cm2y...`.
+- Conclusão provisória: o padrão real observado em 16/16 candidatas é round-trip de wSOL, não funding múltiplo para mesma conta. Próximo passo é examinar instruções de funding, SyncNative, transferências SPL e deltas da candidata #29 para explicar a divergência econômica. Manter fail-closed; não ativar BUY/SELL ou execução financeira.
+
+
+## 196. Candidata Mainnet revela ciclo wSOL create/fund/swap/close/recreate/swap/close — 18/11/2026
+
+- Workflow Mainnet #29 (run `44382931922`) SUCCESS: validação conhecida single-swap, inspeção detalhada da candidata e scanner paginado concluíram. Candidata inspecionada: `4cm2yJUSTzevqYAh5N9vknk2jCmocwgbrJR2s7CiPp8DPCuBBgyMqxKU6qk7F5YSdtLDTJpneRrz4TTn7odqDy6k`, slot 471054827.
+- Pipeline: 2 associações swap/`EvtSwap2` MATCHED e 2 transfer evidences ATTRIBUTED. Reconciliação permanece INCOMPLETE; bundles = 0; nenhuma classificação/execução.
+- Evidência estrutural observada para a mesma ATA wSOL `6gWbcXGP9SDcFxK14T8SeCcitSqoLTir3GxoHVfqLwrs` e carteira monitorada `8mgqGQqRr75muaiSkimDAL91QcGv4dQujFfNXc3pRXdY`:
+  1. ATA wSOL criada no índice externo 1.
+  2. SystemProgram transfer no índice 3 da carteira monitorada para a ATA wSOL: `5,253,182,520` lamports.
+  3. SyncNative no índice 4.
+  4. Primeiro swap no índice 5 consome `5,092,426,526` lamports-equivalentes de wSOL da ATA.
+  5. Token Program CloseAccount no índice 6 fecha a ATA e devolve o saldo restante à carteira.
+  6. ATA wSOL criada novamente no índice 8.
+  7. Segundo swap no índice 9 envia `5,091,426,733` wSOL para a mesma ATA.
+  8. Token Program CloseAccount no índice 10 fecha novamente a ATA e devolve o saldo à carteira.
+- Diferença funding menos input do primeiro swap: `160,755,994` lamports, que permanece na ATA antes do primeiro fechamento. O segundo swap devolve `5,091,426,733` wSOL antes do segundo fechamento. A conta tem pre/post lamports agregados iguais a zero porque é criada e fechada dentro da mesma transação; snapshots simples pre/post não capturam os saldos intermediários.
+- Causa da rejeição atual: o decoder wSOL exige que o total de SystemProgram funding seja exatamente igual ao gross input wSOL e não modela saldos residuais devolvidos por CloseAccount nem ciclos repetidos de criação/fechamento da mesma ATA. O fail-closed atual é correto; não relaxar igualdade nem aceitar apenas pela presença de CloseAccount.
+- Próximo trabalho técnico: projetar evidência de lifecycle wSOL por ciclo, reconstruindo funding, SyncNative, transferências SPL atribuídas e CloseAccount (conta, autoridade e destino), incluindo ATA recriada na mesma transação. Exigir fechamento para a carteira monitorada e balanço completo de cada ciclo; criar fixtures sintéticas antes de validar qualquer novo padrão Mainnet.
+- Scanner paginado #28 confirmou 16 transações multi-swap entre 300 inspecionadas; as 16 candidatas exibem round-trip da mesma conta wSOL (input no primeiro swap, output no segundo), não duas entradas wSOL independentes. CI #1084 SUCCESS: 483 testes e compileall.
+- PR #25 continua OPEN/DRAFT e sem merge. Não habilitar BUY/SELL, ordens ou execução financeira.
+
+
+## 197. Primeiro round-trip wSOL multi-swap real totalmente reconciliado — 18/11/2026
+
+- Mainnet workflow #40 (run `44386175898`, commit `eb1d7562ebab4a70a064f776464f8ae6fbc12925`) SUCCESS em todas as etapas: validação conhecida, inspeção dedicada da candidata real e scanner paginado.
+- Transação real `4cm2yJUSTzevqYAh5N9vknk2jCmocwgbrJR2s7CiPp8DPCuBBgyMqxKU6qk7F5YSdtLDTJpneRrz4TTn7odqDy6k`, slot 471054827: pipeline `RECONCILED`, 2 associações MATCHED, 2 transferências ATTRIBUTED, 1 evidência lifecycle wSOL e 2 bundles de domínio gerados. Classificações permanecem `UNKNOWN` nas duas operações.
+- Lifecycle Mainnet comprovado para ATA `6gWbcXGP9SDcFxK14T8SeCcitSqoLTir3GxoHVfqLwrs`, carteira `8mgqGQqRr75muaiSkimDAL91QcGv4dQujFfNXc3pRXdY`: create [1,8], SystemProgram funding [3], SyncNative [4], transferências SPL [(5,0),(9,1)], CloseAccount [6,10], funding total 5,253,182,520 lamports, saldos reconstruídos antes dos closes [160,755,994; 5,091,426,733], delta agregado de lamports 0.
+- O adaptador de domínio foi ajustado para aceitar a propriedade da token account wSOL comprovada por ATA create + CloseAccount (destino e autoridade = carteira monitorada), quando a conta efêmera não possui delta pre/post. Contas não-wSOL continuam exigindo snapshots/owner; sem lifecycle comprovado, a ausência de delta continua bloqueando.
+- O scanner passou a reconhecer compartilhamento wSOL entre operações por qualquer papel input/output e só reporta sucesso quando o pipeline está RECONCILED e a conta tem funding/lifecycle comprovado.
+- Na mesma execução #40, o scanner encontrou outra transação real: `634xz2RekctQ8hSoe7h3YF5jugtNy9ADeR7c5xJCZjKNvkwoBcBKX2euswtzVLo2hzpcmPEFsRyD5NQuKw1huiPk`, slot 471060124. Após 23 transações inspecionadas, sem falhas de RPC, encontrou 2 swaps MATCHED, pipeline RECONCILED, e a mesma conta wSOL `GqKhpve2sYDBjEhZQGttGUGrYf621gNrXmGv4oEZ9Cf6` usada como input na operação 0 e output na operação 1; lifecycle reconhecido e funding reconciliado.
+- Teste end-to-end sintético novo confirma que duas operações round-trip com a ATA wSOL fechada/recriada reconciliam, excluindo apenas a conta efêmera do delta pre/post depois de reconstruir ambos os ciclos. Testes diretos também rejeitam saldo negativo, CloseAccount para outra carteira e transferências não atribuídas.
+- CI #1113 (run `44386188482`) SUCCESS: 488 testes e compileall. CI #1116 (commit `5fadcd54807699f798f0ef930b8069eb0e7a7cc9`) está validando o teste adicional de ownership lifecycle; o run #1115 teve apenas uma falha de texto na asserção do teste, corrigida no commit #1116.
+- PR #25 permanece OPEN/DRAFT e sem merge. Nenhuma ordem financeira é executada; BUY/SELL continua `UNKNOWN`.
+
+
+## 198. Duas validações Mainnet dedicadas + terceira candidata reconciliada — 18/11/2026
+
+- CI #1116 (run `44386374012`) SUCCESS: 489 testes aprovados em 4,181s e compileall aprovado. CI #1118 (run `44386493363`) SUCCESS: 489 testes e compileall novamente aprovados.
+- Mainnet workflow #41 (run `44386586818`, commit workflow `5076bf42f52d6d8ce6dc126945ff88674b46a5f0`) SUCCESS em todas as quatro etapas: transação conhecida single-swap, primeira candidata multi-swap, segunda candidata multi-swap e scanner paginado.
+- A etapa dedicada para a primeira candidata `4cm2yJUSTzevqYAh5N9vknk2jCmocwgbrJR2s7CiPp8DPCuBBgyMqxKU6qk7F5YSdtLDTJpneRrz4TTn7odqDy6k` (slot 471054827) retornou `RECONCILED`, 2 bundles, classificação `UNKNOWN` para ambas.
+- A etapa dedicada para a segunda candidata `634xz2RekctQ8hSoe7h3YF5jugtNy9ADeR7c5xJCZjKNvkwoBcBKX2euswtzVLo2hzpcmPEFsRyD5NQuKw1huiPk` (slot 471060124) também retornou `RECONCILED`, 2 swaps e 2 bundles; carteira monitorada `EpKbgf77ZKP44uxhFe8t3PiMDAmY1ap7qSaigRjWyW8k`.
+- O scanner da mesma execução encontrou terceira transação `4WpBm6HHVpUv6hXGZgf4meZ2HrAu4pUBC9ufREVvqf2y4X6eiGGdKT9gu8uZaNUPwVdVPX3AHBxaeJ23bftpGMGq`, slot 471060788, após 6 transações inspecionadas e zero falhas RPC. Resultado: 2 `swap2` MATCHED, pipeline `RECONCILED`, mesma ATA wSOL `9v94Hevy89f57EY4LEPWVE843mvgkMbRTgZxhhJ5SFqo` usada como input na operação 0 e output na operação 1, lifecycle reconhecido.
+- O scanner interrompe a busca após encontrar uma candidata totalmente reconciliada; por isso `inspected=6` não representa varredura integral de 300 nesse run.
+- Conclusão técnica: lifecycle wSOL create/fund/SyncNative/swap/CloseAccount/recreate/swap/CloseAccount agora tem (a) teste unitário direto, (b) teste de reconciliação econômica em lote, (c) teste do adaptador de domínio com prova de propriedade lifecycle e (d) validação real Mainnet em duas transações dedicadas, além de terceira candidata confirmada pelo scanner.
+- PR #25 continua OPEN/DRAFT, sem merge. Classificação BUY/SELL segue `UNKNOWN`; nenhum sinal, ordem ou execução financeira foi habilitado.
+
+
+## 199. Confirmação final após ajuste de evidência e reconciliação — 18/11/2026
+
+- Mainnet workflow #42 (run `44386963957`, commit de workflow `63f3b66bc8c1715fb110bb58cf8f4d5441683d34`) SUCCESS em todas as etapas: transação single-swap conhecida, duas transações multi-swap dedicadas e scanner paginado.
+- CI #1121 (run `44386963977`) SUCCESS: 489 testes aprovados em 3,900s e compileall aprovado.
+- Texto de evidência do domínio e motivo de reconciliação agora descrevem corretamente snapshots pre/post **e** lifecycle wSOL quando aplicável, sem sugerir que toda conta efêmera tem delta observável.
+- PR #25 permanece OPEN/DRAFT, sem merge; head atualizado pelos commits desta etapa. BUY/SELL permanece UNKNOWN e execução financeira desabilitada.
+
+
+## 200. Retry idempotente após falha parcial de múltiplos bundles — 18/11/2026
+
+- Na branch da PR #25 foi adicionado o teste `test_partial_multi_bundle_write_retries_idempotently_after_second_bundle_failure` em `tests/test_damm_v2_persistence_pipeline.py`.
+- O teste usa `SQLiteEventStore` real e injeta uma falha única na segunda chamada de `save_swap_bundle`: comprova que o primeiro bundle permanece persistido, o segundo não é gravado, a assinatura continua pendente e o checkpoint não avança.
+- No replay, a reconciliação retorna os mesmos dois bundles; o primeiro é tratado idempotentemente (sem duplicação) e o segundo é persistido. O resultado final fica `reconciled`, com dois bundles disponíveis e sem avanço indevido de checkpoint.
+- A primeira execução do teste falhou porque o replay de fixture vazia retornou `no_damm_v2_swaps`; a simulação foi corrigida para devolver novamente o resultado reconciliado, mantendo a falha de persistência real na primeira tentativa.
+- Commit final: `45ab617686d663bbd653b99f697cec21d3811b34`.
+- CI #44410732347 SUCCESS no commit final: 490 testes aprovados em 3,901s; `compileall -q src tests` aprovado. O log identifica explicitamente o novo teste como `ok`.
+- Limite da evidência: esta cobertura exercita a orquestração de persistência/retry com contratos de bundle sintéticos e SQLite real; não substitui teste Mainnet nem fixture de dois swaps decodificados/reconciliados ponta a ponta.
+- PR #25 permanece OPEN/DRAFT, sem merge. A `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
+- Próxima ação: ampliar a integração DAMM v2 multi-swap entre analyzer, reconciliação econômica, adapter de domínio e persistência, mantendo identidade individual por instrução/CPI e fail-closed.
+
+
+## 201. Persistência independente de dois bundles DAMM v2 no mesmo lote — 18/11/2026
+
+- Adicionado em `tests/test_damm_v2_swap_domain_adapter.py` o teste `test_builds_and_persists_two_distinct_swap2_bundles_from_one_reconciled_batch`.
+- O teste entrega ao adapter dois contextos de swap distintos (instruções 2 e 3, caminhos CPI independentes), evidências de transferências atribuídas, deltas agregados completos e lote econômico `RECONCILED` com duas operações.
+- O adapter deve gerar dois operation IDs distintos, preservar a identidade de cada instrução e manter classificação `UNKNOWN`; ambos os bundles são persistidos e lidos de volta pelo SQLiteEventStore real. Regravar cada bundle idêntico deve retornar idempotentemente `False`, sem duplicação.
+- CI #44411090198 SUCCESS no commit `d5f8df8a8f3bc9061aba3cab72c07e1e8efe35d9`: 491 testes aprovados em 4,213s; compileall aprovado. O log identifica o novo teste como `ok`.
+- Limite da evidência: contextos/evidências/deltas do teste são construídos em fixture sintética. A associação real de duas chamadas `swap2` já possui teste separado no analyzer, e Mainnet já validou transações multi-swap; ainda falta um teste único de integração que atravesse analyzer, decodificação de contas/transferências, reconciliação, adapter e persistência usando o mesmo payload.
+- PR #25 permanece OPEN/DRAFT, sem merge; `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
+- Próxima ação: fechar a lacuna com integração de ponta a ponta DAMM v2 multi-swap em fixture RPC determinística, mantendo bloqueio integral quando qualquer swap do lote não reconciliar.
+
+
+## 202. Integração fail-closed de duas chamadas swap2 até a persistência — 18/11/2026
+
+- Adicionado em `tests/test_damm_v2_persistence_pipeline.py` o teste `test_two_real_swap2_associations_block_entire_batch_when_second_account_decode_fails`.
+- O teste constrói um payload RPC sintético realista com duas chamadas DAMM v2 `swap2` sequenciais e dois eventos `EvtSwap2`; o analyzer associa ambas como operações distintas.
+- A primeira instrução possui inventário de contas válido e a segunda é deliberadamente incompleta. O pipeline real percorre associação e início da resolução de contas, rejeita o lote inteiro e não produz bundle parcial.
+- A camada de persistência registra as duas operações como `INCOMPLETE`, mantém a assinatura pendente, não avança checkpoint e não persiste bundles.
+- A primeira execução PR no commit intermediário `2ac0d546986ffe19b69efa4329433a4665d28c3d` falhou somente porque o teste chamou um método inexistente `list_swap_bundles`. A asserção foi corrigida para consultar `get_swap_bundle` por operation ID; a execução push no commit `edd74ca385c7e294635351ec0a79249205fbd49a` passou.
+- CI push #44411418961 SUCCESS: 492 testes aprovados em 3,899s e compileall concluído. O log identifica o novo teste como `ok`.
+- Limite da evidência: o cenário de duas operações usa payload sintético e interrompe deliberadamente na resolução de contas da segunda operação. Não demonstra ainda o caminho de sucesso completo com duas operações passando por transferências, reconciliação econômica, adapter e SQLite no mesmo payload.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
+- Próxima ação: completar o fixture sintético de sucesso multi-swap com contas, transferências, snapshots/deltas e lifecycle quando aplicável, e passar o payload completo pelo pipeline de ponta a ponta.
+
+
+## 203. Integração ponta a ponta de duas operações DAMM v2 — 18/11/2026
+
+- Adicionada a fixture RPC sintética `_damm_two_swap2_reconciled_raw` em `tests/test_damm_v2_persistence_pipeline.py`, contendo duas chamadas `swap2` sequenciais, dois eventos `EvtSwap2`, listas de contas completas e independentes, quatro transferências `TransferChecked` (input/output por operação) e snapshots pre/post completos para as oito token accounts.
+- O teste `test_two_swap2_payload_runs_full_pipeline_and_persists_both_bundles` chama diretamente `process_damm_v2_observation`, sem mocks nas etapas internas. Portanto percorre o analyzer, associação evento/instrução, decoder de contas, decoder de transferências, atribuição CPI, decoder de deltas, reconciliação econômica do lote, adapter de domínio e persistência SQLite.
+- Resultado comprovado: `reconciled`; 2 swaps decodificados; 2 reconciliados; 0 unresolved; 2 bundles persistidos; 2 tentativas `MATCHED`; IDs de operação distintos; ambos os bundles recuperados do SQLite e classificados `UNKNOWN`; lote liberado para a próxima venue.
+- Durante a construção, a primeira fixture falhou porque os campos `included_transfer_fee_amount_in/out` do evento estavam zerados, apesar dos valores de swap serem 100/90. O log expôs a divergência; a fixture foi corrigida para codificar 100/90/90, conforme o layout do decoder. A execução final não usa mocks para mascarar a reconciliação.
+- CI push #44411969562 SUCCESS no commit `1ffb850856328835903371165e8bcb739bbac28d`: 493 testes aprovados em 4,176s; `compileall` concluído. O log identifica o novo teste como `ok`.
+- O cenário de sucesso é uma fixture RPC sintética determinística, não uma captura Mainnet integral. As evidências Mainnet existentes continuam documentadas nas seções anteriores; não confundir os dois níveis de validação.
+- PR #25 permanece OPEN/DRAFT e sem merge. A `main` não foi alterada. BUY/SELL continua `UNKNOWN`; execução financeira permanece desabilitada.
+- Próxima ação: acrescentar o teste negativo complementar com duas operações em que ambas as contas/transferências são decodificáveis, mas a reconciliação econômica de apenas uma falha; comprovar que nenhum bundle do lote é persistido e que a venue seguinte/checkpoint continuam bloqueados.
+
+
+## 204. Falha econômica isolada bloqueia os dois swaps do lote — 18/11/2026
+
+- Adicionado `test_two_swap2_economic_mismatch_blocks_both_bundles_and_next_venue`, reutilizando a fixture RPC ponta a ponta de duas operações já validada na seção 203.
+- A segunda operação mantém analyzer, contas e transferências decodificáveis; apenas o snapshot post da token account de saída da segunda operação é alterado em uma unidade mínima (delta esperado 90, observado 89).
+- O pipeline executa as etapas reais e a reconciliação econômica rejeita o lote completo: `pending_reconciliation`, 2 swaps decodificados, 0 reconciliados, 2 unresolved, 0 bundles salvos e `ready_for_next_venue=False`.
+- O teste confirma duas tentativas `INCOMPLETE`, ausência de bundle para ambos os operation IDs, assinatura não processada e checkpoint inexistente. Assim, uma divergência econômica em apenas uma das operações impede que qualquer operação do lote seja liberada.
+- CI push #44412231534 SUCCESS e CI PR #44412243276 SUCCESS no commit `a3a40ddb3cb45dbd0e3986986ce98e058c792e2c`: 494 testes aprovados em 3,902s e `compileall` concluído. Ambos os novos testes (sucesso completo e falha econômica) aparecem como `ok`.
+- Evidência permanece em fixture RPC sintética determinística; não equivale a captura Mainnet completa.
+- PR #25 permanece OPEN/DRAFT, sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
+- Próxima ação: reforçar a fronteira de coordenação do WalletMonitor em teste de integração, provando que `ready_for_next_venue=False` impede execução da venue CPMM e preserva checkpoint quando a reconciliação multi-swap DAMM v2 falha.
+
+
+## 205. WalletMonitor integrado ao lote multi-swap com falha econômica — 18/11/2026
+
+- Adicionado `test_wallet_monitor_blocks_cpmm_on_real_two_swap_economic_mismatch` em `tests/test_damm_v2_persistence_pipeline.py`.
+- O teste usa o payload RPC sintético completo de duas operações e o SQLiteEventStore real; o snapshot de saída da segunda operação contém divergência de uma unidade mínima.
+- Executa `WalletMonitor._collect_transaction` de verdade. A chamada DAMM v2 percorre analyzer, contas, transferências, snapshots e reconciliação; a falha econômica do lote retorna `ready_for_next_venue=False`.
+- CPMM é substituído apenas por um spy para comprovar a fronteira de coordenação: `process_raydium_cpmm_observation` não é chamado.
+- Verificações aprovadas: método retorna False; duas tentativas permanecem INCOMPLETE; assinatura não é marcada como processada; checkpoint continua inexistente; assinatura permanece na fila pendente.
+- CI push #44412408828 SUCCESS no commit `1b97635b615753f32614deeeb7ccf4d132fdb776`: 495 testes aprovados em 3,905s e `compileall` concluído. Log registra a mensagem de bloqueio do monitor: 0/2 swaps reconciliados, 2 pendências, checkpoint preservado.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
+- Próxima ação: validar também o fluxo positivo no WalletMonitor com dois swaps reconciliados, comprovando que CPMM só é chamado depois da persistência bem-sucedida de ambos os bundles; depois revisar os checks da PR no head atual.
+
+
+## 206. WalletMonitor libera CPMM somente após persistir os dois bundles DAMM v2 — 18/11/2026
+
+- Adicionado `test_wallet_monitor_calls_cpmm_only_after_both_damm_bundles_persist`, usando o payload RPC sintético completo de duas operações da seção 203 e SQLiteEventStore real.
+- O teste executa `WalletMonitor._collect_transaction` sem mockar o processamento DAMM v2. O CPMM é substituído por um spy com retorno controlado apenas para observar a fronteira e permitir concluir o fluxo.
+- Dentro do spy, o teste consulta o SQLite e exige duas tentativas de reconciliação e dois bundles já persistidos antes da chamada CPMM. A verificação passou.
+- Resultado: WalletMonitor retorna sucesso; CPMM chamado exatamente uma vez; ambos os bundles continuam recuperáveis no SQLite. O teste negativo da seção 205 continua provando que, diante de divergência econômica, CPMM não é chamado.
+- CI push #44412568453 SUCCESS no commit `8f32b2323f52a7c9c81c7e3d72a58df3d31c371f`: 496 testes aprovados em 5,487s; `compileall` concluído. O novo teste positivo aparece como `ok`.
+- O fluxo de CPMM neste teste é um spy, não uma execução real do parser CPMM; a prova cobre a ordem e a condição de entrada na próxima venue.
+- PR #25 permanece OPEN/DRAFT, sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
+- Próxima ação: auditar os checks associados ao head da PR, consolidar a documentação de continuidade e então avançar para cobertura de replay/idempotência do lote completo após falha transitória de persistência.
+
+
+## 207. Replay ponta a ponta após falha transitória no segundo bundle — 18/11/2026
+
+- Adicionado `test_full_two_swap_pipeline_retries_after_transient_second_bundle_write_failure`, usando a fixture de sucesso multi-swap e o pipeline real sem mocks nas etapas de análise, transferência, reconciliação ou adapter.
+- O SQLiteEventStore real grava o primeiro bundle e recebe uma falha transitória injetada somente na segunda chamada de `save_swap_bundle`.
+- Após a falha, o teste comprova: primeiro bundle presente; segundo ausente; duas tentativas de reconciliação registradas; assinatura não processada; checkpoint inexistente; assinatura pendente para replay.
+- O retry reexecuta o pipeline real. O primeiro bundle idêntico é reconhecido como idempotente; o segundo é gravado. Resultado final `reconciled`, 2 operações reconciliadas, 1 novo bundle salvo no retry e ambos recuperáveis no SQLite.
+- O histórico append-only contém quatro tentativas (duas por execução), mantendo os mesmos dois operation IDs. Nenhuma etapa depende de mock de `process_damm_v2_transaction`.
+- CI push #44412697052 SUCCESS e CI PR #44412708214 SUCCESS no commit `e0957323fcd3c22aef94d7ead1e1e1c03676caed`: 497 testes aprovados em 4,421s e `compileall` concluído. O novo teste aparece como `ok`.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` não foi alterada. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
+- Próxima ação: verificar os checks exigidos e a descrição da PR sem alterar seu estado, depois avançar para a próxima venue/integração somente após revisão de eventuais lacunas remanescentes.
+
+
+## 208. Coerência estrutural da fixture multi-swap: pools distintos — 18/11/2026
+
+- Durante a revisão crítica da fixture de sucesso multi-swap, foi identificado que as duas operações usavam a mesma chave de pool, embora tivessem vaults e mints diferentes. Isso era estruturalmente incoerente para duas instruções de pool.
+- A fixture `_damm_two_swap2_reconciled_raw` foi corrigida para gerar duas chaves de pool distintas a partir de bytes determinísticos e codificar exatamente os mesmos bytes no campo `pool` de cada evento `EvtSwap2`.
+- As contas de cada swap continuam independentes; agora cada conjunto de vaults/mints está associado ao seu próprio pool e a associação evento/conta é validada pelo decoder real.
+- CI push #44412971060 SUCCESS no commit `21a775a415fca2f75d98e6bb3bf2188c9dfafd80`: 497 testes aprovados em 4,233s; `compileall` concluído. Os testes de pipeline completo e replay idempotente continuam aprovados.
+- A mudança é exclusivamente de fixture/teste; não altera lógica de produção. PR #25 segue Draft e sem merge; `main` permanece intacta.
+- Próxima ação: confirmar o check PR no HEAD atualizado e concluir revisão de escopo/base da PR sem mudar seu estado nem reescrever a descrição sem autorização.
+
+
+## 209. Evento EvtSwap2 com pool divergente bloqueia o lote multi-swap — 18/11/2026
+
+- Adicionado `test_multi_swap_event_pool_mismatch_blocks_entire_batch` à integração ponta a ponta.
+- O teste parte do payload RPC determinístico de duas operações e altera exclusivamente os 32 bytes do campo `pool` do primeiro evento EvtSwap2, no offset correto do layout Borsh (bytes 16–48 após wrapper Event CPI + discriminator).
+- A associação estrutural swap/Event continua presente; a divergência só é detectada na resolução real das contas, que exige igualdade entre `event.pool` e a conta pool da instrução DAMM v2.
+- O pipeline rejeita o lote inteiro: 2 swaps decodificados, 0 reconciliados, 2 unresolved, 0 bundles persistidos e `ready_for_next_venue=False`. O teste confirma tentativas INCOMPLETE, ausência dos dois bundles, assinatura não processada e checkpoint inexistente.
+- Primeira execução do teste falhou porque o teste alterava bytes 8–40, que pertencem ao discriminator/wrapper, e não ao campo pool. A inspeção do decoder confirmou o offset correto 16–48; a fixture foi corrigida e a nova execução passou.
+- CI push #44413649563 SUCCESS no commit `943a18f2208d5fba123207c7012d83a53a227175`: 498 testes aprovados em 4,147s; `compileall` concluído. O novo teste aparece como `ok`.
+- PR #25 segue OPEN/DRAFT e sem merge; `main` intacta. BUY/SELL permanece `UNKNOWN`; execução financeira desabilitada.
+- Próxima ação: verificar o check de PR no HEAD atual e aprofundar auditoria de evidências Mainnet, especialmente a correspondência de pool e contas para operações múltiplas reais.
+
+
+## 210. Auditoria das PRs empilhadas #23–#25 e correção dos testes da PR #24 — 18/11/2026
+
+- Confirmada a cadeia de dependências: PR #23 (`feat/damm-v2-economic-reconciliation`) → PR #24 (`feat/damm-v2-swap-domain-adapter`) → PR #25 (`feat/damm-v2-transaction-pipeline`). As 383 commits inicialmente exibidas na PR #25 são cumulativas em relação à base empilhada; a PR #25 altera 41 arquivos e não representa 383 commits exclusivos da etapa final.
+- PR #23 tinha um check antigo FAILURE. O job foi reexecutado sem alterar código e passou: run `44308645725`, tentativa 2, 374 testes aprovados em 3,995s e `compileall` concluído.
+- A reexecução da PR #24 revelou dois defeitos reais em `tests/test_damm_v2_swap_domain_adapter.py`: (1) import multilinha escrito literalmente com `\n`, causando SyntaxError; (2) ausência do import de `SQLiteEventStore`, causando NameError no teste de round-trip.
+- Corrigidos os dois defeitos diretamente na branch da PR #24. Commits: `d3f4b50710734e366c2afeb86374103aade81007` (import multilinha) e `58a19750672851a79e59d4cdfc953a37870e7769` (SQLiteEventStore).
+- CI push #44413972426 SUCCESS no commit `58a19750672851a79e59d4cdfc953a37870e7769`: 380 testes aprovados em 3,798s e `compileall` concluído.
+- PR #25 permanece OPEN/DRAFT, sem merge. Check PR no HEAD `7010960b0461bdf4d282df5c625ea6bf88b70717` passou com 498 testes em 4,179s e `compileall`. O teste novo de divergência de pool também aparece como `ok`.
+- As três PRs continuam Draft e nenhuma foi integrada à `main`. A PR #25 depende da atualização/integração ordenada das PRs anteriores; não executar merge fora da sequência aprovada.
+- Próxima ação: revisar se o head da PR #25 já contém integralmente os dois reparos da PR #24 e validar novamente o estado de mergeability/checks após a atualização da cadeia, sem alterar o estado Draft.
+
+
+## 211. Mainnet: scanner encontra lote DAMM v2 de dois swaps com wSOL compartilhado — 18/11/2026
+
+- Reauditado o workflow Mainnet #43, run `44386973078`, SUCCESS, commit executado `62952962818ebcbcb6c7ca36de3905c21a505d95`.
+- As três validações explícitas do workflow foram concluídas: transação conhecida, primeiro candidato real de round-trip wSOL e segundo candidato real de round-trip wSOL. Os dois candidatos de round-trip produziram duas associações `MATCHED`, status `RECONCILED` e 2 bundles cada.
+- O scanner consultou até 100 transações recentes, inspecionou 8 candidatas e reportou `failures: {}`. Encontrou `FOUND_SHARED_WSOL_MULTI_SWAP` na assinatura `3mJobQ63JnNPcHDXmrKypgZLJwXzNNQW1h9Ly7uP5wqkHMKb29BTMEGDq6w4nMe1GH32ZhhQdi9aEbzm5ktXFSNS`, slot 471061330.
+- Resultado Mainnet do scanner: `matched_swap2_count=2`, `pipeline_status=RECONCILED`; a operação 0 consome wSOL e produz o outro mint; a operação 1 consome esse mint e retorna wSOL.
+- A mesma token account wSOL `GYNxJEfFcqCz7t17b7fvJbcKbj1aBpka2LaqwNBguXaS` é usada como input da operação 0 e output da operação 1. O scanner a identifica como `reconciled_shared_wsol_accounts`, comprovando o round-trip compartilhado na mesma transação.
+- Essa validação percorre a resolução de contas por instrução/evento; a rotina `decode_damm_v2_swap_accounts` exige que o pool codificado em cada EvtSwap2 seja idêntico à conta pool da instrução correspondente. Portanto o status RECONCILED inclui a checagem de identidade de pool por operação, além da atribuição e reconciliação econômica.
+- O scanner Mainnet não encontrou input wSOL com funding externo nessa transação (`funded_shared_wsol_input_accounts=0`); trata-se de uma conta compartilhada no ciclo de duas operações, não de prova de um novo funding nativo.
+- As classificações de domínio permanecem `UNKNOWN`; essa validação não gera BUY/SELL nem ordens.
+- Evidência é Mainnet real e distinta das fixtures sintéticas da seção 203. PR #25 continua OPEN/DRAFT e sem merge; execução financeira desabilitada.
+- Próxima ação: aguardar e validar o CI da PR #25 no HEAD documental atualizado, depois revisar o próximo modo de transação real (multi-swap sem round-trip wSOL ou CPI aninhado) sem relaxar os critérios fail-closed.
+
+
+## 212. Cadeia empilhada #21–#25 com checks verdes — 18/11/2026
+
+- Revisados os checks dos cinco PRs abertos que formam a cadeia de transferências/fees → atribuição referral → reconciliação econômica → contratos de domínio → pipeline transacional.
+- PR #21, HEAD `62b3f54b717cf0e6675610b8b88bdfd8c542581d`: check `test` SUCCESS.
+- PR #22, HEAD `b350dca26a5bf0729f58b0770f07b85f5375b9e4`: check `test` SUCCESS.
+- PR #23, HEAD `947c056e01bfc7b22037e19e3600a5248a29e281`: reexecução de CI, run `44308645725`, tentativa 2 SUCCESS, 374 testes e compileall.
+- PR #24, HEAD `58a19750672851a79e59d4cdfc953a37870e7769`: CI push `44413972426` e CI PR `44413981201` SUCCESS, 380 testes e compileall. Os dois defeitos de import identificados na auditoria foram corrigidos.
+- PR #25, HEAD `558006c778d290d73463398a726e037e8535adcc`: CI PR `44414226876` SUCCESS, 498 testes em 3,916s e compileall; o novo teste de divergência do pool está aprovado.
+- Todas as cinco PRs permanecem OPEN/DRAFT e com mergeability disponível na última leitura. A cadeia ainda não foi integrada; nenhuma alteração foi feita na `main`.
+- A PR #25 contém os dois imports corrigidos do arquivo de teste da PR #24; foi verificado diretamente nos arquivos das duas branches.
+- Próxima ação: mapear o próximo nível de dependência da PR #21 e verificar se a branch-base Token-2022 está coberta por PR aberto/fechado e CI verde, para definir a sequência integral de integração sem saltar dependências.
+
+
+## 213. Mapeamento das dependências anteriores da cadeia CPMM → DAMM v2 — 18/11/2026
+
+- A auditoria foi estendida até as PRs que fornecem a base do pipeline atual. A cadeia de branches relevante é: #5 → #6 → #7 → #8 → #9 → #10 → #12 → #13 → #14 → #15 → #16 → #17 → #18 → #21 → #22 → #23 → #24 → #25.
+- PRs #5, #6, #7 e #8 estão abertas, não Draft, com mergeability limpa e checks SUCCESS nos respectivos HEADs.
+- PR #9 está aberta, não Draft e mergeable; não há check-run nem status associado ao HEAD `dfac8ce8734808f0a4cbe817b49c47ee7058bd80`. A PR #10, cuja base é exatamente a branch/HEAD da PR #9, possui CI SUCCESS; isso valida o conjunto integrado a jusante, mas não substitui um check direto registrado na PR #9.
+- PR #10 e #12 estão abertas, não Draft, mergeable e com checks SUCCESS.
+- PR #13 está aberta, não Draft, mergeable e com check SUCCESS. PRs #14–#18 estão abertas como Draft, mergeable e com checks SUCCESS.
+- PR #20 foi encerrada deliberadamente sem merge porque duplicava o decoder DAMM v2. A implementação canônica `damm_v2_decoder.py` já está presente na branch base da PR #18; o encerramento não removeu o decoder usado pelo pipeline atual.
+- PR #11 é uma linha independente baseada diretamente em `main`; não integra a cadeia de dependências da PR #25 e deve ser auditada separadamente.
+- As PRs #21–#25 permanecem como documentado na seção 212. Nenhuma integração foi realizada na `main`.
+- Próxima ação: consolidar uma tabela de prontidão por PR e apontar o único elo sem check direto (#9), sem disparar mudanças em branches antigas quando a validação downstream já cobre o código.
+
+
+## 214. Validação final da revisão de dependências e CI do HEAD atual — 18/11/2026
+
+- A cadeia da PR #25 foi mapeada até a raiz na `main`: #5 → #6 → #7 → #8 → #9 → #10 → #12 → #13 → #14 → #15 → #16 → #17 → #18 → #21 → #22 → #23 → #24 → #25. PR #11 é independente; PR #20 foi encerrada sem merge por duplicação do decoder.
+- Os checks dos HEADs #5–#8 e #10, #12–#18 e #21–#25 estão SUCCESS na última leitura. PR #9 não possui check-run próprio; o código está incluído na base da PR #10, cujo check está SUCCESS. Nenhuma dessas informações autoriza merge automático.
+- PR #23 recuperou o check com rerun (374 testes); PR #24 teve os dois defeitos de import corrigidos e agora passa (380 testes). PR #25 confirma diretamente os mesmos imports corrigidos em sua própria branch.
+- HEAD atual PR #25: `2457846846e37a77b6a4dcae3bed8d8187e7643c`. CI PR #44414530825 SUCCESS: 498 testes em 4,247s; `compileall` concluído.
+- PR #25 permanece OPEN/DRAFT, mergeable e sem merge. PRs anteriores continuam abertas conforme o estado individual; `main` permanece intacta.
+- O scanner Mainnet #43 identificou uma transação real de duas instruções `swap2` reconciliadas com uma conta wSOL compartilhada entre input da operação 0 e output da operação 1 (seção 211).
+- Próxima ação de engenharia: iniciar a cobertura de multi-swap DAMM v2 sem round-trip wSOL, separando o critério de descoberta do critério específico de wSOL; preservar a validação atual como regressão e não alterar o estado das PRs.
+
+
+## 215. Scanner Mainnet separado por padrão de wSOL e diagnóstico por assinatura — 18/11/2026
+
+- O scanner `tools/scan_damm_v2_multi_swap_mainnet.py` agora aceita `--target shared-wsol` (padrão anterior, mantido) e `--target non-shared-wsol`. Ambos só retornam FOUND quando o lote tem ao menos dois `swap2` MATCHED e o pipeline econômico retorna `RECONCILED`.
+- O workflow Mainnet agora executa as duas buscas: shared-wSOL com até 3 páginas de 100 assinaturas; non-shared-wSOL com 1 página de 100. A busca não compartilhada é limitada à amostra recente consultada; resultado vazio não prova inexistência global.
+- Adicionados testes unitários para: descoberta de multi-swap reconciliado sem wSOL compartilhado; preservação do comportamento padrão shared-wSOL; e retenção de assinatura/slot dos erros de análise enquanto o scanner continua para a próxima transação.
+- Run Mainnet #44415303991 SUCCESS no commit `22acf19ac86ab27db9f6223e33f4995bbffb4ba1`. As três validações de transações conhecidas passaram; a busca shared-wSOL inspecionou 98 transações, sem falhas, e encontrou `4dmHfTNPmK3qYmPSqwkcDhrK6rvGhmWNcRopWjEauif9v41j9aHfg1gFi9T6TkqiU84NzFGoKwE9rMRyt7bqLENt`, slot 471107678, com 2 swaps MATCHED e pipeline `RECONCILED`. A conta wSOL `Cj3i3MYyH7LSGmF377mpTFBuRKhJfkU3Lqc6rcV59BbM` é input da operação 0 e output da operação 1.
+- A busca non-shared-wSOL inspecionou 100 transações, sem falhas, e não encontrou candidato nessa amostra (`NO_NON_SHARED_WSOL_MULTI_SWAP_FOUND`, lista de candidatos vazia).
+- CI PR #44415313819 SUCCESS no commit `22acf19ac86ab27db9f6223e33f4995bbffb4ba1`: 501 testes aprovados em 3,897s e `compileall` concluído. O teste de captura de assinatura/slot de falhas está aprovado.
+- Uma execução intermediária no commit `9b90bb4e5e3057512f36cd67cea7a1d8e9fc9b86` falhou porque o retorno antecipado non-shared não incluía `failure_samples`; corrigido em `22acf19` e validado no CI atual.
+- Próxima ação: investigar as três assinaturas Mainnet anteriormente registradas com erro `swap exige 24 bytes` (slots 471107341–471107342), capturando o comprimento real e a instrução específica antes de decidir se são variantes legítimas, payloads malformados ou incompatibilidades do decoder. Não relaxar o fail-closed sem evidência do IDL/programa.
+
+
+## 216. Legacy swap com padding zero e referral self-account — Mainnet — 18/11/2026
+
+- O inspector confirmou três transações on-chain com discriminator legacy `swap` e dados maiores que 24 bytes: 25 bytes com trailing `00` em duas transações e 32 bytes com trailing oito zeros em uma. O source pinado do programa define `SwapParameters` como dois u64 (24 bytes incluindo discriminator); as transações Mainnet, porém, foram executadas com sucesso pelo programa.
+- O decoder agora aceita somente o comprimento base de 24 bytes ou até 8 bytes extras, desde que todos os bytes extras sejam zero. Os bytes de padding são preservados em `DammV2SwapInstruction.trailing_padding`. Padding não nulo ou maior que 8 bytes continua rejeitado. Isso não altera o decoder `swap2`, que mantém comprimento exato.
+- A validação Mainnet da assinatura `5ujkLBVBSF8EcQxKAnv3ie4hc5adBUBr8GYCRdfwYcdAank2dbcoA9ustGoUKUwrDDixrkrEVTBSwHFRfET8QtQT`, slot 471107342, passou a retornar `RECONCILED`, 1 bundle e classificação `UNKNOWN`.
+- A assinatura `4xYWgBV34xYGfm6KxRRsUKikqQoY596w9yx8S946XNLuixcYvaH3bS3wsLZpmJGaC7aQr6dpW8uirfDfXmV63aKt`, slot 471107342, agora é decodificada e atribuída, mas permanece `REJECTED` porque falta um lado de snapshot econômico. Nenhum bundle é persistido.
+- A assinatura mista `2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9`, slot 471107341, contém uma instrução `swap2` externa e uma instrução legacy `swap` via CPI. O validator agora aceita transações Solana versionadas até v1; as duas associações ficaram `MATCHED` e as duas evidências de transferência `ATTRIBUTED`.
+- A segunda operação da assinatura mista usa o mesmo token account para output e referral. Foram identificadas duas transferências do mesmo vault para a mesma conta: output principal de 84,396,359,546 unidades e referral de 71,448,140, exatamente o `referral_fee` do evento. O transfer analyzer agora usa o valor explícito do evento para selecionar a perna de referral e impede que a mesma transferência seja contada simultaneamente como output.
+- Teste unitário `test_referral_transfer_to_output_account_is_not_double_counted_as_output` aprovado. CI push #44417554448 SUCCESS: 504 testes em 4,134s e `compileall` concluído.
+- Mesmo após a atribuição correta, a assinatura mista permanece `REJECTED` com motivo explícito: `transfer fee Token-2022 de referral não está explícita nem no evento`. O RPC informa `fee_raw=null` para a transferência; sem prova da taxa Token-2022 histórica, a reconciliação econômica não é liberada e nenhum bundle é persistido. O bloqueio é intencional e fail-closed.
+- Mainnet workflow #44417554432 SUCCESS no commit `cde9893bf4714670eae7465008272dc3f780d465`. Check da PR #25 no mesmo HEAD: SUCCESS. PR permanece OPEN/DRAFT, sem merge; `main` intacta.
+- Próxima ação: investigar a taxa Token-2022 da transferência de referral sem inferir zero. Precisamos obter evidência histórica da configuração TransferFeeConfig/epoch ou uma fonte on-chain equivalente; até lá, manter o lote INCOMPLETE.
+
+
+## 217. Fonte histórica para TransferFeeConfig e cliente Helius Historical Accounts — 18/11/2026
+
+- A investigação identificou uma fonte capaz de resolver a lacuna sem reconstruir manualmente todas as instruções de alteração: Helius Historical Accounts API, método proprietário `getHistoricalAccountInfo`. A documentação oficial confirma leitura de estado de conta em slot e imediatamente após uma transação específica (`slot` + `transactionIndex`), com `lastUpdatedAt` indicando a escrita que produziu o estado.
+- A cobertura beta começa no slot `444959999` (07/09/2026); portanto, a transação bloqueada na seção 216, slot `471107341`, está dentro da janela publicada. A API é Mainnet-only e exige plano Business ou superior durante o beta; custo de créditos está anunciado como zero durante beta, sujeito a mudança. Não há chave/API key adicionada ao repositório.
+- Regra de consulta definida: buscar o estado do mint imediatamente **antes** da transação (mesmo slot e `transactionIndex - 1`; se índice zero, slot anterior) e, para auditoria, também o estado imediatamente depois. Decodificar `TransferFeeConfig` com o decoder offline já existente e selecionar `older_transfer_fee`/`newer_transfer_fee` pelo epoch comprovado. O `context.slot` da resposta não é usado como posição consultada; validar `lastUpdatedAt` para impedir aceitar estado posterior. Escritas fora de transação (`transactionIndex=null`) são ordenadas no fim do slot.
+- Implementado `src/smart_money_radar/data_sources/helius_historical_account.py`: cliente HTTPS somente leitura, valida envelope JSON-RPC, resposta, owner/dados base64 e posição `lastUpdatedAt`; trata conta ausente e erros sem ecoar detalhes do endpoint; oferece leitura antes da transação incluindo o caso de índice zero.
+- Implementados testes em `tests/test_helius_historical_account.py` para leitura em posição exata, leitura anterior com índice maior que zero, índice zero no slot anterior, rejeição de estado posterior, escrita não transacional no fim do mesmo slot, conta ausente, erro RPC e validações de entrada.
+- Commits na branch da PR #25: `5cd0643689d081e8c7eb3013de58c1f73c77f69c` (cliente), `464c2f19c61ab289d497bd7afcaff3653a4e82de` (testes), `83ea7010ed36bf19d16cdd5b53636c94de1c9b82` (ordenação de writes fora de transação) e `1350235a079c4f6a5d6f5db5aa9bee15270352fe` (teste de regressão).
+- CI `SMR tests` #1219, run `44419102189`, está em execução no HEAD `1350235a079c4f6a5d6f5db5aa9bee15270352fe`; aprovação ainda não confirmada. Execuções intermediárias #1215–#1218 também foram iniciadas por commits sequenciais e não substituem o resultado do HEAD final.
+- **Ainda não houve consulta histórica real**: faltam identificar o mint exato da transferência de referral e o `transactionIndex` da assinatura `2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9`, além de endpoint Helius com acesso ao beta. O cliente implementado ainda não está integrado ao pipeline econômico.
+- Nenhuma reconciliação foi liberada; o caso da seção 216 permanece bloqueado, sem bundle e sem checkpoint. PR #25 segue OPEN/DRAFT e sem merge; `main` intacta.
+- Próxima ação: validar CI #1219; em seguida obter `transactionIndex` e mint da transferência na transação bloqueada, executar a leitura histórica antes/depois e integrar o estado histórico ao cálculo de taxa sem aceitar configuração atual como prova.
+
+
+## 218. Localização determinística do transactionIndex — 18/11/2026
+
+- Criado `src/smart_money_radar/data_sources/solana_transaction_position.py` para consultar `getBlock` finalized e localizar a assinatura primária dentro da lista ordenada de transações, retornando índice zero-based do bloco.
+- O helper valida endpoint HTTPS, slot, assinatura, envelope JSON-RPC, lista de transações, assinatura primária e ausência de duplicidade. Suporta transações versionadas até v1.
+- Criado `tests/test_solana_transaction_position.py`, cobrindo índice zero-based, configuração da requisição, assinatura ausente/duplicada, resposta malformada, erro RPC e entradas inválidas.
+- CI #1224 (run `44419445767`) SUCCESS no commit `82215266ab171de5956fbc6223407ca5c6ed2217`; CI #1225 e #1226 foram disparados em commits subsequentes e seus estados devem ser consultados separadamente.
+- A descoberta do índice resolve uma entrada necessária para consultar o estado histórico imediatamente antes/depois da transação; ainda não foi obtida posição real da assinatura-alvo via RPC neste ambiente.
+
+
+## 219. Auditor histórico de TransferFeeConfig e withheld referral — 18/11/2026
+
+- Criado `tools/audit_token2022_referral_fee_historically.py`, ferramenta somente leitura que combina `getBlock`/transactionIndex, `getEpochSchedule`, Helius `getHistoricalAccountInfo`, decoder offline `TransferFeeConfig`/`TransferFeeAmount` e aritmética inteira de taxa.
+- A ferramenta consulta mint e referral token account antes e depois da transação, seleciona older/newer fee pelo epoch do slot, calcula a taxa esperada sobre o bruto e compara com o delta histórico de `withheld_amount` da conta referral. Se a configuração do mint mudar dentro da transação, se owners forem diferentes de Token-2022, se withheld diminuir ou se a taxa não coincidir, não reporta match.
+- A saída `HISTORICAL_FEE_MATCH` é apenas evidência de auditoria: `reconciliation_released` permanece false. A ferramenta não persiste bundles nem avança checkpoint.
+- Criados `tests/test_audit_token2022_referral_fee_historically.py` com cenários de epoch, match de withheld delta e mudança de configuração durante a transação.
+- A ferramenta exige `SMR_HELIUS_HISTORICAL_RPC_URL` ou `--historical-rpc-url`, além do RPC Solana padrão. Não há API key/segredo gravado no repositório.
+- CI #1227 (run `44419493138`) foi iniciado no HEAD `edf191f5a625ff0741577fcea1d7f13e7c91053e`; resultado ainda não confirmado no momento desta atualização.
+- **Pendência real:** executar a auditoria com a assinatura da seção 216, slot `471107341`, após obter mint, referral token account e bruto da transferência nos dados do validador, e dispor de endpoint Helius com acesso beta. Nenhum caso real foi reconciliado ainda; o bloqueio fail-closed continua.
+- PR #25 continua OPEN/DRAFT e sem merge; `main` intacta.
+
+
+## 220. Diagnóstico de conta referral compartilhada e auditoria agregada — 18/11/2026
+
+- A leitura dos logs Mainnet workflow #59 (`44417476130`) confirmou que a transação `2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9`, slot `471107341`, tem dois swaps, e o segundo tem `has_referral=true`, `referral_fee=71,448,140` raw. O pipeline retorna `REJECTED`, `INCOMPLETE`, sem bundles, por taxa Token-2022 de referral não explícita.
+- O diagnóstico Mainnet mostra que output e referral da segunda operação são transferências separadas, ambas do mint `GgGQzgwUBcPZddt4UFULRLeJK2WFhSyFY1VavYK4MCCc`, ambas com destino `DKfXG1ojeZzCgLuMiYJq7LD1RDVgeu7NHPLmsjgTjiRF`: output bruto `84,396,359,546` e referral bruto `71,448,140`. Esse é um caso de conta de destino compartilhada (self-referral).
+- Consequência importante: o delta histórico de `TransferFeeAmount.withheld_amount` nessa conta é agregado por conta/transação; não pode ser comparado somente com a taxa calculada sobre o valor referral. O auditor foi corrigido para aceitar múltiplos `--gross-amount-raw`, calcular a taxa de cada perna e comparar a soma com o delta withheld. Para este caso, o workflow passa ambos os valores.
+- Criado `tools/inspect_solana_transaction_position.py` para imprimir o transactionIndex zero-based. O workflow Mainnet foi atualizado para localizar esse índice no bloco finalized e para executar opcionalmente o auditor histórico quando o secret `SMR_HELIUS_HISTORICAL_RPC_URL` estiver configurado.
+- Workflow Mainnet #64 (run `44419766877`) foi iniciado para validar a nova etapa de posição e, se houver secret configurado, a consulta histórica. O índice real ainda aguarda saída do job.
+- CI de PR #25 #1229 (run `44419527316`) SUCCESS no HEAD `a79fb6941f5b06d101d64984d0cbb92ec0b7d6bb`: 521 testes em 3,907s e `compileall` concluído. O CI #1233 (run `44419758247`) está validando a alteração de agregação de taxas no commit `d8a7159ce9dbf4d62eda2c246e4a9b810c63f301`; resultado ainda não confirmado.
+- Nenhuma consulta histórica Helius foi comprovada até aqui. Sem secret de acesso beta, a etapa histórica será ignorada; o caso permanece bloqueado e não pode ser liberado.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` intacta.
+
+
+## 221. Robustez do workflow Mainnet e validação de testes após auditoria agregada — 18/11/2026
+
+- CI #1233 (run `44419758247`) SUCCESS no commit `d8a7159ce9dbf4d62eda2c246e4a9b810c63f301`: 521 testes em 3,994s e `compileall` concluído. CI #1235 (run `44419841383`) SUCCESS no commit `f06cfea906fe1d9cf86ee23d5f1ef49b32047a4c`; CI #1236 (run `44419861136`) SUCCESS no commit `5c2c0e21468a1239baaf690fc11b07f14f71d0d1`.
+- Mainnet #64 e #65 falharam antes das etapas de diagnóstico: primeiro o RPC público retornou HTTPError; após trocar para PublicNode, o endpoint não encontrou a transação baseline `1z8...`. Não é falha dos testes do cliente histórico; é limitação/indisponibilidade de dados no endpoint usado para a transação baseline.
+- Para que uma assinatura baseline indisponível não impeça os diagnósticos seguintes, a etapa `Validate known real Mainnet transaction` agora usa `continue-on-error: true`. O RPC padrão do workflow foi trocado para PublicNode, mantendo a mesma URL como fonte alternativa da coleta.
+- Mainnet #66 (run `44419926312`) foi disparado no commit `3b4065664949700ac8a137a1523c178b7068537a`; aguardando execução da etapa de posição transacional do caso bloqueado.
+- O secret `SMR_HELIUS_HISTORICAL_RPC_URL` não está configurado no ambiente GitHub (valor vazio confirmado nos logs). Portanto, a etapa de auditoria histórica fica condicionalmente ignorada até que o endpoint beta seja fornecido. Nenhuma chave foi publicada ou gravada no repositório.
+- Estado econômico do caso `2Zg...`: 2 swaps reconhecidos, segunda operação com referral bruto `71,448,140`; transferência de output `84,396,359,546` e referral são para a mesma conta/mint. A auditoria deve comparar o delta withheld agregado com as taxas calculadas de ambas as pernas. Sem consulta histórica real, permanece `INCOMPLETE`, sem bundles e sem avanço de checkpoint.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` intacta.
+
+
+## 222. Posição Mainnet real resolvida e auditoria pronta para execução — 18/11/2026
+
+- Mainnet workflow #66 (run `44419926312`) SUCCESS no commit `3b4065664949700ac8a137a1523c178b7068537a`. As validações baseline e dos dois candidatos wSOL passaram; as duas buscas de multi-swap terminaram; os três inspectors de instruções passaram; validação e diagnósticos legacy passaram; inspeção do mint atual terminou. A etapa opcional de histórico foi SKIPPED porque `SMR_HELIUS_HISTORICAL_RPC_URL` está vazio.
+- A etapa `Resolve exact transaction index for blocked Token-2022 referral case` localizou de forma independente no bloco finalized a posição da assinatura `2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9`: slot `471107341`, `transaction_index=144`.
+- Com a evidência já registrada na seção 220, os parâmetros exatos do auditor histórico são: mint `GgGQzgwUBcPZddt4UFULRLeJK2WFhSyFY1VavYK4MCCc`; conta referral/destino compartilhado `DKfXG1ojeZzCgLuMiYJq7LD1RDVgeu7NHPLmsjgTjiRF`; transferências brutas para essa conta `84,396,359,546` e `71,448,140`.
+- CI #1240 (run `44420031113`) SUCCESS no commit `06bd9ebfc04c7ebb45e53b3c1a1bcbf34727c86e`: 521 testes em 3,919s e `compileall` concluído. O teste de agregação agora usa duas transferências e confere o total de taxas retidas.
+- A lacuna restante deixou de ser desconhecimento de assinatura, slot, índice, mint ou conta: é exclusivamente acesso ao endpoint Helius Historical Accounts beta. Sem esse endpoint, não é possível obter os snapshots históricos pré/pós-transação e a taxa permanece sem comprovação.
+- Nenhuma reconciliação foi liberada para a assinatura bloqueada; continua sem bundles e sem avanço de checkpoint. PR #25 OPEN/DRAFT e sem merge; `main` intacta.
+- Próxima ação: configurar `SMR_HELIUS_HISTORICAL_RPC_URL` como secret do repositório com endpoint Helius Mainnet Business habilitado e executar a etapa opcional. Se não houver esse acesso, planejar fonte histórica alternativa sem substituir evidência histórica por estado atual.
+
+
+## 223. Prova automática de taxa Token-2022 zero e novo bloqueio cross-venue — 18/11/2026
+
+- A inspeção Mainnet do mint `GgGQzgwUBcPZddt4UFULRLeJK2WFhSyFY1VavYK4MCCc` confirmou owner Token-2022, snapshot finalized posterior ao slot alvo e `TransferFeeConfig` ausente. O source fixado do Token-2022 (`875693f53c77534b46f0d06bdf781430870f8177`) exige `unpack_uninitialized` para inicializar `TransferFeeConfig`; portanto, a extensão precisa ser inicializada antes de `InitializeMint` e não pode ser adicionada após a inicialização.
+- Criados `token2022_fee_absence_proof.py` e `token2022_fee_proof_resolver.py`. O resolver identifica referrals Token-2022 sem fee explícita, consulta o transactionIndex e o estado finalized atual do mint, exige transação bem-sucedida e transferência executada do mint, e só emite proof se a configuração estiver validamente ausente. Configuração presente, RPC indisponível, owner divergente ou snapshot anterior mantêm fail-closed.
+- A prova zero-fee foi integrada à reconciliação econômica, ao pipeline DAMM v2, à fronteira de persistência e ao `SwapEvidence`. O `WalletMonitor` recebe o resolver por injeção; o CLI de produção o habilita. A consulta de rede do resolver ocorre em thread separada, mas a persistência SQLite continua na thread proprietária da conexão.
+- Mainnet workflow #74 (run `44420976969`) SUCCESS no commit `e2157efe9e53dd44b5a4a00e00ca48864a273c85`. Para a transação `2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9`, slot `471107341`, índice `144`, o resolver gerou prova de taxa zero para o mint `GgGQ...`, snapshot slot `471118276`, fee `0` raw.
+- **O bloqueio Token-2022 foi resolvido para este mint.** A transação inteira ainda permanece `INCOMPLETE` por transferências não atribuídas que afetam contas do swap: (a) ix 4/inner 2, `DKfX...` → `69z...`, mint `GgGQ...`, `84,467,807,686` raw; (b) ix 5/inner 3, `99Ha...` → `6mc...`, mint wSOL, `696,189` raw. Nenhum bundle foi persistido para a transação mista.
+- O programa externo `4X3dGCFh63SyE2bNZdGUV7Rj5ukK1XgrxesoxyKQNiRN` aparece nas instruções posteriores, mas sua identificação como venue ainda não está comprovada. A saída da conta DKfX é uma perna downstream de outro fluxo de execução, não uma transferência DAMM v2 isolada. Próximo módulo: identificar o programa CPI/venue exato e construir reconciliação cross-venue para transferências entre swaps na mesma transação.
+- CI #1281 (run `44420976898`) SUCCESS no commit `e2157efe9e53dd44b5a4a00e00ca48864a273c85`: 529 testes em 3,923s e `compileall` concluído. O erro intermediário de SQLite thread-affinity foi corrigido mantendo a escrita SQLite na thread original e executando somente o resolver RPC em worker thread.
+- PR #25 permanece OPEN/DRAFT, sem merge; `main` intacta.
+
+
+## 224. Reconciliação cross-venue de rota CPI (PumpSwap + Meteora DLMM) — Mainnet — 18/11/2026
+
+- O decoder de transferências agora preserva `cpi_program_path` por instrução interna, reconstruído com `stackHeight` e a árvore de invocações; caminhos inválidos permanecem vazios/fail-closed. Teste dedicado cobre a cadeia router → programa de venue → Token program.
+- Identificada na transação real `2ZgHqn...` a rota de execução: programa externo `4X3d...`; CPI PumpSwap `pAMM...` / `6EF8...` (outer instruction 4); CPI Meteora DLMM `LBUZ...` (outer instruction 5); duas operações DAMM v2 (uma top-level e outra dentro da rota).
+- O resolver agora busca proofs de ausência de TransferFeeConfig para todos os mints Token-2022 envolvidos em referrals e transferências de venues roteadas, não apenas para o mint de referral. Foram comprovadas taxas zero para `C5xph...pump`, `GWKw...` e `GgGQ...`, todas com snapshots finalized posteriores ao slot `471107341` e transactionIndex `144`.
+- A reconciliação inclui seis transferências cross-venue verificadas por CPI path e deltas de conta: DKfX→69z (GgGQ, 84,467,807,686); 5nK→CSR5 (GWKw, 752,182,085); 48pY→CLN4 (C5xph, 41,295,643); 48pY→DgWan (C5xph, 10,329); CLN4→6r (C5xph, 41,295,643); 99Ha→6mc (wSOL, 696,189). Cada transferência entra uma única vez no ledger esperado; evidências são anexadas ao `SwapEvidence` dos bundles DAMM.
+- Mainnet workflow #84 (run `44422687863`) SUCCESS no commit `16acabcd0d72ff12d0f43ea75ebc2b1cc799a2d8`: a transação mista passou a `RECONCILED`, com 2 bundles DAMM v2 e lados de classificação `UNKNOWN`. O caso deixou de ficar bloqueado por taxa Token-2022 ou transferências cross-venue não atribuídas.
+- CI #1315 (run `44422696901`) SUCCESS no commit `16acabcd0d72ff12d0f43ea75ebc2b1cc799a2d8`: 532 testes em 3,934s e `compileall` concluído.
+- Mainnet workflow #85 (run `44422939879`) SUCCESS no commit `2048b06a82538da2365d476b3c21c6481d9d016d`: a fronteira `process_damm_v2_observation` persistiu em SQLite em memória 2/2 bundles, `persistence_status=reconciled`, `ready_for_next_venue=True`, `checkpoint_after_persistence=None`; ambos os lados de classificação permanecem `UNKNOWN`. Isso valida a fronteira de persistência sem alterar checkpoint nem banco de produção.
+- PR #25 permanece OPEN/DRAFT e sem merge; `main` intacta. Próxima ação: fechar a validação de persistência em #85 e, depois, executar o mesmo caminho pelo `WalletMonitor` com resolver injetado.
+
+
+### Verificação adicional de evidência persistida — 18/11/2026
+
+- A adapter agora inclui em cada `SwapEvidence` todas as provas Token-2022 usadas na transação e todas as transferências cross-venue reconciliadas, não apenas a prova do referral daquele swap.
+- O validador Mainnet foi ampliado para reler cada bundle do SQLite em memória e comparar as quantidades de provas e transferências persistidas com a reconciliação em memória. Próximo run #86 valida esse requisito antes de avançar.
+
+
+### Persistência da evidência cross-venue confirmada — Mainnet #87 — 18/11/2026
+
+- Mainnet workflow #87 (run `44423115845`) SUCCESS no commit `ca3aa1c671092bd0126eada021e368d5e9fa6787`. Além de reconciliar e salvar 2/2 bundles em SQLite em memória, o validador recuperou ambos pelo `operation_id` e confirmou que cada bundle contém exatamente 6 evidências de transferência cross-venue e 3 proofs de taxa Token-2022; ambos mantêm classificação `UNKNOWN`.
+- Resultado comprovado: `reconciliation_status=RECONCILED`; `persistence_status=reconciled`; `persistence_saved_bundles=2`; `persistence_ready_for_next_venue=true`; `checkpoint_after_persistence=null`. Não houve avanço de checkpoint.
+- CI #1320 (run `44423124451`) SUCCESS no commit `ca3aa1c671092bd0126eada021e368d5e9fa6787`: 532 testes em 3,935s e `compileall` concluído.
+- O módulo de prova Token-2022 + contabilidade de transferências cross-venue está validado para a transação Mainnet alvo. Próximo módulo: transformar as pernas externas PumpSwap/Meteora DLMM em operações de swap independentes, com decoders/eventos próprios, em vez de registrá-las somente como transferências de rota anexadas aos bundles DAMM v2.
+
+## 225. Orquestração DAMM v2 + Raydium CPMM validada pelo WalletMonitor — 19/11/2026
+
+- Adicionado teste de integração test_wallet_monitor_runs_real_damm_and_cpmm_pipelines_with_injected_fee_resolver em tests/test_damm_v2_persistence_pipeline.py. O teste executa o pipeline DAMM v2 real com dois swaps sintéticos reconciliados, injeta um resolver de taxa controlado, deixa o adaptador Raydium CPMM real analisar a mesma transação (sem swap CPMM) e confirma persistência dos dois bundles, processamento e checkpoint pelo coordenador.
+- CI #1337 (run 44426237583) SUCCESS no commit 58fe20fcb03febabac9e0d7c144a26a3be62889a: 534 testes em 3,934s e compileall concluído. O teste novo aparece explicitamente como aprovado.
+- O validador tools/validate_damm_v2_mainnet.py agora executa também o payload Mainnet real pelo WalletMonitor, usando SQLiteEventStore em memória, fonte de replay local e resolver injetado com as provas já obtidas. A validação verifica processed=true, checkpoint igual à assinatura e recuperação de todos os bundles DAMM. Não inicia WebSocket, não grava banco de produção e não executa ordens.
+- Mainnet workflow #89 (run 44426405005) SUCCESS no commit 217aff9f0612d14b4e3c206c9c50d3a33f34dad5. Os logs confirmam o caminho WalletMonitor concluído em quatro payloads Mainnet. Para a transação mista 2ZgHqn1dExm4TtxFg8ADdj8QTqRHCWodiBHE15me2TkX1JMu6oxZgmtwWcmwCKyP8mmpmbwt2KCLfvRDTUs4B1Z9, slot 471107341, o coordenador persistiu 2 bundles DAMM v2; cada bundle recuperado contém 6 evidências cross-venue e 3 provas Token-2022; ambos mantêm classificação UNKNOWN. O registro de validação confirma completed=true, processed=true, checkpoint igual à assinatura, SQLite em memória e orders_executed=false.
+- CI #1338 (run 44426413104) SUCCESS no commit 217aff9f0612d14b4e3c206c9c50d3a33f34dad5: 534 testes em 3,935s e compileall concluído.
+- Commits desta etapa: 58fe20fcb03febabac9e0d7c144a26a3be62889a (teste WalletMonitor com pipelines reais e resolver injetado) e 217aff9f0612d14b4e3c206c9c50d3a33f34dad5 (validação Mainnet pelo coordenador).
+- Estado de integração: DAMM v2 e Raydium CPMM executam sequencialmente pelo mesmo WalletMonitor; DAMM v2 não avança checkpoint; CPMM conclui a transação apenas quando os adaptadores anteriores liberam o fluxo. Falhas/pendências mantêm o checkpoint bloqueado.
+- PR #25 continua OPEN/DRAFT, base feat/damm-v2-swap-domain-adapter (head da PR #24), mergeable, sem reviews e sem merge. A main permanece intacta; a integração foi validada na cadeia de branches empilhadas, não incorporada à main.
+- Próxima ação deste módulo: revisão final da cadeia empilhada e integração controlada das PRs dependentes, sem iniciar o módulo seguinte. A expansão para transformar PumpSwap/Meteora DLMM em operações independentes continua sendo módulo posterior e não deve ser iniciada antes do fechamento desta integração.
+
+### Complemento de validação: caminho positivo Raydium CPMM pelo mesmo WalletMonitor — 19/11/2026
+
+- Adicionado test_real_mainnet_cpmm_fixture_runs_through_shared_wallet_monitor em tests/test_real_mainnet_raydium_cpmm_multivenue.py. Usa fixture pseudonimizada de transação real Mainnet com swap Raydium CPMM MATCHED, passa pelo WalletMonitor completo: adaptador DAMM v2 identifica ausência de swap e libera o seguinte; adaptador Raydium CPMM real reconcilia e persiste 1 bundle; o coordenador marca a transação e avança o checkpoint em SQLite em memória.
+- CI #1341 (run 44426812812) SUCCESS no commit be76e5a1cd0cf2e7b61672d2bc4b637bdb891860: 535 testes em 3,937s; o teste novo está aprovado e compileall concluído.
+- Combinando esta evidência com Mainnet workflow #89, há validação do caminho positivo de ambos os adaptadores no mesmo WalletMonitor: DAMM v2 com dois bundles reais Mainnet e provas cross-venue; Raydium CPMM com fixture Mainnet pseudonimizada e bundle MATCHED. O teste DAMM + CPMM em uma mesma transação com swaps simultâneos de ambos os programas ainda não foi demonstrado por fixture única; a coordenação sequencial, o bloqueio e cada caminho positivo foram testados separadamente.
+- Head atual PR #25: be76e5a1cd0cf2e7b61672d2bc4b637bdb891860. PR segue OPEN/DRAFT, base feat/damm-v2-swap-domain-adapter; nenhuma alteração na main.
+
+
+## 227. Sincronização da ancestralidade da PR #25 — 19/11/2026
+
+- Auditoria dos dois commits que estavam ausentes na ancestralidade da PR #25: d3f4b50710734e366c2afeb86374103aade81007 (restauração do import multilinha do decoder nos testes) e 58a19750672851a79e59d4cdfc953a37870e7769 (importação de SQLiteEventStore no teste do adaptador). A árvore da PR #25 já continha ambos os ajustes funcionais; a divergência era histórica/ancestral.
+- Criado commit de merge explícito 1f2167162a1f61cf35b817f12678fda90273e0fd, com pais 40f0aa1d488c08819e8d3158f81557adf037c279 e 58a19750672851a79e59d4cdfc953a37870e7769. Atualização da branch feat/damm-v2-transaction-pipeline feita como fast-forward do novo commit, usando expected head 40f0aa1d; sem force push e sem alteração na main.
+- Comparação posterior: feat/damm-v2-swap-domain-adapter...feat/damm-v2-transaction-pipeline = ahead 502, behind 0. A divergência de 2 commits foi eliminada.
+- PR #25 permanece OPEN/DRAFT e não mergeada. No momento da atualização, o campo mergeable retornou false (estado transitório após mudança do head); verificar novamente após os checks. Não houve reviews registradas nas PRs #21–#25.
+- CI #1343 (run 44428050448) disparado automaticamente para o novo HEAD 1f2167162a1f61cf35b817f12678fda90273e0fd; no momento deste registro, estava IN_PROGRESS, com instalação concluída e suíte de testes em execução. Resultado ainda não conhecido; não declarar validação pós-sincronização até conclusão SUCCESS.
+- A main continua intacta em 5060bc65ddf181a4736fdb662c44c3fec0dd7259. Nenhuma ordem, assinatura de transação ou gravação em banco de produção foi executada.
+- Próxima ação: aguardar e inspecionar CI #1343; se SUCCESS, atualizar a descrição da PR e prosseguir com revisão final da cadeia. Se falhar, diagnosticar apenas a falha nova, sem repetir validações anteriores sem necessidade.
+
+
+### Resultado da validação pós-sincronização — CI #1343 — 19/11/2026
+
+- CI #1343 (run 44428050448) SUCCESS no commit de sincronização 1f2167162a1f61cf35b817f12678fda90273e0fd. Logs confirmam 535 testes executados em 4,262s, todos OK, e etapa compileall concluída com sucesso.
+- Comparação da PR #25 com a base após sincronização: 503 commits à frente, 0 atrás. A PR continua OPEN/DRAFT e mergeable=true; não foi mergeada.
+- O Registro Mestre foi atualizado depois da execução do CI, gerando o commit 14728293ff2785d6e2fd422b603b6d482647538b. Esse commit contém apenas esta atualização documental; o resultado CI #1343 corresponde ao commit de sincronização 1f2167162a1f61cf35b817f12678fda90273e0fd.
+- Estado atual da branch feat/damm-v2-transaction-pipeline: 14728293ff2785d6e2fd422b603b6d482647538b. Main permanece em 5060bc65ddf181a4736fdb662c44c3fec0dd7259.
+- Próxima ação: revisão final dos diffs e checks da cadeia #21–#25, sem merge até que a revisão esteja concluída. A fixture única com swaps positivos simultâneos DAMM v2 + Raydium CPMM continua sendo uma cobertura adicional desejável, não um resultado já comprovado.
+
+
+## 228. Revisão técnica do pipeline Raydium CPMM e contratos compartilhados — 19/11/2026
+
+Escopo revisado em modo somente leitura na branch `feat/damm-v2-transaction-pipeline`, HEAD de referência `552978f9d6a11b8d20e674aae8cdc608d875ae7f`:
+
+- `src/smart_money_radar/domain/raydium_cpmm_persistence_pipeline.py`
+- `src/smart_money_radar/domain/swap_bundle_builder.py`
+- `src/smart_money_radar/domain/models.py`
+- `src/smart_money_radar/data_sources/damm_v2_swap_domain_adapter.py`
+- `src/smart_money_radar/domain/damm_v2_persistence_pipeline.py`
+- `src/smart_money_radar/services/wallet_monitor.py`
+- `tests/test_raydium_cpmm_persistence_pipeline.py`
+- `tests/test_real_mainnet_raydium_cpmm_multivenue.py`
+- `tests/test_wallet_monitor.py`
+
+Conclusões verificadas no código:
+
+1. O pipeline CPMM valida que a assinatura informada é a primeira assinatura única do payload antes de persistir.
+2. A observação bruta/normalizada é persistida sem avançar checkpoint; transação on-chain falha ou ausência de swaps CPMM são estados terminais tratados explicitamente.
+3. Para swaps encontrados, a identidade da reconciliação compara o conjunto de (instrução externa, índice inner, caminho CPI), detecta duplicatas e registra explicitamente como `UNRESOLVED` qualquer swap sem resultado do reconciliador.
+4. Somente reconciliações `MATCHED` geram bundles. O pipeline confere conjunto/cardinalidade dos operation_ids e alinhamento entre observation, classification e evidence antes de marcar a assinatura processada.
+5. Falhas, divergências e exceções deixam a transação replayável e o checkpoint intacto. Bundles positivos podem ser persistidos de forma idempotente enquanto outros swaps permanecem pendentes.
+6. O builder CPMM valida transferências executadas, contas, programa SPL, mint, decimals, quantidades, posição na instrução e descendência CPI; gera evidência com programa, venue, caminho CPI, transferências e deltas de token accounts/vaults.
+7. Os contratos compartilhados mantêm `SwapObservation`, `SwapClassification` e `SwapEvidence` separados e vinculados pelo mesmo `operation_id`. BUY/SELL exige exatamente um mint explicitamente configurado como referência; caso contrário, classificação UNKNOWN com confiança zero.
+8. O adaptador DAMM v2 usa os mesmos contratos, exige reconciliação de lote, associação evento/instrução e evidências de transferência, e não avança checkpoint. O WalletMonitor chama DAMM v2 antes do CPMM e só o CPMM conclui/avança o checkpoint.
+9. Os testes de pipeline cobrem reconciliação positiva, pendência, ausência de resultado, duplicidade de reconciliação, divergência de identidade de bundle, replay e checkpoint. A fixture Mainnet CPMM pseudonimizada valida caminho positivo pelo WalletMonitor. Os testes do monitor cobrem bloqueio DAMM e ordenação DAMM→CPMM.
+
+Resultado da revisão desta parte: **nenhum defeito confirmado** nos arquivos examinados. Nenhum código funcional foi alterado.
+
+Lacuna de cobertura mantida explicitamente: ainda não foi demonstrada, por uma fixture única, uma transação com pelo menos um swap DAMM v2 positivo e um swap Raydium CPMM positivo, ambos reconciliados e persistidos pelo mesmo WalletMonitor. A validação Mainnet #89 cobre a transação mista com dois bundles DAMM v2 e evidências cross-venue; o teste CPMM Mainnet cobre uma transação separada em que DAMM v2 libera por ausência de swap. A coordenação sequencial está coberta, mas isso não substitui a fixture simultânea. Não afirmar que a cobertura simultânea já existe.
+
+Progresso da revisão técnica: estimativa atualizada de **75%** (antes 65%), pois o pipeline CPMM, o builder e a compatibilidade estrutural dos contratos foram examinados. O progresso geral do módulo permanece **92%**. Esses percentuais são estimativas de revisão/conclusão, não métricas de testes.
+
+Próxima ação: revisar os detalhes restantes da compatibilidade e da cadeia de PRs #21–#25; decidir se a lacuna de fixture simultânea pode ser coberta com payload Mainnet adequado ou se deve permanecer como critério explícito antes do fechamento. PR #25 permanece OPEN/DRAFT e não mergeada; nenhuma alteração na `main`. Não iniciar PumpSwap/Meteora DLMM como módulo novo antes do fechamento desta integração.
+
+
+## 229. Correção de compatibilidade Token-2022 no builder CPMM — 19/11/2026
+
+Durante a revisão da cadeia empilhada, foi identificado defeito confirmado entre a PR #21 e o builder de domínio incluído na PR #25:
+
+- PR #21 introduziu `TRANSFER_CHECKED_WITH_FEE` e o reconciliador CPMM passou a retornar `output_amount_raw` líquido (bruto menos fee).
+- `domain/swap_bundle_builder.py` ainda rejeitava esse tipo de transferência e comparava a saída reconciliada líquida diretamente com o valor bruto da transferência.
+- Consequência anterior à correção: reconciliação podia resultar em `MATCHED`, mas a criação do bundle falhava; o pipeline CPMM permanecia pendente e não avançava checkpoint.
+
+Correção aplicada na branch `feat/damm-v2-transaction-pipeline`:
+
+- `_validate_transfer_evidence` agora aceita `TRANSFER_CHECKED_WITH_FEE` e valida defensivamente fee como inteiro não booleano, não negativo e não superior ao valor bruto.
+- A comparação da saída do bundle agora usa crédito spendable: `amount_raw - fee_amount_raw` para TransferCheckedWithFee; transferências comuns mantêm o valor integral.
+- Adicionado teste de regressão `test_builds_domain_bundle_for_transfer_checked_with_fee_using_net_output` em `tests/test_raydium_cpmm_transfer_reconciliation.py`, cobrindo reconciliação MATCHED e geração do bundle com entrada bruta 100 e saída líquida 95 unidades mínimas.
+
+Commits:
+- Código: `88210dfeb673bd3028a1181c9e9286f8d8094852`.
+- Teste: `1ed91c5d51d537ce812d62267387454b40a74a11` (HEAD após a correção).
+
+Validação:
+- CI #1349, run `44429585134`, SUCCESS no commit `1ed91c5d51d537ce812d62267387454b40a74a11`.
+- Suíte: 536 testes executados, todos aprovados; o teste novo aparece explicitamente como `ok`.
+- `python -m compileall -q src tests`: aprovado.
+- Não houve alteração na `main`, execução de ordens ou gravação em banco de produção.
+
+Estado de revisão:
+- PRs #21, #22, #23, #24 e #25 permanecem OPEN/DRAFT, mergeable, sem reviews e sem threads de revisão registrados na consulta de 19/11/2026.
+- A cadeia de dependências permanece #21 → #22 → #23 → #24 → #25; PR #25 tem base #24. Nenhuma foi mergeada.
+- A revisão técnica geral fica estimada em **80%**; a conclusão estimada do módulo permanece **92%**. A lacuna de fixture única com swaps positivos simultâneos DAMM v2 + CPMM permanece aberta.
+- Próxima ação: continuar a revisão de compatibilidade da cadeia, verificando se existem outros contratos/tipos adicionados em PRs ancestrais que não foram propagados até os adaptadores e builders posteriores. Não fazer merge sem revisão final e autorização.
+
+
+## 230. Preservação da evidência de referral no contrato SwapEvidence — 19/11/2026
+
+Na revisão da PR #24, foi identificada uma lacuna de proveniência: a camada de atribuição e a reconciliação econômica DAMM v2 validavam a transferência de referral, mas o adaptador de domínio não a propagava para `SwapEvidence`. O bundle persistido registrava genericamente input/output, sem preservar a instrução, contas, mint, valor bruto e fee da perna referral.
+
+Correção aplicada na branch `feat/damm-v2-transaction-pipeline`:
+
+- O adaptador agora exige a transferência referral quando `EvtSwap2.has_referral=True` e `referral_fee>0`.
+- Revalida o papel econômico pelo `FeeMode`: vault de origem, conta referral de destino, mint, Token Program, valor bruto igual ao `referral_fee` e execução.
+- Inclui a transferência referral na validação da proveniência CPI e valida defensivamente a fee explícita de `TransferCheckedWithFee`.
+- Persiste em `SwapEvidence.evidence` os índices da instrução, contas origem/destino, mint, valor bruto e fee da transferência referral.
+- Adicionados dois testes: preservação/validação da evidência referral e rejeição de bundle com referral obrigatório ausente.
+
+Commits:
+- Código: `4d238ca7215a8e2016b5feddf409cf143486d173`.
+- Testes: `328223324b1505dfef2df02a055165ba09ef4dcb` (HEAD após a correção).
+
+Validação:
+- CI #1353, run `44429930506`, SUCCESS no commit `328223324b1505dfef2df02a055165ba09ef4dcb`.
+- Suíte: 538 testes executados, todos aprovados; os dois testes novos aparecem explicitamente como `ok`.
+- `python -m compileall -q src tests`: aprovado.
+- Nenhuma alteração na `main`, execução de ordens ou gravação em banco de produção.
+
+Revisão das dependências:
+- PR #22: leitura do analisador de transferências/referral e testes; nenhum defeito adicional confirmado.
+- PR #23: leitura da reconciliação econômica em lote e testes; nenhum defeito adicional confirmado.
+- PR #24: lacuna de proveniência referral identificada e corrigida conforme acima.
+- PRs #21–#25 continuam OPEN/DRAFT, mergeable, sem reviews/threads registrados e sem merge. A cadeia continua empilhada em ordem #21 → #22 → #23 → #24 → #25.
+
+Progresso estimado da revisão técnica: **85%**. Conclusão estimada do módulo: **92%**. A fixture única com swaps positivos simultâneos DAMM v2 + Raydium CPMM continua como lacuna explícita. Próxima ação: fechar a revisão técnica da PR #25 e da cadeia, incluindo compatibilidade dos contratos e revisão final dos checks; não fazer merge sem autorização.
+
+
+## 231. Delimitação de escopo e validação após remoção do decoder roteado experimental — 19/11/2026
+
+Na revisão final dos arquivos da PR #25, foi encontrado `data_sources/routed_venue_swap_decoder.py`, um decoder experimental de PumpSwap/Meteora DLMM que:
+- não possuía teste dedicado no PR;
+- não tinha referência nos pontos de entrada revisados (`cli.py`, `WalletMonitor`, pipeline DAMM v2, resolver Token-2022 e validador Mainnet);
+- podia construir bundle DLMM mesmo sem associação única de `Swap2Evt`, usando transferência como evidência alternativa;
+- não integrava o fluxo coordenado/persistido desta PR e ampliava o escopo para o módulo seguinte.
+
+Para preservar a regra de fechar DAMM v2 + Raydium CPMM antes de iniciar PumpSwap/DLMM, o arquivo foi removido da branch atual. Nenhuma dependência do pipeline corrente foi encontrada nos pontos de entrada revisados. O trabalho futuro de PumpSwap/DLMM permanece adiado e deve ter módulo, contratos, fixtures e testes próprios.
+
+Commit de remoção: `74ba9146797f93af52939ff669fa4a07d03b9070`.
+
+Validação após remoção:
+- CI #1356, run `44430148964`, SUCCESS no commit `74ba9146797f93af52939ff669fa4a07d03b9070`.
+- Suíte: 538 testes executados, todos aprovados.
+- `python -m compileall -q src tests`: aprovado.
+- A lista de arquivos da PR #25 foi conferida novamente; `routed_venue_swap_decoder.py` não consta mais.
+- PR #25 continua OPEN/DRAFT, mergeable=true, base #24, head `74ba9146797f93af52939ff669fa4a07d03b9070`; nenhuma alteração na `main`.
+
+Progresso estimado: módulo **92%**, revisão técnica **90%**. Permanecem: revisão final de detalhes não centrais da PR #25, avaliação/decisão sobre fixture única com swaps positivos simultâneos DAMM v2 + CPMM e revisão da cadeia de merge em ordem. Nenhuma PR foi mergeada; não fazer merge sem autorização explícita.
+
+
+## 232. CI de conferência após atualização do Registro Mestre — 19/11/2026
+
+- A atualização documental da seção 231 gerou o commit `6b79175951c6e20e3d1546667e22e812c0f85099`.
+- CI #1357, run `44430303073`, SUCCESS nesse commit.
+- Suíte: 538 testes aprovados; `python -m compileall -q src tests` aprovado.
+- PR #25 foi consultada após a atualização: OPEN/DRAFT, mergeable=true, head `6b79175951c6e20e3d1546667e22e812c0f85099`, base `feat/damm-v2-swap-domain-adapter`. Não mergeada.
+- A branch main continua sem alteração por esta sequência de commits.
+- Estado estimado mantido: módulo **92%**; revisão técnica **90%**. Não elevar o percentual até fechar a revisão final dos arquivos remanescentes e decidir explicitamente a lacuna de fixture simultânea DAMM v2 + CPMM.
+
+
+## 233. Teste integrado com swaps positivos DAMM v2 + Raydium CPMM no mesmo payload — 19/11/2026
+
+Para cobrir a lacuna de coordenação entre venues, foi adicionado em `tests/test_damm_v2_persistence_pipeline.py` o teste:
+
+`test_wallet_monitor_persists_positive_damm_and_cpmm_swaps_in_one_payload`
+
+Construção da fixture:
+- Parte da fixture CPMM Mainnet anonimizada já versionada em `data/fixtures/mainnet/anonymized/raydium-cpmm-route-multivenue.json`.
+- Acrescenta ao payload duas operações DAMM v2 sintéticas e reconciliáveis, com remapeamento de accountKeys, programIdIndex, contas e token balance snapshots.
+- A fixture é composta para teste de integração; **não representa uma transação Mainnet original contendo simultaneamente as duas venues**.
+
+Comportamento comprovado pelo teste:
+- Um único `WalletMonitor` recebe o payload composto.
+- Pipeline DAMM v2 processa e persiste dois bundles positivos.
+- Pipeline Raydium CPMM processa e persiste um bundle positivo no mesmo payload.
+- As três tentativas de reconciliação têm status MATCHED e operation_id distintos.
+- Evidências persistidas contabilizam dois bundles `Meteora DAMM v2` e um `Raydium CPMM`.
+- A assinatura termina processada, checkpoint avança uma única vez para a assinatura e não restam pendências.
+
+Commit: `6803906f395f87467120409d4562554206f037da`.
+
+Validação:
+- CI push #1359, run `44431591042`, SUCCESS.
+- CI pull_request #1360, run `44431599422`, SUCCESS.
+- 539 testes executados, todos aprovados; o novo teste aparece explicitamente como `ok`.
+- `python -m compileall -q src tests` aprovado em ambos os workflows.
+
+Limite de evidência que permanece:
+- O teste fecha a cobertura de integração/coordenador com ambos os pipelines positivos num mesmo payload composto.
+- Ainda não há uma assinatura/fixture Mainnet original demonstrando coocorrência real de swap DAMM v2 e swap Raydium CPMM na mesma transação. Não confundir fixture composta com evidência on-chain simultânea.
+- Progresso estimado: conclusão do módulo permanece **92%**; revisão técnica estimada **93%**. A pendência final é a revisão da cadeia de merge e decidir se a evidência Mainnet simultânea será requisito de fechamento ou validação posterior controlada. PR #25 segue OPEN/DRAFT, sem merge e sem alteração na main.
+
+
+## 234. Auditoria de ancestralidade das PRs empilhadas — 19/11/2026
+
+Foi investigada a diferença entre os \`base_sha\` registrados nas PRs #8, #10, #15 e #18 e os HEADs atuais das respectivas branches-base.
+
+### Resultado das comparações de branches atuais
+
+1. **#7 → #8**
+   - Base atual \`feat/raydium-cpmm-economic-reconciliation\`: \`e72f893b0c717f4d353d18f765d26f22de516b0e\`.
+   - \`base_sha\` registrado na #8: \`d2ac22625556303d22031435abd55b7b6cc06776\`.
+   - O SHA antigo é ancestral do atual; a branch-base avançou um commit.
+   - Comparação da base atual com a head atual da #8: base à frente em 1 commit e head à frente em 5 commits, com merge-base no SHA antigo.
+
+2. **#9 → #10**
+   - Base atual \`feat/raydium-cpmm-transfer-reconciliation\`: \`dfac8ce8734808f0a4cbe817b49c47ee7058bd80\`.
+   - \`base_sha\` registrado na #10: \`5b57955fa843e4880bb6b8099cb455c160da83e4\`.
+   - O SHA antigo é ancestral do atual; a branch-base avançou um commit.
+   - Comparação da base atual com a head atual da #10: base à frente em 1 commit e head à frente em 7 commits, com merge-base no SHA antigo.
+
+3. **#14 → #15**
+   - Base atual \`integration/pr13-sqlite-persistence\`: \`633dc7b6830672ec1aff61f2dd071c73a5dc31fe\`.
+   - \`base_sha\` registrado na #15: \`894b1b0db413f10a456a63f22d2d715e2c6c4cc1\`.
+   - O SHA antigo é ancestral do atual; a branch-base avançou um commit.
+   - Comparação da base atual com a head atual da #15: base à frente em 1 commit e head à frente em 54 commits, com merge-base no SHA antigo.
+
+4. **#17 → #18**
+   - Base atual \`feat/damm-v2-economic-fee-math\`: \`fd0f73284039bacc4ec4e6b6a88def21f813ce0d\`.
+   - \`base_sha\` registrado na #18: \`58606137e3d096e19b34eb84bae604101c07fef3\`.
+   - A base avançou sete commits depois do SHA registrado na PR.
+   - A comparação das branches atuais confirma que a head da #18 contém a base atual como ancestral; head está 24 commits à frente e não está atrás. Esta transição está alinhada.
+
+### Interpretação e estado de mergeabilidade
+
+- As quatro diferenças são explicadas por atualizações posteriores das branches-base; não foi encontrada evidência de perda de ancestralidade.
+- Nas três primeiras transições (#7→#8, #9→#10 e #14→#15), a branch filha está um commit atrás da branch-base atual. Isso deve ser levado em conta na atualização/integração da PR filha, com CI posterior; não presumir que o snapshot antigo da base representa o estado atual.
+- PRs #8, #10, #15 e #18 foram consultadas novamente: todas OPEN e \`mergeable=true\`. Isso é apenas a avaliação atual do GitHub, não substitui validação de CI após integração.
+- PR #20 continua CLOSED sem merge. Sua própria descrição registra encerramento deliberado porque o decoder isolado duplicava o decoder DAMM v2 existente. O arquivo exclusivo da #20 não está na \`main\` nem na branch-base da #21; isso é coerente com a decisão de descartar a implementação redundante.
+- A cadeia #21→#25 continua alinhada por SHA entre PRs consecutivas. PR #21 parte da head da #18; PR #25 permanece OPEN/DRAFT e não mergeada.
+- \`main\` permanece no SHA conhecido \`5060bc65ddf181a4736fdb662c44c3fec0dd7259\`; nenhuma alteração foi feita nela.
+
+### CI dos commits relevantes examinados
+
+- #7 head \`e72f893b...\`: workflow #105 SUCCESS.
+- #8 head \`a6a75128...\`: workflow #99 SUCCESS.
+- #9 head \`dfac8ce8...\`: workflow #145 terminou com conclusão \`action_required\`, sem jobs executados. **Não é falha de teste, mas também não é CI aprovado**; requer esclarecimento/aprovação ou nova execução válida antes de considerar esta etapa validada.
+- #10 head \`e7c02adb...\`: workflow #115 SUCCESS.
+- #14 head \`633dc7b6...\`: workflow #300 SUCCESS.
+- #15 head \`ebac8180...\`: workflow #349 SUCCESS.
+- #17 head \`fd0f7328...\`: workflow #514 SUCCESS.
+- #18 head \`079a7dd6...\`: workflow #528 SUCCESS.
+- A PR #25 mantém a validação já registrada na seção 233 e no CI #1361: 539 testes e compileall aprovados.
+
+### Conclusão e próxima ação
+
+A auditoria de ancestralidade esclareceu as diferenças dos quatro pontos. A cadeia não deve ser reordenada por causa dessas diferenças. A sequência de dependências continua de baixo para cima, começando pelas PRs ancestrais; porém, antes de autorizar qualquer merge, deve-se resolver o estado \`action_required\` da CI da head da #9 e confirmar os checks das PRs no momento da integração. Não fazer merge, atualizar branches, alterar bases ou executar reruns sem a etapa de autorização correspondente.
+
+Progresso estimado mantido: módulo **92%**; revisão técnica **93%**. A fixture Mainnet original com swaps positivos DAMM v2 e CPMM simultâneos continua como lacuna distinta da fixture composta de integração. Nenhuma PR foi mergeada e nenhuma alteração funcional foi feita nesta auditoria.
+
+
+## 235. Investigação do CI action_required e auditoria da nova fixture CPMM da PR #9 — 19/11/2026
+
+### Estado do workflow #145
+
+Foi inspecionado o workflow \`SMR tests\` associado à PR #9:
+
+- Run: \`44226350561\`, número #145.
+- Commit: \`dfac8ce8734808f0a4cbe817b49c47ee7058bd80\`.
+- Evento: \`pull_request\`.
+- Actor e triggering_actor: \`github-actions[bot]\`.
+- Conclusão: \`action_required\`.
+- Jobs retornados pelo endpoint de jobs: lista vazia; nenhum job foi iniciado.
+
+A execução anterior bem-sucedida da mesma PR foi:
+- Run: \`44223562333\`.
+- Commit: \`449129f9114420e4f136c0ad081c7820d2d0e399\`.
+- Actor: \`Zapatta22\`.
+- Conclusão: SUCCESS.
+- Job \`test\`: instalação, 169 testes e compileall concluídos com sucesso.
+
+A comparação entre os commits mostra que, após o commit validado, foram adicionados somente:
+- \`data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json\`;
+- \`data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json.manifest.json\`;
+- quatro linhas documentais no Registro Mestre.
+
+Portanto, a implementação do correlator da PR #9 tem uma execução anterior aprovada (169 testes), mas o HEAD atual não possui CI aprovado. A nova fixture não foi submetida a testes na execução #145. O actor bot é uma pista compatível com uma exigência de aprovação/política para workflow iniciado por automação; a configuração exata de aprovação do repositório não foi consultada e a causa administrativa específica permanece não confirmada. Não tratar \`action_required\` como falha de teste nem como aprovação.
+
+### Auditoria da fixture adicionada após o CI aprovado
+
+O manifesto \`raydium-cpmm-jupiter-multiswap.json.manifest.json\` declara:
+- \`projection_file\`: \`39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.json\`;
+- \`provenance_manifest\`: \`39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.manifest.json\`.
+
+A árvore Git da head \`dfac8ce8...\` contém somente os dois arquivos nomeados \`raydium-cpmm-jupiter-multiswap.json\` e seu manifesto. Os dois caminhos declarados dentro do manifesto não existem nessa árvore. Isso deixa referências de proveniência pendentes/inconsistentes.
+
+Também foi verificado que \`tests/test_raydium_cpmm_transfer_reconciliation.py\` não referencia o nome \`raydium-cpmm-jupiter-multiswap\`. A fixture nova, portanto, não tem cobertura de consumo explícita no teste dedicado consultado. O payload contém uma rota Jupiter com duas instruções CPMM, incluindo movimentação Token-2022, mas não afirmar validação econômica real desta fixture enquanto ela não for carregada e testada por um caso dedicado.
+
+### Conclusão e ação necessária
+
+A PR #9 não está bloqueada por falha de teste demonstrada. Está sem validação de CI para o HEAD atual porque o workflow #145 foi interrompido antes de iniciar jobs; a execução anterior no HEAD antigo passou com 169 testes.
+
+Há uma lacuna concreta adicional: o manifesto da nova fixture aponta para dois arquivos de projeção/proveniência ausentes e a fixture não é referenciada pelo teste dedicado verificado. Antes de considerar a PR #9 plenamente validada para integração, corrigir a proveniência/manifesto de forma compatível com o formato adotado no projeto, criar teste que consuma a fixture e obter CI aprovado no HEAD final. Não alterar o manifesto por suposição: primeiro confirmar o contrato de fixture e o procedimento de anonimização.
+
+Nenhum rerun, aprovação de workflow, alteração funcional, merge ou mudança na \`main\` foi executado nesta investigação. PR #9 permanece aberta; PR #25 permanece aberta/Draft, sem merge. Progresso mantido: módulo **92%**, revisão técnica **93%**.
+
+
+## 236. Confirmação do contrato do anonimizador para a fixture da PR #9 — 19/11/2026
+
+A revisão foi aprofundada usando \`fixture_anonymizer.py\`, \`fixture_audit.py\`, os testes correspondentes e a documentação da Etapa 13.
+
+Confirmações:
+- O anonimizador gera um manifesto de projeção \`smr.anonymized-fixture.v1\` com \`projection_file\` igual ao nome real do arquivo de saída e \`provenance_manifest\` igual ao nome do manifesto bruto de origem quando este é fornecido; quando não há manifesto de origem, o campo fica \`null\`.
+- O manifesto bruto coletado pelo \`RpcFixtureCollector\` é um formato diferente, contendo \`raw_file\`, \`sha256\`, \`encoding\`, \`commitment\` e \`anonymized=false\`.
+- \`fixture_audit.audit_fixture\` valida pares de manifesto bruto + payload bruto; ele não é um validador do manifesto de projeção anonimizada.
+- Na fixture da PR #9, \`projection_file\` aponta para um nome de arquivo que não existe na árvore e não corresponde ao arquivo de projeção efetivamente versionado (\`raydium-cpmm-jupiter-multiswap.json\`).
+- \`provenance_manifest\` aponta para \`<signature>.manifest.json\`, também ausente da árvore da PR.
+- O manifesto de projeção presente não contém os campos obrigatórios do auditor de manifesto bruto; portanto, não deve ser passado diretamente a \`audit_fixture\`.
+
+Conclusão: a inconsistência não é apenas ausência de teste. O manifesto não descreve corretamente o arquivo de projeção versionado e a trilha declarada para o manifesto de origem não está presente. O bruto original pode permanecer fora do repositório por política de privacidade, mas a proveniência precisa ser representada corretamente: nome da projeção exato e manifesto de origem incluído ou referência nula/externa documentada, conforme política do projeto. Não inventar SHA ou manifesto de origem.
+
+Nenhum arquivo funcional ou fixture foi modificado nesta inspeção. A correção da fixture e um teste de consumo continuam pendentes na PR #9; o HEAD atual segue sem CI aprovado após a adição da fixture. Progresso mantido: módulo **92%**, revisão técnica **93%**.
+
+
+## 237. CI de confirmação após auditoria da PR #9 — 19/11/2026
+
+Após as seções 235 e 236, o commit documental 28c30c3c6c07cb30eed354b7198838f868db18b1 foi validado pelo workflow da PR #25:
+
+- Run #1364, ID 44433622092, evento pull_request, actor Zapatta22.
+- Conclusão: SUCCESS.
+- Job test: instalação concluída; **539 testes executados, todos aprovados** (Ran 539 tests in 3.951s, OK).
+- python -m compileall -q src tests: aprovado.
+- PR #25 continua OPEN/DRAFT, não mergeada, mergeable=true na consulta posterior.
+
+A confirmação CI #1364 valida o conteúdo da branch de integração/Registro Mestre até este commit; não altera o estado da PR #9. A PR #9 continua com head dfac8ce8734808f0a4cbe817b49c47ee7058bd80 e run #145 action_required, sem jobs. A execução anterior #44223562333 aprovou 169 testes no head antigo 449129f9114420e4f136c0ad081c7820d2d0e399. A fixture CPMM/Jupiter recém-adicionada continua sem teste consumidor e com manifesto de projeção/proveniência inconsistente, conforme seções 235–236.
+
+Progresso mantido: módulo **92%**, revisão técnica **93%**. Nenhuma PR foi mergeada; main permanece intacta. Próxima ação: decidir e executar, em branch/PR apropriada, a correção de proveniência e teste dedicado da fixture da PR #9, ou obter uma validação CI aprovada para seu HEAD atual. Não considerar a PR #9 totalmente validada até ambas as lacunas serem resolvidas.
+
+
+## 238. CI de confirmação do Registro Mestre — 19/11/2026
+
+O commit documental 501a2ae61bc9ee1b1ec240ba92262bb446cdc3b6 (seção 237) foi validado pelo workflow #1365, run ID 44433759007:
+
+- Evento pull_request; actor Zapatta22.
+- Conclusão SUCCESS.
+- 539 testes executados em 4.684s, todos aprovados.
+- python -m compileall -q src tests aprovado.
+- Nenhuma alteração funcional foi incluída nesta atualização documental.
+
+Estado confirmado após a execução:
+- PR #25 OPEN/DRAFT, não mergeada, head 501a2ae61bc9ee1b1ec240ba92262bb446cdc3b6.
+- PR #9 OPEN, head dfac8ce8734808f0a4cbe817b49c47ee7058bd80, run #145 action_required sem jobs; CI anterior no head antigo aprovou 169 testes.
+- A fixture CPMM/Jupiter da PR #9 ainda tem manifesto com projection_file divergente do nome do arquivo e provenance_manifest ausente, e não possui teste consumidor dedicado.
+- Módulo 92%; revisão técnica 93%; main sem alteração.
+
+Próxima ação técnica recomendada: corrigir a proveniência/manifesto da fixture da PR #9 e adicionar teste que efetivamente a consuma; depois obter CI aprovado no HEAD atualizado. Não mergear a cadeia até essa pendência ser resolvida e os checks finais serem confirmados.
+
+
+## 239. Correção do manifesto e teste consumidor da fixture CPMM/Jupiter da PR #9 — 19/11/2026
+
+### Alterações efetivamente realizadas na branch da PR #9
+
+- Corrigido \`projection_file\` no manifesto \`raydium-cpmm-jupiter-multiswap.json.manifest.json\`: agora aponta para o nome real versionado \`raydium-cpmm-jupiter-multiswap.json\`. Os hashes existentes não foram alterados.
+- Adicionado teste consumidor em \`tests/test_raydium_cpmm_transfer_reconciliation.py\`: carrega a fixture Mainnet anonimizada do disco e executa os decoders reais de swaps CPMM e transferências SPL/Token-2022.
+- O teste confirma dois swaps CPMM na instrução externa 0, posições internas 0 e 6, caminhos CPI distintos e stackHeight 2; confirma também as contas de entrada/saída esperadas e sete transferências executadas nas posições internas 1, 2, 4, 5, 7, 8 e 10, incluindo ambos os programas token.
+- Escopo do teste é estrutural/decodificação da fixture. Ele não declara reconciliação econômica MATCHED dos dois swaps nem classificação BUY/SELL; isso continua sujeito aos limites do reconciliador e à evidência de saldo.
+
+### CI no HEAD atualizado
+
+- PR #9 HEAD: \`d91f0c277c1daf1f5fff102f85fc55a1c3b07676\`.
+- Workflow #1368, run ID \`44434394914\`, evento push.
+- Resultado SUCCESS: **170 testes aprovados** e \`python -m compileall -q src tests\` aprovado.
+- PR #9 permanece OPEN, não Draft e mergeable=true; não foi mergeada.
+
+### Proveniência remanescente
+
+O campo \`provenance_manifest\` ainda nomeia \`39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.manifest.json\`, mas esse manifesto de origem não está versionado na árvore da PR. O bruto original também não está versionado. Não inventamos manifesto bruto, encoding, caminho ou SHA. A referência de proveniência externa precisa ser confirmada/arquivada conforme a política de fixtures antes de declarar a trilha documental integralmente fechada.
+
+Nenhum merge, rebase, aprovação manual de workflow, ordem financeira ou alteração na main foi executado. PR #25 segue OPEN/DRAFT; módulo permanece **92%** e revisão técnica **93%** até a revisão final da proveniência e da cadeia empilhada.
+
+
+## 240. Integridade criptográfica do manifesto da fixture CPMM/Jupiter — 19/11/2026
+
+Foi ampliado o teste consumidor da PR #9 para validar também o manifesto da projeção:
+- schema \`smr.anonymized-fixture.v1\`;
+- \`projection_file\` igual ao nome real do JSON;
+- SHA-256 do arquivo de projeção recalculado em runtime e comparado com \`projection_sha256\`;
+- assinatura e slot do manifesto iguais aos valores do payload;
+- \`anonymized=true\`.
+
+Commit da PR #9: \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`.
+CI #1370 (push, run \`44434546829\`) e CI #1371 (pull_request, run \`44434553632\`) concluídos com SUCCESS. Ambos executaram **170 testes aprovados** e \`python -m compileall -q src tests\` aprovado. O workflow #1371 corresponde ao HEAD atual da PR #9 e não está em \`action_required\`.
+
+A trilha de proveniência externa permanece a única lacuna específica da fixture: o manifesto de origem indicado em \`provenance_manifest\` e o payload bruto não estão versionados, portanto não foi possível revalidar o \`raw_sha256\` a partir do artefato bruto. Não foi fabricada evidência ausente. PR #9 segue OPEN, mergeable=true, não mergeada; PR #25 segue OPEN/DRAFT. Main continua no SHA \`5060bc65ddf181a4736fdb662c44c3fec0dd7259\`.
+
+
+## 241. Fechamento da rodada de teste da fixture CPMM/Jupiter — 19/11/2026
+
+A segunda revisão do teste consumidor confirmou a integridade criptográfica da projeção: o teste recalcula SHA-256 dos bytes de \`raydium-cpmm-jupiter-multiswap.json\` e compara com \`projection_sha256\` do manifesto, além de conferir schema, nome do arquivo, assinatura, slot e \`anonymized=true\`.
+
+Evidências:
+- PR #9 HEAD final desta rodada: \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`.
+- CI #1370, run \`44434546829\`, evento push: SUCCESS, 170 testes, compileall SUCCESS.
+- CI #1371, run \`44434553632\`, evento pull_request: SUCCESS, 170 testes, compileall SUCCESS.
+- PR #9 OPEN, não Draft, mergeable=true; base \`feat/solana-token-account-deltas\`.
+- PR #25 OPEN/DRAFT, mergeable=true; head documental \`94a3fa39a32849d427477db44c594fa127370c23\`.
+- \`main\` permanece em \`5060bc65ddf181a4736fdb662c44c3fec0dd7259\`.
+
+A única lacuna documental remanescente da fixture é a disponibilidade verificável do artefato bruto e do manifesto original apontado por \`provenance_manifest\`. O campo foi preservado para não apagar a referência histórica; não criamos substituto sintético nem declaramos o SHA bruto auditado. A fixture anonimizada, sua integridade SHA-256, seu consumo pelos decoders e o CI no HEAD atual estão validados.
+
+O commit desta atualização altera apenas este Registro Mestre em Markdown; o workflow \`smr-tests.yml\` filtra paths de código/testes/configuração e, portanto, não se espera CI para este commit documental isolado. Não houve merge, rebase, alteração na main ou execução financeira.
+
+
+## 242. Reauditoria da ancestralidade da PR #10 após atualização da PR #9 — 19/11/2026
+
+A PR #9 avançou até \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`. A PR #10 continua baseada na branch \`feat/raydium-cpmm-transfer-reconciliation\`, mas seu head não incorporou esses quatro commits posteriores da base.
+
+Comparação atual:
+- PR #10 base atual: branch \`feat/raydium-cpmm-transfer-reconciliation\`, SHA \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`.
+- PR #10 head: \`e7c02adb3564fefb3a8c734098f5c92603eb4a7b\`.
+- Merge-base: \`5b57955fa843e4880bb6b8099cb455c160da83e4\`.
+- Base: 4 commits à frente do merge-base; head #10: 7 commits à frente; comparação divergente, sem evidência de perda do ancestral comum.
+- GitHub informa \`mergeable=true\`; PR #10 OPEN, não Draft, não mergeada.
+- Os arquivos funcionais da PR #9 (fixture e teste de reconciliação) não se sobrepõem aos arquivos funcionais próprios da PR #10 (builder de contratos de domínio e seus testes). Ambas alteram o Registro Mestre/documentação; GitHub não reporta conflito no estado atual.
+
+CI conhecido da PR #10:
+- Run \`44223834918\`, workflow #115, SUCCESS no head antigo \`e7c02adb...\`.
+- 181 testes aprovados e compileall aprovado.
+- Esse CI não valida a combinação com os quatro commits novos da base #9. A validação do merge resultante deve ocorrer quando a integração bottom-up for autorizada/realizada.
+
+Não atualizar branch, rebasear ou mergear PR #10 nesta auditoria. A cadeia permanece empilhada; a atualização da base é uma diferença explicada, não uma razão para reordenar PRs.
+
+
+## 243. CI de confirmação da auditoria PR #10 / Registro Mestre — 19/11/2026
+
+O commit \`26da0c6e431ead8512af02397e5a2758b74817bd\`, contendo a seção 242, foi validado no workflow #1374, run ID \`44434924202\`, evento pull_request:
+
+- Conclusão SUCCESS.
+- **539 testes aprovados** (\`Ran 539 tests in 3.987s\`, \`OK\`).
+- \`python -m compileall -q src tests\` aprovado.
+- PR #25 segue OPEN/DRAFT e mergeable=true; não houve merge.
+- PR #9 segue OPEN, HEAD \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`, com CI #1371 SUCCESS (170 testes + compileall).
+- PR #10 segue OPEN, HEAD \`e7c02adb3564fefb3a8c734098f5c92603eb4a7b\`, CI #115 SUCCESS (181 testes + compileall no head próprio). A combinação com a base atual #9 ainda exige CI no resultado de integração.
+- \`main\` permanece em \`5060bc65ddf181a4736fdb662c44c3fec0dd7259\`.
+
+A seção 242 registra a divergência de ancestralidade atual da PR #10: quatro commits da base #9 ainda não estão no head #10; merge-base preservado e GitHub reporta mergeable=true. Não foi feito rebase, atualização de branch ou merge.
+
+
+## 244. Auditoria de disponibilidade da proveniência RAW da fixture CPMM/Jupiter — 19/11/2026
+
+Foi concluída a verificação da proveniência no repositório GitHub, sem alterar a fixture nem inventar artefatos ausentes.
+
+### Evidências verificadas
+
+- Na árvore da branch atual da PR #9 (`feat/raydium-cpmm-transfer-reconciliation`, HEAD `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a)), estão presentes a projeção `data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json` e seu manifesto `.manifest.json`.
+- Não aparecem nessa árvore o payload RAW nem o manifesto de origem referenciado pelo campo `provenance_manifest`.
+- Consultas ao histórico GitHub para os caminhos convencionais do coletor — `data/fixtures/raw/39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.raw.json` e `data/fixtures/raw/39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.manifest.json` — retornaram listas vazias de commits. Portanto, esses dois caminhos nunca foram versionados no histórico consultado.
+- A documentação do coletor exige um par RAW/manifesto com `finalized`, `encoding=json`, assinatura, slot e SHA-256. O auditor offline recalcula o SHA do RAW e confere assinatura/slot no payload.
+- O anonimizador aceita manifesto de origem externo/local e, quando informado, executa `audit_fixture` e compara o SHA do bruto. O manifesto de projeção atualmente preserva apenas o nome do manifesto de origem e o valor `raw_sha256`; isso não substitui a presença do artefato original para auditoria independente.
+- O teste da PR #9 comprova o SHA-256 da projeção anonimizada, a assinatura e o slot. Não comprova o SHA-256 do RAW, pois o RAW não está disponível no repositório consultado.
+
+### Conclusão e tratamento correto
+
+A evidência disponível permite afirmar: **projeção íntegra e decodificação estrutural testada; proveniência desde o payload RPC original não revalidada**.
+
+A ausência no GitHub não prova que o RAW e o manifesto não existam no armazenamento local/privado de quem coletou a fixture. Não os publicar automaticamente: o payload bruto pode conter endereços e dados que exigem revisão de privacidade. A pendência só poderá ser fechada se o par original for localizado em ambiente privado e auditado com `audit_solana_fixtures.py`, ou se a política do projeto formalizar a fixture como proveniência externa não reproduzível e corrigir a referência documental de modo explícito. Não alterar `raw_sha256`, não fabricar manifesto e não declarar proveniência integralmente validada.
+
+### Estado da cadeia
+
+- PR #9: OPEN, HEAD `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a`, CI #1371 SUCCESS (170 testes + compileall).
+- PR #10: OPEN, HEAD `e7c02adb3564fefb3a8c734098f5c92603eb4a7b`, CI #115 SUCCESS (181 testes + compileall no head próprio); quatro commits da base #9 ainda não estão incorporados no head #10. Não foi feito rebase, atualização de branch ou merge.
+- PR #25: OPEN/DRAFT, não mergeada; este registro será atualizado nesta branch de integração. Nenhuma alteração na `main`.
+- Progresso mantido: módulo **92%**, revisão técnica **93%**. Não elevar enquanto a decisão de proveniência e a validação combinada da PR #10 permanecerem pendentes.
+
+
+## 245. Confirmação CI da auditoria de proveniência e revisão estática da PR #10 — 19/11/2026
+
+### CI do Registro Mestre
+
+O commit `dfec3eb944f6019c0ace5ad94939884fcd331ee1`, que registra a auditoria de disponibilidade dos artefatos RAW da fixture CPMM/Jupiter (seção 244), foi validado pelo workflow #1376, run ID `44435406567`:
+
+- Evento `pull_request`, PR #25, HEAD exato `dfec3eb944f6019c0ace5ad94939884fcd331ee1`.
+- Conclusão SUCCESS.
+- Job `test` concluído com sucesso.
+- **539 testes aprovados** (`Ran 539 tests in 4.279s`, `OK`).
+- `python -m compileall -q src tests` aprovado.
+
+### Revisão estática da PR #10
+
+- A PR #10 continua OPEN, não Draft, não mergeada e GitHub informa `mergeable=true`.
+- Head #10: `e7c02adb3564fefb3a8c734098f5c92603eb4a7b`; base atual #9: `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a`.
+- A comparação permanece divergente: base 4 commits à frente e head #10 7 commits à frente do merge-base `5b57955fa843e4880bb6b8099cb455c160da83e4`.
+- As mudanças funcionais da PR #10 são o builder de bundles de domínio e seus testes. A PR #9 acrescenta fixture/teste de decodificação; não há sobreposição entre esses arquivos funcionais. Ambas atualizam o Registro Mestre.
+- O CI próprio #115 (run `44223834918`) permanece SUCCESS no head #10: 181 testes + compileall. Ele não valida a combinação com os quatro commits mais recentes da base #9.
+- Revisão de compatibilidade: o builder da PR #10 foi escrito antes dos reforços posteriores de Token-2022/transfer-fee e evidências de deltas por token account. A branch de integração PR #25 já contém validações adicionais no builder para transferência executada, fee Token-2022, valor líquido de saída, identidade CPI, deltas e consistência entre reconciliação e transferências. Os testes da PR #10, isoladamente, são sintéticos e não cobrem esse conjunto posterior. Isso não é conflito funcional com a fixture #9, mas reforça que o CI combinado da cadeia deve ser executado no estado final integrado.
+- Não foi feito rebase, atualização da branch #10, merge ou alteração na `main`.
+
+### Estado
+
+- PR #9: OPEN; CI #1371 SUCCESS, 170 testes + compileall; rastreabilidade RAW permanece não comprovada no GitHub.
+- PR #10: OPEN; CI próprio #115 SUCCESS, 181 testes + compileall; integração com base atualizada ainda sem CI.
+- PR #25: OPEN/DRAFT; CI #1376 SUCCESS, 539 testes + compileall no commit `dfec3eb...`.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Progresso mantido: módulo **92%**, revisão técnica **93%**. Nenhum percentual foi elevado porque permanecem pendentes a decisão sobre a proveniência externa e a validação conjunta da PR #10.
+
+## 246. Busca local do RAW e CI #1377 — 19/11/2026
+
+O usuário executou `find "$HOME" -type f` pelos nomes exatos do RAW e do manifesto de origem; o comando terminou sem imprimir caminhos. Conclusão limitada: nenhum dos arquivos foi localizado dentro de `$HOME`. Isso não exclui armazenamento compartilhado Android, diretórios externos ou backups. Nenhum RAW foi exibido/publicado e nenhum artefato substituto será criado. Não alterar `raw_sha256`.
+
+O workflow #1377 (run `44435540809`) concluiu SUCCESS no commit `2f11f3ab453d4abd02b9503d1524cb67fc128cb3`, PR #25. CI #1376 no commit anterior confirmou 539 testes e compileall; #1377 também concluiu com sucesso.
+
+Estado conferido: PR #9 OPEN, HEAD `b9dfe8f...`, mergeable; PR #10 OPEN, HEAD `e7c02ad...`, mergeable, integração com base #9 ainda sem validação conjunta; PR #25 OPEN/DRAFT, HEAD `2f11f3a...`, mergeable. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Nenhum merge, rebase, atualização de branch da cadeia ou operação financeira executado.
+
+Progresso mantido: módulo **92%**, revisão técnica **93%**. A busca em `$HOME` sem resultado não fecha a pendência de proveniência.
+
+## 247. Busca no armazenamento compartilhado Android — 19/11/2026
+
+O usuário executou novamente a busca pelos nomes exatos do RAW e do manifesto original em `$HOME` e, em seguida, em `$HOME/storage/shared`. Ambos os comandos terminaram sem imprimir caminhos.
+
+Conclusão: os dois arquivos não foram localizados nem na árvore privada do Termux (`$HOME`) nem no armazenamento compartilhado Android acessível pelo Termux. Isso não exclui cópias em armazenamento externo removível não montado, backups, nuvem ou outro dispositivo. Não pedir para o usuário publicar conteúdo RAW e não fabricar manifesto.
+
+A pendência de proveniência permanece **não resolvida por indisponibilidade dos artefatos de origem**. A projeção anonimizada segue validada pelo hash do próprio manifesto e pelos testes estruturais da PR #9. Manter essas duas conclusões separadas.
+
+Próxima sequência: não insistir em buscas amplas sem indicação de outro local concreto; manter a ressalva documentada e continuar a revisão técnica da cadeia #9 → #10 sem rebase, merge ou alteração de branches. A validação combinada da PR #10 ainda depende de uma integração controlada autorizada, que não foi executada.
+
+Estado preservado: PR #9 e #10 abertas; PR #25 OPEN/DRAFT; `main` intacta. Progresso mantido em módulo **92%** e revisão técnica **93%**.
+
+## 248. Integração autorizada da PR #9 e estado da dependência #10 — 19/11/2026
+
+O usuário autorizou expressamente a continuidade e as operações técnicas necessárias no repositório.
+
+### PR #9 — merge concluído em branch de feature
+
+- PR #9 foi integrada à sua branch-base `feat/solana-token-account-deltas`, sem tocar na `main`.
+- Merge commit: `802243877dc7f1350ab72b17565f8468785d1c29`.
+- Head da PR #9 antes do merge: `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a`.
+- CI no head da PR #9: run `44434553632`, job `135260000780`, SUCCESS; log confirma 539 testes e execução de compileall.
+- PR #9 agora está CLOSED/MERGED.
+
+### PR #10 — dependência não atualizada automaticamente
+
+- PR #10 permanece OPEN, base `feat/raydium-cpmm-transfer-reconciliation`, head `e7c02adb3564fefb3a8c734098f5c92603eb4a7b`.
+- A branch-base da #10 continua em `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a`; o merge da #9 atualizou a branch-base da #9 (`feat/solana-token-account-deltas`) para `802243877dc7f1350ab72b17565f8468785d1c29`, mas não moveu a branch head da #9, que é a base da #10.
+- Comparação atual #10: diverged, head 7 commits à frente e 4 atrás do merge-base `5b57955fa843e4880bb6b8099cb455c160da83e4`. GitHub informa mergeable=true, mas isso não substitui integração e CI combinados.
+- Não foi feito rebase/atualização forçada da branch #10. As ferramentas GitHub disponíveis nesta sessão não expõem a operação nativa “Update branch” da PR; não improvisar reconstrução de merge commit sem uma árvore de integração validada.
+- Próxima ação técnica: preparar atualização controlada da branch `feat/swap-domain-bundle-builder` com a base atual `feat/raydium-cpmm-transfer-reconciliation`, preservando os commits e validando o resultado; então executar/aguardar CI combinado antes de qualquer merge da #10.
+
+### Estado preservado
+
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- PR #10 OPEN; PR #25 OPEN/DRAFT.
+- CI do commit documental anterior `16efb6d7933d84fb60ee4dec04819f91824dc78e`: run `44436536921`, SUCCESS; log confirma 539 testes e compileall.
+- Nenhum swap real, assinatura ou execução financeira habilitada.
+- Progresso do módulo permanece 92%; revisão técnica 93%, pois a integração combinada #10 ainda não foi validada.
+
+## 249. Integração da PR #10 e validação combinada pendente — 19/11/2026
+
+Após reavaliar a topologia real das branches, confirmou-se que a PR #10 tinha como base a branch `feat/raydium-cpmm-transfer-reconciliation` (head `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a`) e head próprio `e7c02adb3564fefb3a8c734098f5c92603eb4a7b`. A comparação contra o merge-base antigo mostrava 7 commits à frente e 4 atrás; GitHub reportava `mergeable=true`. O CI próprio da PR #10 havia passado (run `44223834918`, 181 testes e compileall), mas não era prova do resultado combinado.
+
+Com a autorização expressa do usuário, a PR #10 foi integrada à sua branch-base `feat/raydium-cpmm-transfer-reconciliation`:
+- PR #10: CLOSED/MERGED.
+- Merge commit: `a7e8a47a6ff29817d1ec13e2d2f965d6e857a425`.
+- CI disparado no merge commit: run `44437095983`, inicialmente `in_progress`.
+- A validação decisiva é o CI deste merge commit, pois ele testa a árvore resultante com os quatro commits da base e os sete commits da PR #10.
+
+Estado das dependências: PR #9 e PR #10 integradas em suas respectivas branches-base intermediárias; isso não significa integração na `main`. PR #25 continua OPEN/DRAFT. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+Próxima ação: acompanhar run `44437095983`, inspecionar o log e confirmar número de testes + compileall. Se falhar, diagnosticar e corrigir na branch de integração, sem avançar para a próxima dependência até fechar esta etapa. Progresso permanece módulo 92% / revisão técnica 93% até o CI combinado ser aprovado.

@@ -58,6 +58,8 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any]) -> list[s
     if not isinstance(raw, list):
         raise ValueError("message.accountKeys ausente ou inválido")
     parsed_keys = any(isinstance(item, dict) for item in raw)
+    if parsed_keys and not all(isinstance(item, dict) for item in raw):
+        raise ValueError("message.accountKeys mistura formatos jsonParsed e compiled")
     keys: list[str] = []
     for item in raw:
         key = item.get("pubkey") if isinstance(item, dict) else item
@@ -65,7 +67,26 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any]) -> list[s
             raise ValueError("accountKeys contém chave inválida")
         keys.append(key)
     if not parsed_keys:
-        loaded = meta.get("loadedAddresses") or {}
+        lookups = message.get("addressTableLookups", [])
+        if not isinstance(lookups, list):
+            raise ValueError("message.addressTableLookups inválido")
+        expected = {"writable": 0, "readonly": 0}
+        for lookup in lookups:
+            if not isinstance(lookup, dict):
+                raise ValueError("addressTableLookup inválido")
+            for field in ("writable", "readonly"):
+                indexes = lookup.get(field + "Indexes")
+                if not isinstance(indexes, list) or any(
+                    isinstance(index, bool) or not isinstance(index, int) or index < 0
+                    for index in indexes
+                ):
+                    raise ValueError(f"addressTableLookup.{field}Indexes inválido")
+                expected[field] += len(indexes)
+        loaded = meta.get("loadedAddresses") if meta is not None else None
+        if lookups and not isinstance(loaded, dict):
+            raise ValueError("meta.loadedAddresses ausente para mensagem com addressTableLookups")
+        if loaded is None:
+            loaded = {}
         if not isinstance(loaded, dict):
             raise ValueError("meta.loadedAddresses inválido")
         for field in ("writable", "readonly"):
@@ -74,6 +95,14 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any]) -> list[s
                 not isinstance(value, str) or not value for value in values
             ):
                 raise ValueError(f"loadedAddresses.{field} inválido")
+            if lookups and len(values) != expected[field]:
+                raise ValueError(
+                    f"loadedAddresses.{field} não corresponde à quantidade de índices da lookup table"
+                )
+            if not lookups and values:
+                raise ValueError(
+                    "meta.loadedAddresses contém endereços sem addressTableLookups"
+                )
             keys.extend(values)
     return keys
 

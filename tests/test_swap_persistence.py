@@ -1,4 +1,9 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from pathlib import Path
+import tempfile
+from threading import Barrier
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -58,7 +63,7 @@ class SwapPersistenceTests(unittest.TestCase):
         self.assertEqual(bundle["evidence"], self.evidence)
         self.assertEqual(bundle["observation"].input_amount, Decimal("1.250000000"))
 
-    def test_repeated_operation_is_idempotent_and_updates_bundle(self):
+    def test_repeated_identical_operation_is_idempotent(self):
         self.assertTrue(self.store.save_swap_bundle(
             self.observation, self.classification, self.evidence
         ))
@@ -67,7 +72,39 @@ class SwapPersistenceTests(unittest.TestCase):
         ))
         self.assertEqual(self.store.get_swap_bundle(self.observation.operation_id)["evidence"], self.evidence)
 
-    def test_existing_bundle_is_updated_without_creating_duplicate(self):
+    def test_concurrent_divergent_bundle_writes_preserve_first_committed_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "concurrent.sqlite3")
+            try:
+                store.save_observation(
+                    "wallet-a", "sig-a", {"meta": {"err": None}}, [],
+                    parse_status="no_events", parser_version="1",
+                )
+                divergent = replace(
+                    self.observation,
+                    input_amount=Decimal("9.99"),
+                )
+                barrier = Barrier(2)
+
+                def persist(observation):
+                    barrier.wait()
+                    try:
+                        return ("saved", store.save_swap_bundle(
+                            observation, self.classification, self.evidence
+                        ))
+                    except ValueError:
+                        return ("rejected", False)
+
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    outcomes = list(executor.map(persist, (self.observation, divergent)))
+
+                self.assertCountEqual([item[0] for item in outcomes], ["saved", "rejected"])
+                persisted = store.get_swap_bundle(self.observation.operation_id)["observation"]
+                self.assertIn(persisted, (self.observation, divergent))
+            finally:
+                store.close()
+
+    def test_existing_bundle_rejects_divergent_replay_without_explicit_replace(self):
         self.assertTrue(self.store.save_swap_bundle(
             self.observation, self.classification, self.evidence
         ))
@@ -85,12 +122,45 @@ class SwapPersistenceTests(unittest.TestCase):
             cpi_path=(0, 1),
             evidence=("outer instruction 2", "verified inner CPI path"),
         )
+        with self.assertRaisesRegex(ValueError, "Bundle divergente"):
+            self.store.save_swap_bundle(
+                self.observation, revised_classification, revised_evidence
+            )
+        bundle = self.store.get_swap_bundle(self.observation.operation_id)
+        self.assertEqual(bundle["classification"], self.classification)
+        self.assertEqual(bundle["evidence"], self.evidence)
+
+    def test_incomplete_existing_bundle_is_not_silently_repaired(self):
+        self.store.save_swap_bundle(
+            self.observation, self.classification, self.evidence
+        )
+        with self.store._connection_scope() as connection:
+            with connection:
+                connection.execute(
+                    "DELETE FROM swap_evidence WHERE operation_id = ?",
+                    (self.observation.operation_id,),
+                )
+        with self.assertRaisesRegex(RuntimeError, "Bundle existente incompleto"):
+            self.store.save_swap_bundle(
+                self.observation, self.classification, self.evidence
+            )
+
+    def test_existing_bundle_can_be_replaced_only_explicitly(self):
+        self.assertTrue(self.store.save_swap_bundle(
+            self.observation, self.classification, self.evidence
+        ))
+        revised = SwapClassification(
+            operation_id=self.observation.operation_id,
+            side="BUY",
+            confidence=Decimal("0.90"),
+            reason="Explicitly authorized parser reprocessing.",
+        )
         self.assertFalse(self.store.save_swap_bundle(
-            self.observation, revised_classification, revised_evidence
+            self.observation, revised, self.evidence, replace_existing=True
         ))
         bundle = self.store.get_swap_bundle(self.observation.operation_id)
-        self.assertEqual(bundle["classification"], revised_classification)
-        self.assertEqual(bundle["evidence"], revised_evidence)
+        self.assertEqual(bundle["classification"], revised)
+        self.assertEqual(bundle["evidence"], self.evidence)
 
     def test_rejects_contracts_with_different_operation_ids(self):
         wrong = SwapClassification(

@@ -100,6 +100,15 @@ class SQLiteEventStore:
                     )
                     """
                 )
+                checkpoint_columns = {
+                    row[1] for row in connection.execute(
+                        "PRAGMA table_info(wallet_checkpoints)"
+                    ).fetchall()
+                }
+                if "slot" not in checkpoint_columns:
+                    connection.execute(
+                        "ALTER TABLE wallet_checkpoints ADD COLUMN slot INTEGER"
+                    )
                 connection.execute(
                     """
                     CREATE TABLE IF NOT EXISTS observed_transactions (
@@ -136,6 +145,21 @@ class SQLiteEventStore:
                         connection.execute(
                             f"ALTER TABLE observed_transactions ADD COLUMN {column} {definition}"
                         )
+                connection.execute(
+                    """UPDATE wallet_checkpoints
+                       SET slot = (
+                           SELECT observed.slot FROM observed_transactions AS observed
+                           WHERE observed.wallet_address = wallet_checkpoints.wallet_address
+                             AND observed.signature = wallet_checkpoints.signature
+                       )
+                       WHERE slot IS NULL
+                         AND EXISTS (
+                           SELECT 1 FROM observed_transactions AS observed
+                           WHERE observed.wallet_address = wallet_checkpoints.wallet_address
+                             AND observed.signature = wallet_checkpoints.signature
+                             AND observed.slot IS NOT NULL
+                         )"""
+                )
                 connection.execute(
                     """
                     CREATE TABLE IF NOT EXISTS token_balance_deltas (
@@ -257,6 +281,7 @@ class SQLiteEventStore:
         parse_error: str | None = None,
         normalized_observation: NormalizedObservation | None = None,
         advance_checkpoint: bool = True,
+        slot: int | None = None,
     ) -> int:
         """Persiste payload e contratos normalizados; checkpoint é opcional.
 
@@ -270,6 +295,10 @@ class SQLiteEventStore:
             raise ValueError("Estado de parsing e versão do parser são obrigatórios.")
         if not isinstance(advance_checkpoint, bool):
             raise TypeError("advance_checkpoint deve ser bool")
+        if slot is not None and (
+            isinstance(slot, bool) or not isinstance(slot, int) or slot < 0
+        ):
+            raise ValueError("slot deve ser inteiro não negativo ou None")
         if any(event.wallet_address != wallet_address or event.signature != signature for event in events):
             raise ValueError("Todos os eventos devem pertencer à observação informada.")
         if normalized_observation is not None:
@@ -280,6 +309,8 @@ class SQLiteEventStore:
                 raise ValueError("Eventos legados divergem do resultado normalizado.")
             if transaction is not None and envelope.raw_transaction != transaction:
                 raise ValueError("Payload normalizado diverge do payload bruto informado.")
+            if slot is not None and envelope.slot is not None and slot != envelope.slot:
+                raise ValueError("slot informado diverge do envelope normalizado.")
             parse_status = envelope.parse_status
             parser_version = envelope.parser_version
         payload_json = (
@@ -298,7 +329,23 @@ class SQLiteEventStore:
             for event in events
         ]
         with self._connection_scope() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             with connection:
+                existing = connection.execute(
+                    """SELECT payload_json FROM observed_transactions
+                       WHERE wallet_address = ? AND signature = ?""",
+                    (wallet_address, signature),
+                ).fetchone()
+                if (
+                    existing is not None
+                    and existing[0] is not None
+                    and payload_json is not None
+                    and existing[0] != payload_json
+                ):
+                    raise ValueError(
+                        "Payload RAW divergente para assinatura já arquivada; "
+                        "a evidência original é imutável."
+                    )
                 connection.execute(
                     """
                     INSERT INTO observed_transactions
@@ -317,7 +364,7 @@ class SQLiteEventStore:
                     (wallet_address, signature, payload_json, parse_status,
                      parser_version, parse_error,
                      normalized_observation.transaction.chain if normalized_observation else None,
-                     normalized_observation.transaction.slot if normalized_observation else None,
+                     normalized_observation.transaction.slot if normalized_observation else slot,
                      normalized_observation.transaction.occurred_at.isoformat()
                      if normalized_observation and normalized_observation.transaction.occurred_at else None),
                 )
@@ -363,18 +410,42 @@ class SQLiteEventStore:
             (wallet_address, signature),
         )
         connection.execute(
-            """INSERT INTO wallet_checkpoints (wallet_address, signature)
-               VALUES (?, ?)
+            """INSERT INTO wallet_checkpoints (wallet_address, signature, slot)
+               VALUES (
+                   ?, ?,
+                   (SELECT slot FROM observed_transactions
+                    WHERE wallet_address = ? AND signature = ?)
+               )
                ON CONFLICT(wallet_address) DO UPDATE SET
-                   signature = excluded.signature, updated_at = CURRENT_TIMESTAMP""",
-            (wallet_address, signature),
+                   signature = excluded.signature,
+                   slot = COALESCE(excluded.slot, wallet_checkpoints.slot),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE
+                   (wallet_checkpoints.slot IS NULL AND excluded.slot IS NULL)
+                   OR (
+                       excluded.slot IS NOT NULL
+                       AND (
+                           wallet_checkpoints.slot IS NULL
+                           OR excluded.slot > wallet_checkpoints.slot
+                       )
+                   )""",
+            (wallet_address, signature, wallet_address, signature),
         )
 
-    def mark_processed(self, wallet_address: str, signature: str) -> None:
-        """Marca uma transação como concluída somente após todo o pipeline terminar."""
+    def mark_processed(
+        self,
+        wallet_address: str,
+        signature: str,
+        *,
+        advance_checkpoint: bool = True,
+    ) -> None:
+        """Marca processamento; backfill pode adiar o cursor até o CAS ordenado."""
+        if not isinstance(advance_checkpoint, bool):
+            raise TypeError("advance_checkpoint deve ser bool.")
         if not wallet_address.strip() or not signature.strip():
             raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
         with self._connection_scope() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             with connection:
                 parent = connection.execute(
                     "SELECT 1 FROM observed_transactions WHERE wallet_address = ? AND signature = ?",
@@ -382,13 +453,22 @@ class SQLiteEventStore:
                 ).fetchone()
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes de marcar como processada.")
-                self._mark_processed_in_connection(connection, wallet_address, signature)
+                if advance_checkpoint:
+                    self._mark_processed_in_connection(connection, wallet_address, signature)
+                else:
+                    connection.execute(
+                        """INSERT OR IGNORE INTO processed_signatures (wallet_address, signature)
+                           VALUES (?, ?)""",
+                        (wallet_address, signature),
+                    )
 
     def save_swap_bundle(
         self, observation: SwapObservation, classification: SwapClassification,
-        evidence: SwapEvidence,
+        evidence: SwapEvidence, *, replace_existing: bool = False,
     ) -> bool:
         """Grava os três contratos atomicamente; retorna True se for novo."""
+        if not isinstance(replace_existing, bool):
+            raise TypeError("replace_existing deve ser bool.")
         operation_id = observation.operation_id
         if not (classification.operation_id == evidence.operation_id == operation_id):
             raise ValueError("Os três contratos devem compartilhar o mesmo operation_id.")
@@ -400,6 +480,7 @@ class SQLiteEventStore:
         if observation.chain.strip().lower() != "solana":
             raise ValueError("Esta versão do EventStore aceita swaps apenas da chain Solana.")
         with self._connection_scope() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             with connection:
                 parent = connection.execute(
                     """SELECT 1 FROM observed_transactions
@@ -408,9 +489,58 @@ class SQLiteEventStore:
                 ).fetchone()
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes do swap.")
-                existed = connection.execute(
-                    "SELECT 1 FROM swap_observations WHERE operation_id = ?", (operation_id,)
-                ).fetchone() is not None
+                existing = connection.execute(
+                    """SELECT chain, wallet_address, signature, input_mint, output_mint,
+                              input_amount, output_amount, parser_version
+                       FROM swap_observations WHERE operation_id = ?""",
+                    (operation_id,),
+                ).fetchone()
+                existing_classification = connection.execute(
+                    """SELECT side, confidence, reason FROM swap_classifications
+                       WHERE operation_id = ?""",
+                    (operation_id,),
+                ).fetchone()
+                existing_evidence = connection.execute(
+                    """SELECT program_id, venue, instruction_index, cpi_path_json, evidence_json
+                       FROM swap_evidence WHERE operation_id = ?""",
+                    (operation_id,),
+                ).fetchone()
+                existed = existing is not None
+                if existed and not replace_existing:
+                    if existing_classification is None or existing_evidence is None:
+                        raise RuntimeError(
+                            "Bundle existente incompleto; replay não pode repará-lo silenciosamente."
+                        )
+                    same_observation = (
+                        existing[0], existing[1], existing[2], existing[3], existing[4],
+                        existing[5], existing[6], existing[7],
+                    ) == (
+                        observation.chain, observation.wallet_address, observation.signature,
+                        observation.input_mint, observation.output_mint,
+                        str(observation.input_amount), str(observation.output_amount),
+                        observation.parser_version,
+                    )
+                    same_classification = (
+                        existing_classification[0], existing_classification[1],
+                        existing_classification[2],
+                    ) == (
+                        classification.side, str(classification.confidence),
+                        classification.reason,
+                    )
+                    same_evidence = (
+                        existing_evidence[0], existing_evidence[1], existing_evidence[2],
+                        existing_evidence[3], existing_evidence[4],
+                    ) == (
+                        evidence.program_id, evidence.venue, evidence.instruction_index,
+                        json.dumps(list(evidence.cpi_path), separators=(",", ":")),
+                        json.dumps(list(evidence.evidence), separators=(",", ":")),
+                    )
+                    if not (same_observation and same_classification and same_evidence):
+                        raise ValueError(
+                            "Bundle divergente para operation_id já persistido; "
+                            "use replace_existing=True somente em reprocessamento autorizado."
+                        )
+                    return False
                 connection.execute(
                     """INSERT INTO swap_observations
                        (operation_id, chain, wallet_address, signature, input_mint, output_mint,
@@ -920,6 +1050,68 @@ class SQLiteEventStore:
             ).fetchone()
         return row is not None
 
+    def advance_checkpoint_in_order(
+        self,
+        wallet_address: str,
+        signature: str,
+        slot: int,
+        *,
+        expected_previous_signature: str,
+    ) -> None:
+        """Avança checkpoint seguindo a ordem autoritativa do RPC getSignaturesForAddress."""
+        if not isinstance(wallet_address, str) or not wallet_address.strip():
+            raise ValueError("Carteira do checkpoint é obrigatória.")
+        if not isinstance(signature, str) or not signature.strip():
+            raise ValueError("Assinatura do checkpoint é obrigatória.")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+            raise ValueError("slot deve ser inteiro não negativo.")
+        if not isinstance(expected_previous_signature, str) or not expected_previous_signature.strip():
+            raise ValueError("A assinatura anterior esperada do checkpoint é obrigatória.")
+        with self._connection_scope() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            with connection:
+                processed = connection.execute(
+                    """SELECT 1 FROM processed_signatures
+                       WHERE wallet_address = ? AND signature = ?""",
+                    (wallet_address, signature),
+                ).fetchone()
+                if processed is None:
+                    raise ValueError(
+                        "Não é possível avançar checkpoint de transação ainda não processada."
+                    )
+                observed = connection.execute(
+                    """SELECT slot FROM observed_transactions
+                       WHERE wallet_address = ? AND signature = ?""",
+                    (wallet_address, signature),
+                ).fetchone()
+                if observed is None or observed[0] != slot:
+                    raise ValueError(
+                        "Slot informado deve corresponder à observação persistida."
+                    )
+                current = connection.execute(
+                    "SELECT signature, slot FROM wallet_checkpoints WHERE wallet_address = ?",
+                    (wallet_address,),
+                ).fetchone()
+                if current is not None and current[0] == signature:
+                    return
+                if current is None or current[0] != expected_previous_signature:
+                    raise ValueError(
+                        "Checkpoint mudou durante o backfill; avanço recusado para preservar a ordem."
+                    )
+                if current[1] is not None and slot < current[1]:
+                    raise ValueError(
+                        "Checkpoint ordenado não pode retroceder para slot anterior."
+                    )
+                connection.execute(
+                    """INSERT INTO wallet_checkpoints (wallet_address, signature, slot)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(wallet_address) DO UPDATE SET
+                           signature = excluded.signature,
+                           slot = excluded.slot,
+                           updated_at = CURRENT_TIMESTAMP""",
+                    (wallet_address, signature, slot),
+                )
+
     def save_checkpoint(self, wallet_address: str, signature: str) -> None:
         """Registra assinatura processada e atualiza o cursor mais recente conhecido."""
         if not wallet_address.strip() or not signature.strip():
@@ -935,13 +1127,27 @@ class SQLiteEventStore:
                 )
                 connection.execute(
                     """
-                    INSERT INTO wallet_checkpoints (wallet_address, signature)
-                    VALUES (?, ?)
+                    INSERT INTO wallet_checkpoints (wallet_address, signature, slot)
+                    VALUES (
+                        ?, ?,
+                        (SELECT slot FROM observed_transactions
+                         WHERE wallet_address = ? AND signature = ?)
+                    )
                     ON CONFLICT(wallet_address) DO UPDATE SET
                         signature = excluded.signature,
+                        slot = COALESCE(excluded.slot, wallet_checkpoints.slot),
                         updated_at = CURRENT_TIMESTAMP
+                    WHERE
+                        (wallet_checkpoints.slot IS NULL AND excluded.slot IS NULL)
+                        OR (
+                            excluded.slot IS NOT NULL
+                            AND (
+                                wallet_checkpoints.slot IS NULL
+                                OR excluded.slot > wallet_checkpoints.slot
+                            )
+                        )
                     """,
-                    (wallet_address, signature),
+                    (wallet_address, signature, wallet_address, signature),
                 )
 
 

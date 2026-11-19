@@ -32,6 +32,7 @@ class SolanaTokenTransfer:
     source_format: str
     cpi_path_valid: bool = True
     fee_amount_raw: int | None = None
+    cpi_program_path: tuple[str, ...] = ()
 
 
 def _decode_base58(value: str) -> bytes:
@@ -52,6 +53,8 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any] | None) ->
     if not isinstance(raw, list):
         raise ValueError("message.accountKeys ausente ou inválido")
     parsed_keys = any(isinstance(item, dict) for item in raw)
+    if parsed_keys and not all(isinstance(item, dict) for item in raw):
+        raise ValueError("message.accountKeys mistura formatos jsonParsed e compiled")
     keys = []
     for item in raw:
         key = item.get("pubkey") if isinstance(item, dict) else item
@@ -60,8 +63,27 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any] | None) ->
         keys.append(key)
 
     # jsonParsed já expõe as chaves resolvidas; encoding json usa loadedAddresses.
-    if not parsed_keys and meta is not None:
-        loaded = meta.get("loadedAddresses") or {}
+    if not parsed_keys:
+        lookups = message.get("addressTableLookups", [])
+        if not isinstance(lookups, list):
+            raise ValueError("message.addressTableLookups inválido")
+        expected = {"writable": 0, "readonly": 0}
+        for lookup in lookups:
+            if not isinstance(lookup, dict):
+                raise ValueError("addressTableLookup inválido")
+            for field in ("writable", "readonly"):
+                indexes = lookup.get(field + "Indexes")
+                if not isinstance(indexes, list) or any(
+                    isinstance(index, bool) or not isinstance(index, int) or index < 0
+                    for index in indexes
+                ):
+                    raise ValueError(f"addressTableLookup.{field}Indexes inválido")
+                expected[field] += len(indexes)
+        loaded = meta.get("loadedAddresses") if meta is not None else None
+        if lookups and not isinstance(loaded, dict):
+            raise ValueError("meta.loadedAddresses ausente para mensagem com addressTableLookups")
+        if loaded is None:
+            loaded = {}
         if not isinstance(loaded, dict):
             raise ValueError("meta.loadedAddresses inválido")
         for field in ("writable", "readonly"):
@@ -70,6 +92,14 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any] | None) ->
                 not isinstance(value, str) or not value for value in values
             ):
                 raise ValueError(f"loadedAddresses.{field} inválido")
+            if lookups and len(values) != expected[field]:
+                raise ValueError(
+                    f"loadedAddresses.{field} não corresponde à quantidade de índices da lookup table"
+                )
+            if not lookups and values:
+                raise ValueError(
+                    "meta.loadedAddresses contém endereços sem addressTableLookups"
+                )
             keys.extend(values)
     return keys
 
@@ -117,6 +147,58 @@ def _cpi_paths(instructions: list[Any]) -> list[tuple[tuple[int, ...], int | Non
         path = parent + (sibling,)
         stack_paths[height] = path
         result.append((path, height))
+    return result
+
+
+def _cpi_program_paths(
+    outer: list[Any],
+    groups: list[Any],
+    keys: list[str],
+) -> dict[tuple[int, int], tuple[str, ...]]:
+    """Resolve a trusted program ancestry for each inner instruction."""
+    result: dict[tuple[int, int], tuple[str, ...]] = {}
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        outer_index = group.get("index")
+        nested = group.get("instructions")
+        if (
+            isinstance(outer_index, bool)
+            or not isinstance(outer_index, int)
+            or not 0 <= outer_index < len(outer)
+            or not isinstance(nested, list)
+        ):
+            continue
+        outer_program = _resolve_program_id(outer[outer_index], keys)
+        if not outer_program:
+            continue
+        stack: list[tuple[int, str]] = [(1, outer_program)]
+        for inner_index, item in enumerate(nested):
+            if not isinstance(item, dict):
+                result[(outer_index, inner_index)] = ()
+                continue
+            height = item.get("stackHeight")
+            program = _resolve_program_id(item, keys)
+            if (
+                isinstance(height, bool)
+                or not isinstance(height, int)
+                or height < 2
+                or not program
+            ):
+                result[(outer_index, inner_index)] = ()
+                stack = [(1, outer_program)]
+                continue
+            while stack and stack[-1][0] >= height:
+                stack.pop()
+            if not stack or stack[-1][0] != height - 1:
+                result[(outer_index, inner_index)] = ()
+                stack = [(1, outer_program)]
+                continue
+            result[(outer_index, inner_index)] = tuple(
+                ancestor for _, ancestor in stack
+            )
+            if program not in TOKEN_PROGRAM_IDS:
+                stack.append((height, program))
     return result
 
 
@@ -269,6 +351,7 @@ def _decode_one(
     cpi_path: tuple[int, ...],
     execution_status: str,
     cpi_path_valid: bool = True,
+    cpi_program_path: tuple[str, ...] = (),
 ) -> SolanaTokenTransfer | None:
     program_id = _resolve_program_id(item, keys)
     if program_id not in TOKEN_PROGRAM_IDS:
@@ -304,6 +387,7 @@ def _decode_one(
         source_format=source_format,
         cpi_path_valid=cpi_path_valid,
         fee_amount_raw=fee_amount,
+        cpi_program_path=cpi_program_path,
     )
 
 
@@ -350,6 +434,7 @@ def decode_solana_token_transfers(
     if not isinstance(groups, list):
         raise ValueError("meta.innerInstructions inválido")
     seen = set()
+    program_paths = _cpi_program_paths(outer, groups, keys)
     for group in groups:
         if not isinstance(group, dict):
             raise ValueError("grupo innerInstructions inválido")
@@ -375,6 +460,7 @@ def decode_solana_token_transfers(
             decoded = _decode_one(
                 item, keys, outer_index, inner_index, height, path, status,
                 cpi_path_valid=path_valid,
+                cpi_program_path=program_paths.get((outer_index, inner_index), ()),
             )
             if decoded is not None:
                 results.append(decoded)

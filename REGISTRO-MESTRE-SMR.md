@@ -3283,3 +3283,28 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - Logs: `Ran 609 tests in 4.821s`, `OK`; `python -m compileall -q src tests` SUCCESS.
 - A branch `feat/token2022-transfer-checked-with-fee` permanece no merge commit `aa173f7bc13158d641e04d571173763df4962052` antes desta atualização exclusivamente documental.
 - `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+## 315. Contrato inicial de observação de transações Yellowstone — 19/11/2026
+
+### Implementação
+- Branch isolada: `feat/geyser-transaction-observation`, criada a partir do HEAD documental validado da branch Token-2022 `f688d290115ada8067ea0b1465076ff99f2e5f7c`.
+- Criado `src/smart_money_radar/data_sources/geyser_transaction_updates.py` com `NormalizedTransactionObservation` e `normalize_transaction_update()`.
+- O normalizador trata o wrapper Yellowstone `SubscribeUpdateTransaction`: slot vem do wrapper; assinatura, Transaction, meta, is_vote e índice vêm de TransactionInfo.
+- Assinatura de 64 bytes é convertida para Base58 e comparada com a primeira assinatura da Transaction; divergência falha fechado.
+- Preserva payload serializado de Transaction e TransactionStatusMeta, índice opcional, is_vote, assinatura, slot, source_id, stream_id, ordering_domain_id e stream_sequence.
+- Meta ausente permanece ausente e marca `evidence_complete=false`; não há inferência.
+- Bytes recebidos exatos podem ser fornecidos em `raw_message_bytes`; nesse caso provenance é `WIRE`. Sem bytes do transporte, usa serialização protobuf determinística marcada `PROTOBUF_DETERMINISTIC_RESERIALIZATION`, não wire RAW original.
+- `geyser_proto_adapter.py` agora despacha o oneof transaction para o novo normalizador. A sequência não é atribuída pelo adapter: o receptor deve sequenciar todas as mensagens SubscribeUpdate em um único contador por stream antes da dispatch; o mesmo ordering_domain_id deve ser fornecido para transaction/account updates correlacionáveis.
+- Criado `tests/test_geyser_transaction_updates.py` com testes para normalização, metadados, assinatura divergente, ausência de meta, bytes wire, validação de slot/sequência e dispatch.
+- Atualizado `docs/SOLANA-HISTORICAL-SNAPSHOT-INGESTION-CONTRACT.md`, seção 10.
+
+### Limites explícitos
+- Esta fatia não implementa cliente gRPC, provider, sequenciador, persistência RAW, replay/reconnect, decodificação de instruções/CPI, transaction_order, snapshots históricos, classificação BUY/SELL ou execução.
+- A integração efetiva com account updates ainda depende de um receptor que compartilhe sequência e ordering_domain_id e de persistência auditável. Nenhum snapshot se torna elegível por esta implementação isolada.
+- Nenhum merge foi autorizado ou executado; a branch Token-2022 e `main` permanecem intactas.
+
+### Validação
+- Aguardando CI da PR draft no HEAD final; não declarar testes aprovados antes do resultado SUCCESS no commit correspondente.
+
+### Próxima ação
+- Abrir PR draft da branch `feat/geyser-transaction-observation` para `feat/token2022-transfer-checked-with-fee`, validar CI e revisar o diff integrado. Não fazer merge sem autorização expressa.

@@ -1975,3 +1975,18 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - O estado `RECONCILED` deve ser lido como reconciliação dos deltas base pre/post e transferências atribuídas. Os valores withheld esperados são expostos, mas o estado TLV histórico ainda não foi observado; epoch/config histórica do mint e withheld pre/post continuam pendentes.
 - Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain foi realizada.
 - Próxima etapa: desenhar e implementar a camada de prova histórica de TransferFeeConfig/epoch e TransferFeeAmount pre/post, sem usar estado atual como substituto histórico.
+
+
+## 268. Decoder TLV de withheld pre/post e CI 416/416 — 19/11/2026
+
+- Criado `TransferFeeAmountDelta` e `decode_transfer_fee_amount_delta(pre_account_data, post_account_data)` em `token2022_transfer_fee_state.py`.
+- O decoder lê o TLV `TransferFeeAmount` nos dois lados, exige a extensão presente em ambos e conjunto de extensões estável, e retorna `pre_withheld_amount`, `post_withheld_amount` e delta assinado. Delta negativo é permitido para capturar harvest; extensão ausente não vira zero.
+- Testes novos cobrem aumento, redução/harvest, mudança no conjunto de extensões e extensão ausente.
+- Limite: o decoder valida estrutura dos bytes, não prova que os snapshots correspondem ao instante imediatamente anterior/posterior à transação. Assinatura, slot, ordenação e proveniência precisam vir do coletor; `getTransaction.pre/postTokenBalances` não contém o TLV withheld.
+- Commits: decoder `bfdfc01c4333ea267ec96c10153b8d2ef61ae358`; testes `be1695ec8896855aa1748ad19c59fa3848d25ac2`; documentação `bc8623e5cdae0d1292d1cf22b8da07a1a7842aa7`.
+- CI #1473 (`44445631405`) e #1474 (`44445639117`) no HEAD de código/testes `be1695ec8896855aa1748ad19c59fa3848d25ac2`: completed/success, **416 testes OK**, compileall aprovado.
+- Commit documental `bc8623e5cdae0d1292d1cf22b8da07a1a7842aa7` e atualização desta seção não alteram código/testes após o CI aprovado.
+- Descrição da PR #23 atualizada para incluir ownership, withheld esperado, decoder TLV e limites de proveniência.
+- PR #23 permanece OPEN/DRAFT, mergeable/clean, sem merge; PR #22 permanece Draft; `main` continua `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: desenhar o contrato de snapshots TLV com assinatura/slot/ordem verificáveis e integrá-lo ao resultado da reconciliação, sem confundir bytes válidos com proveniência histórica comprovada.

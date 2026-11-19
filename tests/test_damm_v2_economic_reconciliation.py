@@ -989,10 +989,10 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(len(snapshots), 2)
         self.assertEqual(
-            [(item.instruction_index, item.inner_instruction_index, item.mint)
-             for item in self.evidence and [
-                 self.evidence[0].input_transfer, self.evidence[0].output_transfer
-             ]],
+            [
+                (item.transfer_instruction_index, item.transfer_inner_instruction_index, item.mint)
+                for item in snapshots
+            ],
             [(0, 2, "mint-a"), (0, 2, "mint-b")],
         )
         self.assertEqual(snapshots[0].transaction_signature, "signature-1")

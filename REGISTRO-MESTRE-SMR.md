@@ -2812,6 +2812,8 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - A lista de IDs testemunhas de um único evento ainda é materializada como JSON em uma string pelo SQLite; cardinalidade extrema por evento permanece uma limitação a testar.
 - Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
 - PR #27 continua Draft, aberta e sem merge; PR #26 permanece inalterada e Draft; `main` intacta.
+- HEAD final da branch de otimização: `7cd4a25078140be85e292a555c2a815c97d819a1`; o CI #1770 validou o HEAD de código/testes `4ef7ad0393c2d8796f897274c3b7aaefb7cee6ef`, e o commit posterior alterou somente o Registro Mestre.
+- Verificação GitHub: PR #27 OPEN/DRAFT, `merged=false`, base `feat/geyser-unsequenced-raw-audit`; PR #26 OPEN/DRAFT, `merged=false`, HEAD preservado em `f0d63038411cc4207fae910a3ef168e3af443784`; `main` preservada em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 
 ### Próxima ação
 - Obter CI verde no HEAD atual (suíte completa e compileall); corrigir falhas com evidência antes de benchmark.

@@ -2662,3 +2662,37 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 
 ### Próxima etapa
 Continuar a auditoria técnica da PR #23 nos módulos de recuperação/backfill, linhagem de bancos e reconciliação econômica DAMM v2. Manter PR #31/#32 Draft até revisão conjunta das dependências. Não fazer merge #31 → #23, #32 → #26, #26 → #23 ou qualquer merge para `main` sem autorização explícita.
+
+
+## 297. Invalidação fail-closed de identidade de banco após metadados contraditórios — 19/11/2026
+
+### Achado da auditoria
+- Na revisão de `BankLineageTracker`, foi observado que `_conflict()` registrava divergências de blockhash/parent metadata, mas mantinha o nó previamente aceito com `usable_for_observation=True`.
+- `AccountUpdateTimeline.transition_for()` usa `is_bank_usable()` e `is_ancestor()`; portanto, uma cadeia antes válida poderia continuar autorizando pareamento pre/post mesmo depois de uma observação contraditória para a mesma identidade `(source_id, slot, bank_id)`.
+- Isso não selecionava um fork errado por si só, mas preservava indevidamente uma prova de ancestralidade após evidência conflitante.
+
+### Correção preparada — PR #33
+- Branch: `fix/geyser-bank-lineage-conflict-taint`.
+- PR #33: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/33 — OPEN/DRAFT, mergeable, sem merge.
+- HEAD validado: `90ebeca948829325f3f6a5c25e0e7a6887cae27a`.
+- `_conflict()` agora registra a chave em `_conflicted_keys` e invalida um nó já existente.
+- Um conflito sobre identidade ainda não materializada não cria artificialmente um nó; se metadados posteriores materializarem essa chave, `_node()` aplica o taint histórico e cria o nó já invalidado.
+- `is_bank_usable()` passa a falhar fechado para a identidade conflitante e para descendentes cuja cadeia conhecida passe por ela.
+- Nenhuma reparação automática ou seleção de fork canônico foi introduzida.
+- Documentação `docs/GEYSER-ACCOUNT-TIMELINE.md` atualizada.
+- Teste novo reproduz uma cadeia pai/filho inicialmente válida, introduz blockhash contraditório e comprova que a ancestralidade deixa de ser utilizável. O teste de múltiplos bancos limpos também confirma que uma chave conflitante não é materializada, mas permanece tainted caso apareça depois.
+
+### Validação CI
+- PR #33 — workflow SMR tests, run `44595295948`, HEAD `90ebeca948829325f3f6a5c25e0e7a6887cae27a`: SUCCESS; **574 testes OK** em 4,536 s; compileall aprovado.
+- Rodadas preliminares falharam porque a primeira implementação materializava um nó para um replacement ambíguo, contrariando o contrato/teste existente. A correção passou a guardar a chave conflitante separadamente, sem materializar o nó, e o HEAD final passou.
+- PR #31 recebeu atualização documental no Registro Mestre: HEAD `20fc3ba49eae1972887dd421ed12f2aa14839dfb`; CI run `44594779664`: SUCCESS; **574 testes OK** em 4,697 s; compileall aprovado.
+
+### Estado e limites
+- PR #33 é uma correção independente baseada na PR #23; permanece Draft e sem merge.
+- PR #31 e #32 permanecem Draft; seus estados e validações estão registrados na seção 296.
+- PR #23 permanece no HEAD `4a517ca15499746ddd3f5522f112c80aaac1433b`; PR #26 permanece no HEAD `675b03bb00cfa869e5102241bbc5eec72bb20cab`.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Não houve alteração de RAW, seleção de fork canônico, conexão de provider/RPC ou execução on-chain.
+
+### Próxima etapa
+Concluir a revisão da reconciliação econômica DAMM v2 e de suas dependências de transferência/balance snapshots. Até agora, a leitura não encontrou outro bloqueio semântico confirmado nesses módulos; a revisão permanece parcial, não uma aprovação integral da PR #23. Não fazer merge de PR #31, #32 ou #33 sem autorização explícita.

@@ -3636,3 +3636,23 @@ Evidências:
 A única lacuna documental remanescente da fixture é a disponibilidade verificável do artefato bruto e do manifesto original apontado por \`provenance_manifest\`. O campo foi preservado para não apagar a referência histórica; não criamos substituto sintético nem declaramos o SHA bruto auditado. A fixture anonimizada, sua integridade SHA-256, seu consumo pelos decoders e o CI no HEAD atual estão validados.
 
 O commit desta atualização altera apenas este Registro Mestre em Markdown; o workflow \`smr-tests.yml\` filtra paths de código/testes/configuração e, portanto, não se espera CI para este commit documental isolado. Não houve merge, rebase, alteração na main ou execução financeira.
+
+
+## 242. Reauditoria da ancestralidade da PR #10 após atualização da PR #9 — 19/11/2026
+
+A PR #9 avançou até \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`. A PR #10 continua baseada na branch \`feat/raydium-cpmm-transfer-reconciliation\`, mas seu head não incorporou esses quatro commits posteriores da base.
+
+Comparação atual:
+- PR #10 base atual: branch \`feat/raydium-cpmm-transfer-reconciliation\`, SHA \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`.
+- PR #10 head: \`e7c02adb3564fefb3a8c734098f5c92603eb4a7b\`.
+- Merge-base: \`5b57955fa843e4880bb6b8099cb455c160da83e4\`.
+- Base: 4 commits à frente do merge-base; head #10: 7 commits à frente; comparação divergente, sem evidência de perda do ancestral comum.
+- GitHub informa \`mergeable=true\`; PR #10 OPEN, não Draft, não mergeada.
+- Os arquivos funcionais da PR #9 (fixture e teste de reconciliação) não se sobrepõem aos arquivos funcionais próprios da PR #10 (builder de contratos de domínio e seus testes). Ambas alteram o Registro Mestre/documentação; GitHub não reporta conflito no estado atual.
+
+CI conhecido da PR #10:
+- Run \`44223834918\`, workflow #115, SUCCESS no head antigo \`e7c02adb...\`.
+- 181 testes aprovados e compileall aprovado.
+- Esse CI não valida a combinação com os quatro commits novos da base #9. A validação do merge resultante deve ocorrer quando a integração bottom-up for autorizada/realizada.
+
+Não atualizar branch, rebasear ou mergear PR #10 nesta auditoria. A cadeia permanece empilhada; a atualização da base é uma diferença explicada, não uma razão para reordenar PRs.

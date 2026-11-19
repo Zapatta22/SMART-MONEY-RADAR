@@ -2,13 +2,30 @@
 
 import json
 import sqlite3
+import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
-from smart_money_radar.domain.models import ActivityEvent, TokenBalanceDelta
+from smart_money_radar.domain.models import (
+    ActivityEvent, SwapClassification, SwapEvidence, SwapObservation, TokenBalanceDelta,
+    build_swap_operation_id,
+)
 from smart_money_radar.domain.normalization import NormalizedObservation
+
+
+@dataclass(frozen=True)
+class SwapReconciliationRecord:
+    """Resultado auditável de uma tentativa de reconciliar um swap CPMM."""
+
+    operation_id: str
+    instruction_index: int
+    inner_instruction_index: int | None
+    cpi_path: tuple[int, ...]
+    status: str
+    reason: str
 
 
 class SQLiteEventStore:
@@ -27,8 +44,10 @@ class SQLiteEventStore:
 
     def _connect(self) -> sqlite3.Connection:
         if self._memory_connection is not None:
+            self._memory_connection.execute("PRAGMA foreign_keys = ON")
             return self._memory_connection
         connection = sqlite3.connect(self.database_path, timeout=15.0)
+        connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 15000")
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
@@ -144,6 +163,59 @@ class SQLiteEventStore:
                     )
                     """
                 )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS swap_observations (
+                        operation_id TEXT PRIMARY KEY, chain TEXT NOT NULL,
+                        wallet_address TEXT NOT NULL, signature TEXT NOT NULL,
+                        input_mint TEXT NOT NULL, output_mint TEXT NOT NULL,
+                        input_amount TEXT NOT NULL, output_amount TEXT NOT NULL,
+                        observed_at TEXT NOT NULL, parser_version TEXT NOT NULL,
+                        FOREIGN KEY(wallet_address, signature)
+                            REFERENCES observed_transactions(wallet_address, signature)
+                            ON DELETE CASCADE)"""
+                )
+                connection.execute("""CREATE INDEX IF NOT EXISTS idx_swap_observations_wallet_time
+                    ON swap_observations(wallet_address, observed_at DESC)""")
+                connection.execute("""CREATE INDEX IF NOT EXISTS idx_swap_observations_signature
+                    ON swap_observations(signature)""")
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS swap_classifications (
+                        operation_id TEXT PRIMARY KEY,
+                        side TEXT NOT NULL CHECK(side IN ('BUY','SELL','UNKNOWN')),
+                        confidence TEXT NOT NULL, reason TEXT NOT NULL,
+                        FOREIGN KEY(operation_id) REFERENCES swap_observations(operation_id)
+                            ON DELETE CASCADE)"""
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS swap_evidence (
+                        operation_id TEXT PRIMARY KEY, program_id TEXT NOT NULL,
+                        venue TEXT, instruction_index INTEGER NOT NULL,
+                        cpi_path_json TEXT NOT NULL, evidence_json TEXT NOT NULL,
+                        FOREIGN KEY(operation_id) REFERENCES swap_observations(operation_id)
+                            ON DELETE CASCADE)"""
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS swap_reconciliation_attempts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        attempt_id TEXT NOT NULL,
+                        wallet_address TEXT NOT NULL,
+                        signature TEXT NOT NULL,
+                        operation_id TEXT NOT NULL,
+                        instruction_index INTEGER NOT NULL,
+                        inner_instruction_index INTEGER,
+                        cpi_path_json TEXT NOT NULL,
+                        status TEXT NOT NULL CHECK(status IN ('MATCHED','INCOMPLETE','AMBIGUOUS','UNRESOLVED')),
+                        reason TEXT NOT NULL,
+                        attempted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(wallet_address, signature)
+                            REFERENCES observed_transactions(wallet_address, signature)
+                            ON DELETE CASCADE
+                    )"""
+                )
+                connection.execute(
+                    """CREATE INDEX IF NOT EXISTS idx_swap_reconciliation_signature
+                       ON swap_reconciliation_attempts(wallet_address, signature, attempted_at, id)"""
+                )
 
     def save_events(self, events: list[ActivityEvent]) -> int:
         """Grava eventos e retorna quantos registros novos foram inseridos."""
@@ -184,8 +256,9 @@ class SQLiteEventStore:
         parser_version: str = "1",
         parse_error: str | None = None,
         normalized_observation: NormalizedObservation | None = None,
+        advance_checkpoint: bool = True,
     ) -> int:
-        """Persiste payload, contratos normalizados, eventos e checkpoint atomicamente.
+        """Persiste payload e contratos normalizados; checkpoint é opcional.
 
         O payload bruto permite replay quando o parser ganhar cobertura nova.
         Para falhas on-chain, transaction pode ser None e parse_status deve
@@ -195,6 +268,8 @@ class SQLiteEventStore:
             raise ValueError("Carteira e assinatura da observação são obrigatórias.")
         if not parse_status.strip() or not parser_version.strip():
             raise ValueError("Estado de parsing e versão do parser são obrigatórios.")
+        if not isinstance(advance_checkpoint, bool):
+            raise TypeError("advance_checkpoint deve ser bool")
         if any(event.wallet_address != wallet_address or event.signature != signature for event in events):
             raise ValueError("Todos os eventos devem pertencer à observação informada.")
         if normalized_observation is not None:
@@ -276,24 +351,174 @@ class SQLiteEventStore:
                             delta_rows,
                         )
                 inserted = connection.total_changes - before
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO processed_signatures (wallet_address, signature)
-                    VALUES (?, ?)
-                    """,
-                    (wallet_address, signature),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO wallet_checkpoints (wallet_address, signature)
-                    VALUES (?, ?)
-                    ON CONFLICT(wallet_address) DO UPDATE SET
-                        signature = excluded.signature,
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (wallet_address, signature),
-                )
+                if advance_checkpoint:
+                    self._mark_processed_in_connection(connection, wallet_address, signature)
                 return inserted
+
+    @staticmethod
+    def _mark_processed_in_connection(connection, wallet_address: str, signature: str) -> None:
+        connection.execute(
+            """INSERT OR IGNORE INTO processed_signatures (wallet_address, signature)
+               VALUES (?, ?)""",
+            (wallet_address, signature),
+        )
+        connection.execute(
+            """INSERT INTO wallet_checkpoints (wallet_address, signature)
+               VALUES (?, ?)
+               ON CONFLICT(wallet_address) DO UPDATE SET
+                   signature = excluded.signature, updated_at = CURRENT_TIMESTAMP""",
+            (wallet_address, signature),
+        )
+
+    def mark_processed(self, wallet_address: str, signature: str) -> None:
+        """Marca a transação como concluída sem regredir o checkpoint por replay antigo."""
+        if not wallet_address.strip() or not signature.strip():
+            raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
+        with self._connection_scope() as connection:
+            with connection:
+                parent = connection.execute(
+                    """SELECT slot, observed_at FROM observed_transactions
+                       WHERE wallet_address = ? AND signature = ?""",
+                    (wallet_address, signature),
+                ).fetchone()
+                if parent is None:
+                    raise KeyError("A transação observada deve existir antes de marcar como processada.")
+
+                current = connection.execute(
+                    """SELECT observed.slot, observed.observed_at
+                       FROM wallet_checkpoints AS checkpoint
+                       LEFT JOIN observed_transactions AS observed
+                         ON observed.wallet_address = checkpoint.wallet_address
+                        AND observed.signature = checkpoint.signature
+                       WHERE checkpoint.wallet_address = ?""",
+                    (wallet_address,),
+                ).fetchone()
+                if current is not None:
+                    new_slot, new_observed_at = parent
+                    current_slot, current_observed_at = current
+                    # A recuperação de uma assinatura antiga pode terminar depois
+                    # de assinaturas mais novas. Ela deve ser marcada como processada,
+                    # mas nunca pode mover o cursor para trás. Em slots iguais não há
+                    # índice de transação disponível neste armazenamento; manter o
+                    # checkpoint atual é a escolha conservadora.
+                    if current_slot is not None and (
+                        new_slot is None or new_slot <= current_slot
+                    ):
+                        connection.execute(
+                            """INSERT OR IGNORE INTO processed_signatures
+                               (wallet_address, signature) VALUES (?, ?)""",
+                            (wallet_address, signature),
+                        )
+                        return
+                    if current_slot is None and current_observed_at is not None and (
+                        new_observed_at is None or new_observed_at <= current_observed_at
+                    ):
+                        connection.execute(
+                            """INSERT OR IGNORE INTO processed_signatures
+                               (wallet_address, signature) VALUES (?, ?)""",
+                            (wallet_address, signature),
+                        )
+                        return
+                self._mark_processed_in_connection(connection, wallet_address, signature)
+
+    def save_swap_bundle(
+        self, observation: SwapObservation, classification: SwapClassification,
+        evidence: SwapEvidence,
+    ) -> bool:
+        """Grava os três contratos atomicamente; retorna True se for novo."""
+        operation_id = observation.operation_id
+        if not (classification.operation_id == evidence.operation_id == operation_id):
+            raise ValueError("Os três contratos devem compartilhar o mesmo operation_id.")
+        expected_id = build_swap_operation_id(
+            observation.chain, observation.signature, evidence.instruction_index, evidence.cpi_path
+        )
+        if operation_id != expected_id:
+            raise ValueError("operation_id não corresponde à identidade determinística da instrução/CPI.")
+        if observation.chain.strip().lower() != "solana":
+            raise ValueError("Esta versão do EventStore aceita swaps apenas da chain Solana.")
+        with self._connection_scope() as connection:
+            with connection:
+                parent = connection.execute(
+                    """SELECT 1 FROM observed_transactions
+                       WHERE wallet_address = ? AND signature = ?""",
+                    (observation.wallet_address, observation.signature),
+                ).fetchone()
+                if parent is None:
+                    raise KeyError("A transação observada deve existir antes do swap.")
+                existed = connection.execute(
+                    "SELECT 1 FROM swap_observations WHERE operation_id = ?", (operation_id,)
+                ).fetchone() is not None
+                connection.execute(
+                    """INSERT INTO swap_observations
+                       (operation_id, chain, wallet_address, signature, input_mint, output_mint,
+                        input_amount, output_amount, observed_at, parser_version)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(operation_id) DO UPDATE SET
+                        chain=excluded.chain, wallet_address=excluded.wallet_address,
+                        signature=excluded.signature, input_mint=excluded.input_mint,
+                        output_mint=excluded.output_mint, input_amount=excluded.input_amount,
+                        output_amount=excluded.output_amount, observed_at=excluded.observed_at,
+                        parser_version=excluded.parser_version""",
+                    (operation_id, observation.chain, observation.wallet_address,
+                     observation.signature, observation.input_mint, observation.output_mint,
+                     str(observation.input_amount), str(observation.output_amount),
+                     observation.observed_at.isoformat(), observation.parser_version),
+                )
+                connection.execute(
+                    """INSERT INTO swap_classifications(operation_id, side, confidence, reason)
+                       VALUES (?, ?, ?, ?) ON CONFLICT(operation_id) DO UPDATE SET
+                       side=excluded.side, confidence=excluded.confidence, reason=excluded.reason""",
+                    (operation_id, classification.side, str(classification.confidence), classification.reason),
+                )
+                connection.execute(
+                    """INSERT INTO swap_evidence
+                       (operation_id, program_id, venue, instruction_index, cpi_path_json, evidence_json)
+                       VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(operation_id) DO UPDATE SET
+                       program_id=excluded.program_id, venue=excluded.venue,
+                       instruction_index=excluded.instruction_index,
+                       cpi_path_json=excluded.cpi_path_json, evidence_json=excluded.evidence_json""",
+                    (operation_id, evidence.program_id, evidence.venue, evidence.instruction_index,
+                     json.dumps(list(evidence.cpi_path), separators=(",", ":")),
+                     json.dumps(list(evidence.evidence), separators=(",", ":"))),
+                )
+                return not existed
+
+    def get_swap_bundle(self, operation_id: str) -> dict | None:
+        """Recupera contratos persistidos sem perder precisão decimal."""
+        with self._connection_scope() as connection:
+            obs = connection.execute(
+                """SELECT chain, wallet_address, signature, input_mint, output_mint,
+                          input_amount, output_amount, observed_at, parser_version
+                   FROM swap_observations WHERE operation_id = ?""", (operation_id,)
+            ).fetchone()
+            if obs is None:
+                return None
+            cls = connection.execute(
+                "SELECT side, confidence, reason FROM swap_classifications WHERE operation_id = ?",
+                (operation_id,),
+            ).fetchone()
+            ev = connection.execute(
+                """SELECT program_id, venue, instruction_index, cpi_path_json, evidence_json
+                   FROM swap_evidence WHERE operation_id = ?""", (operation_id,)
+            ).fetchone()
+        if cls is None or ev is None:
+            raise RuntimeError("Bundle de swap incompleto: classificação ou evidência ausente.")
+        return {
+            "observation": SwapObservation(
+                operation_id=operation_id, chain=obs[0], wallet_address=obs[1], signature=obs[2],
+                input_mint=obs[3], output_mint=obs[4], input_amount=Decimal(obs[5]),
+                output_amount=Decimal(obs[6]), observed_at=datetime.fromisoformat(obs[7]),
+                parser_version=obs[8],
+            ),
+            "classification": SwapClassification(
+                operation_id=operation_id, side=cls[0], confidence=Decimal(cls[1]), reason=cls[2]
+            ) if cls else None,
+            "evidence": SwapEvidence(
+                operation_id=operation_id, program_id=ev[0], venue=ev[1],
+                instruction_index=ev[2], cpi_path=tuple(json.loads(ev[3])),
+                evidence=tuple(json.loads(ev[4])),
+            ) if ev else None,
+        }
 
     def get_raw_transaction(self, wallet_address: str, signature: str) -> dict | None:
         """Recupera payload bruto para auditoria e replay do parser."""
@@ -436,6 +661,116 @@ class SQLiteEventStore:
             for row in rows
         ]
 
+
+    def save_swap_reconciliation_attempt(
+        self,
+        wallet_address: str,
+        signature: str,
+        records: list[SwapReconciliationRecord],
+    ) -> str:
+        """Acrescenta resultados por swap sem os confundir com bundles MATCHED."""
+        if not wallet_address.strip() or not signature.strip():
+            raise ValueError("Carteira e assinatura da reconciliação são obrigatórias.")
+        if not records:
+            raise ValueError("A tentativa deve conter ao menos um resultado por swap.")
+        allowed = {"MATCHED", "INCOMPLETE", "AMBIGUOUS", "UNRESOLVED"}
+        rows = []
+        for record in records:
+            if not isinstance(record, SwapReconciliationRecord):
+                raise TypeError("records deve conter SwapReconciliationRecord.")
+            if not record.operation_id or not record.reason.strip():
+                raise ValueError("Identidade e motivo da reconciliação são obrigatórios.")
+            if record.status not in allowed:
+                raise ValueError("Status de reconciliação não suportado.")
+            if (isinstance(record.instruction_index, bool)
+                    or not isinstance(record.instruction_index, int)
+                    or record.instruction_index < 0):
+                raise ValueError("instruction_index deve ser inteiro não negativo.")
+            if record.inner_instruction_index is not None and (
+                isinstance(record.inner_instruction_index, bool)
+                or not isinstance(record.inner_instruction_index, int)
+                or record.inner_instruction_index < 0
+            ):
+                raise ValueError("inner_instruction_index inválido.")
+            if any(isinstance(item, bool) or not isinstance(item, int) or item < 0
+                   for item in record.cpi_path):
+                raise ValueError("cpi_path deve conter índices inteiros não negativos.")
+            expected_operation_id = build_swap_operation_id(
+                "solana", signature, record.instruction_index, record.cpi_path
+            )
+            if record.operation_id != expected_operation_id:
+                raise ValueError(
+                    "operation_id não corresponde à identidade da instrução/CPI auditada."
+                )
+            rows.append((
+                record.operation_id, record.instruction_index,
+                record.inner_instruction_index,
+                json.dumps(list(record.cpi_path), separators=(",", ":")),
+                record.status, record.reason,
+            ))
+        attempt_id = uuid.uuid4().hex
+        with self._connection_scope() as connection:
+            with connection:
+                parent = connection.execute(
+                    "SELECT 1 FROM observed_transactions WHERE wallet_address = ? AND signature = ?",
+                    (wallet_address, signature),
+                ).fetchone()
+                if parent is None:
+                    raise KeyError("A observação pai deve existir antes da auditoria de reconciliação.")
+                connection.executemany(
+                    """INSERT INTO swap_reconciliation_attempts
+                       (attempt_id, wallet_address, signature, operation_id,
+                        instruction_index, inner_instruction_index, cpi_path_json, status, reason)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    [(attempt_id, wallet_address, signature, *row) for row in rows],
+                )
+        return attempt_id
+
+    def get_swap_reconciliation_attempts(
+        self, wallet_address: str, signature: str
+    ) -> list[dict]:
+        """Lista histórico de tentativas por swap, da mais antiga à mais recente."""
+        with self._connection_scope() as connection:
+            rows = connection.execute(
+                """SELECT attempt_id, operation_id, instruction_index,
+                          inner_instruction_index, cpi_path_json, status, reason, attempted_at
+                   FROM swap_reconciliation_attempts
+                   WHERE wallet_address = ? AND signature = ?
+                   ORDER BY id ASC""",
+                (wallet_address, signature),
+            ).fetchall()
+        return [{
+            "attempt_id": row[0], "operation_id": row[1],
+            "instruction_index": row[2], "inner_instruction_index": row[3],
+            "cpi_path": tuple(json.loads(row[4])), "status": row[5],
+            "reason": row[6], "attempted_at": row[7],
+        } for row in rows]
+
+    def get_pending_signatures(
+        self, wallet_address: str, *, limit: int = 100
+    ) -> list[str]:
+        """Lista observações arquivadas que ainda não concluíram o pipeline."""
+        if not wallet_address.strip():
+            raise ValueError("O endereço da carteira é obrigatório.")
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("O limite de pendências deve ser inteiro positivo.")
+        with self._connection_scope() as connection:
+            rows = connection.execute(
+                """SELECT observed.signature
+                   FROM observed_transactions AS observed
+                   LEFT JOIN processed_signatures AS processed
+                     ON processed.wallet_address = observed.wallet_address
+                    AND processed.signature = observed.signature
+                   WHERE observed.wallet_address = ?
+                     AND observed.payload_json IS NOT NULL
+                     AND processed.signature IS NULL
+                   ORDER BY COALESCE(observed.slot, 0) ASC,
+                            observed.observed_at ASC, observed.rowid ASC
+                   LIMIT ?""",
+                (wallet_address, limit),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
     def get_checkpoint(self, wallet_address: str) -> str | None:
         """Retorna a última assinatura processada com sucesso para a carteira."""
         with self._connection_scope() as connection:
@@ -490,7 +825,8 @@ class SQLiteEventStore:
         with self._connection_scope() as connection:
             counts = {}
             for table in ("activity_events", "observed_transactions", "token_balance_deltas",
-                          "processed_signatures", "wallet_checkpoints"):
+                          "processed_signatures", "wallet_checkpoints",
+                          "swap_reconciliation_attempts"):
                 counts[table] = int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
             page_count = int(connection.execute("PRAGMA page_count").fetchone()[0])
             page_size = int(connection.execute("PRAGMA page_size").fetchone()[0])

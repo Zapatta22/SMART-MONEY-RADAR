@@ -381,8 +381,8 @@ class BankLineageTracker:
             current = self._banks.get(current.parent_key)
             if current is None:
                 return None
-        if current.parent_key is None and (
-            current.parent_blockhash is not None or current.parent_slot is not None
-        ):
+        if current.parent_key is None:
+            if current.key.slot == 0 and current.parent_slot is None and current.parent_blockhash is None:
+                return False
             return None
         return False

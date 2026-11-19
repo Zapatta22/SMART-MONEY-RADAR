@@ -2727,3 +2727,37 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - PR #26 continua Draft, aberta e sem merge; `main` intacta.
 - Próxima ação: confirmar o resultado do run #1761 para o HEAD com o Registro Mestre atualizado; em seguida iniciar a avaliação de desempenho/memória do rebuild da auditoria, sem alterar a política de evidência.
 - Não fazer merge sem autorização explícita.
+
+## 300. Benchmark sintético de escala da auditoria Geyser — 19/11/2026
+
+### Isolamento e método
+- Criada branch independente `perf/geyser-audit-benchmark`, partindo do HEAD validado da PR #26 (`f0d63038411cc4207fae910a3ef168e3af443784`). A PR #26 e `main` não foram alteradas.
+- Adicionado `tools/benchmark_geyser_unsequenced_audit.py` e workflow `.github/workflows/geyser-audit-benchmark.yml`.
+- Workflow #1, run ID `44559378178`, conclusão SUCCESS.
+- Fixture sintética determinística gravada diretamente no schema SQLite em transação, para isolar o custo da projeção do overhead de ingestão. Cada evento lógico tem duas deliveries: uma sem sequência e uma testemunha sequenciada em outra stream.
+- Métrica de memória: pico de alocações Python observado por `tracemalloc` durante `rebuild()`; não equivale ao RSS total do processo e não inclui o custo de preparação da fixture.
+- Sem provider, RPC, dados reais, credenciais ou execução on-chain.
+
+### Resultados observados
+| Eventos lógicos | Deliveries | Rebuild | Deliveries/s | Pico Python |
+|---:|---:|---:|---:|---:|
+| 1.000 | 2.000 | 0,063 s | 31.582,91 | 1,38 MiB |
+| 10.000 | 20.000 | 0,644 s | 31.036,27 | 14,35 MiB |
+| 50.000 | 100.000 | 3,667 s | 27.273,51 | 75,15 MiB |
+| 100.000 | 200.000 | 7,331 s | 27.279,93 | 150,48 MiB |
+
+### Integridade e interpretação
+- Todas as quatro escalas terminaram com workflow SUCCESS.
+- Classificações esperadas em todas as escalas: uma delivery `SEQUENCED` e uma `UNSEQUENCED_RECONCILED` por evento lógico.
+- Contagens RAW permaneceram iguais às da fixture; `PRAGMA integrity_check` retornou `ok` em todas as escalas.
+- Throughput caiu de aproximadamente 31,6 mil para 27,3 mil deliveries/s e estabilizou entre 100 mil e 200 mil deliveries no ambiente GitHub Actions usado.
+- Memória Python cresceu aproximadamente de forma linear: 75,15 MiB em 100 mil deliveries e 150,48 MiB em 200 mil. Extrapolação linear para milhões de deliveries é apenas indicativa, não uma medição.
+- O perfil confirma o custo O(N) em memória já identificado no rebuild atual (lista completa de deliveries, conjuntos auxiliares, mapa de testemunhas e lista de linhas de auditoria). Para uma operação contínua de grande escala, o pico observado justifica otimização antes de conectar produção.
+- O tempo medido inclui `tracemalloc` ativo; usar os valores para comparação relativa entre as escalas, não como latência de produção. O benchmark não mede RSS total, concorrência, latência de ingestão, disco sob pressão ou comportamento de provider.
+
+### Próxima decisão técnica
+- Não alterar a política nem os critérios de reconciliação.
+- Próximo trabalho recomendado: projetar rebuild com memória limitada/streaming e staging SQLite temporário ou tabelas auxiliares transacionais, preservando atomicidade, determinismo e rollback. Evitar apenas reduzir estruturas em memória se isso enfraquecer a auditabilidade.
+- Implementar otimização em branch separada, comparar com este baseline nas mesmas escalas e manter teste de equivalência das classificações/IDs de testemunha.
+- PR #26 permanece Draft, aberta e sem merge. `main` intacta.
+- Artefato JSON do benchmark: run #1, artifact `geyser-audit-benchmark-results`, ID `14546462526`.

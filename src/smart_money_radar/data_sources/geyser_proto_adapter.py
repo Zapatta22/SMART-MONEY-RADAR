@@ -160,19 +160,20 @@ def adapt_entry_update_parent(
 
 
 def adapt_transaction_update(
-    message: Any, *, source_id: str, stream_id: str, stream_sequence: int,
-    raw_message_bytes: bytes | None = None,
+    message: Any, *, source_id: str, stream_id: str, ordering_domain_id: str,
+    stream_sequence: int, raw_message_bytes: bytes | None = None,
 ) -> NormalizedTransactionObservation:
     """Convert SubscribeUpdateTransaction and preserve transport provenance."""
     return normalize_transaction_update(
         message, source_id=source_id, stream_id=stream_id,
-        stream_sequence=stream_sequence, raw_message_bytes=raw_message_bytes,
+        ordering_domain_id=ordering_domain_id, stream_sequence=stream_sequence,
+        raw_message_bytes=raw_message_bytes,
     )
 
 
 def adapt_subscribe_update(
     message: Any, *, source_id: str, stream_id: str, stream_sequence: int,
-    raw_message_bytes: bytes | None = None
+    raw_message_bytes: bytes | None = None, ordering_domain_id: str | None = None
 ) -> (
     NormalizedAccountUpdate
     | NormalizedSlotUpdate
@@ -194,6 +195,7 @@ def adapt_subscribe_update(
         return adapt_transaction_update(
             getattr(message, kind), source_id=source_id, stream_id=stream_id,
             stream_sequence=stream_sequence, raw_message_bytes=raw_message_bytes,
+            ordering_domain_id=ordering_domain_id,
         )
     adapters = {
         "account": adapt_account_update,

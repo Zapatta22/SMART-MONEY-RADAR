@@ -64,6 +64,7 @@ class SolanaTransactionEvidenceBundle:
     damm_v2_transfer_evidence: tuple[DammV2TransferEvidence, ...] = ()
     damm_v2_issues: tuple[str, ...] = ()
     _factory_token: object = field(default=None, repr=False, compare=False)
+    _factory_snapshot: tuple[Any, ...] | None = field(default=None, repr=False, compare=False)
 
     @property
     def damm_v2_complete(self) -> bool:
@@ -212,7 +213,7 @@ def build_solana_transaction_evidence_bundle(
     ):
         raise ValueError("inventário de instruções diverge da identidade do payload")
 
-    return SolanaTransactionEvidenceBundle(
+    bundle = SolanaTransactionEvidenceBundle(
         identity=identity,
         instruction_inventory=inventory,
         transfers=tuple(transfers),
@@ -223,6 +224,21 @@ def build_solana_transaction_evidence_bundle(
         damm_v2_issues=tuple(damm_issues),
         _factory_token=_BUNDLE_FACTORY_TOKEN,
     )
+    object.__setattr__(
+        bundle,
+        "_factory_snapshot",
+        (
+            bundle.identity,
+            bundle.instruction_inventory,
+            bundle.transfers,
+            bundle.balance_deltas,
+            bundle.damm_v2_associations,
+            bundle.damm_v2_contexts,
+            bundle.damm_v2_transfer_evidence,
+            bundle.damm_v2_issues,
+        ),
+    )
+    return bundle
 
 
 def reconcile_solana_transaction_damm_v2_bundle(
@@ -245,6 +261,23 @@ def reconcile_solana_transaction_damm_v2_bundle(
         or bundle._factory_token is not _BUNDLE_FACTORY_TOKEN
     ):
         raise TypeError("bundle deve ser criado pela factory validada de evidências Solana")
+    snapshot = bundle._factory_snapshot
+    current_evidence = (
+        bundle.identity,
+        bundle.instruction_inventory,
+        bundle.transfers,
+        bundle.balance_deltas,
+        bundle.damm_v2_associations,
+        bundle.damm_v2_contexts,
+        bundle.damm_v2_transfer_evidence,
+        bundle.damm_v2_issues,
+    )
+    if (
+        not isinstance(snapshot, tuple)
+        or len(snapshot) != len(current_evidence)
+        or any(current is not sealed for current, sealed in zip(current_evidence, snapshot))
+    ):
+        raise ValueError("bundle foi alterado após a construção pela factory")
 
     operation_count = len(bundle.damm_v2_associations)
     if not bundle.damm_v2_associations:

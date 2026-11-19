@@ -11,6 +11,7 @@ import base64
 import binascii
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -24,7 +25,7 @@ from smart_money_radar.storage.geyser_recovery_store import SQLiteGeyserRecovery
 
 
 PROJECTION_NAME = "geyser_account_timeline"
-PROJECTION_VERSION = 1
+PROJECTION_VERSION = 2
 
 
 def _u64(value, field):
@@ -135,7 +136,9 @@ class SQLiteGeyserAccountTimelineProjection:
 
     @staticmethod
     def _decode_event(row):
-        event_id, source_id, event_kind, schema_version, payload_encoding, payload_bytes, stream_id, sequence, _delivery_id = row
+        event_id, source_id, event_kind, schema_version, payload_encoding, payload_bytes, payload_sha256, stream_id, sequence, _delivery_id = row
+        if not isinstance(payload_bytes, bytes) or hashlib.sha256(payload_bytes).hexdigest() != payload_sha256:
+            raise ValueError(f"SHA-256 RAW diverge: {event_id}")
         if payload_encoding != "normalized_json" or sequence is None or stream_id is None:
             return None
         envelope = json.loads(payload_bytes.decode("utf-8"))
@@ -210,13 +213,25 @@ class SQLiteGeyserAccountTimelineProjection:
             connection.execute("BEGIN IMMEDIATE")
             rows = connection.execute("""
                 SELECT e.event_id,e.source_id,e.event_kind,e.schema_version,
-                       e.payload_encoding,e.payload_bytes,d.stream_id,d.stream_sequence,d.delivery_id
+                       e.payload_encoding,e.payload_bytes,e.payload_sha256,
+                       d.stream_id,d.stream_sequence,d.delivery_id
                 FROM geyser_raw_events e
                 JOIN geyser_raw_deliveries d ON d.delivery_id=(
                     SELECT MIN(d2.delivery_id) FROM geyser_raw_deliveries d2
-                    WHERE d2.event_id=e.event_id AND d2.stream_sequence IS NOT NULL
+                    WHERE d2.event_id=e.event_id
+                      AND d2.stream_sequence IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1 FROM geyser_transport_anomalies a
+                          WHERE a.source_id=d2.source_id
+                            AND a.stream_id=d2.stream_id
+                            AND a.stream_sequence=d2.stream_sequence
+                      )
                 )
-                ORDER BY d.delivery_id,e.event_id
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM geyser_raw_conflicts c
+                    WHERE c.event_id=e.event_id
+                )
+                ORDER BY d.source_id,d.stream_id,d.stream_sequence,d.delivery_id,e.event_id
             """).fetchall()
             source_count = connection.execute(
                 "SELECT COUNT(*) FROM geyser_raw_events"

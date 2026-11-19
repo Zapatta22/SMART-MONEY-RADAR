@@ -3315,3 +3315,10 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - Erro: o teste de dispatch construiu o objeto externo como se fosse o wrapper interno `SubscribeUpdateTransaction`; o adaptador corretamente despacha o campo oneof para esse wrapper, que por sua vez contém TransactionInfo.
 - Correção: teste agora modela os dois níveis protobuf (`SubscribeUpdate` externo e `SubscribeUpdateTransaction` interno). Não alterar a semântica do contrato para acomodar fixture incorreta.
 - CI ainda pendente no novo HEAD; nenhum resultado SUCCESS declarado.
+
+
+### Ajuste adicional do contrato e estado da branch — 19/11/2026
+- O teste de dispatch foi corrigido para representar explicitamente os dois níveis protobuf: envelope `SubscribeUpdate` e wrapper interno `SubscribeUpdateTransaction`.
+- O serializador agora preserva também metadados protobuf presentes cuja serialização válida seja vazia (`b""`); ausência de meta continua distinguida de meta presente e vazia.
+- HEAD atual da branch de trabalho: `8780bab8319df3b36968042596566f4558f9e0d1`.
+- PR #37 permanece OPEN/DRAFT, destino `feat/token2022-transfer-checked-with-fee`; o primeiro CI no HEAD anterior falhou no fixture de dispatch. Aguardando execução/resultado no HEAD corrigido; não declarar CI aprovado.

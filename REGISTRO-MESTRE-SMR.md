@@ -2818,3 +2818,28 @@ Auditar o diff completo da PR #34 e verificar se o contrato de snapshots, o bund
 - PR #34 continua Draft, aberta, mergeable e sem merge.
 - `main` permanece intocada.
 - Próxima ação: auditar o contrato do adapter contra os normalizadores/timeline Geyser existentes e especificar a representação tipada de commitment/finality antes de qualquer adapter operacional.
+
+## 301. Política de commitment/finality e bloqueio de transições não finalizadas — 19/11/2026
+
+### Decisão
+- Estados de commitment não são equivalentes: PROCESSED e CONFIRMED são observações não finais; FINALIZED é somente declaração reportada pelo provider.
+- `commitment_state()` expõe `UNKNOWN`, `PROVIDER_REPORTED_PROCESSED`, `PROVIDER_REPORTED_CONFIRMED`, `PROVIDER_REPORTED_FINALIZED`, `DEAD`, `INVALIDATED` e `CONFLICTED`.
+- A elegibilidade de uma transição bank-scoped exige o banco do prestate e do poststate em estado provider-reported finalized.
+- Para transições entre bancos, cada ancestral explicitamente ligado na cadeia precisa estar finalizado e utilizável; ancestralidade ausente não é inferida.
+- Conflitos de blockhash/parent metadata contaminam a identidade do banco e invalidam o nó existente ou sua materialização posterior. Uma mensagem FINALIZED posterior não reabilita banco conflitante.
+- SLOT_DEAD, EntryUpdateParent e rollback permanecem bloqueios; RAW/orphaned evidence é preservada sem promoção.
+- FINALIZED não autentica criptograficamente o provider nem comprova consenso independente. Adapter operacional ainda exige política de autenticação, identidade de endpoint, integridade de transporte, reconnect e rollback.
+
+### Implementação
+- Branch: `fix/geyser-finalized-evidence-gate`, criada a partir do HEAD exato da PR #34 `e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`.
+- Arquivos de código/teste: `src/smart_money_radar/data_sources/geyser_bank_lineage.py`, `src/smart_money_radar/data_sources/geyser_account_timeline.py`, `tests/test_geyser_bank_lineage.py`, `tests/test_geyser_account_timeline.py`.
+- Documento: `docs/GEYSER-COMMITMENT-FINALITY-POLICY.md`.
+- Testes adicionados para progressão de commitment, ancestral finalizado, conflito de metadados e bloqueio de transição até finalização dos dois lados.
+
+### Estado de validação
+- Implementação enviada à branch isolada; CI ainda não executado/confirmado.
+- Nenhum provider foi conectado. Nenhuma execução financeira foi habilitada.
+- PR #34 e main não foram alteradas; nenhuma integração/merge foi feita.
+
+### Próxima etapa
+Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. Não promover FINALIZED a VERIFIED operacional até implementar confiança/autenticação do provider.

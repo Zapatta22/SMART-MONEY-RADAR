@@ -156,6 +156,22 @@ class AccountUpdateTimelineTests(unittest.TestCase):
         )
         timeline.add(update)
         self.assertIsNone(timeline.current_state("account-A"))
+    def test_slot_rollback_refuses_bank_scoped_fork_history(self):
+        timeline = AccountUpdateTimeline()
+        update = normalize_account_update(
+            {
+                "slot": 100, "bank_id": 7,
+                "account": {
+                    "pubkey": "account-A", "lamports": 1, "owner": "owner-program",
+                    "executable": False, "rent_epoch": 0, "data": b"state",
+                    "write_version": 1, "txn_signature": "sig",
+                },
+            },
+            stream_id="stream-1", stream_sequence=1,
+        )
+        timeline.add(update)
+        with self.assertRaisesRegex(ValueError, "BankLineageTracker"):
+            timeline.rollback_from_slot(100)
     def test_accounts_are_tracked_independently(self):
         timeline = AccountUpdateTimeline()
         timeline.add(_update(pubkey="A", slot=100, write_version=1, signature="a1", sequence=1))

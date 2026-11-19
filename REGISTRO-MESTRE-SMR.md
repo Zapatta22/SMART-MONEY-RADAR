@@ -1928,3 +1928,16 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - Resultado da auditoria: nenhum bloqueio estrutural adicional identificado dentro do escopo de atribuição; permanecem as limitações econômicas já declaradas. Isso não equivale a auditoria de transações RAW mainnet nem a aprovação para execução financeira.
 - PR #22 permanece OPEN/DRAFT, mergeable/clean; não integrada. `main` permanece `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 - Próxima etapa técnica após decisão de revisão: especificar reconciliação econômica por operação usando EvtSwap2, transfers input/output/referral, fees explícitas/implícitas, withheld histórico e deltas por conta/vault, sem dividir arbitrariamente deltas agregados entre swaps sequenciais.
+
+
+## 264. Retomada e sincronização da PR #23 com a PR #22 atual — 19/11/2026
+
+- PR #23 já continha a implementação de reconciliação em lote no módulo `damm_v2_economic_reconciliation.py`, com testes e documento próprios; não foi recriada.
+- HEAD anterior da PR #23: `947c056e01bfc7b22037e19e3600a5248a29e281`; CI #588 (`44308645725`) no mesmo HEAD concluiu SUCCESS: **374 testes OK** e compileall aprovado. Validação local Termux registrada em `d6142ba37c55aae45f9756b9adec2e2be3520895`: 374/374 e compileall.
+- A PR #23 estava baseada em `b350dca26a5bf0729f58b0770f07b85f5375b9e4`, enquanto a PR #22 avançou para `0567eb9c4981ba6ffc33e98a402292130667760a`; GitHub reportou PR #23 `mergeable_state=dirty`, 68 commits atrás.
+- Sincronização controlada: usar o commit atual da base PR #22 como primeiro parent e o HEAD anterior da PR #23 como segundo parent; preservar integralmente a árvore atual da PR #22 e reaplicar somente os quatro arquivos próprios da PR #23 (módulo, testes, documento e Registro Mestre atualizado). Dependências compartilhadas são mantidas da base atual, não das cópias antigas da PR #23.
+- Arquivos de dependência comparados antes da sincronização: `damm_v2_transfer_analyzer.py`, `damm_v2_fee_math.py`, `solana_token_transfer_decoder.py` e `damm_v2_analyzer.py` tinham diferenças entre a base atual e a branch antiga da PR #23; `solana_token_balance_delta_decoder.py`, `damm_v2_decoder.py` e `damm_v2_accounts.py` tinham blobs idênticos. As versões atuais da PR #22 são preservadas.
+- A CI #588 valida o HEAD antigo da PR #23, não a combinação sincronizada. Novo CI obrigatório antes de qualquer aprovação.
+- Limites permanecem: `RECONCILED` verifica transferências atribuídas e deltas agregados base por token account, mas não valida ainda snapshots históricos de withheld TransferFeeAmount, epoch/config histórico do mint nem todos os componentes de reserva/fee AMM. Não cria SwapObservation, BUY/SELL ou execução.
+- Nenhuma alteração em `main`, RAW, SQLite, checkpoints, RPC/Helius ou estado on-chain.
+- Próxima ação: validar o merge commit sincronizado e revisar os invariantes adicionais de ownership e reservas DAMM v2 antes de retirar Draft.

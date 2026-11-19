@@ -7,8 +7,8 @@ não reconcilia swaps e não produz contratos de domínio.
 Meteora DAMM v2:
   18936b18c26708f6e9b52cacc01ea2f99868ba8e
 Token-2022 interface:
-  main em 2026-11-18; algoritmo TransferFee.calculate_fee /
-  calculate_pre_fee_amount / calculate_inverse_fee.
+  solana-program/token-2022@875693f53c77534b46f0d06bdf781430870f8177;
+  TransferFee.calculate_fee / calculate_pre_fee_amount / calculate_inverse_fee.
 """
 from dataclasses import dataclass
 from typing import Literal

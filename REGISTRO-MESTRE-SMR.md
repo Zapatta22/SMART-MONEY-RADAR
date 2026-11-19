@@ -3196,3 +3196,37 @@ Precedência e efeito:
 - PR #29 continua OPEN/DRAFT, `merged=false`, `mergeable=true`; branch `integration/geyser-pr27-pr28`. PRs originais #26, #27 e #28 continuam sem merge.
 - `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Nenhum merge foi executado; nenhum provider/RPC/credencial/VPS/dado real/execução on-chain foi conectado.
 - Próxima etapa: decidir e preparar a estratégia de incorporação permanente das PRs #27 e #28 na cadeia baseada em #26, sem duplicar commits ou documentação. A PR #29 permanece apenas como validação temporária; não mergear sem autorização explícita.
+
+
+## 312. Integração com histórico preservado das PRs #27 e #28 — PR #30 — 19/11/2026
+
+### Construção da integração
+- Criada branch `integration/geyser-pr27-pr28-preserve-history`, inicialmente a partir do HEAD original da PR #27.
+- Criado commit de integração `a749fe84f96558b64a6eecc2642208204784511e` com dois pais ordenados:
+  1. PR #27: `d281daea02dc8d93c7159c5095d8a47579becf7c`.
+  2. PR #28: `61ecdde08e66a6707e13ceb09fd54372e672c859`.
+- A árvore do commit é exatamente `b77f63a0a940cf0485a7627cffdece8da9d4901c`, a mesma árvore combinada previamente validada na PR #29.
+- A PR #30 foi criada em Draft e inicialmente apontada para a base ancestral da PR #26. Em seguida, a base foi corrigida explicitamente para `feat/geyser-unsequenced-raw-audit`, HEAD `f0d63038411cc4207fae910a3ef168e3af443784`.
+- Comparação GitHub após correção da base: `ahead`, 43 commits, 0 atrás; 8 arquivos alterados (+1.159/-74), correspondendo à integração combinada sobre a base #26.
+- A PR #30 preserva a ancestralidade de ambas as PRs originais; a PR #29 continua sendo referência temporária de validação, não uma PR final.
+- Estado consultado: PR #30 OPEN/DRAFT, `merged=false`, `mergeable=true`. Não houve merge.
+
+### CI e benchmark do commit de integração
+- Workflow **SMR tests**, run ID `44586860900`, run #1832: SUCCESS. Log confirma `Ran 593 tests in 6.795s`, resultado `OK`; `python -m compileall -q src tests` também passou.
+- Workflow **Geyser audit benchmark**, run ID `44586860592`, run #48: SUCCESS; job `benchmark` e upload do artefato concluídos.
+- Artefato `geyser-audit-benchmark-results`, ID `14561438046`, SHA-256 `4c631209519086d6c1a6f8e46a169315bfc244283cd2df6b03a4fc8e1a4d271d`.
+- Escalas sintéticas: 1.000, 10.000, 50.000 e 100.000 eventos lógicos (2.000, 20.000, 100.000 e 200.000 deliveries). Na escala máxima, rebuild 4,670176 s, 42.824,94 deliveries/s, pico RSS do worker 28,78 MiB, TEMP SQLite 24.399.872 bytes; 100.000 `SEQUENCED` e 100.000 `UNSEQUENCED_RECONCILED`; 200.000 deliveries e 100.000 eventos RAW preservados; `integrity_check=["ok"]`.
+- Fanout alto: 1 evento lógico e 10.000 testemunhas; rebuild 0,173194 s, pico RSS 28,76 MiB, TEMP SQLite 2.088.960 bytes e `integrity_check=["ok"]`.
+- Comparação TEMP no cenário de 100.000 eventos: DEFAULT 3,962442 s / 28,94 MiB RSS; FILE 3,831503 s / 29,05 MiB; MEMORY 3,752154 s / 53,26 MiB. O ganho temporal de MEMORY é pequeno diante do aumento de aproximadamente 24,3 MiB de RSS; manter DEFAULT/file-backed.
+- Limites: benchmark sintético em runner Linux/GitHub Actions. RSS/VmHWM mede a vida útil do worker, não somente rebuild; TEMP pages × page size mede alocação lógica SQLite, não bytes físicos escritos. Não extrapolar diretamente para Termux, VPS ou produção.
+
+### Observação sobre o escopo da validação e base da PR
+- Os runs #1832 e #48 foram concluídos antes da correção final da base da PR #30. O log do benchmark mostra checkout do merge ref temporário `55719e912215da9d226bfa52369264e3e8fcc244`, que combinava o commit de integração com a antiga base `4a517ca15499746ddd3f5522f112c80aaac1433b`.
+- Portanto, esses resultados comprovam a execução bem-sucedida sobre a árvore de implementação da PR #30, mas não substituem a CI do novo merge ref após a base ser alterada para o HEAD da PR #26.
+- Após esta atualização do Registro Mestre, confirmar que os workflows executam no novo HEAD/merge ref com base #26. Registrar os novos resultados antes de considerar a validação final da PR #30.
+
+### Estado de segurança e próxima ação
+- PR #30 permanece Draft e não mergeada; PRs #26, #27, #28 e #29 permanecem abertas/Draft e sem merge.
+- A branch `main` não foi modificada por esta operação. Nenhum provider/RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+- Próxima ação: aguardar e inspecionar a CI disparada por esta atualização documental, confirmando que o runner usa a base #26. Em seguida, revisar o diff e o estado das PRs sem repetir os testes já aprovados.
+- Não fazer merge sem autorização explícita e específica do usuário.

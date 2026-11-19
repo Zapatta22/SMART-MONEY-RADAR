@@ -2761,3 +2761,38 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - Implementar otimização em branch separada, comparar com este baseline nas mesmas escalas e manter teste de equivalência das classificações/IDs de testemunha.
 - PR #26 permanece Draft, aberta e sem merge. `main` intacta.
 - Artefato JSON do benchmark: run #1, artifact `geyser-audit-benchmark-results`, ID `14546462526`.
+
+
+## 301. Otimização de memória do rebuild da auditoria Geyser — 19/11/2026
+
+### Decisão e isolamento
+- Decisão técnica: avançar com a redução do pico de memória observado no benchmark da seção 300, antes de ampliar escala ou conectar provider.
+- Criada branch independente `perf/geyser-audit-bounded-rebuild`, a partir do HEAD do benchmark `6561a66bf45e61ba0783fbe73ae8ee43d4628ba6`.
+- PR #26, branch `feat/geyser-unsequenced-raw-audit`, e `main` não foram alteradas. Nenhum merge realizado.
+
+### Implementação inicial
+- Modificado `src/smart_money_radar/storage/geyser_unsequenced_delivery_audit.py`.
+- O rebuild deixou de carregar todas as deliveries, todos os conflitos/anomalias, o mapa Python de testemunhas e a lista completa de linhas de auditoria em memória.
+- Elegibilidade das testemunhas passou a ser materializada em tabela TEMP SQLite indexada pela chave `event_id + source_id + payload_sha256 + delivery_id`, com exclusão SQL de conflitos RAW e anomalias abertas.
+- Deliveries são lidas em lotes de 500 via `fetchmany(500)`; cada lote é inserido na tabela de auditoria dentro da mesma transação `BEGIN IMMEDIATE`.
+- IDs de testemunhas são consultados por chave e serializados em ordem crescente de `delivery_id`; a sequência continua apenas como referência e nunca é transferida.
+- Mantidos o mesmo esquema persistente, política v1, códigos de classificação, checkpoint e commit atômico. Exceções antes do commit devem reverter exclusão, inserções e checkpoint como antes.
+- Tabela TEMP e índice são locais à conexão e desaparecem ao fechar; nenhuma tabela RAW, delivery, conflito ou checkpoint de transporte é modificada.
+
+### Testes adicionados
+- Adicionado `test_rebuild_streams_across_multiple_delivery_batches`: 501 eventos lógicos, 1.002 deliveries (acima do limite de lote), 501 reconciliações, uma testemunha por delivery reconciliada e `integrity_check == ok`.
+- Os 14 testes anteriores da auditoria foram preservados.
+- Commit de implementação: `ea4f84965b7b7c41e3b17e461e8bfaca84600cdf`.
+- Commit do teste multi-lote: `970ed5efce7a7fb96aed6e993551a3aab90ab8a3`.
+
+### Validação e limites
+- Até este registro, não foi consultado resultado de CI para o HEAD `970ed5efce7a7fb96aed6e993551a3aab90ab8a3`; portanto, implementação, testes completos e compileall ainda não estão declarados aprovados.
+- O benchmark comparativo nas mesmas escalas (1k, 10k, 50k e 100k eventos lógicos) ainda precisa ser executado e comparado ao baseline da seção 300.
+- O caminho SQL evita estruturas globais O(N) em Python, mas a tabela TEMP e o índice consomem espaço em disco/cache SQLite; custo de I/O e comportamento sob concorrência ainda precisam ser medidos.
+- A lista de IDs testemunhas de um único evento é serializada em uma string JSON pelo SQLite; casos patológicos com cardinalidade extrema por evento merecem avaliação específica.
+- Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+### Próxima ação
+- Obter CI verde no HEAD atual (suíte completa e compileall); corrigir falhas com evidência antes de benchmark.
+- Depois executar o mesmo benchmark da seção 300, nas mesmas quatro escalas, comparar tempo e pico Python e validar classificações, IDs de testemunhas, contagens RAW e integridade SQLite.
+- Manter esta branch isolada; não fazer merge nem alterar PR #26 ou `main` sem nova decisão explícita.

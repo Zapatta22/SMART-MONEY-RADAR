@@ -6,7 +6,7 @@ Isso evita repartir arbitrariamente deltas líquidos entre swaps sequenciais.
 
 Não cria SwapObservation, BUY/SELL, sinal ou autorização de execução.
 """
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
 
@@ -24,11 +24,14 @@ from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SPL_TOKEN_PROGRAM_ID,
     TOKEN_2022_PROGRAM_ID,
+    SolanaInstructionInventory,
     SolanaTokenTransfer,
 )
 from smart_money_radar.data_sources.token2022_transfer_fee_state import (
     TransferFeeAmountDelta,
     TransferFeeConfigState,
+    collect_transfer_fee_config_init_positions,
+    decode_transfer_fee_config_optional,
 )
 
 
@@ -84,6 +87,16 @@ class DammV2EconomicReconciliation:
     mint_fee_config_status: Literal[
         "NOT_REQUIRED", "EXPECTED_NOT_VERIFIED", "VERIFIED"
     ] = "NOT_REQUIRED"
+
+
+@dataclass(frozen=True)
+class DammV2MintPrestate:
+    mint: str
+    account_data: bytes
+    snapshot_slot: int
+    snapshot_order: int
+    source: str
+    state_ref: str
 
 
 @dataclass(frozen=True)
@@ -203,6 +216,108 @@ def _net_received(
 
 
 
+
+
+
+def build_damm_v2_mint_fee_config_snapshots(
+    evidence: Sequence[DammV2TransferEvidence],
+    mint_prestate_by_mint: Mapping[str, DammV2MintPrestate],
+    instruction_inventory: SolanaInstructionInventory,
+    *,
+    transaction_epoch: int,
+    transaction_slot: int,
+    transaction_order: int,
+) -> tuple[DammV2MintFeeConfigSnapshot, ...]:
+    """Builds per-transfer mint fee snapshots from ordered transaction evidence.
+
+    Mint account bytes must be the exact pre-transaction state from the same
+    slot/order domain. The instruction inventory must include all outer/CPI
+    instructions so initialization positions can be proven complete.
+    """
+    if not isinstance(evidence, Sequence) or isinstance(evidence, (str, bytes)):
+        raise TypeError("evidence deve ser uma sequência")
+    if not isinstance(mint_prestate_by_mint, Mapping):
+        raise TypeError("mint_prestate_by_mint deve ser um mapeamento")
+    if not isinstance(instruction_inventory, SolanaInstructionInventory):
+        raise TypeError("instruction_inventory inválido")
+    for label, value in (
+        ("transaction_epoch", transaction_epoch),
+        ("transaction_slot", transaction_slot),
+        ("transaction_order", transaction_order),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= (1 << 64) - 1:
+            raise ValueError(f"{label} inválido")
+
+    transfers = []
+    seen = set()
+    for item in evidence:
+        if not isinstance(item, DammV2TransferEvidence):
+            raise TypeError("evidence contém item inválido")
+        for transfer in (item.input_transfer, item.output_transfer, item.referral_transfer):
+            if transfer is None or transfer.program_id != TOKEN_2022_PROGRAM_ID:
+                continue
+            key = (
+                transfer.instruction_index,
+                transfer.inner_instruction_index,
+                transfer.mint,
+            )
+            if key in seen:
+                raise ValueError(f"transferência Token-2022 duplicada na evidência: {key}")
+            seen.add(key)
+            transfers.append(transfer)
+
+    snapshots = []
+    cache = {}
+    for transfer in transfers:
+        mint = transfer.mint
+        if not isinstance(mint, str) or not mint:
+            raise ValueError("mint ausente em transferência Token-2022")
+        prestate = mint_prestate_by_mint.get(mint)
+        if not isinstance(prestate, DammV2MintPrestate) or prestate.mint != mint:
+            raise ValueError(f"mint prestate ausente/inválido para {mint}")
+        if not isinstance(prestate.account_data, bytes):
+            raise ValueError(f"account data prestate inválido para {mint}")
+        if (
+            isinstance(prestate.snapshot_slot, bool)
+            or not isinstance(prestate.snapshot_slot, int)
+            or prestate.snapshot_slot != transaction_slot
+            or isinstance(prestate.snapshot_order, bool)
+            or not isinstance(prestate.snapshot_order, int)
+            or prestate.snapshot_order >= transaction_order
+        ):
+            raise ValueError(f"mint prestate não é anterior à transação no mesmo slot para {mint}")
+        if (
+            not isinstance(prestate.source, str) or not prestate.source.strip()
+            or not isinstance(prestate.state_ref, str) or not prestate.state_ref.strip()
+        ):
+            raise ValueError(f"proveniência do mint prestate ausente para {mint}")
+        if mint not in cache:
+            inventory = collect_transfer_fee_config_init_positions(
+                instruction_inventory, mint
+            )
+            if not inventory.complete:
+                raise ValueError(
+                    f"inventário de InitializeTransferFeeConfig incompleto para {mint}: "
+                    + "; ".join(inventory.issues)
+                )
+            config_state = decode_transfer_fee_config_optional(prestate.account_data)
+            cache[mint] = (config_state, inventory)
+        config_state, inventory = cache[mint]
+        snapshots.append(DammV2MintFeeConfigSnapshot(
+            mint=mint,
+            transfer_instruction_index=transfer.instruction_index,
+            transfer_inner_instruction_index=transfer.inner_instruction_index,
+            config_state=config_state,
+            transaction_epoch=transaction_epoch,
+            transaction_slot=transaction_slot,
+            transaction_order=transaction_order,
+            pre_snapshot_order=prestate.snapshot_order,
+            transfer_fee_config_init_positions=inventory.initialization_positions,
+            transfer_fee_init_inventory_complete=inventory.complete,
+            source=prestate.source,
+            pre_state_ref=prestate.state_ref,
+        ))
+    return tuple(snapshots)
 
 def _calculate_fee_from_mint_snapshot(
     snapshot: DammV2MintFeeConfigSnapshot,

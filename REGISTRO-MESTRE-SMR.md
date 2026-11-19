@@ -2914,3 +2914,20 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - PR #27 permanece OPEN/DRAFT, sem merge; PR #26 e `main` não foram alteradas.
 - HEAD de código/testes/benchmark validado: `d78b7dceafedad8a596156dfb42dbf80330d83c7`; commits de registro posteriores, se houver, devem ser identificados separadamente.
 - Próxima ação: revisão final de implementação e documentação, especialmente validar o parâmetro opcional TEMP_STORE e decidir se ele permanece como opção diagnóstica ou é removido após o experimento. Nenhum merge sem aprovação explícita.
+
+
+## 304. Revisão de integração da auditoria Geyser — 19/11/2026
+
+### Ajustes autorizados e implementados na branch isolada
+- Removido o parâmetro `temp_store` do construtor operacional de `SQLiteGeyserUnsequencedDeliveryAudit`; a auditoria usa o default SQLite sem override operacional.
+- A comparação DEFAULT/FILE/MEMORY permanece exclusivamente no benchmark, por meio de uma subclasse privada `_BenchmarkAudit`; nenhum modo de armazenamento temporário é exposto pela API do produto.
+- Removidos os testes de configuração TEMP operacional e substituídos por teste que confirma que o construtor rejeita esse argumento.
+- Adicionado teste concorrente com duas instâncias e barreira sincronizada; ambas executam rebuild no mesmo banco, devem serializar via `BEGIN IMMEDIATE`, produzir gerações 1 e 2 e preservar contagens/integridade RAW.
+- Removida a chave duplicada `temp_store_requested` no resultado do worker.
+- Documentado que `VmHWM` mede o high-water mark durante toda a vida do worker isolado (incluindo imports e construção do auditor), não o pico exclusivo de `rebuild()`. O isolamento elimina a contaminação do processo pai, mas não isola o rebuild de toda a memória anterior do próprio worker.
+
+### Estado de validação
+- Alterações de código e testes preparadas nesta branch; CI ainda precisa ser executado após o commit.
+- Nenhuma alteração à política de reconciliação, tabelas RAW ou Timeline.
+- PR #27 deve permanecer OPEN/DRAFT e sem merge até CI e revisão dos resultados.
+- PR #26 e `main` não devem ser modificadas.

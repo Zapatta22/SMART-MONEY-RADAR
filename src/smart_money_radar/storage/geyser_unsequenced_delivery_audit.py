@@ -20,13 +20,8 @@ PROJECTION_VERSION = 1
 class SQLiteGeyserUnsequencedDeliveryAudit:
     """Classify each persisted delivery using only deterministic RAW evidence."""
 
-    def __init__(
-        self, database_path: Path | str, *, temp_store: str | None = None
-    ) -> None:
+    def __init__(self, database_path: Path | str) -> None:
         self.database_path = str(database_path)
-        if temp_store not in (None, "FILE", "MEMORY"):
-            raise ValueError("temp_store deve ser None, 'FILE' ou 'MEMORY'")
-        self.temp_store = temp_store
         self.last_rebuild_metrics: dict[str, object] = {}
         if self.database_path == ":memory:":
             raise ValueError("a auditoria deve compartilhar o arquivo SQLite persistente do RAW store")
@@ -97,10 +92,6 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("PRAGMA synchronous = FULL")
-            if self.temp_store is not None:
-                # Diagnostic/operational override for connection-local TEMP data.
-                # The default remains SQLite's compiled/runtime default.
-                connection.execute(f"PRAGMA temp_store = {self.temp_store}")
             yield connection
         finally:
             connection.close()

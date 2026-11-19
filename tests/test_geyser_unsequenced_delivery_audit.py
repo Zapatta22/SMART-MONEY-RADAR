@@ -44,24 +44,9 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
             self.raw, self.event(**kwargs), schema_version="geyser-v16"
         )
 
-    def test_explicit_sqlite_temp_store_modes_are_connection_local(self):
-        self.ingest()
-        for mode, expected_pragma in (("FILE", 1), ("MEMORY", 2)):
-            auditor = SQLiteGeyserUnsequencedDeliveryAudit(
-                self.db, temp_store=mode
-            )
-            auditor.rebuild()
-            self.assertEqual(
-                auditor.last_rebuild_metrics["temp_store_pragma"],
-                expected_pragma,
-            )
-            self.assertGreater(
-                auditor.last_rebuild_metrics["temp_db_allocated_bytes"], 0
-            )
-
-    def test_sqlite_temp_store_rejects_unknown_mode(self):
-        with self.assertRaisesRegex(ValueError, "temp_store"):
-            SQLiteGeyserUnsequencedDeliveryAudit(self.db, temp_store="CACHE")
+    def test_temp_store_is_not_an_operational_audit_option(self):
+        with self.assertRaises(TypeError):
+            SQLiteGeyserUnsequencedDeliveryAudit(self.db, temp_store="MEMORY")
 
     def test_unsequenced_delivery_without_witness_remains_unresolved(self):
         result = self.ingest()
@@ -330,6 +315,30 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         self.assertIsNotNone(checkpoint)
         self.assertEqual(checkpoint["projected_event_count"], 0)
         self.assertEqual(checkpoint["skipped_unsequenced_count"], 1)
+
+    def test_concurrent_rebuilds_are_serialized_and_advance_generations(self):
+        self.ingest()
+        self.ingest(sequence=20, stream="replay")
+        auditors = [
+            SQLiteGeyserUnsequencedDeliveryAudit(self.db),
+            SQLiteGeyserUnsequencedDeliveryAudit(self.db),
+        ]
+        start = threading.Barrier(2)
+
+        def rebuild(auditor):
+            start.wait(timeout=10)
+            return auditor.rebuild()
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(rebuild, auditor) for auditor in auditors]
+            results = [future.result(timeout=45) for future in futures]
+
+        self.assertEqual(sorted(result["generation"] for result in results), [1, 2])
+        self.assertEqual(self.audit.get_checkpoint()["generation"], 2)
+        self.assertEqual(self.audit.get_checkpoint()["delivery_count"], 2)
+        self.assertEqual(len(self.audit.list_deliveries()), 2)
+        self.assertEqual(self.raw.integrity_check(), ["ok"])
 
     def test_schema_migration_version_is_recorded(self):
         with sqlite3.connect(self.db) as connection:

@@ -7,6 +7,7 @@ fixture construction. No provider or network connection is used.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import sqlite3
@@ -21,6 +22,25 @@ from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
 from smart_money_radar.storage.geyser_unsequenced_delivery_audit import (
     SQLiteGeyserUnsequencedDeliveryAudit,
 )
+
+
+class _BenchmarkAudit(SQLiteGeyserUnsequencedDeliveryAudit):
+    """Keep TEMP mode overrides confined to this diagnostic benchmark."""
+
+    def __init__(self, database_path: Path, temp_store: str | None) -> None:
+        if temp_store not in (None, "FILE", "MEMORY"):
+            raise ValueError("modo TEMP de benchmark inválido")
+        self._benchmark_temp_store = temp_store
+        super().__init__(database_path)
+
+    @contextmanager
+    def _connect(self):
+        with super()._connect() as connection:
+            if self._benchmark_temp_store is not None:
+                connection.execute(
+                    f"PRAGMA temp_store = {self._benchmark_temp_store}"
+                )
+            yield connection
 
 
 def seed_database(database: Path, logical_events: int) -> None:
@@ -83,7 +103,7 @@ def process_memory_snapshot() -> dict:
 
 
 def run_rebuild_worker(database: Path, temp_store: str | None) -> dict:
-    audit = SQLiteGeyserUnsequencedDeliveryAudit(database, temp_store=temp_store)
+    audit = _BenchmarkAudit(database, temp_store)
     before_memory = process_memory_snapshot()
     tracemalloc.start()
     started = time.perf_counter()
@@ -94,13 +114,13 @@ def run_rebuild_worker(database: Path, temp_store: str | None) -> dict:
     after_memory = process_memory_snapshot()
     # Use this process' own /proc high-water mark. getrusage.ru_maxrss can
     # retain the pre-fork parent's peak on Linux and contaminate this worker.
-    rss_peak_kib = after_memory["vmhwm_kib"]
+    # VmHWM covers the worker lifetime (imports/construction included), not rebuild alone.\n    rss_peak_kib = after_memory["vmhwm_kib"]
     rss_peak_mib = round(rss_peak_kib / 1024, 2) if rss_peak_kib is not None else None
     return {
         "summary": summary,
         "rebuild_seconds": round(elapsed, 6),
         "tracemalloc_peak_mib": round(peak_bytes / (1024 * 1024), 2),
-        "process_rss_peak_mib": rss_peak_mib,
+        "process_rss_peak_mib": rss_peak_mib,\n        "rss_peak_scope": "worker_process_lifetime_including_imports_and_audit_construction",
         "memory_before_rebuild": before_memory,
         "memory_after_rebuild": after_memory,
         "temp_store_requested": temp_store or "DEFAULT",
@@ -281,7 +301,7 @@ def main() -> None:
     print(json.dumps({
         "benchmark": "geyser_unsequenced_delivery_audit_rebuild",
         "fixture": "synthetic_sqlite_two_deliveries_per_event",
-        "rss_method": "isolated_worker_process_proc_status_VmHWM",
+        "rss_method": "isolated_worker_process_proc_status_VmHWM_worker_lifetime_not_rebuild_only",
         "temp_storage_method": "sqlite_temp_page_count_times_page_size",
         "process_memory_method": "/proc/self/status and smaps_rollup on Linux",
         "high_cardinality_witness_fanout": fanout,

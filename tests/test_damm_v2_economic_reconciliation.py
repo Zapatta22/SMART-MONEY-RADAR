@@ -868,47 +868,24 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         evidence = _evidence(
             context, input_transfer, output_transfer, referral_transfer
         )
-        mint_a = TransferFeeConfigState(
-            withheld_amount=0,
-            older_transfer_fee=TransferFeeRate(epoch=0, maximum_fee=100, basis_points=500),
-            newer_transfer_fee=TransferFeeRate(epoch=10, maximum_fee=100, basis_points=500),
-            extension_types=(1,),
+        snapshots = build_damm_v2_mint_fee_config_snapshots(
+            [evidence],
+            {
+                "mint-a": DammV2MintPrestate(
+                    mint="mint-a", account_data=_mint_account_data(500),
+                    snapshot_slot=123, snapshot_order=49,
+                    source="ordered-mint-prestate-fixture", state_ref="mint-a-pre",
+                ),
+                "mint-b": DammV2MintPrestate(
+                    mint="mint-b", account_data=_mint_account_data(1_000),
+                    snapshot_slot=123, snapshot_order=49,
+                    source="ordered-mint-prestate-fixture", state_ref="mint-b-pre",
+                ),
+            },
+            _instruction_inventory(),
+            transaction_signature="signature-1",
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
-        mint_b = TransferFeeConfigState(
-            withheld_amount=0,
-            older_transfer_fee=TransferFeeRate(epoch=0, maximum_fee=100, basis_points=1_000),
-            newer_transfer_fee=TransferFeeRate(epoch=10, maximum_fee=100, basis_points=1_000),
-            extension_types=(1,),
-        )
-        snapshots = [
-            DammV2MintFeeConfigSnapshot(
-                mint="mint-a", transaction_signature="signature-1", transfer_instruction_index=0,
-                transfer_inner_instruction_index=2, config_state=mint_a,
-                transaction_epoch=10, transaction_slot=123,
-                transaction_order=50, pre_snapshot_order=49,
-                transfer_fee_config_init_positions=(),
-            transfer_fee_init_inventory_complete=True,
-                source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
-            ),
-            DammV2MintFeeConfigSnapshot(
-                mint="mint-b", transaction_signature="signature-1", transfer_instruction_index=0,
-                transfer_inner_instruction_index=2, config_state=mint_b,
-                transaction_epoch=10, transaction_slot=123,
-                transaction_order=50, pre_snapshot_order=49,
-                transfer_fee_config_init_positions=(),
-            transfer_fee_init_inventory_complete=True,
-                source="ordered-mint-prestate-fixture", pre_state_ref="mint-b-output-pre",
-            ),
-            DammV2MintFeeConfigSnapshot(
-                mint="mint-b", transaction_signature="signature-1", transfer_instruction_index=0,
-                transfer_inner_instruction_index=3, config_state=mint_b,
-                transaction_epoch=10, transaction_slot=123,
-                transaction_order=50, pre_snapshot_order=49,
-                transfer_fee_config_init_positions=(),
-            transfer_fee_init_inventory_complete=True,
-                source="ordered-mint-prestate-fixture", pre_state_ref="mint-b-referral-pre",
-            ),
-        ]
         result = _reconcile(
             [context], [evidence],
             _deltas([
@@ -989,6 +966,80 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("inventário de InitializeTransferFeeConfig incompleto", result.reason)
+
+
+    def test_builder_creates_one_historical_mint_snapshot_per_token2022_transfer(self):
+        snapshots = build_damm_v2_mint_fee_config_snapshots(
+            [self.evidence],
+            {
+                "mint-a": DammV2MintPrestate(
+                    mint="mint-a", account_data=_mint_account_data(500),
+                    snapshot_slot=123, snapshot_order=49,
+                    source="fixture", state_ref="mint-a-pre",
+                ),
+                "mint-b": DammV2MintPrestate(
+                    mint="mint-b", account_data=_mint_account_data(None),
+                    snapshot_slot=123, snapshot_order=49,
+                    source="fixture", state_ref="mint-b-pre",
+                ),
+            },
+            _instruction_inventory(),
+            transaction_signature="signature-1",
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(len(snapshots), 2)
+        self.assertEqual(
+            [(item.instruction_index, item.inner_instruction_index, item.mint)
+             for item in self.evidence and [
+                 self.evidence[0].input_transfer, self.evidence[0].output_transfer
+             ]],
+            [(0, 2, "mint-a"), (0, 2, "mint-b")],
+        )
+        self.assertEqual(snapshots[0].transaction_signature, "signature-1")
+        self.assertEqual(snapshots[0].config_state.fee_for_epoch(10).basis_points, 500)
+        self.assertIsNone(snapshots[1].config_state)
+
+    def test_builder_rejects_instruction_inventory_from_another_transaction(self):
+        with self.assertRaisesRegex(ValueError, "assinatura/slot"):
+            build_damm_v2_mint_fee_config_snapshots(
+                [self.evidence],
+                {
+                    "mint-a": DammV2MintPrestate(
+                        mint="mint-a", account_data=_mint_account_data(500),
+                        snapshot_slot=123, snapshot_order=49,
+                        source="fixture", state_ref="mint-a-pre",
+                    ),
+                    "mint-b": DammV2MintPrestate(
+                        mint="mint-b", account_data=_mint_account_data(None),
+                        snapshot_slot=123, snapshot_order=49,
+                        source="fixture", state_ref="mint-b-pre",
+                    ),
+                },
+                _instruction_inventory("other-signature"),
+                transaction_signature="signature-1",
+                transaction_epoch=10, transaction_slot=123, transaction_order=50,
+            )
+
+    def test_builder_rejects_stale_mint_prestate_from_another_slot(self):
+        with self.assertRaisesRegex(ValueError, "mesmo slot"):
+            build_damm_v2_mint_fee_config_snapshots(
+                [self.evidence],
+                {
+                    "mint-a": DammV2MintPrestate(
+                        mint="mint-a", account_data=_mint_account_data(500),
+                        snapshot_slot=122, snapshot_order=49,
+                        source="fixture", state_ref="mint-a-pre",
+                    ),
+                    "mint-b": DammV2MintPrestate(
+                        mint="mint-b", account_data=_mint_account_data(None),
+                        snapshot_slot=123, snapshot_order=49,
+                        source="fixture", state_ref="mint-b-pre",
+                    ),
+                },
+                _instruction_inventory(),
+                transaction_signature="signature-1",
+                transaction_epoch=10, transaction_slot=123, transaction_order=50,
+            )
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,11 @@ from smart_money_radar.data_sources.geyser_event_identity import (
     IDENTITY_VERSION,
     derive_event_identity,
 )
+from smart_money_radar.storage.geyser_raw_store import (
+    RawDeliveryInput,
+    RawEventInput,
+    SQLiteGeyserRawStore,
+)
 
 
 class GeyserEventIdentityTests(unittest.TestCase):
@@ -98,6 +103,30 @@ class GeyserEventIdentityTests(unittest.TestCase):
             derive_event_identity(first, schema_version="v1").event_id,
             derive_event_identity(other_bank, schema_version="v1").event_id,
         )
+
+    def test_same_logical_identity_with_changed_raw_payload_is_a_store_conflict(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        first = self.account(data=b"original-state")
+        changed = self.account(data=b"changed-state", stream_id="stream-b", sequence=9)
+        first_id = derive_event_identity(first, schema_version="geyser-v16")
+        changed_id = derive_event_identity(changed, schema_version="geyser-v16")
+        self.assertEqual(first_id.event_id, changed_id.event_id)
+        first_result = store.ingest(
+            RawEventInput(first_id.event_id, first.source, "account", "geyser-v16",
+                          "protobuf_decoded", b"original-state"),
+            RawDeliveryInput("stream-a", 1, "live"),
+        )
+        conflict_result = store.ingest(
+            RawEventInput(changed_id.event_id, changed.source, "account", "geyser-v16",
+                          "protobuf_decoded", b"changed-state"),
+            RawDeliveryInput("stream-b", 9, "replay"),
+        )
+        self.assertEqual(first_result.status, "inserted")
+        self.assertEqual(conflict_result.status, "conflict")
+        self.assertEqual(
+            store.get_raw_event(first_id.event_id)["payload_bytes"], b"original-state"
+        )
+        store.close()
 
     def test_invalid_schema_and_unsupported_event_are_rejected(self):
         with self.assertRaises(ValueError):

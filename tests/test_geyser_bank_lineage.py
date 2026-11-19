@@ -142,7 +142,14 @@ class BankLineageTrackerTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "conflict")
         self.assertEqual(result.conflict.reason, "ambiguous_replacement")
-        self.assertNotIn(BankKey("yellowstone", 101, 3), {node.key for node in tracker.banks})
+        conflicted_key = BankKey("yellowstone", 101, 3)
+        self.assertNotIn(conflicted_key, {node.key for node in tracker.banks})
+        # If later metadata creates this bank identity, the prior conflict
+        # remains tainted and the bank is not usable.
+        tracker.add_block_meta(_block(101, 3, "later-hash", 100, "parent-hash", sequence=4))
+        conflicted_node = next(node for node in tracker.banks if node.key == conflicted_key)
+        self.assertTrue(conflicted_node.invalidated)
+        self.assertFalse(tracker.is_bank_usable(conflicted_key))
 
     def test_slot_dead_without_bank_id_invalidates_known_and_future_banks(self):
         tracker = BankLineageTracker()

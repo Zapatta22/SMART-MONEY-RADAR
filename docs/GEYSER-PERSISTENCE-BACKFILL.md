@@ -211,10 +211,23 @@ Required tests include duplicate content across streams, same identity with diff
 
 ## 13. Current implementation status
 
-As of this specification:
-- the protobuf boundary adapter and provider-neutral account/bank/timeline contracts exist in the PR #23 branch;
-- bank-aware timeline behavior was validated by CI runs #1633 and #1634 (515/515 tests and compileall on functional commit `d5b21774e8210096dc5c41e842c3c2d0a9434054`);
-- the current PR head before this documentation change was `135af1caefe406e3fedbab765ef65706b244a165`;
-- no Geyser RAW persistence, dedicated SQLite database, live transport client, continuous capture, durable Geyser checkpoints, or backfill implementation exists.
+The initial offline RAW persistence slice is now implemented in PR #23:
+- `src/smart_money_radar/storage/geyser_raw_store.py` defines `SQLiteGeyserRawStore`, `RawEventInput`, `RawDeliveryInput`, and `RawIngestResult`;
+- schema migration v1 creates a dedicated RAW event table, delivery table, conflict table, migration ledger, and lookup indexes;
+- file-backed stores use WAL and `synchronous=FULL`; in-memory stores support deterministic offline tests;
+- event content is stored separately from each delivery. Replays of identical content add delivery rows without duplicating RAW content;
+- reuse of an event_id with incompatible source/kind/schema/encoding/bytes preserves the original RAW row, records the incoming bytes and hashes as a conflict, and records the attempted delivery;
+- each ingest transaction atomically stores the RAW row (when new) and its delivery. A forced delivery insert failure is tested to roll back the new RAW row;
+- SHA-256 is computed over the exact supplied payload bytes. `protobuf_wire` may be declared only when the caller actually captured wire bytes; this store does not manufacture or infer that provenance.
 
-This document records the approved design only. Implementation requires a separate scoped step with schema, migrations, tests, and explicit review. No provider connection or financial execution is authorized by this document.
+Validation:
+- CI #1645, run `44462300540`, push: SUCCESS; 522/522 tests and `python -m compileall -q src tests` passed on `92ba36d494e23932d11ec4b7c25ffd9afebe2916`.
+- CI #1646, run `44462306301`, pull_request: SUCCESS; 522/522 tests and compileall passed on the same commit.
+
+Explicitly not implemented in this slice:
+- no live Yellowstone/Helius client or wire-byte capture boundary;
+- no automatic event identity derivation from protobuf messages; the caller must supply a stable event_id;
+- no transport/continuity/backfill checkpoints, sequence-gap reconciliation, normalized-event projection, account-write persistence, timeline generations, backfill jobs, or restart orchestration;
+- no connection to a provider, credentials, continuous capture, or financial/on-chain execution.
+
+The next implementation slice must review event identity derivation and add durable transport checkpoint/gap contracts before any live ingestion is considered. No provider connection or financial execution is authorized by this document.

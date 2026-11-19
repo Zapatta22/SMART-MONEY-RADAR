@@ -1,6 +1,11 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from threading import Barrier
 
 from smart_money_radar.domain.models import (
     ObservedTransaction, SwapClassification, SwapEvidence, SwapObservation,
@@ -93,6 +98,43 @@ class SwapPersistenceTests(unittest.TestCase):
         bundle = self.store.get_swap_bundle(self.observation.operation_id)
         self.assertEqual(bundle["classification"], revised_classification)
         self.assertEqual(bundle["evidence"], revised_evidence)
+
+    def test_rejects_a_second_wallet_for_an_existing_operation(self):
+        self.store.save_swap_bundle(self.observation, self.classification, self.evidence)
+        self.store.save_observation(
+            "wallet-b", "sig-a", {"meta": {"err": None}}, [],
+            parse_status="no_events", parser_version="1",
+        )
+        with self.assertRaisesRegex(ValueError, "outra carteira"):
+            self.store.save_swap_bundle(
+                replace(self.observation, wallet_address="wallet-b"),
+                self.classification, self.evidence,
+            )
+        bundle = self.store.get_swap_bundle(self.observation.operation_id)
+        self.assertEqual(bundle["observation"], self.observation)
+
+    def test_concurrent_writers_report_only_one_insert(self):
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "events.sqlite3"
+            store = SQLiteEventStore(database)
+            store.save_observation(
+                "wallet-a", "sig-a", {"meta": {"err": None}}, [],
+                parse_status="no_events", parser_version="1",
+            )
+            barrier = Barrier(2, timeout=5)
+
+            def save():
+                barrier.wait()
+                return store.save_swap_bundle(
+                    self.observation, self.classification, self.evidence,
+                )
+
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                results = [workers.submit(save) for _ in range(2)]
+                self.assertCountEqual([result.result() for result in results], [True, False])
+            self.assertEqual(
+                store.get_swap_bundle(self.observation.operation_id)["evidence"], self.evidence,
+            )
 
     def test_rejects_contracts_with_different_operation_ids(self):
         wrong = SwapClassification(

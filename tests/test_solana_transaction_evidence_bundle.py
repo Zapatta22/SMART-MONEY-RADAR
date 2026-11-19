@@ -7,7 +7,7 @@ from smart_money_radar.data_sources.solana_transaction_evidence_bundle import (
 )
 
 
-def _transaction(signature="signature-1", slot=123):
+def _transaction(signature="1" * 64, slot=123):
     return {
         "transaction": {
             "signatures": [signature],
@@ -43,7 +43,7 @@ class SolanaTransactionEvidenceBundleTests(unittest.TestCase):
             ).encode("utf-8")
         ).hexdigest()
 
-        self.assertEqual(bundle.identity.transaction_signature, "signature-1")
+        self.assertEqual(bundle.identity.transaction_signature, "1" * 64)
         self.assertEqual(bundle.identity.slot, 123)
         self.assertEqual(bundle.identity.source_id, "geyser-provider-a")
         self.assertEqual(bundle.identity.payload_sha256, expected_hash)
@@ -58,7 +58,7 @@ class SolanaTransactionEvidenceBundleTests(unittest.TestCase):
             raw, source_id="rpc-a"
         )
 
-        self.assertEqual(bundle.identity.transaction_signature, "signature-1")
+        self.assertEqual(bundle.identity.transaction_signature, "1" * 64)
         self.assertEqual(bundle.identity.slot, 123)
         self.assertTrue(bundle.structurally_complete)
 

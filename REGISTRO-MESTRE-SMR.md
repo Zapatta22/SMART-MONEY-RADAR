@@ -3484,3 +3484,49 @@ Foi investigada a diferença entre os \`base_sha\` registrados nas PRs #8, #10, 
 A auditoria de ancestralidade esclareceu as diferenças dos quatro pontos. A cadeia não deve ser reordenada por causa dessas diferenças. A sequência de dependências continua de baixo para cima, começando pelas PRs ancestrais; porém, antes de autorizar qualquer merge, deve-se resolver o estado \`action_required\` da CI da head da #9 e confirmar os checks das PRs no momento da integração. Não fazer merge, atualizar branches, alterar bases ou executar reruns sem a etapa de autorização correspondente.
 
 Progresso estimado mantido: módulo **92%**; revisão técnica **93%**. A fixture Mainnet original com swaps positivos DAMM v2 e CPMM simultâneos continua como lacuna distinta da fixture composta de integração. Nenhuma PR foi mergeada e nenhuma alteração funcional foi feita nesta auditoria.
+
+
+## 235. Investigação do CI action_required e auditoria da nova fixture CPMM da PR #9 — 19/11/2026
+
+### Estado do workflow #145
+
+Foi inspecionado o workflow \`SMR tests\` associado à PR #9:
+
+- Run: \`44226350561\`, número #145.
+- Commit: \`dfac8ce8734808f0a4cbe817b49c47ee7058bd80\`.
+- Evento: \`pull_request\`.
+- Actor e triggering_actor: \`github-actions[bot]\`.
+- Conclusão: \`action_required\`.
+- Jobs retornados pelo endpoint de jobs: lista vazia; nenhum job foi iniciado.
+
+A execução anterior bem-sucedida da mesma PR foi:
+- Run: \`44223562333\`.
+- Commit: \`449129f9114420e4f136c0ad081c7820d2d0e399\`.
+- Actor: \`Zapatta22\`.
+- Conclusão: SUCCESS.
+- Job \`test\`: instalação, 169 testes e compileall concluídos com sucesso.
+
+A comparação entre os commits mostra que, após o commit validado, foram adicionados somente:
+- \`data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json\`;
+- \`data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json.manifest.json\`;
+- quatro linhas documentais no Registro Mestre.
+
+Portanto, a implementação do correlator da PR #9 tem uma execução anterior aprovada (169 testes), mas o HEAD atual não possui CI aprovado. A nova fixture não foi submetida a testes na execução #145. O actor bot é uma pista compatível com uma exigência de aprovação/política para workflow iniciado por automação; a configuração exata de aprovação do repositório não foi consultada e a causa administrativa específica permanece não confirmada. Não tratar \`action_required\` como falha de teste nem como aprovação.
+
+### Auditoria da fixture adicionada após o CI aprovado
+
+O manifesto \`raydium-cpmm-jupiter-multiswap.json.manifest.json\` declara:
+- \`projection_file\`: \`39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.json\`;
+- \`provenance_manifest\`: \`39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.manifest.json\`.
+
+A árvore Git da head \`dfac8ce8...\` contém somente os dois arquivos nomeados \`raydium-cpmm-jupiter-multiswap.json\` e seu manifesto. Os dois caminhos declarados dentro do manifesto não existem nessa árvore. Isso deixa referências de proveniência pendentes/inconsistentes.
+
+Também foi verificado que \`tests/test_raydium_cpmm_transfer_reconciliation.py\` não referencia o nome \`raydium-cpmm-jupiter-multiswap\`. A fixture nova, portanto, não tem cobertura de consumo explícita no teste dedicado consultado. O payload contém uma rota Jupiter com duas instruções CPMM, incluindo movimentação Token-2022, mas não afirmar validação econômica real desta fixture enquanto ela não for carregada e testada por um caso dedicado.
+
+### Conclusão e ação necessária
+
+A PR #9 não está bloqueada por falha de teste demonstrada. Está sem validação de CI para o HEAD atual porque o workflow #145 foi interrompido antes de iniciar jobs; a execução anterior no HEAD antigo passou com 169 testes.
+
+Há uma lacuna concreta adicional: o manifesto da nova fixture aponta para dois arquivos de projeção/proveniência ausentes e a fixture não é referenciada pelo teste dedicado verificado. Antes de considerar a PR #9 plenamente validada para integração, corrigir a proveniência/manifesto de forma compatível com o formato adotado no projeto, criar teste que consuma a fixture e obter CI aprovado no HEAD final. Não alterar o manifesto por suposição: primeiro confirmar o contrato de fixture e o procedimento de anonimização.
+
+Nenhum rerun, aprovação de workflow, alteração funcional, merge ou mudança na \`main\` foi executado nesta investigação. PR #9 permanece aberta; PR #25 permanece aberta/Draft, sem merge. Progresso mantido: módulo **92%**, revisão técnica **93%**.

@@ -3671,3 +3671,30 @@ O commit \`26da0c6e431ead8512af02397e5a2758b74817bd\`, contendo a seção 242, f
 - \`main\` permanece em \`5060bc65ddf181a4736fdb662c44c3fec0dd7259\`.
 
 A seção 242 registra a divergência de ancestralidade atual da PR #10: quatro commits da base #9 ainda não estão no head #10; merge-base preservado e GitHub reporta mergeable=true. Não foi feito rebase, atualização de branch ou merge.
+
+
+## 244. Auditoria de disponibilidade da proveniência RAW da fixture CPMM/Jupiter — 19/11/2026
+
+Foi concluída a verificação da proveniência no repositório GitHub, sem alterar a fixture nem inventar artefatos ausentes.
+
+### Evidências verificadas
+
+- Na árvore da branch atual da PR #9 (`feat/raydium-cpmm-transfer-reconciliation`, HEAD `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a)), estão presentes a projeção `data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json` e seu manifesto `.manifest.json`.
+- Não aparecem nessa árvore o payload RAW nem o manifesto de origem referenciado pelo campo `provenance_manifest`.
+- Consultas ao histórico GitHub para os caminhos convencionais do coletor — `data/fixtures/raw/39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.raw.json` e `data/fixtures/raw/39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.manifest.json` — retornaram listas vazias de commits. Portanto, esses dois caminhos nunca foram versionados no histórico consultado.
+- A documentação do coletor exige um par RAW/manifesto com `finalized`, `encoding=json`, assinatura, slot e SHA-256. O auditor offline recalcula o SHA do RAW e confere assinatura/slot no payload.
+- O anonimizador aceita manifesto de origem externo/local e, quando informado, executa `audit_fixture` e compara o SHA do bruto. O manifesto de projeção atualmente preserva apenas o nome do manifesto de origem e o valor `raw_sha256`; isso não substitui a presença do artefato original para auditoria independente.
+- O teste da PR #9 comprova o SHA-256 da projeção anonimizada, a assinatura e o slot. Não comprova o SHA-256 do RAW, pois o RAW não está disponível no repositório consultado.
+
+### Conclusão e tratamento correto
+
+A evidência disponível permite afirmar: **projeção íntegra e decodificação estrutural testada; proveniência desde o payload RPC original não revalidada**.
+
+A ausência no GitHub não prova que o RAW e o manifesto não existam no armazenamento local/privado de quem coletou a fixture. Não os publicar automaticamente: o payload bruto pode conter endereços e dados que exigem revisão de privacidade. A pendência só poderá ser fechada se o par original for localizado em ambiente privado e auditado com `audit_solana_fixtures.py`, ou se a política do projeto formalizar a fixture como proveniência externa não reproduzível e corrigir a referência documental de modo explícito. Não alterar `raw_sha256`, não fabricar manifesto e não declarar proveniência integralmente validada.
+
+### Estado da cadeia
+
+- PR #9: OPEN, HEAD `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a`, CI #1371 SUCCESS (170 testes + compileall).
+- PR #10: OPEN, HEAD `e7c02adb3564fefb3a8c734098f5c92603eb4a7b`, CI #115 SUCCESS (181 testes + compileall no head próprio); quatro commits da base #9 ainda não estão incorporados no head #10. Não foi feito rebase, atualização de branch ou merge.
+- PR #25: OPEN/DRAFT, não mergeada; este registro será atualizado nesta branch de integração. Nenhuma alteração na `main`.
+- Progresso mantido: módulo **92%**, revisão técnica **93%**. Não elevar enquanto a decisão de proveniência e a validação combinada da PR #10 permanecerem pendentes.

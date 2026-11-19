@@ -367,7 +367,7 @@ class BankLineageTracker:
     def is_ancestor(self, ancestor: BankKey, descendant: BankKey) -> bool | None:
         """True/False when the known parent chain is complete; None if incomplete."""
         if ancestor == descendant:
-            return True
+            return True if ancestor in self._banks else None
         current = self._banks.get(descendant)
         if current is None:
             return None

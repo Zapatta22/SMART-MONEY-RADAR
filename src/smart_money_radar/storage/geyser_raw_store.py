@@ -95,10 +95,18 @@ class SQLiteGeyserRawStore:
 
     SCHEMA_VERSION = 3
 
-    def __init__(self, database_path: Path | str) -> None:
+    def __init__(self, database_path: Path | str, *, read_only: bool = False) -> None:
         self.database_path = str(database_path)
+        self._read_only = read_only
         self._memory_connection: sqlite3.Connection | None = None
-        if self.database_path == ":memory:":
+        if read_only:
+            if self.database_path == ":memory:":
+                raise ValueError("a leitura do journal exige um arquivo SQLite")
+            with self._connection() as connection:
+                row = connection.execute("SELECT MAX(version) FROM geyser_schema_migrations").fetchone()
+                if row[0] != self.SCHEMA_VERSION:
+                    raise ValueError("schema SQLite incompatível com a leitura do journal Yellowstone")
+        elif self.database_path == ":memory:":
             self._memory_connection = sqlite3.connect(":memory:")
             self._initialize(self._memory_connection)
         else:
@@ -108,6 +116,9 @@ class SQLiteGeyserRawStore:
                 self._initialize(connection)
 
     def _connect(self) -> sqlite3.Connection:
+        if self._read_only:
+            uri = Path(self.database_path).resolve().as_uri() + "?mode=ro"
+            return sqlite3.connect(uri, uri=True, timeout=15.0)
         if self._memory_connection is not None:
             return self._memory_connection
         connection = sqlite3.connect(self.database_path, timeout=15.0)
@@ -301,6 +312,17 @@ class SQLiteGeyserRawStore:
                     contiguous_sequence, last_seen_sequence) VALUES (?, ?, ?, ?, ?, ?)""",
                 (source_id, stream_id, ordering_domain_id, initial, initial - 1, initial - 1),
             )
+
+    def require_frame_stream(self, source_id: str, stream_id: str, ordering_domain_id: str) -> None:
+        """Check that the journal already contains the requested connection."""
+        with self._connection() as connection:
+            row = connection.execute(
+                """SELECT 1 FROM geyser_frame_streams
+                   WHERE source_id = ? AND stream_id = ? AND ordering_domain_id = ?""",
+                (source_id, stream_id, ordering_domain_id),
+            ).fetchone()
+        if row is None:
+            raise ValueError("stream e domínio desconhecidos")
 
     def append_wire_frame(
         self, *, source_id: str, stream_id: str, ordering_domain_id: str,

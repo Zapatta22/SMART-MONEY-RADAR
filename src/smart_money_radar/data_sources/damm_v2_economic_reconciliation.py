@@ -7,7 +7,7 @@ Isso evita repartir arbitrariamente deltas líquidos entre swaps sequenciais.
 Não cria SwapObservation, BUY/SELL, sinal ou autorização de execução.
 """
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
@@ -56,7 +56,25 @@ class DammV2EconomicReconciliation:
     expected_account_deltas: tuple[DammV2ExpectedAccountDelta, ...]
     reason: str
     expected_withheld_fee_deltas: tuple[DammV2ExpectedWithheldFeeDelta, ...] = ()
-    withheld_fee_status: Literal["NOT_REQUIRED", "EXPECTED_NOT_VERIFIED"] = "NOT_REQUIRED"
+    withheld_fee_status: Literal[
+        "NOT_REQUIRED", "EXPECTED_NOT_VERIFIED", "VERIFIED"
+    ] = "NOT_REQUIRED"
+
+
+@dataclass(frozen=True)
+class DammV2WithheldFeeSnapshot:
+    token_account: str
+    mint: str
+    pre_withheld_amount_raw: int
+    post_withheld_amount_raw: int
+    transaction_signature: str
+    transaction_slot: int
+    transaction_order: int
+    pre_snapshot_order: int
+    post_snapshot_order: int
+    source: str
+    pre_state_ref: str
+    post_state_ref: str
 
 
 def _add_expected(
@@ -495,3 +513,117 @@ def reconcile_damm_v2_economic_batch(
         return DammV2EconomicReconciliation(
             "INCOMPLETE", len(contexts), (), str(exc)
         )
+
+
+def verify_damm_v2_withheld_fee_deltas(
+    reconciliation: DammV2EconomicReconciliation,
+    snapshots: Sequence[DammV2WithheldFeeSnapshot],
+    *,
+    transaction_signature: str,
+    transaction_slot: int,
+    transaction_order: int,
+) -> DammV2EconomicReconciliation:
+    """Verifies expected withheld increments against provenance-bound TLV snapshots.
+
+    The caller is responsible for obtaining account data immediately before and
+    after this exact transaction. Snapshot order values must come from the same
+    source ordering domain and prove pre < transaction < post.
+    """
+    if not isinstance(reconciliation, DammV2EconomicReconciliation):
+        raise TypeError("reconciliation inválida")
+    if reconciliation.status != "RECONCILED":
+        raise ValueError("reconciliação base precisa estar RECONCILED")
+    if not isinstance(snapshots, Sequence) or isinstance(snapshots, (str, bytes)):
+        raise TypeError("snapshots deve ser uma sequência")
+    if any(not isinstance(item, DammV2WithheldFeeSnapshot) for item in snapshots):
+        raise TypeError("snapshot withheld inválido")
+    if not isinstance(transaction_signature, str) or not transaction_signature.strip():
+        raise ValueError("transaction_signature é obrigatório")
+    for label, value in (("transaction_slot", transaction_slot), ("transaction_order", transaction_order)):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{label} inválido")
+
+    if not reconciliation.expected_withheld_fee_deltas:
+        if snapshots:
+            return replace(
+                reconciliation,
+                status="INCOMPLETE",
+                withheld_fee_status="NOT_REQUIRED",
+                reason="snapshots withheld fornecidos sem fee withheld esperada",
+            )
+        return replace(reconciliation, withheld_fee_status="NOT_REQUIRED")
+
+    by_account = {}
+    for snapshot in snapshots:
+        if snapshot.token_account in by_account:
+            return replace(
+                reconciliation,
+                status="AMBIGUOUS",
+                withheld_fee_status="EXPECTED_NOT_VERIFIED",
+                reason=f"snapshot withheld duplicado para {snapshot.token_account}",
+            )
+        by_account[snapshot.token_account] = snapshot
+
+    mismatches = []
+    for expected in reconciliation.expected_withheld_fee_deltas:
+        snapshot = by_account.get(expected.token_account)
+        if snapshot is None:
+            mismatches.append(f"snapshot withheld ausente para {expected.token_account}")
+            continue
+        if snapshot.mint != expected.mint:
+            mismatches.append(f"mint do snapshot withheld diverge para {expected.token_account}")
+            continue
+        if snapshot.transaction_signature != transaction_signature:
+            mismatches.append(f"assinatura do snapshot diverge para {expected.token_account}")
+            continue
+        if snapshot.transaction_slot != transaction_slot:
+            mismatches.append(f"slot do snapshot diverge para {expected.token_account}")
+            continue
+        if snapshot.transaction_order != transaction_order:
+            mismatches.append(f"ordem da transação diverge para {expected.token_account}")
+            continue
+        order_values = (
+            snapshot.pre_snapshot_order,
+            snapshot.transaction_order,
+            snapshot.post_snapshot_order,
+        )
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in order_values):
+            mismatches.append(f"ordem temporal inválida para {expected.token_account}")
+            continue
+        if not snapshot.pre_snapshot_order < snapshot.transaction_order < snapshot.post_snapshot_order:
+            mismatches.append(f"snapshots não provam pre < transação < post para {expected.token_account}")
+            continue
+        if (
+            not isinstance(snapshot.source, str) or not snapshot.source.strip()
+            or not isinstance(snapshot.pre_state_ref, str) or not snapshot.pre_state_ref.strip()
+            or not isinstance(snapshot.post_state_ref, str) or not snapshot.post_state_ref.strip()
+            or snapshot.pre_state_ref == snapshot.post_state_ref
+        ):
+            mismatches.append(f"proveniência/hash de snapshot ausente para {expected.token_account}")
+            continue
+        amounts = (snapshot.pre_withheld_amount_raw, snapshot.post_withheld_amount_raw)
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= (1 << 64) - 1
+            for value in amounts
+        ):
+            mismatches.append(f"quantidade withheld inválida para {expected.token_account}")
+            continue
+        observed_delta = snapshot.post_withheld_amount_raw - snapshot.pre_withheld_amount_raw
+        if observed_delta != expected.expected_withheld_delta_raw:
+            mismatches.append(
+                f"withheld diverge para {expected.token_account}: "
+                f"esperado {expected.expected_withheld_delta_raw}, observado {observed_delta}"
+            )
+
+    if mismatches:
+        return replace(
+            reconciliation,
+            status="INCOMPLETE",
+            withheld_fee_status="EXPECTED_NOT_VERIFIED",
+            reason="; ".join(mismatches),
+        )
+    return replace(
+        reconciliation,
+        withheld_fee_status="VERIFIED",
+        reason=reconciliation.reason + "; deltas TLV withheld conferidos com snapshots pre/post vinculados à transação",
+    )

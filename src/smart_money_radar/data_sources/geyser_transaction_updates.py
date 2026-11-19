@@ -26,7 +26,7 @@ def _text(value: Any, field: str) -> str:
 def _base58_encode(value: bytes, *, field: str, expected_length: int) -> str:
     if not isinstance(value, bytes) or len(value) != expected_length:
         raise ValueError(f"{field} deve conter exatamente {expected_length} bytes")
-    zeroes = len(value) - len(value.lstrip(b"\\x00"))
+    zeroes = len(value) - len(value.lstrip(b"\x00"))
     number = int.from_bytes(value, "big")
     encoded = ""
     while number:

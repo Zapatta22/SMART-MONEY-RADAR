@@ -124,14 +124,15 @@ def _read_extensions(data: bytes, expected_account_type: int) -> dict[int, bytes
     return extensions
 
 
-def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
+def decode_transfer_fee_config_optional(mint_data: bytes) -> TransferFeeConfigState | None:
+    """Decodes a pre-state mint and returns None when TransferFeeConfig is absent."""
     if not isinstance(mint_data, bytes):
         raise TypeError("mint_data deve ser bytes")
     _validate_mint_base(mint_data)
     extensions = _read_extensions(mint_data, ACCOUNT_TYPE_MINT)
     payload = extensions.get(EXTENSION_TRANSFER_FEE_CONFIG)
     if payload is None:
-        raise ValueError("TransferFeeConfig ausente")
+        return None
     if len(payload) != TRANSFER_FEE_CONFIG_LENGTH:
         raise ValueError("tamanho inválido de TransferFeeConfig")
     withheld = _read_u64(payload, 64)
@@ -146,6 +147,13 @@ def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
     return TransferFeeConfigState(
         withheld, read_rate(72), read_rate(90), tuple(sorted(extensions))
     )
+
+
+def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
+    state = decode_transfer_fee_config_optional(mint_data)
+    if state is None:
+        raise ValueError("TransferFeeConfig ausente")
+    return state
 
 
 def decode_transfer_fee_amount(account_data: bytes) -> TransferFeeAmountState:

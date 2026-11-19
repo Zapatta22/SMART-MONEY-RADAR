@@ -82,9 +82,19 @@ def _validate_transfer_evidence(
 ) -> None:
     """Revalida no limite do domínio a transferência que sustenta o MATCHED."""
     if transfer.execution_status != "EXECUTED" or transfer.instruction_type not in {
-        "TRANSFER", "TRANSFER_CHECKED"
+        "TRANSFER", "TRANSFER_CHECKED", "TRANSFER_CHECKED_WITH_FEE"
     }:
         raise ValueError(f"Transferência de {label} não tem execução/tipo suportado.")
+    if transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE":
+        if (
+            isinstance(transfer.fee_amount_raw, bool)
+            or not isinstance(transfer.fee_amount_raw, int)
+            or isinstance(transfer.amount_raw, bool)
+            or not isinstance(transfer.amount_raw, int)
+            or transfer.amount_raw <= 0
+            or not 0 <= transfer.fee_amount_raw <= transfer.amount_raw
+        ):
+            raise ValueError(f"Transferência de {label} tem taxa Token-2022 inválida.")
     if (
         transfer.instruction_index != swap.instruction_index
         or transfer.inner_instruction_index is None
@@ -180,8 +190,21 @@ def build_swap_domain_bundles(
             raise ValueError("Deltas por conta devem ser inteiros brutos.")
         if item.input_amount_raw != item.input_transfer.amount_raw:
             raise ValueError("Quantidade de entrada diverge da transferência selecionada.")
-        if item.output_amount_raw != item.output_transfer.amount_raw:
-            raise ValueError("Quantidade de saída diverge da transferência selecionada.")
+        expected_output_amount_raw = item.output_transfer.amount_raw
+        if item.output_transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE":
+            fee_amount_raw = item.output_transfer.fee_amount_raw
+            if (
+                isinstance(fee_amount_raw, bool)
+                or not isinstance(fee_amount_raw, int)
+                or isinstance(item.output_transfer.amount_raw, bool)
+                or not isinstance(item.output_transfer.amount_raw, int)
+                or item.output_transfer.amount_raw <= 0
+                or not 0 <= fee_amount_raw <= item.output_transfer.amount_raw
+            ):
+                raise ValueError("Transferência de saída tem taxa Token-2022 inválida.")
+            expected_output_amount_raw -= fee_amount_raw
+        if item.output_amount_raw != expected_output_amount_raw:
+            raise ValueError("Quantidade líquida de saída diverge do crédito spendable da transferência.")
         input_key = (
             item.input_transfer.instruction_index,
             item.input_transfer.inner_instruction_index,

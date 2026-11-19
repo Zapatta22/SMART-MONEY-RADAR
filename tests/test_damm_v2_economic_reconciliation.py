@@ -176,6 +176,8 @@ def _mint_fee_snapshots(input_bps=500, input_max_fee=100, input_epoch=10):
             transfer_fee_config_init_positions=(),
             transfer_fee_init_inventory_complete=True,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256="b" * 64,
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256="b" * 64,
         ),
         DammV2MintFeeConfigSnapshot(
             mint="mint-b", transaction_signature="signature-1", transfer_instruction_index=0,
@@ -185,6 +187,8 @@ def _mint_fee_snapshots(input_bps=500, input_max_fee=100, input_epoch=10):
             transfer_fee_config_init_positions=(),
             transfer_fee_init_inventory_complete=True,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-b-pre",
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256="c" * 64,
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256="c" * 64,
         ),
     ]
 
@@ -573,6 +577,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
             source="ordered-account-snapshot-fixture",
             pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
+            source_id="rpc-a", transaction_payload_sha256="a" * 64,
+            pre_state_sha256="b" * 64, post_state_sha256="c" * 64,
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
@@ -875,11 +881,13 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                     mint="mint-a", account_data=_mint_account_data(500),
                     snapshot_slot=123, snapshot_order=49,
                     source="ordered-mint-prestate-fixture", state_ref="mint-a-pre",
+                    source_id="rpc-a",
                 ),
                 "mint-b": DammV2MintPrestate(
                     mint="mint-b", account_data=_mint_account_data(1_000),
                     snapshot_slot=123, snapshot_order=49,
                     source="ordered-mint-prestate-fixture", state_ref="mint-b-pre",
+                    source_id="rpc-a",
                 ),
             },
             _instruction_inventory(),
@@ -975,12 +983,12 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                 "mint-a": DammV2MintPrestate(
                     mint="mint-a", account_data=_mint_account_data(500),
                     snapshot_slot=123, snapshot_order=49,
-                    source="fixture", state_ref="mint-a-pre",
+                    source="fixture", state_ref="mint-a-pre", source_id="rpc-a",
                 ),
                 "mint-b": DammV2MintPrestate(
                     mint="mint-b", account_data=_mint_account_data(None),
                     snapshot_slot=123, snapshot_order=49,
-                    source="fixture", state_ref="mint-b-pre",
+                    source="fixture", state_ref="mint-b-pre", source_id="rpc-a",
                 ),
             },
             _instruction_inventory(),

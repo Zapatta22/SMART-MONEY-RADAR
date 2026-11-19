@@ -25,6 +25,9 @@ class DashboardHTTPMainTests(unittest.TestCase):
 
         dashboard_http.main(["--port", "8765"])
 
+        store_class.assert_called_once_with(
+            os.environ["SMR_DB_PATH"], read_only=True
+        )
         create_server.assert_called_once_with(
             store, auth_token="x" * 40, host="127.0.0.1", port=8765
         )

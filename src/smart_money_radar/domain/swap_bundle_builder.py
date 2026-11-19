@@ -133,12 +133,6 @@ def _validate_transfer_evidence(
         raise ValueError(f"Mint da transferência de {label} diverge do mint do swap.")
     if transfer.decimals is not None and transfer.decimals != decimals:
         raise ValueError(f"Decimals da transferência de {label} divergem dos metadados do swap.")
-    if (
-        isinstance(transfer.amount_raw, bool)
-        or not isinstance(transfer.amount_raw, int)
-        or transfer.amount_raw <= 0
-    ):
-        raise ValueError(f"Quantidade bruta da transferência de {label} é inválida.")
 
 
 def build_swap_domain_bundles(

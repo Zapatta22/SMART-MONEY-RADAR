@@ -3107,3 +3107,33 @@ Precedência e efeito:
 - Isso valida o conjunto combinado no HEAD da PR #29, mas não autoriza merge automático das PRs originais nem transforma a PR temporária #29 em PR final.
 - Próxima etapa: revisão final do diff combinado e escolha explícita da estratégia de integração permanente. Preservar a base ancestral PR #23/#26 e resolver a documentação sem duplicar seções. Depois da decisão, validar o HEAD final da branch de integração permanente e só então solicitar autorização específica para merge.
 - Não fechar nem mergear a PR #29 nesta etapa; mantê-la como evidência reproduzível até a decisão sobre integração permanente.
+
+## 309. Validação final do HEAD documental da integração Geyser — 19/11/2026
+
+### CI no HEAD atualizado
+- Após registrar a seção 308, o commit 267f7512871d8bbab1414822413c2c11da18264c disparou automaticamente nova execução de ambos os workflows.
+- SMR tests: run 44581283469, job test SUCCESS. Log confirma Ran 593 tests in 5.319s; python -m compileall -q src tests concluiu com sucesso. Nenhuma falha.
+- Geyser audit benchmark: run 44581283368, job benchmark SUCCESS. Benchmark sintético e upload do artefato concluídos com sucesso.
+- Ambos os workflows apontam para o mesmo HEAD 267f7512871d8bbab1414822413c2c11da18264c.
+
+### Benchmark e artefato da execução final
+- Artefato geyser-audit-benchmark-results, ID 14559665298, SHA-256 457084e0646e213ae0e0a6f90241af59321c70fb02e9a2e0725d2035517b45a0, expiração indicada 2027-02-17. ZIP baixado e JSON interno inspecionado.
+- Escala principal de 100.000 eventos lógicos / 200.000 deliveries: rebuild 4,997681 s, throughput 40.018,56 deliveries/s, pico RSS do worker 28,99 MiB, TEMP SQLite 24.399.872 bytes, tracemalloc 0,60 MiB; 100.000 classificações SEQUENCED e 100.000 UNSEQUENCED_RECONCILED; contagens RAW preservadas e integrity_check=["ok"].
+- Fanout: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,199967 s, pico RSS 28,90 MiB, TEMP SQLite 2.088.960 bytes, 10.000 IDs completos e ordenados, integrity_check=["ok"].
+- Comparação de TEMP em 100.000 eventos: DEFAULT 5,014738 s / 28,98 MiB RSS; FILE 4,986653 s / 28,95 MiB; MEMORY 5,005368 s / 53,37 MiB. Não há ganho de velocidade material do modo MEMORY; mantém-se DEFAULT/file-backed.
+- Em todas as quatro escalas (2 mil, 20 mil, 100 mil e 200 mil deliveries), classificações esperadas, contagens RAW e integridade SQLite passaram.
+- Limite: fixture sintética em runner Linux/GitHub Actions. RSS inclui vida útil do worker (imports/construção), não apenas rebuild; TEMP pages são alocação lógica SQLite, não medição de bytes físicos escritos. Não extrapolar diretamente para Termux/VPS/produção.
+
+### Revisão do diff e estado remoto
+- Revisão do diff combinado confirmou que o rebuild da auditoria usa TEMP table/index local à conexão, leitura em lotes de 500, transação BEGIN IMMEDIATE, inserção em lotes, IDs de testemunhas ordenados e nenhuma transferência de sequência. A Timeline escolhe a menor delivery_id entre deliveries sequenciadas elegíveis, exigindo mesma fonte, ausência de conflito RAW e ausência de anomalia OPEN na chave exata da delivery.
+- Os testes integrados cobrem lote acima de 500, fanout de 4.096 testemunhas, rollback, concorrência de rebuilds, conflito RAW e replay elegível posterior quando a primeira delivery é inelegível.
+- PR #29 permanece OPEN/DRAFT, merged=false, mergeable=true, base feat/geyser-unsequenced-raw-audit em f0d63038411cc4207fae910a3ef168e3af443784, HEAD 267f7512871d8bbab1414822413c2c11da18264c, diff 8 arquivos (+1.070/-74).
+- PRs #26, #27 e #28 permanecem OPEN/DRAFT e não mergeadas; seus HEADs não foram alterados por esta revisão.
+- Branch integration/geyser-pr27-pr28 aponta para 267f7512871d8bbab1414822413c2c11da18264c; main continua intacta em 5060bc65ddf181a4736fdb662c44c3fec0dd7259.
+- Nenhum merge foi executado. Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+### Conclusão e próximo passo
+- A combinação PR #27 + PR #28 sobre a base PR #26 passou na suíte completa, compilação, benchmark e revisão do diff no HEAD 267f751...
+- A integração está tecnicamente validada no ambiente CI, mas ainda não foi integrada permanentemente à cadeia de PRs nem à main.
+- Próxima etapa: preparar a estratégia de incorporação permanente sem duplicar commits/documentação entre PRs #27, #28 e #29; manter a PR #29 como candidata Draft e preservar todas as branches até a decisão de merge.
+- Esta validação não autoriza merge. Não fazer merge sem aprovação explícita e específica do usuário.

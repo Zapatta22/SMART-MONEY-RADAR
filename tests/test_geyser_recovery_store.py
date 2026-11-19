@@ -74,6 +74,15 @@ class GeyserRecoveryStoreTests(unittest.TestCase):
                     "pagination_exhausted": True, "query_semantics": "test",
                 },
             )
+        with self.assertRaisesRegex(ValueError, "compatível"):
+            self.store.finish_backfill_job(
+                job["job_id"], status="COMPLETED", coverage_status="COMPLETE",
+                coverage_evidence={
+                    "provider_contract": "confirmed", "range_covered": True,
+                    "pagination_exhausted": True, "retention_limit_checked": True,
+                    "query_semantics": "different query",
+                },
+            )
 
     def test_progress_counters_cannot_regress_and_only_running_jobs_change(self):
         job = self.store.start_backfill_job(self.create_job()["job_id"])

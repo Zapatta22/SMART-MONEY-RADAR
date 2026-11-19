@@ -44,6 +44,25 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
             self.raw, self.event(**kwargs), schema_version="geyser-v16"
         )
 
+    def test_explicit_sqlite_temp_store_modes_are_connection_local(self):
+        self.ingest()
+        for mode, expected_pragma in (("FILE", 1), ("MEMORY", 2)):
+            auditor = SQLiteGeyserUnsequencedDeliveryAudit(
+                self.db, temp_store=mode
+            )
+            auditor.rebuild()
+            self.assertEqual(
+                auditor.last_rebuild_metrics["temp_store_pragma"],
+                expected_pragma,
+            )
+            self.assertGreater(
+                auditor.last_rebuild_metrics["temp_db_allocated_bytes"], 0
+            )
+
+    def test_sqlite_temp_store_rejects_unknown_mode(self):
+        with self.assertRaisesRegex(ValueError, "temp_store"):
+            SQLiteGeyserUnsequencedDeliveryAudit(self.db, temp_store="CACHE")
+
     def test_unsequenced_delivery_without_witness_remains_unresolved(self):
         result = self.ingest()
         summary = self.audit.rebuild()

@@ -7,17 +7,23 @@ on:
       - "src/**"
       - "tests/**"
       - "pyproject.toml"
+      - "docs/SMR-DEVELOPMENT-STATUS.md"
       - ".github/workflows/smr-tests.yml"
   pull_request:
-    branches: [main]
+    branches: [main, "feat/**", "integration/**"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: smr-tests-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,10 +32,31 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install project
+        id: install
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
       - name: Run unit tests
+        id: tests
         run: PYTHONPATH=src python -m unittest discover -s tests -v
       - name: Compile source and tests
+        id: compile
         run: python -m compileall -q src tests
+
+      - name: Record development evidence
+        if: always()
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          COMPILE: ${{ steps.compile.outcome }}
+        run: |
+          {
+            printf '## SMR · %s\n\n' "$(git rev-parse HEAD 2>/dev/null || printf '%s' "$GITHUB_SHA")"
+            printf '%s\n' "- Instalação: $INSTALL" "- Testes: $TESTS" "- Compilação: $COMPILE"
+            if [ "$INSTALL" != success ] || [ "$TESTS" != success ] || [ "$COMPILE" != success ]; then
+              printf '\nCorrigir a etapa malsucedida e repetir no mesmo ref antes de avançar.\n'
+            elif [ -f docs/SMR-DEVELOPMENT-STATUS.md ]; then
+              printf '\n### Próxima tarefa prioritária\n\n'
+              awk '/^## Próxima tarefa prioritária$/ { show = 1; next } /^## / { show = 0 } show && NF { print; exit }' docs/SMR-DEVELOPMENT-STATUS.md
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

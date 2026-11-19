@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from smart_money_radar.data_sources.damm_v2_accounts import decode_damm_v2_swap_accounts
@@ -32,6 +32,9 @@ from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
     SolanaTokenBalanceDeltaResult,
     decode_solana_token_account_balance_deltas,
 )
+_BUNDLE_FACTORY_TOKEN = object()
+
+
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SolanaInstructionInventory,
     SolanaTokenTransfer,
@@ -60,6 +63,7 @@ class SolanaTransactionEvidenceBundle:
     damm_v2_contexts: tuple[DammV2SwapTransferContext, ...] = ()
     damm_v2_transfer_evidence: tuple[DammV2TransferEvidence, ...] = ()
     damm_v2_issues: tuple[str, ...] = ()
+    _factory_token: object = field(default=None, repr=False, compare=False)
 
     @property
     def damm_v2_complete(self) -> bool:
@@ -217,6 +221,7 @@ def build_solana_transaction_evidence_bundle(
         damm_v2_contexts=tuple(contexts),
         damm_v2_transfer_evidence=tuple(transfer_evidence),
         damm_v2_issues=tuple(damm_issues),
+        _factory_token=_BUNDLE_FACTORY_TOKEN,
     )
 
 
@@ -235,8 +240,11 @@ def reconcile_solana_transaction_damm_v2_bundle(
     Historical mint snapshots retain their own provenance and must still pass
     the economic reconciler's ordering and applicability checks.
     """
-    if not isinstance(bundle, SolanaTransactionEvidenceBundle):
-        raise TypeError("bundle de evidências Solana inválido")
+    if (
+        not isinstance(bundle, SolanaTransactionEvidenceBundle)
+        or bundle._factory_token is not _BUNDLE_FACTORY_TOKEN
+    ):
+        raise TypeError("bundle deve ser criado pela factory validada de evidências Solana")
 
     operation_count = len(bundle.damm_v2_associations)
     if not bundle.damm_v2_associations:

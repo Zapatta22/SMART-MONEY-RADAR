@@ -231,7 +231,9 @@ class SQLiteGeyserRawStore:
                     "WHERE source_id = ? AND stream_id = ?", (source_id, stream_id)
                 ).fetchone()
                 if existing is not None:
-                    if existing[0] != initial_sequence or existing[1] != "adapter_declared":
+                    if existing[1] == "first_observed_unverified":
+                        raise ValueError("não é possível declarar baseline após ingestão")
+                    if existing[0] != initial_sequence:
                         raise ValueError("stream já possui baseline incompatível")
                 else:
                     deliveries = connection.execute(

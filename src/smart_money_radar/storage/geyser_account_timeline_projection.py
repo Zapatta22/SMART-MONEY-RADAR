@@ -214,7 +214,14 @@ class SQLiteGeyserAccountTimelineProjection:
                 FROM geyser_raw_events e
                 JOIN geyser_raw_deliveries d ON d.delivery_id=(
                     SELECT MIN(d2.delivery_id) FROM geyser_raw_deliveries d2
-                    WHERE d2.event_id=e.event_id AND d2.stream_sequence IS NOT NULL
+                    WHERE d2.event_id=e.event_id
+                      AND d2.stream_sequence IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1 FROM geyser_transport_anomalies a
+                          WHERE a.source_id=d2.source_id
+                            AND a.stream_id=d2.stream_id
+                            AND a.stream_sequence=d2.stream_sequence
+                      )
                 )
                 ORDER BY d.delivery_id,e.event_id
             """).fetchall()
@@ -360,12 +367,12 @@ class SQLiteGeyserAccountTimelineProjection:
                     SELECT COUNT(*) FROM geyser_transport_gaps
                     WHERE source_id=? AND status='OPEN'
                 """, (source_id,)).fetchone()[0]
-                open_anomalies = connection.execute("""
+                historical_anomalies = connection.execute("""
                     SELECT COUNT(*) FROM geyser_transport_anomalies
-                    WHERE source_id=? AND status='OPEN'
+                    WHERE source_id=?
                 """, (source_id,)).fetchone()[0]
                 transport_state[source_id] = (
-                    checkpoint_rows, open_gaps, open_anomalies
+                    checkpoint_rows, open_gaps, historical_anomalies
                 )
             connection.commit()
 
@@ -378,14 +385,14 @@ class SQLiteGeyserAccountTimelineProjection:
         }
         projection_checkpoints = []
         for source_id, event_count, delivery_count, last_delivery_id in source_stats:
-            checkpoint_rows, open_gaps, open_anomalies = transport_state[source_id]
+            checkpoint_rows, open_gaps, historical_anomalies = transport_state[source_id]
             skipped_source = event_count - replayed_by_source.get(source_id, 0)
             declared = bool(checkpoint_rows) and all(
                 baseline == "adapter_declared" for baseline, _ in checkpoint_rows
             )
             transport_interrupted = (
                 any(bool(interrupted) for _, interrupted in checkpoint_rows)
-                or open_gaps > 0 or open_anomalies > 0
+                or open_gaps > 0 or historical_anomalies > 0
             )
             timeline_interrupted = timeline_gap_counts.get(source_id, 0) > 0
             interrupted = bool(

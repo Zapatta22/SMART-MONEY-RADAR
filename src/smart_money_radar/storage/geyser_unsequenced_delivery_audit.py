@@ -130,8 +130,7 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                   )
                   AND NOT EXISTS (
                       SELECT 1 FROM geyser_transport_anomalies a
-                      WHERE a.status='OPEN'
-                        AND a.source_id=d.source_id
+                      WHERE a.source_id=d.source_id
                         AND a.stream_id=d.stream_id
                         AND a.stream_sequence=d.stream_sequence
                   )

@@ -96,6 +96,30 @@ class GeyserAccountTimelineProjectionTests(unittest.TestCase):
         result=self.projection.rebuild()
         self.assertEqual(result["account_write_count"],2)
 
+    def test_stream_gap_is_persisted_and_breaks_predecessor_continuity(self):
+        self.add(self.account(100,1,1))
+        self.add(self.account(101,2,3,signature="after-gap"))
+        self.projection.rebuild()
+        writes=self.projection.list_account_writes("acct")
+        self.assertEqual(len(writes),2)
+        self.assertEqual(writes[1]["continuity_baseline"],1)
+        gaps=self.projection.list_gaps()
+        self.assertEqual(len(gaps),1)
+        self.assertEqual((gaps[0]["expected_sequence"],gaps[0]["received_sequence"]),(2,3))
+
+    def test_distinct_sources_do_not_create_false_reconnect_gap(self):
+        self.add(self.account(100,1,1,pubkey="source-a"))
+        second=NormalizedAccountUpdate(
+            pubkey="source-b",slot=100,write_version=1,txn_signature=None,
+            lamports=1,owner="owner",executable=False,rent_epoch=0,data=b"x",
+            stream_id="stream-b",stream_sequence=1,source="yellowstone-backup",
+            bank_id=10,is_startup=False,
+        )
+        self.add(second)
+        self.projection.rebuild()
+        self.assertEqual(len(self.projection.list_account_writes()),2)
+        self.assertEqual(self.projection.list_gaps(),[])
+
     def test_bad_raw_payload_rolls_back_previous_generation(self):
         self.add(self.account(100,1,1))
         self.projection.rebuild()

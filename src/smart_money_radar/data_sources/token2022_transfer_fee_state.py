@@ -1,6 +1,11 @@
 """Strict offline decoder for Token-2022 TransferFee extensions."""
 from dataclasses import dataclass
 
+from smart_money_radar.data_sources.solana_token_transfer_decoder import (
+    TOKEN_2022_PROGRAM_ID,
+    SolanaInstructionInventory,
+)
+
 MINT_BASE_LENGTH = 82
 TOKEN_ACCOUNT_BASE_LENGTH = 165
 ACCOUNT_TYPE_OFFSET = 165
@@ -38,8 +43,31 @@ class TransferFeeConfigState:
 
 
 @dataclass(frozen=True)
+class TransferFeeConfigInitInventory:
+    mint: str
+    initialization_positions: tuple[tuple[int, int], ...]
+    complete: bool
+    issues: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TransferFeeConfigMutationInstruction:
+    kind: str
+    transfer_fee_basis_points: int
+    maximum_fee: int
+
+
+@dataclass(frozen=True)
 class TransferFeeAmountState:
     withheld_amount: int
+    extension_types: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class TransferFeeAmountDelta:
+    pre_withheld_amount: int
+    post_withheld_amount: int
+    delta: int
     extension_types: tuple[int, ...]
 
 
@@ -116,14 +144,15 @@ def _read_extensions(data: bytes, expected_account_type: int) -> dict[int, bytes
     return extensions
 
 
-def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
+def decode_transfer_fee_config_optional(mint_data: bytes) -> TransferFeeConfigState | None:
+    """Decodes a pre-state mint and returns None when TransferFeeConfig is absent."""
     if not isinstance(mint_data, bytes):
         raise TypeError("mint_data deve ser bytes")
     _validate_mint_base(mint_data)
     extensions = _read_extensions(mint_data, ACCOUNT_TYPE_MINT)
     payload = extensions.get(EXTENSION_TRANSFER_FEE_CONFIG)
     if payload is None:
-        raise ValueError("TransferFeeConfig ausente")
+        return None
     if len(payload) != TRANSFER_FEE_CONFIG_LENGTH:
         raise ValueError("tamanho inválido de TransferFeeConfig")
     withheld = _read_u64(payload, 64)
@@ -140,6 +169,13 @@ def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
     )
 
 
+def decode_transfer_fee_config(mint_data: bytes) -> TransferFeeConfigState:
+    state = decode_transfer_fee_config_optional(mint_data)
+    if state is None:
+        raise ValueError("TransferFeeConfig ausente")
+    return state
+
+
 def decode_transfer_fee_amount(account_data: bytes) -> TransferFeeAmountState:
     if not isinstance(account_data, bytes):
         raise TypeError("account_data deve ser bytes")
@@ -151,3 +187,190 @@ def decode_transfer_fee_amount(account_data: bytes) -> TransferFeeAmountState:
     if len(payload) != TRANSFER_FEE_AMOUNT_LENGTH:
         raise ValueError("tamanho inválido de TransferFeeAmount")
     return TransferFeeAmountState(_read_u64(payload, 0), tuple(sorted(extensions)))
+
+
+def decode_transfer_fee_amount_delta(
+    pre_account_data: bytes,
+    post_account_data: bytes,
+) -> TransferFeeAmountDelta:
+    """Decodes the signed pre/post delta of a token account's withheld fee TLV.
+
+    The caller must supply account-data snapshots from the exact transaction
+    boundary being audited. This function validates TLV structure, not snapshot
+    provenance, slot ordering, or transaction identity.
+    """
+    before = decode_transfer_fee_amount(pre_account_data)
+    after = decode_transfer_fee_amount(post_account_data)
+    if before.extension_types != after.extension_types:
+        raise ValueError("conjunto de extensões mudou entre snapshots pre/post")
+    return TransferFeeAmountDelta(
+        pre_withheld_amount=before.withheld_amount,
+        post_withheld_amount=after.withheld_amount,
+        delta=after.withheld_amount - before.withheld_amount,
+        extension_types=before.extension_types,
+    )
+
+
+def decode_transfer_fee_config_mutation_instruction(
+    instruction_data: bytes,
+) -> TransferFeeConfigMutationInstruction | None:
+    """Decodes Token-2022 TransferFeeExtension init/set mutation instructions.
+
+    The outer TokenInstruction discriminator is 26; the extension sub-tags are
+    0 (InitializeTransferFeeConfig) and 5 (SetTransferFee). Other sub-tags do
+    not mutate the mint's transfer-fee rate configuration.
+    """
+    if not isinstance(instruction_data, bytes):
+        raise TypeError("instruction_data deve ser bytes")
+    if not instruction_data or instruction_data[0] != 26:
+        return None
+    if len(instruction_data) < 2:
+        raise ValueError("TransferFeeExtension instruction truncada")
+    subtag = instruction_data[1]
+    if subtag not in (0, 5):
+        return None
+
+    if subtag == 5:
+        if len(instruction_data) != 12:
+            raise ValueError("SetTransferFee instruction com tamanho inválido")
+        basis_points = int.from_bytes(instruction_data[2:4], "little")
+        maximum_fee = int.from_bytes(instruction_data[4:12], "little")
+    else:
+        offset = 2
+        for field in ("transfer_fee_config_authority", "withdraw_withheld_authority"):
+            if offset + 4 > len(instruction_data):
+                raise ValueError(f"COption truncada em {field}")
+            tag = int.from_bytes(instruction_data[offset:offset + 4], "little")
+            if tag == 0:
+                offset += 4
+            elif tag == 1:
+                if offset + 36 > len(instruction_data):
+                    raise ValueError(f"pubkey COption truncada em {field}")
+                offset += 36
+            else:
+                raise ValueError(f"tag COption inválida em {field}")
+        if offset + 10 != len(instruction_data):
+            raise ValueError("InitializeTransferFeeConfig com tamanho inválido")
+        basis_points = int.from_bytes(instruction_data[offset:offset + 2], "little")
+        maximum_fee = int.from_bytes(instruction_data[offset + 2:offset + 10], "little")
+
+    if basis_points > 10_000:
+        raise ValueError("transfer_fee_basis_points excede 10000")
+    return TransferFeeConfigMutationInstruction(
+        kind="INITIALIZE_TRANSFER_FEE_CONFIG" if subtag == 0 else "SET_TRANSFER_FEE",
+        transfer_fee_basis_points=basis_points,
+        maximum_fee=maximum_fee,
+    )
+
+
+def collect_transfer_fee_config_init_positions(
+    instruction_inventory: SolanaInstructionInventory,
+    mint: str,
+) -> TransferFeeConfigInitInventory:
+    """Collects all InitializeTransferFeeConfig positions for one mint.
+
+    Position is (outer_instruction_index, inner_instruction_index); -1 denotes
+    a top-level instruction. The inventory must cover all outer and CPI
+    instructions. SetTransferFee is validated but does not change the active
+    fee for the current epoch in the pinned Token-2022 implementation.
+    """
+    if not isinstance(instruction_inventory, SolanaInstructionInventory):
+        raise TypeError("instruction_inventory inválido")
+    if not isinstance(mint, str) or not mint:
+        raise ValueError("mint inválido")
+
+    issues = list(instruction_inventory.issues)
+    if not instruction_inventory.complete:
+        issues.append("inventário de instruções Solana incompleto")
+    positions = []
+
+    known_non_rate_mutations = {1, 2, 3, 4}
+    for instruction in instruction_inventory.instructions:
+        if instruction.program_id != TOKEN_2022_PROGRAM_ID:
+            continue
+        if instruction.accounts is None:
+            issues.append(
+                f"accounts Token-2022 não resolvidas em "
+                f"{instruction.instruction_index}/{instruction.inner_instruction_index}"
+            )
+            continue
+        if not instruction.accounts or instruction.accounts[0] != mint:
+            continue
+
+        position = (
+            instruction.instruction_index,
+            -1 if instruction.inner_instruction_index is None
+            else instruction.inner_instruction_index,
+        )
+        if instruction.data is not None:
+            data = instruction.data
+            if not data:
+                issues.append(f"data Token-2022 vazia em {position}")
+                continue
+            if data[0] != 26:
+                continue
+            if len(data) < 2:
+                issues.append(f"TransferFeeExtension truncada em {position}")
+                continue
+            subtag = data[1]
+            if subtag == 0:
+                try:
+                    mutation = decode_transfer_fee_config_mutation_instruction(data)
+                except (TypeError, ValueError) as exc:
+                    issues.append(f"InitializeTransferFeeConfig inválida em {position}: {exc}")
+                    continue
+                if mutation is None or mutation.kind != "INITIALIZE_TRANSFER_FEE_CONFIG":
+                    issues.append(f"InitializeTransferFeeConfig não decodificada em {position}")
+                    continue
+                positions.append(position)
+            elif subtag == 5:
+                try:
+                    mutation = decode_transfer_fee_config_mutation_instruction(data)
+                except (TypeError, ValueError) as exc:
+                    issues.append(f"SetTransferFee inválida em {position}: {exc}")
+                    continue
+                if mutation is None or mutation.kind != "SET_TRANSFER_FEE":
+                    issues.append(f"SetTransferFee não decodificada em {position}")
+            elif subtag not in known_non_rate_mutations:
+                issues.append(f"subtag TransferFeeExtension desconhecida {subtag} em {position}")
+            continue
+
+        parsed_type = (instruction.parsed_type or "").lower().replace("_", "")
+        if parsed_type == "initializetransferfeeconfig":
+            info = instruction.parsed_info or {}
+            basis_points = info.get("transferFeeBasisPoints")
+            maximum_fee = info.get("maximumFee")
+            if (
+                isinstance(basis_points, bool) or not isinstance(basis_points, int)
+                or not 0 <= basis_points <= 10_000
+                or isinstance(maximum_fee, bool) or not isinstance(maximum_fee, int)
+                or not 0 <= maximum_fee <= U64_MAX
+            ):
+                issues.append(f"InitializeTransferFeeConfig parsed inválida em {position}")
+                continue
+            positions.append(position)
+        elif parsed_type == "settransferfee":
+            info = instruction.parsed_info or {}
+            basis_points = info.get("transferFeeBasisPoints")
+            maximum_fee = info.get("maximumFee")
+            if (
+                isinstance(basis_points, bool) or not isinstance(basis_points, int)
+                or not 0 <= basis_points <= 10_000
+                or isinstance(maximum_fee, bool) or not isinstance(maximum_fee, int)
+                or not 0 <= maximum_fee <= U64_MAX
+            ):
+                issues.append(f"SetTransferFee parsed inválida em {position}")
+        elif parsed_type not in {
+            "transfercheckedwithfee",
+            "withdrawwithheldtokensfrommint",
+            "withdrawwithheldtokensfromaccounts",
+            "harvestwithheldtokenstomint",
+        }:
+            issues.append(f"tipo parsed Token-2022 não reconhecido para mint em {position}")
+
+    return TransferFeeConfigInitInventory(
+        mint=mint,
+        initialization_positions=tuple(sorted(positions)),
+        complete=not issues,
+        issues=tuple(issues),
+    )

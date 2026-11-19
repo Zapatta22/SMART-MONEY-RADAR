@@ -15,6 +15,29 @@ U64_MAX = (1 << 64) - 1
 
 
 @dataclass(frozen=True)
+class SolanaInstructionRecord:
+    program_id: str | None
+    instruction_index: int
+    inner_instruction_index: int | None
+    accounts: tuple[str, ...] | None
+    data: bytes | None
+    parsed_type: str | None
+    parsed_info: Mapping[str, Any] | None
+    stack_height: int | None
+    cpi_path: tuple[int, ...]
+    cpi_path_valid: bool
+
+
+@dataclass(frozen=True)
+class SolanaInstructionInventory:
+    instructions: tuple[SolanaInstructionRecord, ...]
+    complete: bool
+    issues: tuple[str, ...]
+    transaction_signature: str | None = None
+    slot: int | None = None
+
+
+@dataclass(frozen=True)
 class SolanaTokenTransfer:
     program_id: str
     program_name: str
@@ -386,3 +409,155 @@ def decode_solana_token_transfers(
             if decoded is not None:
                 results.append(decoded)
     return results
+
+
+def decode_solana_instruction_inventory(
+    raw_transaction: dict[str, Any],
+) -> SolanaInstructionInventory:
+    """Decodes ordered outer/inner instructions with resolved program/accounts.
+
+    This is an instruction inventory, not a semantic decoder for every program.
+    Missing innerInstructions, unresolved Token-2022 accounts or undecodable
+    Token-2022 data make the inventory incomplete.
+    """
+    if not isinstance(raw_transaction, dict):
+        raise TypeError("transação precisa ser um objeto")
+    payload = raw_transaction.get("result", raw_transaction)
+    if not isinstance(payload, dict):
+        raise ValueError("payload RPC inválido")
+    tx = payload.get("transaction")
+    if not isinstance(tx, dict) or not isinstance(tx.get("message"), dict):
+        return SolanaInstructionInventory((), False, ("transaction/message ausente",))
+    message = tx["message"]
+    signatures = tx.get("signatures")
+    transaction_signature = (
+        signatures[0] if isinstance(signatures, list)
+        and signatures and isinstance(signatures[0], str) else None
+    )
+    slot = payload.get("slot")
+    issues: list[str] = []
+    if not isinstance(transaction_signature, str) or not transaction_signature:
+        issues.append("assinatura da transação ausente")
+    if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+        issues.append("slot da transação ausente/inválido")
+    meta = payload.get("meta")
+    if not isinstance(meta, dict):
+        return SolanaInstructionInventory(
+            (), False, tuple(issues + ["meta ausente"]),
+            transaction_signature, slot if isinstance(slot, int) and not isinstance(slot, bool) else None,
+        )
+    if meta.get("err") is not None:
+        return SolanaInstructionInventory(
+            (), False, tuple(issues + ["transação não foi executada com sucesso"]),
+            transaction_signature, slot if isinstance(slot, int) and not isinstance(slot, bool) else None,
+        )
+    try:
+        keys = _account_keys(message, meta)
+    except (TypeError, ValueError) as exc:
+        return SolanaInstructionInventory((), False, (f"accountKeys inválido: {exc}",))
+
+    outer = message.get("instructions")
+    if not isinstance(outer, list):
+        return SolanaInstructionInventory((), False, ("message.instructions ausente/inválido",))
+    inner_groups = meta.get("innerInstructions")
+    if not isinstance(inner_groups, list):
+        issues.append("meta.innerInstructions ausente/inválido")
+
+    records: list[SolanaInstructionRecord] = []
+
+    def add_record(
+        item: Any,
+        outer_index: int,
+        inner_index: int | None,
+        stack_height: int | None,
+        cpi_path: tuple[int, ...],
+        cpi_path_valid: bool,
+    ) -> None:
+        if not isinstance(item, dict):
+            issues.append(f"instrução inválida em {outer_index}/{inner_index}")
+            return
+        program_id = _resolve_program_id(item, keys)
+        if program_id is None:
+            issues.append(f"programId não resolvido em {outer_index}/{inner_index}")
+        raw_accounts = item.get("accounts")
+        accounts = None
+        if isinstance(raw_accounts, list):
+            try:
+                accounts = tuple(
+                    _resolve_key(value, keys, "índice de conta")
+                    for value in raw_accounts
+                )
+            except ValueError as exc:
+                issues.append(f"accounts inválidas em {outer_index}/{inner_index}: {exc}")
+        elif program_id == TOKEN_2022_PROGRAM_ID:
+            issues.append(f"accounts Token-2022 ausentes em {outer_index}/{inner_index}")
+
+        encoded = item.get("data")
+        data = None
+        if isinstance(encoded, str) and encoded:
+            try:
+                data = _decode_base58(encoded)
+            except ValueError as exc:
+                if program_id == TOKEN_2022_PROGRAM_ID:
+                    issues.append(f"data Token-2022 inválida em {outer_index}/{inner_index}: {exc}")
+        elif encoded is not None:
+            if program_id == TOKEN_2022_PROGRAM_ID:
+                issues.append(f"data Token-2022 em formato inválido em {outer_index}/{inner_index}")
+
+        parsed = item.get("parsed")
+        parsed_type = parsed.get("type") if isinstance(parsed, dict) else None
+        parsed_info = parsed.get("info") if isinstance(parsed, dict) and isinstance(parsed.get("info"), dict) else None
+        if program_id == TOKEN_2022_PROGRAM_ID and data is None and not isinstance(parsed_type, str):
+            issues.append(f"data/parsed type Token-2022 ausente em {outer_index}/{inner_index}")
+
+        records.append(SolanaInstructionRecord(
+            program_id=program_id,
+            instruction_index=outer_index,
+            inner_instruction_index=inner_index,
+            accounts=accounts,
+            data=data,
+            parsed_type=parsed_type if isinstance(parsed_type, str) else None,
+            parsed_info=parsed_info,
+            stack_height=stack_height,
+            cpi_path=cpi_path,
+            cpi_path_valid=cpi_path_valid,
+        ))
+
+    for outer_index, item in enumerate(outer):
+        add_record(item, outer_index, None, 1, (), True)
+
+    if isinstance(inner_groups, list):
+        seen: set[int] = set()
+        for group in inner_groups:
+            if not isinstance(group, dict):
+                issues.append("grupo innerInstructions inválido")
+                continue
+            outer_index = group.get("index")
+            nested = group.get("instructions")
+            if (
+                isinstance(outer_index, bool)
+                or not isinstance(outer_index, int)
+                or not 0 <= outer_index < len(outer)
+                or not isinstance(nested, list)
+                or outer_index in seen
+            ):
+                issues.append("grupo innerInstructions inconsistente")
+                continue
+            seen.add(outer_index)
+            paths = _cpi_paths(nested)
+            path_validity = _strict_cpi_path_validity(nested)
+            for inner_index, (item, path_info, path_valid) in enumerate(
+                zip(nested, paths, path_validity)
+            ):
+                path, height = path_info
+                add_record(
+                    item, outer_index, inner_index, height, path, path_valid
+                )
+
+    return SolanaInstructionInventory(
+        instructions=tuple(records),
+        complete=not issues,
+        issues=tuple(issues),
+        transaction_signature=transaction_signature,
+        slot=slot if isinstance(slot, int) and not isinstance(slot, bool) else None,
+    )

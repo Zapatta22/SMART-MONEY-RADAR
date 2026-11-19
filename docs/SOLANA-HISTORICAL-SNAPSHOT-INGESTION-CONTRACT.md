@@ -1,0 +1,119 @@
+# Contrato do adapter de snapshots históricos Solana
+
+**Status:** contrato arquitetural definido; adapter operacional ainda não implementado.
+
+## 1. Objetivo e limite
+
+Definir como uma futura camada provider-neutral pode produzir evidências históricas de mint e token accounts para a reconciliação econômica DAMM v2, sem misturar fontes ou comparar ordens que não pertencem ao mesmo domínio.
+
+O adapter não classifica BUY/SELL, não cria sinais e não autoriza execução. Ele normaliza e preserva evidências. O reconciliador continua fail-closed.
+
+## 2. Identidades que não podem ser confundidas
+
+Cada evento histórico deve carregar separadamente:
+
+- `source_id`: namespace estável do provider/nó. Deve permanecer igual em reconexões da mesma fonte lógica; não é ID de conexão.
+- `ordering_domain_id`: identidade do domínio em que os valores de ordem são comparáveis. Em um stream Yellowstone multiplexado, pode corresponder ao identificador daquela conexão/stream. Um reconnect cria novo domínio, salvo se o provider oferecer explicitamente um cursor global comparável.
+- `stream_id`: identidade de conexão/transporte. É metadado de continuidade; não prova, por si só, que sequências de streams diferentes sejam comparáveis.
+- `stream_sequence`: ordem monotônica atribuída a cada mensagem recebida no mesmo domínio ordenado. Deve incluir mensagens de transação e account updates usados no mesmo pareamento.
+
+**Regra obrigatória:** igualdade de `source_id` não autoriza comparar `transaction_order`, `pre_snapshot_order` ou `post_snapshot_order` de `ordering_domain_id` diferentes. A verificação agora exige domínio igual para mint e withheld snapshots.
+
+Não derivar `stream_sequence` de timestamp, slot, `write_version`, `delivery_id`, ordem lexical de assinatura, ordem de instrução ou sequência observada em outra stream. `slot/write_version` descrevem ordem de ledger/account writes; não substituem a ordem de transporte que relaciona mensagens de famílias distintas.
+
+Se o provider não garantir uma ordem comum para transaction updates e account updates, o adapter não deve inventar uma. O snapshot fica inelegível.
+
+## 3. Contrato mínimo de eventos normalizados
+
+### Transaction observation
+
+Deve preservar:
+- assinatura Solana validada;
+- slot;
+- payload RPC original e SHA-256 canonicalizado;
+- `source_id`;
+- `ordering_domain_id`;
+- `stream_id` e `stream_sequence` observados;
+- metadados de banco/fork e commitment disponibilizados pelo provider;
+- inventário completo de instruções externas e CPI, incluindo posições e contas resolvidas.
+
+O `transaction_order` usado nos snapshots deve ser a ordem da mensagem da transação no mesmo domínio ordenado dos account updates, não o slot ou o índice de instrução.
+
+### Account update
+
+Deve preservar:
+- pubkey e owner do account;
+- slot e `write_version`;
+- bytes brutos completos da conta;
+- `txn_signature` quando fornecida pelo provider;
+- `bank_id`, `is_startup` e metadados de fork quando disponíveis;
+- `source_id`, `ordering_domain_id`, `stream_id` e `stream_sequence`;
+- referência durável ao RAW imutável e SHA-256 dos bytes.
+
+O adapter deve validar o owner program e a identidade da conta antes de construir snapshots de Token-2022. A validação do TLV não substitui a validação do account owner, mint ou pubkey.
+
+## 4. Regras para mint prestate
+
+Para construir `DammV2MintPrestate`:
+
+1. Capturar bytes completos do mint antes da mensagem da transação-alvo.
+2. Exigir o mesmo `source_id` e `ordering_domain_id` da transação.
+3. Exigir `pre_snapshot_order < transaction_order` no mesmo domínio. O contrato atual também exige o mesmo slot da transação; prestate de outro slot permanece inelegível nesta versão.
+4. Preservar `source`, `state_ref`, bytes brutos e `source_id`.
+5. O builder calcula SHA-256 dos bytes e decodifica `TransferFeeConfig` a partir desses mesmos bytes.
+6. O inventário externo/CPI de `InitializeTransferFeeConfig` deve estar completo e demonstrar que não houve inicialização anterior à transferência. A semântica de `SetTransferFee` e epoch permanece validada separadamente.
+7. Se houver lacuna, reconnect, baseline sem predecessor, fork não resolvido, stream/domain diferente ou estado ausente, não produzir snapshot elegível.
+
+O adapter não pode substituir prestate histórico pelo estado atual retornado por RPC.
+
+## 5. Regras para withheld pre/post
+
+Para construir `DammV2WithheldFeeSnapshot`:
+
+1. Obter a transição da token account específica associada à assinatura-alvo.
+2. O prestate deve preceder a mensagem da transação; o poststate deve sucedê-la no mesmo `ordering_domain_id`.
+3. Exigir `pre_snapshot_order < transaction_order < post_snapshot_order`.
+4. O poststate precisa estar associado à assinatura exata da transação-alvo. Se o provider não fornecer essa associação, não presumir que a atualização pertence à transação.
+5. Exigir continuidade sem gap/reconnect entre os estados, baseline válido e linhagem de banco utilizável. Bancos irmãos, parent slot isolado ou ordenação de entrega não provam ancestralidade.
+6. Preservar bytes TLV pre/post e referências RAW separadas. O verifier recalcula os dois hashes, redecodifica `TransferFeeAmount` e compara o delta com a evidência recebida.
+7. Validar pubkey, owner program, mint e identidade da token account antes de materializar o snapshot.
+
+Se a conta não tiver update pós-transação associado à assinatura, não inferir poststate a partir de saldo, timestamp ou próxima observação não vinculada.
+
+## 6. Continuidade, replay e forks
+
+- RAW é imutável e recebe todos os deliveries disponíveis, inclusive os não sequenciados.
+- Delivery sem sequência nunca recebe sequência inferida.
+- Gap, reconnect ou mudança de `ordering_domain_id` cria uma fronteira: o primeiro update subsequente é baseline e não prova transição pre/post através da fronteira.
+- Replay idêntico é idempotente; conflito de identidade não sobrescreve RAW nem vira testemunha.
+- `slot/write_version` ordenam account writes no ledger; `stream_sequence` estabelece apenas ordem de mensagens dentro do domínio de transporte. Não trocar uma semântica pela outra.
+- Banco morto, invalidado ou com ancestralidade desconhecida não pode produzir transição elegível. Histórico órfão permanece auditável, mas inelegível.
+
+## 7. Commitment e promoção a VERIFIED
+
+A camada atual verifica identidade, bytes, TLV e ordem declarada. SHA-256 não autentica o provider, e `source_id/ordering_domain_id` não provam que o adapter recebeu todos os eventos.
+
+Antes de uso operacional, ainda deve ser formalizada uma política explícita de commitment/fork finality e sua representação tipada no snapshot/verifier. Até essa política ser implementada e validada, dados sintéticos e snapshots apenas processados/observados não devem ser descritos como prova mainnet nem usados para autorizar execução.
+
+## 8. Interface pretendida do adapter
+
+O adapter provider-neutral deverá expor operações equivalentes a:
+
+- normalizar transaction observations e account updates, preservando bytes e metadados originais;
+- atribuir/transportar `ordering_domain_id` e `stream_sequence` sem fabricar continuidade;
+- obter transição pre/post de account updates pela timeline bank-aware;
+- construir `DammV2MintPrestate` e `DammV2WithheldFeeSnapshot` somente após todas as invariantes;
+- emitir resultado explícito `ELIGIBLE` ou `INELIGIBLE` com razões e referências RAW.
+
+A implementação deverá permanecer provider-neutral. Yellowstone/Helius é uma possível fonte de eventos, não uma dependência conectada ou aprovada nesta etapa.
+
+## 9. Critérios de aceitação antes de integrar provider
+
+- Testes de streams separadas com o mesmo `source_id` e sequências incompatíveis: rejeição.
+- Testes de reconnect/gap e baseline: rejeição de pares através da fronteira.
+- Testes de assinatura ausente/divergente no poststate: rejeição.
+- Testes de banco morto, fork irmão e ancestralidade desconhecida: rejeição.
+- Testes de bytes pre/post adulterados, owner/mint/pubkey divergentes e TLV inválido: rejeição.
+- Replay idêntico preserva idempotência; conflito não altera evidência original.
+- Fixture positiva usa um único domínio ordenado e percorre ingestão -> RAW -> timeline bank-aware -> snapshot -> verifier.
+- CI integral e auditoria de proveniência aprovados antes de qualquer execução financeira.

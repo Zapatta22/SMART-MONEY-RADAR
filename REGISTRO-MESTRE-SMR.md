@@ -1,5 +1,5 @@
 # SMART MONEY RADAR (SMR) — REGISTRO MESTRE
-Última atualização: 2026-11-17 — PR #1 validado e integrado à main
+Última atualização: 2026-11-19 — continuidade e integração bank-aware da PR #23 em validação isolada
 
 ## 1. Estado executivo
 
@@ -1891,3 +1891,1359 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - A base TransferCheckedWithFee está integrada em branch intermediária; `main` permanece intacta.
 - Próxima dependência: PR #22, atribuição da transferência de referral DAMM v2. Fonte oficial `ix_p_swap.rs` confirma que a transferência referral sai do vault determinado por `FeeMode`, usa `swap_result.referral_fee` como valor bruto e ocorre antes da emissão de `EvtSwap2`.
 - Revisão atual adiciona validação de tipo, amount u64 positivo, programa Token-2022 obrigatório para TransferCheckedWithFee, fee não superior ao bruto e rejeição de fee em transferências comuns. O resultado continua somente `ATTRIBUTED`, sem reconciliação econômica.
+
+
+## 261. PR #22 sincronizada com a base atual após resolução controlada do conflito — 19/11/2026
+
+- A PR #22 tinha sido criada sobre o commit-base `62b3f54b717cf0e6675610b8b88bdfd8c542581d`. A branch-base avançou até `46dcf389d4cb06973a5d82967ba99fa3965121be`, causando `mergeable_state=dirty`.
+- Auditoria dos blobs confirmou que `damm_v2_transfer_analyzer.py` e `tests/test_damm_v2_transfer_analyzer.py` na base atual permaneciam byte a byte iguais ao ponto de divergência `62b3f54`; a divergência material compartilhada estava no Registro Mestre.
+- Resolução planejada: manter integralmente o Registro Mestre mais recente da base (seções 254–260), preservar as alterações funcionais/testes da PR #22 e seu documento técnico, e criar merge commit com a base atual como primeiro parent e o HEAD anterior da PR como segundo parent.
+- Código funcional da PR #22 permanece limitado à atribuição estrutural de input/output/referral; status `ATTRIBUTED` não é reconciliação econômica nem BUY/SELL.
+- CI previamente aprovado: run #1455 (`44443611154`), commit funcional/teste `97c38c9434bc2e5ff2a5a91390cb4b9709a12e76`, **365 testes OK** e compileall aprovado. Esse CI antecede a sincronização com a base atual; novo CI combinado é obrigatório.
+- A sincronização não deve alterar `main`, não deve integrar a PR #22 e não habilita RPC/Helius, RAW, SQLite, importação, checkpoint ou execução on-chain.
+- Próximo passo: verificar o merge commit, confirmar `mergeable=true` e aguardar CI completo no novo HEAD antes de qualquer revisão final.
+
+
+## 262. CI combinado após sincronização da PR #22 — 19/11/2026
+
+- Merge commit de sincronização: `5bdcbfe6d1fb1c166c1eb5d609e239c61559cd5a`; primeiro parent é a base atual `46dcf389d4cb06973a5d82967ba99fa3965121be`, segundo parent é o HEAD anterior da PR #22 `9528618d7fb83b475a0a7f447c21ded620442844`.
+- O Registro Mestre da base (seções 254–260) foi preservado integralmente e recebeu esta sequência de continuidade; os arquivos funcionais/testes e documento técnico da PR #22 foram reaplicados sobre a base atual.
+- Compare da árvore: `ahead_by=15`, `behind_by=0`; GitHub reporta `mergeable=true`, `mergeable_state=clean`.
+- CI combinado #1456 (`44444094172`) no HEAD `5bdcbfe6d1fb1c166c1eb5d609e239c61559cd5a`: **completed/success**. Suíte completa: **393 testes OK**; `python -m compileall -q src tests` aprovado.
+- A PR #22 continua aberta e Draft; nenhum merge da PR foi realizado. `main` continua em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- O resultado comprova compatibilidade de código/testes com a base intermediária atual, mas não valida transações RAW mainnet nem reconciliação econômica DAMM v2. `ATTRIBUTED` permanece evidência estrutural, nunca `MATCHED`.
+- Nenhuma operação RPC/Helius, leitura/escrita de RAW, SQLite, importação, checkpoint ou operação on-chain foi realizada.
+- Próxima ação: revisão final dos invariantes e dos limites semânticos de referral antes de decidir se a PR pode sair de Draft.
+
+
+## 263. Auditoria estática final da atribuição referral PR #22 — 19/11/2026
+
+- A matriz `resolve_damm_fee_mode` seleciona token A apenas para `BOTH_TOKEN + B_TO_A`; nos demais modos/direções suportados, seleciona token B. Isso corresponde ao mapeamento FeeMode documentado para `BOTH_TOKEN`, `ONLY_B` e `COMPOUNDING`.
+- A seleção da transferência exige mesma instrução externa, descendência CPI demonstrável, posição anterior ao EvtSwap2, origem no vault do token de cobrança e destino na referral token account.
+- A validação posterior confere programa Token, mint, presença de decimals, tipo suportado, amount bruto positivo u64, coerência de `TransferCheckedWithFee`/fee explícita e igualdade do bruto com `EvtSwap2.swap_result.referral_fee`.
+- A unicidade é verificada por papel e globalmente entre operações; duplicidade ou reutilização não é promovida a `ATTRIBUTED`.
+- Casos ausentes, ambíguos, malformados, não executados ou inconsistentes permanecem fail-closed. O teste temporal pós-EvtSwap2 foi aprovado no CI.
+- Limite semântico identificado e mantido explícito: o módulo exige `decimals` presente, mas não consulta o mint para comparar o número de casas decimais. Para transferências executadas, a validação de decimals é imposta pelo programa Token no processamento on-chain; a camada atual não decodifica estado do mint nem prova epoch. Essa prova pertence à reconciliação com estado histórico, não deve ser inferida da atribuição isolada.
+- CI combinado #1456 no merge commit sincronizado: **393 testes OK** e compileall aprovado. O commit posterior `2fa5ed8856e48d7e474547fdaec10100dd57f10d` alterou somente este Registro Mestre.
+- Resultado da auditoria: nenhum bloqueio estrutural adicional identificado dentro do escopo de atribuição; permanecem as limitações econômicas já declaradas. Isso não equivale a auditoria de transações RAW mainnet nem a aprovação para execução financeira.
+- PR #22 permanece OPEN/DRAFT, mergeable/clean; não integrada. `main` permanece `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Próxima etapa técnica após decisão de revisão: especificar reconciliação econômica por operação usando EvtSwap2, transfers input/output/referral, fees explícitas/implícitas, withheld histórico e deltas por conta/vault, sem dividir arbitrariamente deltas agregados entre swaps sequenciais.
+
+
+## 264. Retomada e sincronização da PR #23 com a PR #22 atual — 19/11/2026
+
+- PR #23 já continha a implementação de reconciliação em lote no módulo `damm_v2_economic_reconciliation.py`, com testes e documento próprios; não foi recriada.
+- HEAD anterior da PR #23: `947c056e01bfc7b22037e19e3600a5248a29e281`; CI #588 (`44308645725`) no mesmo HEAD concluiu SUCCESS: **374 testes OK** e compileall aprovado. Validação local Termux registrada em `d6142ba37c55aae45f9756b9adec2e2be3520895`: 374/374 e compileall.
+- A PR #23 estava baseada em `b350dca26a5bf0729f58b0770f07b85f5375b9e4`, enquanto a PR #22 avançou para `0567eb9c4981ba6ffc33e98a402292130667760a`; GitHub reportou PR #23 `mergeable_state=dirty`, 68 commits atrás.
+- Sincronização controlada: usar o commit atual da base PR #22 como primeiro parent e o HEAD anterior da PR #23 como segundo parent; preservar integralmente a árvore atual da PR #22 e reaplicar somente os quatro arquivos próprios da PR #23 (módulo, testes, documento e Registro Mestre atualizado). Dependências compartilhadas são mantidas da base atual, não das cópias antigas da PR #23.
+- Arquivos de dependência comparados antes da sincronização: `damm_v2_transfer_analyzer.py`, `damm_v2_fee_math.py`, `solana_token_transfer_decoder.py` e `damm_v2_analyzer.py` tinham diferenças entre a base atual e a branch antiga da PR #23; `solana_token_balance_delta_decoder.py`, `damm_v2_decoder.py` e `damm_v2_accounts.py` tinham blobs idênticos. As versões atuais da PR #22 são preservadas.
+- A CI #588 valida o HEAD antigo da PR #23, não a combinação sincronizada. Novo CI obrigatório antes de qualquer aprovação.
+- Limites permanecem: `RECONCILED` verifica transferências atribuídas e deltas agregados base por token account, mas não valida ainda snapshots históricos de withheld TransferFeeAmount, epoch/config histórico do mint nem todos os componentes de reserva/fee AMM. Não cria SwapObservation, BUY/SELL ou execução.
+- Nenhuma alteração em `main`, RAW, SQLite, checkpoints, RPC/Helius ou estado on-chain.
+- Próxima ação: validar o merge commit sincronizado e revisar os invariantes adicionais de ownership e reservas DAMM v2 antes de retirar Draft.
+
+
+## 265. PR #23 sincronizada e CI combinado aprovado — 19/11/2026
+
+- Sincronização da PR #23 com a base atual da PR #22 concluída no merge commit `232c11ac2f8b9a754446e10a3d74ec7dbc8c8688`; primeiro parent `0567eb9c4981ba6ffc33e98a402292130667760a`, segundo parent `947c056e01bfc7b22037e19e3600a5248a29e281`.
+- A árvore da base PR #22 foi preservada integralmente; reaplicados somente os quatro arquivos próprios da PR #23: reconciliador, testes, documento e Registro Mestre.
+- Compare após sincronização: 25 commits à frente, 0 atrás; quatro arquivos próprios. GitHub reportou `mergeable=true`, `mergeable_state=clean`.
+- CI #1460 (`44445124525`) no HEAD sincronizado `232c11ac2f8b9a754446e10a3d74ec7dbc8c8688`: **408 testes OK**, compileall aprovado, workflow completed/success.
+- A validação local anterior no Termux permanece registrada: 374 testes aprovados e compileall no commit `d6142ba37c55aae45f9756b9adec2e2be3520895`. A validação mais recente e combinada é o CI #1460.
+- PR #23 continua Draft e não integrada; PR #22 continua Draft e não integrada; `main` intacta.
+
+## 266. Ownership explícito e trilha de withheld fees na PR #23 — 19/11/2026
+
+- `reconcile_damm_v2_economic_batch` agora exige `monitored_wallet`; owner das token accounts input/output deve ser a carteira monitorada e owner dos vaults A/B deve ser `pool_authority`. `payer` não é usado como proxy de owner econômico.
+- Colisão entre as quatro contas principais (input user, input vault, output vault, output user) falha fechado; referral ativa não pode colidir com outra conta do swap.
+- Transferências atribuídas para reconciliação devem ser `TRANSFER_CHECKED` ou `TRANSFER_CHECKED_WITH_FEE`, com amount bruto estritamente positivo. Isso corresponde ao caminho de transferência checked esperado no escopo.
+- O resultado expõe `expected_withheld_fee_deltas`, agregados por conta destino e mint, derivados de bruto menos crédito spendable. `withheld_fee_status` distingue `NOT_REQUIRED` de `EXPECTED_NOT_VERIFIED`.
+- Limite explícito: withheld esperado ainda não é prova do TLV `TransferFeeAmount.withheld_amount` pre/post. O estado histórico do mint, epoch aplicável e o delta TLV da conta ainda precisam ser obtidos e verificados; o estado atual do mint não pode substituir prestate histórico.
+- Testes novos cobrem owner de carteira, owner dos vaults, withheld esperado não verificado e carteira monitorada ausente.
+- Commits desta atualização: reconciliador `0c51441c6022ba6668d89bee78ea7af0e5ad4b85`; testes `24866016f041ac558af8a4d471a0aad6d2153be8` e `2a809c06451c485db87ea54d24afddea1182fed5`; documento `503fd0a825f9c16f3219d1e009c299a307b366fa`.
+- CI #1460 valida o HEAD anterior à atualização de ownership/withheld. Novo CI é obrigatório para o HEAD final desta seção.
+- Nenhuma alteração em `main`, RAW, SQLite, checkpoints, RPC/Helius ou estado on-chain.
+- Próxima ação: executar CI no HEAD final e revisar eventuais falhas; depois planejar a camada histórica de mint/epoch e TLV withheld.
+
+
+## 267. CI final da PR #23 após ownership/withheld e descrição atualizada — 19/11/2026
+
+- CI #1466 (`44445338461`) no commit de código/testes `2a809c06451c485db87ea54d24afddea1182fed5`: completed/success, **412 testes OK**, compileall aprovado.
+- CI #1468 (`44445369964`) no commit documental `503fd0a825f9c16f3219d1e009c299a307b366fa`: completed/success, **412 testes OK**, compileall aprovado.
+- A seção 266 e o commit `67feff6c6949ebfa3481b944ef9ed304f25c58e3` alteraram somente o Registro Mestre; nenhum código/teste mudou depois do commit funcional validado. A descrição da PR #23 foi atualizada para refletir a sincronização, os 412 testes e os limites de withheld.
+- PR #23 continua OPEN/DRAFT, mergeable/clean; compare contra o HEAD atual da PR #22: 30 commits à frente, 0 atrás, quatro arquivos próprios. PR #22 continua Draft. `main` permanece `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- O estado `RECONCILED` deve ser lido como reconciliação dos deltas base pre/post e transferências atribuídas. Os valores withheld esperados são expostos, mas o estado TLV histórico ainda não foi observado; epoch/config histórica do mint e withheld pre/post continuam pendentes.
+- Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain foi realizada.
+- Próxima etapa: desenhar e implementar a camada de prova histórica de TransferFeeConfig/epoch e TransferFeeAmount pre/post, sem usar estado atual como substituto histórico.
+
+
+## 268. Decoder TLV de withheld pre/post e CI 416/416 — 19/11/2026
+
+- Criado `TransferFeeAmountDelta` e `decode_transfer_fee_amount_delta(pre_account_data, post_account_data)` em `token2022_transfer_fee_state.py`.
+- O decoder lê o TLV `TransferFeeAmount` nos dois lados, exige a extensão presente em ambos e conjunto de extensões estável, e retorna `pre_withheld_amount`, `post_withheld_amount` e delta assinado. Delta negativo é permitido para capturar harvest; extensão ausente não vira zero.
+- Testes novos cobrem aumento, redução/harvest, mudança no conjunto de extensões e extensão ausente.
+- Limite: o decoder valida estrutura dos bytes, não prova que os snapshots correspondem ao instante imediatamente anterior/posterior à transação. Assinatura, slot, ordenação e proveniência precisam vir do coletor; `getTransaction.pre/postTokenBalances` não contém o TLV withheld.
+- Commits: decoder `bfdfc01c4333ea267ec96c10153b8d2ef61ae358`; testes `be1695ec8896855aa1748ad19c59fa3848d25ac2`; documentação `bc8623e5cdae0d1292d1cf22b8da07a1a7842aa7`.
+- CI #1473 (`44445631405`) e #1474 (`44445639117`) no HEAD de código/testes `be1695ec8896855aa1748ad19c59fa3848d25ac2`: completed/success, **416 testes OK**, compileall aprovado.
+- Commit documental `bc8623e5cdae0d1292d1cf22b8da07a1a7842aa7` e atualização desta seção não alteram código/testes após o CI aprovado.
+- Descrição da PR #23 atualizada para incluir ownership, withheld esperado, decoder TLV e limites de proveniência.
+- PR #23 permanece OPEN/DRAFT, mergeable/clean, sem merge; PR #22 permanece Draft; `main` continua `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: desenhar o contrato de snapshots TLV com assinatura/slot/ordem verificáveis e integrá-lo ao resultado da reconciliação, sem confundir bytes válidos com proveniência histórica comprovada.
+
+
+## 269. Verificação de withheld vinculada à transação — 19/11/2026
+
+- Adicionado `DammV2WithheldFeeSnapshot` e `verify_damm_v2_withheld_fee_deltas` ao módulo de reconciliação econômica.
+- O verifier exige que a reconciliação base esteja `RECONCILED`, recebe snapshots TLV decodificados e exige correspondência de token account/mint, assinatura, slot e ordem da transação.
+- Exige `pre_snapshot_order < transaction_order < post_snapshot_order` no mesmo domínio de ordenação, refs pre/post distintos e fonte identificada. Os valores TLV precisam vir de `TransferFeeAmountDelta` produzido pelo decoder.
+- Compara o delta observado `post_withheld - pre_withheld` com `expected_withheld_fee_deltas`. Correspondência integral resulta em `withheld_fee_status=VERIFIED`; ausência/divergência resulta em `INCOMPLETE`; snapshots duplicados resultam em `AMBIGUOUS`.
+- Testes usam bytes TLV de conta decodificados pelo `decode_transfer_fee_amount_delta`, e cobrem correspondência, divergência, snapshot ausente, assinatura errada, ordem temporal inválida e duplicidade.
+- Commits: verifier `277d1e3e9ddf3d2955d5ad9d830df6e64b56bd2c`; endurecimento de metadados `8891627bf164ee175fb7a2bb1190b4e82c93dc1b`; testes `eaec0c945c3e21942cffcdd8301a3c957357c622` e `934bc0f20b78fa189e67b1a08ebb11074f846739`; documentação `0f72ecbcadb93856c07dffe5afa1debabb9b8d0c`.
+- CI #1487 (`44445935062`) e #1488 (`44445941647`) no HEAD funcional `8891627bf164ee175fb7a2bb1190b4e82c93dc1b`: completed/success, **422 testes OK**, compileall aprovado.
+- Limite de proveniência: os refs/ordem são contrato do coletor, não prova criptográfica automática. Nenhum adapter real de arquivo histórico/Geyser foi conectado nesta etapa. A configuração histórica do mint/epoch também permanece pendente.
+- PR #23 continua OPEN/DRAFT, mergeable/clean, sem merge; PR #22 Draft; `main` intacta.
+- Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima etapa: definir a fonte de dados real que consegue fornecer snapshots account-data exatos e ordenados em torno da transação, e ligar esse adapter ao verifier sem aceitar `getAccountInfo` atual como estado histórico.
+
+
+## 270. Verificação histórica de TransferFeeConfig/epoch por transferência — 19/11/2026
+
+- Adicionado `decode_transfer_fee_config_optional(mint_data)`: valida mint base e TLV e retorna `None` quando TransferFeeConfig não existe; `decode_transfer_fee_config` permanece estrito e lança erro quando ausente.
+- Cada transferência Token-2022 reconciliada agora gera `DammV2ExpectedTransferFee` com identidade outer/inner, mint, bruto e taxa esperada derivada do líquido confirmado pelo evento/TransferCheckedWithFee.
+- Criado `DammV2MintFeeConfigSnapshot` e `verify_damm_v2_mint_fee_config`: exige snapshot por transferência específica, mesma identidade de mint/instrução, epoch/slot/ordem, prestate anterior e confirmação do adapter de que o mint não mudou antes da transferência dentro da transação.
+- Com TransferFeeConfig presente, seleciona older/newer fee pelo epoch fornecido e recalcula a taxa com `calculate_transfer_fee` (arredondamento ceil e cap). Sem extensão, a taxa calculada é zero.
+- `mint_fee_config_status=VERIFIED` só quando todas as transferências Token-2022 do lote conferem. O verifier não deriva epoch do slot; o adapter precisa fornecer epoch historicamente correto.
+- Referral Token-2022 por TransferChecked padrão continua fail-closed na reconciliação base, pois o líquido ainda precisa ser calculado com a configuração histórica antes de agregar os deltas; isso permanece próximo trabalho.
+- Testes novos cobrem extensão ausente/presente, configuração divergente, snapshot faltante/duplicado, prestate que não antecede a transação, mudança de mint antes da transferência e seleção older/newer por epoch.
+- Commits: decoder opcional `fe00a88a57b5a5a3b71dab142e268efb8551dced`; testes decoder `0f8a2f446a27bd89fed3179c4b47c77dfc8ced7a`; verifier inicial `8ff00ddfe9aa1423242f4f52ac7cf808c90c4daa`; validação estrita `7bb619375c6817788b821db9d57728cac977c8d8`; testes `892fab8a6a84d30188be2ccbb2fef56c2324be51` e `e5b2c43f5607fbe9083eb38c77363de72ae90e87`; documentação `2337d74a559ea33c3a0004d6493cc662dd20c014`.
+- CI #1503 (`44446452613`) e #1504 (`44446458291`) no HEAD funcional/teste `e5b2c43f5607fbe9083eb38c77363de72ae90e87`: completed/success, **431 testes OK**, compileall aprovado.
+- CI #1505 (`44446566545`) no HEAD `2337d74a559ea33c3a0004d6493cc662dd20c014`: completed/success, **431 testes OK**, compileall aprovado.
+- PR #23 permanece OPEN/DRAFT, sem merge; PR #22 permanece Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: usar a configuração histórica validada para calcular o crédito líquido da referral Token-2022 padrão e só então fechar os deltas agregados por conta.
+
+
+## 271. Referral Token-2022 TransferChecked padrão com mint prestate — 19/11/2026
+
+- A reconciliação base agora recebe opcionalmente `mint_fee_snapshots`, `transaction_epoch`, `transaction_slot` e `transaction_order`.
+- Para referral Token-2022 em `TRANSFER_CHECKED` padrão (fee implícita no payload), exige exatamente um snapshot de mint para a identidade outer/inner e mint da transferência.
+- Calcula fee com `TransferFeeConfig` prestate e epoch, deriva `referral_net = gross - fee`, agrega o crédito líquido da referral account e inclui a transferência em `expected_transfer_fees` e `expected_withheld_fee_deltas`.
+- Cada `DammV2ExpectedTransferFee` agora declara a origem do fee: `EVT_SWAP2_NET`, `TRANSFER_CHECKED_WITH_FEE` ou `MINT_PRESTATE`.
+- `verify_damm_v2_mint_fee_config` continua revalidando todos os snapshots por transferência, inclusive input/output/referral; o adapter deve garantir que o mint não mudou antes da instrução. Sem snapshot ou com identidade/proveniência inválida, fail-closed.
+- Teste integrado: input Token-2022 fee 5, output gross 90/net 81 fee 9 e referral gross 5/net 4 fee 1; deltas agregados dos vaults e token accounts conferem, e as três taxas passam pela validação do mint prestate/epoch.
+- Teste adicional confirma que referral Token-2022 padrão sem snapshot histórico não é reconciliada.
+- Commits: cálculo referral `4e9ec1a82faf32cba2e1c3bb999e84bdd29cb000`; validação estrita `e512bbc850a00ecbca263197c9b74ec2d8ac667c`; testes `3cb04506dcaf36dc9d58911cfbd67c97874faf35`; ajuste de asserção `1c0c038360b662d64f3884507bc3461d097c8772`; documentação `9062a882e5714551daf9ec1473f5fff378eaeb2a`.
+- CI #1514 (`44446949702`) e #1515 (`44446955433`) no HEAD `1c0c038360b662d64f3884507bc3461d097c8772`: completed/success, **433 testes OK**, compileall aprovado.
+- CI #1507–#1512 falharam apenas porque um teste ainda esperava a mensagem antiga de fail-closed; a asserção foi atualizada. A implementação de referral foi aprovada no CI #1514/#1515.
+- Limite restante: `mint_state_unchanged_before_transfer` é atualmente declaração do adapter; falta decodificar completamente instruções de alteração de TransferFeeConfig para produzir essa prova automaticamente. Fonte/adapter de snapshots históricos também não está conectado.
+- PR #23 continua OPEN/DRAFT, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: substituir a declaração booleana de estabilidade do mint por inventário verificável de instruções de alteração de TransferFeeConfig, com posições antes/depois da transferência.
+
+
+## 272. Inventário explícito de inicialização de TransferFeeConfig — 19/11/2026
+
+- Adicionado `TransferFeeConfigMutationInstruction` e `decode_transfer_fee_config_mutation_instruction` no decoder Token-2022.
+- O decoder reconhece prefixo externo `TransferFeeExtension=26`, subtag `0=InitializeTransferFeeConfig` e `5=SetTransferFee`; valida COption, tamanho, basis points e maximum fee.
+- `DammV2MintFeeConfigSnapshot` substitui `mint_state_unchanged_before_transfer` por `transfer_fee_config_init_positions` e `transfer_fee_init_inventory_complete`.
+- O cálculo/verifier exige inventário completo das posições de inicialização para aquele mint e rejeita qualquer `InitializeTransferFeeConfig` anterior ou na mesma posição da transferência.
+- `SetTransferFee` não invalida o fee do epoch corrente: no código Token-2022 fixado, agenda a nova taxa para `current_epoch + 2` e preserva a taxa ativa anterior em `older_transfer_fee`. A taxa efetiva segue `fee_for_epoch(transaction_epoch)`.
+- O inventário ainda é fornecido pelo adapter; o scanner de instruções externas/CPI que resolve o mint e popula as posições ainda não foi implementado.
+- Commits: decoder mutation `c001ca24c723b5038738666ce024b9d193267bfb`; testes decoder `b164b0f14e87b8e822c7827add495ad4db74dbf1`; substituição da flag `1028cceb7ad35a58b66e6bfbd9a868c6e12eb834`; testes `531a2dc9a98ee7c82bb269796d58c3a048c0ec84` e `b51411a8fba50a8cdbf94cad67d15c6ecefbdf30`; documentação `4d444bff357adb579716b3241bb6fedf2f0394a3`.
+- CI #1525 (`44447328127`) e #1526 no HEAD de testes `b51411a8fba50a8cdbf94cad67d15c6ecefbdf30`: completed/success, **440 testes OK**, compileall aprovado.
+- CI #1527 (`44447361606`) no HEAD `4d444bff357adb579716b3241bb6fedf2f0394a3`: completed/success, **440 testes OK**, compileall aprovado.
+- PR #23 permanece OPEN/DRAFT, mergeable/clean, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: implementar scanner de instruções Token-2022 externas e CPI, mapear account index do mint e gerar automaticamente o inventário completo de inicialização por mint.
+
+
+## 273. Scanner de instruções externas/CPI para inicialização de TransferFeeConfig — 19/11/2026
+
+- Adicionado `SolanaInstructionRecord`, `SolanaInstructionInventory` e `decode_solana_instruction_inventory(raw_transaction)` ao decoder de instruções Solana.
+- O inventário resolve program IDs e contas de instruções externas e inner/CPI, preserva posição outer/inner, dados compilados ou parsed type e registra stackHeight/CPI path.
+- Falha fechado se `meta.innerInstructions` estiver ausente, a transação falhar, programId/account index não puder ser resolvido ou dados Token-2022 relevantes estiverem ausentes/inválidos.
+- Adicionado `TransferFeeConfigInitInventory` e `collect_transfer_fee_config_init_positions(inventory, mint)`: filtra Token-2022 com a primeira conta igual ao mint, reconhece `InitializeTransferFeeConfig` 26/0 e retorna posições `(outer, inner)`; `-1` representa instrução externa.
+- `SetTransferFee` 26/5 é validada, mas não adicionada como inicialização; sub-tags desconhecidas da extensão causam inventário incompleto. A saída fornece diretamente posições e flag de completude para o snapshot de mint.
+- Testes cobrem instruções externas e CPI, mint distinto, SetTransferFee, parsed initialize, lista interna ausente, subtag desconhecida, init malformada e transação falha.
+- Commits: inventory decoder `53d93545cd781427a69e1ec068ef8a2774c4304b`; testes scanner `5c82ea891582d046551ca2e7262c2bc7ba0b3ce4`; rejeição de transação falha `ba82ef52499087c1fab376133b08ec6fba628f49`; teste de falha `7057c5611a20e122c7b3bfbe6ed0491ee87151e9`; documentação `4240c070c928a09243abf2721bdb0a9fd09786bc`.
+- CI #1537 (`44447770956`) e #1538 no HEAD funcional/teste `7057c5611a20e122c7b3bfbe6ed0491ee87151e9`: completed/success, **448 testes OK**, compileall aprovado.
+- CI #1539 (`44447862941`) no HEAD `4240c070c928a09243abf2721bdb0a9fd09786bc`: completed/success, **448 testes OK**, compileall aprovado.
+- A saída do scanner ainda não foi conectada automaticamente ao adapter que monta `DammV2MintFeeConfigSnapshot`; o coletor também ainda não fornece snapshots históricos de mint/account em produção.
+- PR #23 permanece OPEN/DRAFT, mergeable, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: criar um construtor/adapter que receba o inventário, a saída por mint, o epoch/slot e os snapshots prestate e gere `DammV2MintFeeConfigSnapshot` com proveniência verificável, sem aceitar dados atuais como históricos.
+
+
+## 274. Construtor de snapshots históricos de mint por transferência — 19/11/2026
+
+- Adicionado `DammV2MintPrestate` e `build_damm_v2_mint_fee_config_snapshots(evidence, mint_prestate_by_mint, instruction_inventory, ...)`.
+- O construtor percorre as evidências input/output/referral e cria um `DammV2MintFeeConfigSnapshot` por transferência Token-2022 (outer/inner/mint), incluindo assinatura da transação, slot, epoch, ordem, config state, posições de inicialização, fonte e state ref.
+- Exige que `SolanaInstructionInventory.transaction_signature/slot` correspondam exatamente à transação alvo e que o inventário esteja completo.
+- Exige bytes prestate de mint do mesmo slot, ordem anterior à transação e fonte/state ref não vazios; decodifica `TransferFeeConfig` opcionalmente e gera posições de init via `collect_transfer_fee_config_init_positions`.
+- A assinatura da transação foi adicionada também ao `DammV2MintFeeConfigSnapshot`, ao builder, à reconciliação de referral Token-2022 padrão e ao verifier, evitando misturar snapshot de outra transação.
+- O construtor conecta scanner + decoder + evidências, mas ainda não busca snapshots históricos por conta própria. O adapter de origem histórica (bytes prestate de mint e TLV de token account) continua pendente; `getAccountInfo` atual não é aceito como histórico.
+- Commits: builder inicial `faa121a8742a7de191b8ab7ebf603d667bf5ad47`; assinatura/inventory binding `ec0831c27d7f7021f9b721c90387ba382d4401b1`; fixtures `b80a7a71d540cee4ebbe9122dcfe4164e658fb88`; builder tests `a6c43e885f741b02b009ec58027796877704bbd0`; correção de asserção `25c7f8253a42bb1b6b74c06cceebe7b788b45807`; documentação `762f91ce60b5542da91776562c8b5865c18df5ab`.
+- CI #1555 (`44448400017`) e #1556 no HEAD `25c7f8253a42bb1b6b74c06cceebe7b788b45807`: completed/success, **451 testes OK**, compileall aprovado.
+- CI #1557 (`44448535055`) no HEAD documental atual `762f91ce60b5542da91776562c8b5865c18df5ab`: completed/success, **451 testes OK**, compileall aprovado.
+- PR #23 continua OPEN/DRAFT, mergeable, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: conectar uma fonte histórica que forneça bytes de mint e token account no estado exato pre/post da transação, e construir os objetos `DammV2MintPrestate` e `DammV2WithheldFeeSnapshot` com proveniência verificável.
+
+
+## 275. Pesquisa da fonte de snapshots históricos e arquitetura de coleta — 19/11/2026
+
+- Fontes oficiais/documentação consultadas: Solana RPC JSON Structures/Indexing; Helius LaserStream/Preprocessed Transactions; Yellowstone Geyser `geyser.proto`.
+- Yellowstone `SubscribeUpdateAccountInfo` expõe `data`, `write_version` e `txn_signature` opcional; `SubscribeUpdateAccount` expõe slot. Esses campos permitem vincular um post-state à assinatura e ordenar atualizações da mesma conta.
+- Helius LaserStream é compatível com Yellowstone e oferece replay recente/reconexão. A documentação indica que em `processed` account updates chegam em ordem do validator e podem existir múltiplas atualizações da mesma conta no slot; em `confirmed`, assinantes recebem apenas estado final. Logo, capturar pre/post exige observar `processed` e depois confirmar a assinatura em commitment superior.
+- Preprocessed Transactions oferece transação assinada/slot/instruções antes da execução, mas não contém meta, inner instructions/CPI, balances ou resultado. Serve como alerta antecipado, nunca como prova econômica.
+- RPC `getAccountInfo` consulta estado atual no slot de contexto; `getTransaction` contém pre/post token balances, mas não o TLV bruto `TransferFeeAmount` de cada token account. `getTransactionsForAddress` é opção de backfill de transações, não substituto de account-state history.
+- Arquitetura candidata: timeline por pubkey com account updates `processed` contendo bytes, slot, write_version e txn_signature; parear o update associado à assinatura com o estado imediatamente anterior da mesma conta; armazenar refs/hash; confirmar/finalizar e descartar forks revertidos.
+- Helius LaserStream é candidato técnico, não foi contratado/conectado; a página oficial indica disponibilidade em planos Business ou superiores. Manter adapter provider-neutral e validar preço/limites antes de contratação.
+- Limite de código atual: `DammV2MintPrestate` e `DammV2WithheldFeeSnapshot` são contratos tipados; o construtor ainda depende de bytes prestate fornecidos por um adapter externo. Não existe coletor LaserStream/Geyser operacional.
+- Próxima ação: implementar normalizador provider-neutral de `GeyserAccountUpdate` e timeline/pairer por pubkey/write_version/txn_signature, com testes de startup baseline, lacunas/replay, updates múltiplos no mesmo slot e rollback antes de conectar um provider.
+
+
+## 276. Fonte candidata de snapshots e validação documental CI — 19/11/2026
+
+- Pesquisa confirmou que o schema Yellowstone Geyser `SubscribeUpdateAccountInfo` fornece `data`, `write_version` e `txn_signature` opcional, enquanto `SubscribeUpdateAccount` fornece `slot`. LaserStream declara compatibilidade com Yellowstone.
+- Helius documenta que account updates em `processed` chegam na ordem do validator e podem conter várias atualizações da mesma conta no slot; em `confirmed`, a assinatura de conta recebe somente o estado final. Portanto, snapshots pre/post exigem captura `processed` e confirmação posterior da transação.
+- Preprocessed Transactions entrega a mensagem assinada antes da execução, mas não inclui meta, CPI/inner instructions, balances nem resultado. Não é fonte de reconciliação.
+- Solana RPC `getAccountInfo` é leitura do estado no slot de contexto; `getTransaction` fornece pre/post token balances, não o TLV bruto withheld de token accounts. Helius `getTransactionsForAddress` é útil para backfill de transações, não para estado bruto histórico de contas.
+- Arquitetura recomendada: timeline persistente por pubkey, armazenando bytes, slot, write_version, txn_signature e stream sequence; parear update com assinatura-alvo ao último estado anterior da mesma conta; confirmar/finalizar e descartar forks revertidos. LaserStream replay recente auxilia recuperação, mas persistência própria é obrigatória.
+- Helius LaserStream permanece candidato, não contratado/conectado. A disponibilidade anunciada é Business ou superior; manter adapter provider-neutral.
+- Documentação atualizada no commit `803aec1307436db9f39dcad321122eceacb467ba`; CI #1559 (`44448848178`) no mesmo HEAD: completed/success, **451 testes OK**, compileall aprovado.
+- Este trabalho foi apenas pesquisa documental e atualização do Registro Mestre; nenhuma credencial, RPC, Helius, RAW, SQLite ou operação on-chain foi usada.
+- Próxima ação: implementar normalizador provider-neutral de mensagens Geyser e timeline/pairer por pubkey/write_version/txn_signature, incluindo startup baseline, lacunas/replay, múltiplos updates no mesmo slot e rollback.
+
+
+## 277. CI final da pesquisa de snapshots e estado atual da PR23 — 19/11/2026
+
+- PR #23 HEAD: `e80c9179eb8c0587a47d0cb4425c5171449b0358`; base `feat/damm-v2-referral-transfer-attribution`.
+- CI #1561 (`44448957990`) no HEAD atual: completed/success, **451 testes OK**, compileall aprovado.
+- PR #23 permanece OPEN/DRAFT, `mergeable=true`, `mergeable_state=clean`; não integrada. PR #22 continua Draft.
+- Compare da PR #23: 85 commits à frente, 0 atrás, oito arquivos próprios. `main` permanece `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhum código/teste foi alterado após a validação #1561; as atualizações finais são apenas descrição da PR/registro.
+- Nenhuma RPC/Helius, RAW, SQLite, importação, checkpoint ou operação on-chain foi executada.
+- Próxima etapa de implementação: normalizador de account updates Yellowstone/Geyser e timeline por pubkey, usando `write_version`, `txn_signature`, slot e stream sequence; parear pre/post, preservar startup baseline e detectar lacunas/replay/rollback antes de qualquer reconciliação real.
+
+
+## 278. CI final da cadeia de snapshots históricos — 19/11/2026
+
+- HEAD funcional/documental da PR #23 após sincronização de continuidade: `ee95cd298a1704391b3b62245dbf4fc410eefe64`.
+- CI #1562 (`44449119065`) e CI #1563 (`44449252412`) no HEAD validado: completed/success, **451 testes OK**, compileall aprovado.
+- O último ajuste após CI #1561 foi documental; nenhum código/teste mudou após a suíte de 451 testes.
+- PR #23 continua OPEN/DRAFT, `mergeable=true`, `mergeable_state=clean`, sem merge; PR #22 permanece Draft.
+- `main` continua `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Próxima implementação definida: normalizador provider-neutral de Yellowstone/Geyser account updates e timeline por pubkey, preservando slot, write_version, txn_signature e stream sequence; construir pareamento pre/post, startup baseline, recuperação de lacunas/replay e descarte de forks antes de conectar Helius ou outro provider.
+
+
+## 279. Implementação inicial da timeline histórica Geyser — 19/11/2026
+
+- CI #1567 (run `44454181573`) validou o normalizador provider-neutral de account updates: **464 testes OK** e `compileall` aprovado.
+- Na branch `feat/damm-v2-economic-reconciliation`, foram adicionados:
+  - `src/smart_money_radar/data_sources/geyser_account_timeline.py`: timeline em memória por pubkey; ordenação ledger por `(slot, write_version)`; separação de transporte por `stream_id/stream_sequence`; deduplicação; conflitos de identidade; detecção de gaps/reconexão; pareamento conservador pre/post; rollback explícito com preservação de updates órfãos.
+  - `tests/test_geyser_account_timeline.py`: 12 testes para ordenação, replay, colisões, gaps, reconexão, assinatura ausente, rollback e independência entre contas.
+  - `docs/GEYSER-ACCOUNT-TIMELINE.md`: contrato, semântica e limitações.
+- CI #1571 (run `44455090010`) no commit de testes: completed/success, **476 testes OK**, compileall aprovado.
+- CI #1572 (run `44455118052`) no HEAD documental `5bd3e7f91c693dbb37563db7d874702675bd8ad1`: completed/success, **476 testes OK**, compileall aprovado.
+- Commits: timeline `68d4533b5fdc5f69004577b64536fdaff7ac0405`; testes `e3000d0d727625dc71debf54fdc6d851b1824041`; documentação `5bd3e7f91c693dbb37563db7d874702675bd8ad1`.
+- PR #23 continua OPEN/DRAFT, mergeable e sem merge; base `feat/damm-v2-referral-transfer-attribution`. `main` continua em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Limites importantes: timeline somente em memória; sem adapter protobuf Yellowstone oficial; sem commitment/blockhash/parent slot/fork identity; rollback é entrada explícita de um tracker externo, não detecção automática. Nenhuma conexão RPC/Helius, RAW, SQLite ou operação on-chain foi executada.
+- Próxima etapa: revisar o contrato do adapter Yellowstone com o schema oficial e definir como transportar commitment, blockhash/parent slot e sinais de rollback/replay sem confundir write_version com ordenação de instruções. Depois disso, desenhar baseline/backfill persistente antes de qualquer integração de provider. Não conectar serviço pago nem alterar SQLite/RAW sem autorização.
+
+
+## 280. Revisão do schema oficial Yellowstone — 19/11/2026
+
+- Revisada a definição oficial `yellowstone-grpc-proto/proto/geyser.proto` do projeto rpcpool/yellowstone-grpc: https://github.com/rpcpool/yellowstone-grpc/blob/master/yellowstone-grpc-proto/proto/geyser.proto.
+- Além de `slot`, `write_version` e `txn_signature`, `SubscribeUpdateAccount` contém `is_startup` e `bank_id` opcional; `SubscribeUpdateSlot` contém `parent`, `status`, `dead_error` e `bank_id` opcional. O enum `SlotStatus` inclui `SLOT_DEAD` e `SLOT_CREATED_BANK`.
+- O schema atual também define `SubscribeUpdateEntryUpdateParent`, que invalida dados do `cleared_bank_id` e informa `parent_slot`/ `parent_block_id`; a atualização `SLOT_CREATED_BANK` informa o banco substituto. `SubscribeUpdateBlock` fornece `blockhash`, `parent_slot` e `parent_blockhash`.
+- Implicação: rollback apenas por limiar de slot é insuficiente para distinguir forks/branches. A timeline implementada continua conservadora e só executa rollback quando recebe sinal externo explícito; ainda não resolve bank lineage automaticamente.
+- Próxima etapa de arquitetura: estender o envelope canônico para preservar `is_startup` e `bank_id`; normalizar slot lifecycle e invalidações de bank; associar account updates a block/bank lineage sem usar `write_version` como índice de instrução ou assumir canonicalidade por ordem de chegada. Só depois habilitar pareamento entre bancos distintos quando a relação pai/filho estiver demonstrada.
+- Nenhum código foi alterado nesta revisão documental; sem adapter protobuf, RPC/Helius, RAW ou SQLite.
+
+
+## 281. Identidade de bancos Yellowstone e linhagem de forks — 19/11/2026
+
+### Implementado na branch da PR23
+- `NormalizedAccountUpdate` agora preserva `bank_id` opcional e `is_startup`; startup com bank_id é rejeitado. O fingerprint inclui source, bank_id e is_startup.
+- `ordering_key` é somente `(slot, write_version)`; `stream_sequence` não é usada como desempate da ordem do ledger.
+- Novo módulo `src/smart_money_radar/data_sources/geyser_bank_lineage.py`:
+  - normalizadores provider-neutral para `SubscribeUpdateSlot`, `SubscribeUpdateBlockMeta` e `SubscribeUpdateEntryUpdateParent`;
+  - identidade do banco `(source_id, slot, bank_id)`; source_id é namespace estável entre reconexões e stream_id representa apenas transporte;
+  - `SLOT_CREATED_BANK` exige bank_id; FIRST_SHRED_RECEIVED/COMPLETED podem ficar sem banco;
+  - `SLOT_DEAD` com bank_id invalida aquele banco específico; sem bank_id invalida os bancos conhecidos e futuros do source/slot;
+  - `EntryUpdateParent` invalida o `cleared_bank_id`, preserva `parent_block_id` como bytes opacos e liga o banco substituto ao próximo CREATED_BANK apenas se houver exatamente um candidato;
+  - `parent_slot` isolado não escolhe fork. Link pai/filho só é estabelecido com correspondência exata `(parent_slot, parent_blockhash)` de block metadata;
+  - blockhashes ou parent metadata incompatíveis e substituições ambíguas viram conflitos sem mutação parcial;
+  - `is_ancestor` retorna None para linhagem incompleta; só retorna False quando a cadeia observada chega à raiz conhecida (slot 0).
+- A timeline linear falha fechada: não gera pre/post para account updates com bank_id ou startup, e não expõe um único current_state quando o histórico inclui bancos/forks ou apenas startup.
+- Testes novos em `tests/test_geyser_bank_lineage.py`, além da cobertura de account normalizer e timeline.
+- Contrato documentado em `docs/GEYSER-ACCOUNT-TIMELINE.md`.
+
+### Validação comprovada
+- CI #1609 — run `44455853310`, HEAD `06f41fe054ce2b51d5c804e431a84ed1f056d1b4`: **495/495 testes OK**, `compileall` aprovado; job completed/success.
+- CI #1608 — push para o mesmo HEAD: completed/success.
+- O CI #1584/#1583 falhou em uma expectativa de teste de ancestralidade incompleta; a regra foi corrigida para retornar None, e execuções posteriores passaram. O CI #1597 também capturou a mudança de assinatura de ordering_key antes da atualização do teste; corrigido no commit subsequente e validado. Não ocultar essas falhas históricas; os commits posteriores aprovados são a referência.
+
+### Estado do repositório
+- PR #23: OPEN, Draft, mergeable, sem merge; head `06f41fe054ce2b51d5c804e431a84ed1f056d1b4`; base `feat/damm-v2-referral-transfer-attribution`.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma alteração ou merge em main.
+- PR #22 continua separada. Nenhum serviço Geyser/Helius conectado; sem adapter protobuf oficial; sem RAW/SQLite/persistência e sem operações on-chain.
+- Schema de referência: rpcpool/yellowstone-grpc `yellowstone-grpc-proto/proto/geyser.proto`, consultado em 19/11/2026.
+
+### Próxima etapa
+Implementar adapter de fronteira para mensagens protobuf Yellowstone (ou mapping testável equivalente) que converta os campos binários pubkey/owner/signature e os eventos de slot/block/entry-parent para os contratos normalizados. Fixar a versão/schema de protocolo em fixtures; testar mensagens reais serializadas/deserializadas e replay/reconnect. Ainda não conectar endpoint nem habilitar captura contínua. Depois, integrar BankLineageTracker à timeline para reconstruir pre/post somente dentro da cadeia de bancos verificada; só então desenhar backfill e persistência.
+
+
+## 282. Fechamento e endurecimento da camada de forks — 19/11/2026
+
+- Ajustes finais após revisão dos testes:
+  - `rollback_from_slot` agora rejeita histórico que contenha `bank_id`; rollback amplo por slot poderia apagar bancos concorrentes.
+  - `current_state` não retorna um estado único para histórico fork-scoped nem para snapshot startup ainda não sucedido por estado observável.
+  - `is_ancestor` retorna `None` para cadeia incompleta ou banco não observado; só retorna `False` quando a cadeia alcança a raiz conhecida no slot 0.
+  - Conflitos em substituição ambígua, parent_slot ou blockhash não deixam criação parcial de nós.
+  - Testes cobrem a rejeição de rollback por slot em histórico com bank_id e startup não promovido.
+- CI final da camada: #1615, run `44455986697`, HEAD de código/documentação `0c662e00c8161a708eda7e5fbf40ac2a96b6783e`: **496/496 testes OK**, `compileall` aprovado, job completed/success.
+- CI #1614 (run `44455975278`) também passou em 496/496 no commit imediatamente anterior, antes da atualização documental final.
+- PR #23 permanece OPEN/DRAFT, sem merge, mergeable; head na atualização deste registro: `0c662e00c8161a708eda7e5fbf40ac2a96b6783e`; base `feat/damm-v2-referral-transfer-attribution`.
+- `main` permanece intacta em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Próxima ação aprovada pelo plano: implementar adapter de fronteira para protobuf Yellowstone com fixtures versionadas e mensagens binárias reais; não conectar endpoint, não persistir RAW/SQLite e não usar a timeline para decisões financeiras. Depois, integrar o tracker de bancos à reconstrução de pre/post com testes de forks concorrentes.
+
+
+## 283. Adapter de fronteira Yellowstone protobuf — 19/11/2026
+
+### Implementação preparada na branch da PR23
+- Novo `src/smart_money_radar/data_sources/geyser_proto_adapter.py`: converte mensagens protobuf decodificadas para os contratos provider-neutral existentes.
+- Eventos suportados no dispatcher `SubscribeUpdate.update_oneof`: Account, Slot, BlockMeta e EntryUpdateParent. Ping/pong, transactions, block e entry comum ficam fora do escopo deste adapter.
+- Account: valida pubkey/owner com 32 bytes e assinatura opcional com 64 bytes; converte essas identidades binárias para Base58; preserva `data` como bytes; transporta `slot`, `write_version`, `bank_id`, `is_startup` e ausência de `txn_signature`.
+- Slot: mapeia enum numérico SlotStatus e preserva parent, bank_id e dead_error opcionais.
+- BlockMeta: preserva blockhash, parent_slot, parent_blockhash e bank_id.
+- EntryUpdateParent: preserva parent_block_id como bytes opacos.
+- source_id estável, stream_id de conexão e stream_sequence são fornecidos pelo chamador; o adapter não inventa ordem nem faz reconnect/replay.
+- Dependência protobuf adicionada para desserialização e testes wire-level.
+
+### Schema e fixtures versionados
+- Schema fixado em rpcpool/yellowstone-grpc tag `v16.1.5+solana.4.3.2`, arquivo `yellowstone-grpc-proto/proto/geyser.proto`, Git blob SHA `d0f96616d515c978a07b16e6409c7706f4429a5a`.
+- Manifesto: `tests/fixtures/yellowstone/v16.1.5+solana.4.3.2/manifest.json`.
+- Fixtures protobuf serializadas/desserializadas cobrem account update, startup, SLOT_CREATED_BANK, SLOT_DEAD, BlockMeta e EntryUpdateParent; hashes SHA-256 são verificados no teste.
+- O descriptor de teste é um subconjunto wire-compatible com os field numbers, enum values e wire types do schema fixado. O adapter de produção recebe os objetos gerados pelo cliente Yellowstone, sem importar o descriptor de teste.
+
+### Limites preservados
+- Sem endpoint Yellowstone/Geyser, cliente gRPC, captura contínua, reconnect/replay automático, RAW/SQLite, backfill ou operações on-chain.
+- Sem promoção de commitment/canonicalidade. Sem integração do BankLineageTracker à timeline; pareamento pre/post bank-aware continua bloqueado até essa integração e testes de forks concorrentes.
+
+
+## 284. Validação do adapter protobuf Yellowstone — 19/11/2026
+
+- CI #1617, run `44456501557`, no commit de implementação `060f922ccd6b3852e4415f62227d0c983b16c81d`: completed/success; **502/502 testes OK** em 4,064 s; `compileall -q src tests` concluído com sucesso.
+- O CI #1618 (evento pull_request) foi iniciado para o mesmo HEAD; a validação de referência já aprovada é o CI #1617 de push no mesmo SHA.
+- PR #23 permanece OPEN/DRAFT, `merged=false`, `mergeable=true`; HEAD de implementação `060f922ccd6b3852e4415f62227d0c983b16c81d`, base `feat/damm-v2-referral-transfer-attribution`.
+- `main` permanece intacta em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma integração/merge foi feita.
+- Próxima etapa: integrar `BankLineageTracker` à timeline com reconstrução pre/post condicionada à relação pai/filho de bancos verificada; cobrir forks concorrentes, updates fora de ordem, replay/reconnect e rollback exato. Ainda sem endpoint Geyser, captura contínua ou persistência RAW/SQLite.
+
+
+## 285. Integração BankLineageTracker com AccountUpdateTimeline — 19/11/2026
+
+### Implementação na branch da PR23
+- `AccountUpdateTimeline` agora recebe um `BankLineageTracker` injetável e cria um tracker próprio por padrão.
+- Adicionados métodos de ingestão `add_slot_update`, `add_block_meta` e `add_entry_update_parent`, encaminhando eventos normalizados ao tracker.
+- `transition_for(signature)` mantém o comportamento linear antigo somente quando ambos os eventos não têm bank_id. Não mistura estados com/sem bank_id.
+- Para eventos bank-scoped, exige bancos observados e utilizáveis; pares no mesmo banco usam a identidade exata (source, slot, bank_id); pares entre bancos exigem `is_ancestor(pre_bank, post_bank) == True`, estabelecido por correspondência exata de parent_slot + parent_blockhash.
+- Seleciona o estado anterior mais recente na cadeia verificada, respeitando slot/write_version; empate na chave ledger não escolhe arbitrariamente.
+- Dead bank, cleared bank e ancestrais conhecidos invalidados não podem contribuir para transições. Histórico permanece para auditoria; não é apagado.
+- Eventos de metadados podem chegar após account updates; o pareamento é reavaliado dinamicamente quando `transition_for` é chamado.
+- Adicionada `BankLineageTracker.is_bank_usable`; `is_ancestor` agora falha fechado quando encontra banco morto/inválido, ciclo ou cadeia incompleta.
+- Testes novos em `tests/test_geyser_bank_aware_timeline.py`: mesma bank, cadeia cross-bank comprovada, forks irmãos, parent_slot sem blockhash, EntryUpdateParent, ancestral morto, metadados fora de ordem, reconexão e replay.
+
+### Validação
+- Validação final registrada na seção 286: CI #1633/#1634, 515/515 testes e compileall aprovados no commit funcional `d5b21774e8210096dc5c41e842c3c2d0a9434054`.
+
+### Limites
+- Não há endpoint Yellowstone conectado, captura contínua, replay/reconnect de rede, persistência RAW/SQLite, backfill ou operações on-chain.
+- Não há promoção de commitment nem seleção de fork canônico. Transição é evidência de estados observados em banco/linhagem verificados, não decisão de compra/venda.
+
+### Próxima etapa
+Concluída na seção 286: invalidação de descendants, updates fora de ordem, replay/reconnect e rollback exato foram implementados e testados. A próxima frente é o contrato de persistência/backfill.
+
+
+## 286. Validação final da integração bank-aware e proteção de forks — 19/11/2026
+
+### Estado final do código
+- Commit funcional validado: `d5b21774e8210096dc5c41e842c3c2d0a9434054` (código e testes). Commit HEAD atual da branch: `a09a18c834c5cea0ff7920d55c56e0a57a51d862` (somente documentação/Registro após a validação de código).
+- `AccountUpdateTimeline` integra o `BankLineageTracker` por padrão ou por injeção; recebe Slot, BlockMeta e EntryUpdateParent através de métodos explícitos.
+- Transição bank-scoped exige banco pre e post observado/utilizável, mesma fonte estável e:
+  - identidade exata do mesmo banco; ou
+  - cadeia ancestral verificada por parent_slot + parent_blockhash exatos.
+- A seleção do pre-state escolhe a escrita anterior mais recente na cadeia verificada; não escolhe entre candidatos empatados.
+- Forks irmãos, parent_slot sem blockhash, bancos mortos, bancos limpos por EntryUpdateParent e descendants ligados a ancestrais mortos/invalidados não geram transição.
+- Histórico invalidado permanece disponível para auditoria; nenhuma exclusão física nem rollback global por slot é usada para histórico com bank_id.
+- Account writes fora de ordem podem ser reconciliados após ordenação por (slot, write_version), desde que cheguem na mesma continuity epoch e a linhagem prove a relação.
+- Gap/reconnect cria continuity baseline. Um update ancestral atrasado não atravessa essa fronteira; a reconstrução só retoma a partir do novo baseline.
+- Testes adicionados em `tests/test_geyser_bank_aware_timeline.py`, cobrindo same-bank, cross-bank, forks irmãos, parent metadata incompleta, EntryUpdateParent, SLOT_DEAD, ancestor invalidation, late metadata, account updates fora de ordem, replay, reconnect, gap e rollback exato.
+
+### Validação CI comprovada
+- CI #1633 — run `44457364018`, push no HEAD funcional: completed/success; **515/515 testes OK** em 4,058 s; `python -m compileall -q src tests` aprovado.
+- CI #1634 — run `44457372356`, pull_request no mesmo HEAD: completed/success; **515/515 testes OK** em 4,107 s; compileall aprovado.
+- CI intermediário #1621/#1622 encontrou dois problemas nas fixtures de teste (replay com estado alterado e write_version repetido no reconnect); as fixtures foram corrigidas. As execuções #1625–#1634 passaram; os dois últimos runs acima validam o HEAD final.
+
+### Estado GitHub e segurança
+- PR #23: OPEN, Draft, `merged=false`; HEAD atual `a09a18c834c5cea0ff7920d55c56e0a57a51d862`; base `feat/damm-v2-referral-transfer-attribution`. O código/testes validados estão no pai `d5b21774e8210096dc5c41e842c3c2d0a9434054`; o commit HEAD seguinte alterou apenas docs/Registro.
+- `main` intacta: `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Nenhum merge.
+- Nenhum endpoint Yellowstone/Helius conectado; sem captura contínua, reconnect/replay de rede, RAW/SQLite, backfill ou execução on-chain/financeira.
+
+### Próxima etapa
+Desenhar o contrato de persistência histórica e backfill (RAW imutável + timeline derivada), incluindo chaves de idempotência, checkpoints por source/stream, retenção de eventos órfãos e reconstrução após reinício. Antes de qualquer conexão real, revisar como o adapter de transporte fornecerá stream_sequence e eventos de reconnect/discard-bank. Nenhum provider pago deve ser contratado/conectado sem autorização.
+
+
+## 287. Contrato documental de persistência histórica Geyser e backfill — 19/11/2026
+
+### Estado da entrega
+- Criado `docs/GEYSER-PERSISTENCE-BACKFILL.md` na branch `feat/damm-v2-economic-reconciliation`.
+- Commit do documento técnico: `b03711063f59727f9402c1037545ec7fa3cf9a90`.
+- Esta entrega é exclusivamente especificação/documentação. Nenhum schema SQLite, migração, classe de persistência, cliente gRPC, captura contínua, checkpoint durável ou backfill foi implementado.
+
+### Contrato registrado
+- Três camadas: RAW imutável, eventos normalizados provider-neutral e timeline/projeções reconstruíveis.
+- Banco dedicado proposto: `smr_geyser.sqlite`, separado de `smr_events.sqlite`; EventStore e checkpoints de carteira existentes permanecem inalterados.
+- RAW e deliveries separados: conteúdo identificado independentemente de stream/sequence; cada replay/entrega mantém proveniência própria.
+- Proveniência de bytes explícita: o adapter atual recebe protobuf decodificado; bytes wire só podem ser declarados quando capturados antes da decodificação. Representações reconstruídas devem ser rotuladas corretamente.
+- Projeções persistentes propostas para eventos normalizados, account writes, bank events, gerações da timeline e eventos órfãos/invalidados.
+- Três checkpoints independentes: transporte por (source_id, stream_id), continuidade comprovada por epoch e progresso/cobertura do backfill.
+- Gap não pode ser pulado: evento posterior é preservado, lacuna registrada, checkpoint contíguo não avança e continuidade fica interrompida até recuperação comprovada.
+- Backfill separado da captura viva, com cobertura COMPLETE/PARTIAL/UNKNOWN; estado atual de conta não substitui histórico de account writes.
+- Atomicidade de RAW, delivery, normalização, conflitos/gaps e checkpoint de transporte; checkpoint só avança após commit durável.
+- Reconstrução determinística/versionada, preservação de forks/órfãos, backup/restore testado e sem retenção automática inicial.
+- Sequência de implementação e critérios de aceitação documentados, incluindo crash injection, replay, conflitos, reconnect, overlap live/backfill e falhas de reconstrução.
+
+### Confirmação do estado GitHub antes da documentação
+- Consulta direta da PR #23 confirmou: OPEN, Draft, merged=false, mergeable=true.
+- Base: `feat/damm-v2-referral-transfer-attribution`.
+- HEAD confirmado antes desta entrega: `135af1caefe406e3fedbab765ef65706b244a165`.
+- A comparação entre `a09a18c834c5cea0ff7920d55c56e0a57a51d862` e `135af1caefe406e3fedbab765ef65706b244a165` confirmou 1 commit à frente e 0 atrás; a única alteração desse commit foi o Registro Mestre.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma alteração ou merge em main.
+- O commit funcional de código/testes continua `d5b21774e8210096dc5c41e842c3c2d0a9434054`; CI #1633/#1634: 515/515 testes e compileall aprovados nesse commit.
+
+### Próxima etapa
+Revisar o contrato documental e, em etapa separada, iniciar apenas os contratos de schema/migração e testes de persistência offline. Não conectar provider, não contratar infraestrutura, não implementar backfill real e não alterar a main sem autorização explícita.
+
+
+## 288. Primeira implementação offline de persistência RAW Geyser — 19/11/2026
+
+### Escopo executado
+- Implementação restrita à branch `feat/damm-v2-economic-reconciliation`, PR #23.
+- Criado `src/smart_money_radar/storage/geyser_raw_store.py`.
+- Criado `tests/test_geyser_raw_store.py`.
+- Atualizado `docs/GEYSER-PERSISTENCE-BACKFILL.md` para separar o que está implementado das próximas camadas ainda pendentes.
+
+### Implementação comprovada no código
+- `SQLiteGeyserRawStore` usa banco dedicado informado pelo chamador; não altera nem reutiliza `SQLiteEventStore` ou checkpoints de carteira.
+- Migração versionada v1 cria `geyser_raw_events`, `geyser_raw_deliveries`, `geyser_raw_conflicts` e `geyser_schema_migrations`, com índices para fonte/tipo, stream/sequence, evento e conflito.
+- Arquivo SQLite usa WAL e `synchronous=FULL`; modo `:memory:` é suportado para testes offline.
+- Evento RAW é separado de cada entrega. Replay de conteúdo idêntico cria nova delivery e mantém um único RAW.
+- Reutilização de `event_id` com source, tipo, schema, encoding ou bytes incompatíveis preserva o RAW original e registra conflito com hash e bytes recebidos, além de registrar a delivery conflitante.
+- SHA-256 é calculado sobre os bytes exatos recebidos. O storage não serializa protobuf nem declara origem wire por conta própria.
+- Inserção RAW nova + delivery ocorre na mesma transação. Teste com trigger que força falha ao inserir delivery confirma rollback do RAW.
+- A identidade estável `event_id` ainda é fornecida pelo chamador; derivação determinística por tipo de evento não foi implementada.
+
+### Commits da implementação
+- `1d29fc6` — módulo inicial de persistência RAW.
+- `79d5a88` — testes de RAW, replay, conflitos, reabertura e validação.
+- `e7714bb` — migração de schema tornada explicitamente atômica.
+- `92ba36d494e23932d11ec4b7c25ffd9afebe2916` — teste de rollback transacional; HEAD funcional validado.
+- `7bdb07a5379e8c552af8e7f6e3ca40800aed10dc` — atualização documental de status e validação.
+
+### Validação CI comprovada
+- CI #1645 — run `44462300540`, evento push, commit `92ba36d494e23932d11ec4b7c25ffd9afebe2916`: completed/success; **522/522 testes OK** em 4,033 s; `python -m compileall -q src tests` aprovado.
+- CI #1646 — run `44462306301`, evento pull_request, mesmo commit: completed/success; **522/522 testes OK**; compileall aprovado.
+- O CI valida o código/testes no commit `92ba36d...`; commits posteriores alteraram somente documentação.
+
+### Estado GitHub e limites
+- PR #23 permanece OPEN, Draft, `merged=false`, base `feat/damm-v2-referral-transfer-attribution`.
+- Nenhuma alteração ou merge na `main`.
+- Nenhum cliente gRPC, captura wire, conexão Yellowstone/Helius, credencial, VPS, captura contínua, checkpoint de transporte/continuidade, gap recovery, timeline persistida ou backfill foi implementado.
+- Não há autorização de execução financeira ou operação on-chain.
+
+### Próxima etapa técnica
+Revisar e formalizar derivação de identidade por tipo de evento; depois implementar checkpoints de transporte e gaps com transação atômica, sem conectar provider. Só após essa camada devem entrar persistência normalizada e reconstrução da timeline.
+
+
+## 289. Checkpoints de transporte Geyser e gaps persistentes — 19/11/2026
+
+### Escopo implementado
+- Continuação da seção 288, exclusivamente na branch `feat/damm-v2-economic-reconciliation`, PR #23.
+- Evoluída a migração do banco Geyser para schema v2 em `src/smart_money_radar/storage/geyser_raw_store.py`.
+- Adicionadas tabelas `geyser_transport_checkpoints`, `geyser_transport_gaps` e `geyser_transport_anomalies`.
+- Mantido o banco dedicado; nenhum checkpoint de carteira do `SQLiteEventStore` foi reutilizado.
+
+### Semântica comprovada
+- Checkpoint por `(source_id, stream_id)`, separado de identidade RAW e de ledger order.
+- `register_stream(source_id, stream_id, initial_sequence)` permite declarar o primeiro número esperado antes da ingestão.
+- Se a stream não for registrada previamente, o primeiro sequence observado vira baseline `first_observed_unverified`; isso não prova cobertura de sequência anterior.
+- `contiguous_sequence` só avança através de deliveries persistidas sem lacunas. Sequence posterior é preservado, gap é registrado e checkpoint contíguo não salta o intervalo.
+- Eventos fora de ordem podem preencher gaps. Registros substituídos e resolvidos permanecem auditáveis.
+- Replay do mesmo evento na mesma sequence não cria colisão. Evento diferente reutilizando sequence, conflito de identidade RAW não identificável ou sequence anterior ao baseline declarado gera anomalia aberta e interrompe checkpoint.
+- Anomalias exigem resolução explícita com nota. Resolver uma anomalia não remove interrupção enquanto houver gap ou outra anomalia aberta.
+- RAW, delivery, gap/anomalia e atualização do checkpoint são atômicos na mesma transação SQLite. Teste com trigger de falha na inserção do gap prova rollback conjunto.
+- Reconnect deve usar novo `stream_id`; semântica de reset de sequence não é inferida.
+
+### Testes e CI
+- Adicionados testes de checkpoints, baseline, sequência fora de ordem, fechamento de gaps, replay, colisão, resolução de anomalia, rollback atômico e upgrade de schema v1 para v2.
+- CI #1660 — run `44508678117`, push, commit `b470a5eb02025512569d83d667d82ddc55a33ec5`: completed/success; **530/530 testes OK** em 3,839 s; `python -m compileall -q src tests` aprovado.
+- CI #1661 — run `44508689458`, pull_request, mesmo commit: completed/success; **530/530 testes OK** em 4,090 s; compileall aprovado.
+- Teste adicional comprova migração de banco existente v1 para v2.
+- CI #1664 — run `44508979168`, push, commit `5d66bd1b50559ed9f4ede06461c2b4cf0ac9cf9b`: completed/success; **531/531 testes OK** em 3,834 s; compileall aprovado.
+- CI #1665 — run `44508987457`, pull_request, mesmo commit: completed/success; **531/531 testes OK** em 3,954 s; compileall aprovado.
+- Runs #1654–#1659 tiveram falha apenas na asserção do texto esperado para registro tardio de baseline; mensagem/validação foi corrigida e os runs finais passaram.
+
+### Commits desta etapa
+- `99a6773` — schema v2 e primeira implementação de checkpoint/gap.
+- `d4d4f06` — correção crítica para impedir avanço do checkpoint através de gap aberto.
+- `32cf299` — testes de checkpoints, gaps, replay e rollback.
+- `a72d782` — conflitos RAW passam a interromper transporte.
+- `be8b20e` — cobertura de conflito de identidade RAW.
+- `b470a5eb02025512569d83d667d82ddc55a33ec5` — correção do registro tardio de baseline; CI 530/530.
+- `5d66bd1b50559ed9f4ede06461c2b4cf0ac9cf9b` — teste de upgrade v1→v2; HEAD funcional validado por CI 531/531.
+- `f1f9dec33d7abd05fa598d7da665bb2f0b936478` — atualização inicial do contrato técnico.
+- `73f47b4c8c4edd5b48b18c36499c41be425c1255` — documentação final da migração e CI 531/531.
+
+### Limites e estado GitHub
+- PR #23 permanece OPEN, Draft, sem merge, base `feat/damm-v2-referral-transfer-attribution`.
+- Nenhuma alteração na `main`; nenhuma conexão Geyser/Helius, credencial, VPS, captura contínua ou operação on-chain/financeira.
+- Não implementados: identidade determinística automática de evento, checkpoint de continuidade/epoch, persistência normalizada, account writes, timeline persistente, backfill e recuperação de reinício.
+
+### Próxima etapa técnica
+Formalizar a derivação determinística de `event_id` por tipo de evento e versão do schema, com tratamento de colisão e compatibilidade. Depois, em etapa separada, implementar persistência de eventos normalizados. Não conectar provider.
+
+
+## 290. Identidade determinística versionada para eventos Geyser — 19/11/2026
+
+### Escopo implementado
+- Implementação offline na branch `feat/damm-v2-economic-reconciliation`, PR #23.
+- Criado `src/smart_money_radar/data_sources/geyser_event_identity.py`.
+- Criado `tests/test_geyser_event_identity.py`.
+- Contrato versionado `IDENTITY_VERSION = "geyser-event-id:v1"`; API `derive_event_identity(event, schema_version=...)`.
+
+### Chaves lógicas por tipo
+- Account: source_id, pubkey, slot, write_version, bank_id e is_startup.
+- Slot: source_id, slot, status e bank_id.
+- BlockMeta: source_id, slot e bank_id.
+- EntryUpdateParent: source_id, slot e cleared_bank_id.
+- `stream_id` e `stream_sequence` são excluídos da identidade; pertencem à delivery.
+- A versão explícita do schema upstream e a versão do contrato de identidade entram no JSON canônico antes do SHA-256.
+- Campos de conteúdo excluídos da chave (por exemplo account data, parent hashes, parent_block_id, parent_slot e dead_error) não são descartados: permanecem protegidos pela comparação de bytes/hash do RAW store. Reutilizar o mesmo event_id com payload diferente deve resultar em conflito preservando o RAW original.
+- A identidade é de evento normalizado provider-neutral. Não é identidade byte-for-byte do protobuf wire; o adapter atual recebe mensagens decodificadas.
+
+### Testes adicionados
+- Determinismo entre streams/reconnects e alterações de stream_sequence.
+- Independência de campos de conteúdo que devem gerar conflito no RAW, em vez de novo evento.
+- Separação por schema version, tipo de evento, slot/write_version/bank.
+- Rejeição de tipo não suportado e schema_version vazio.
+- Integração de teste com `SQLiteGeyserRawStore`: mesmo event_id + bytes alterados gera conflito e mantém payload original imutável.
+
+### Limites
+- Atualização pela seção 291: o helper agora é chamado pelo coordenador offline `data_sources/geyser_ingestion.py`; ainda não está acoplado automaticamente ao adapter protobuf nem a um worker de transporte.
+- Atualização pela seção 291: conteúdo normalizado já é arquivado como `normalized_json` no RAW store. Ainda faltam projeções/tabelas normalizadas dedicadas, timeline persistente, continuidade/epoch e backfill.
+- Sem endpoint/cliente Yellowstone/Helius, captura wire, credenciais, VPS, operação on-chain ou execução financeira.
+- PR #23 continua Draft e sem merge; `main` permanece intocada.
+
+### Validação
+- CI #1674 — run `44510167848`, evento pull_request, HEAD `bde85727630b4f37994852c67594a9c70887d1a3`: completed/success; **539/539 testes OK** em 3,843 s; `python -m compileall -q src tests` aprovado.
+
+### Próxima etapa
+Integrar o helper ao contrato de ingestão RAW sem acoplar identidade a transporte; depois implementar persistência normalizada com versionamento e diagnósticos. Não conectar provider.
+
+
+## 291. Coordenador offline de ingestão normalizada para RAW Geyser — 19/11/2026
+
+### Escopo implementado
+- Criado `src/smart_money_radar/data_sources/geyser_ingestion.py`.
+- Criado `tests/test_geyser_ingestion.py`.
+- API pública: `ingest_normalized_event(store, event, schema_version=..., delivery_kind=...)`.
+- Suporta os quatro contratos provider-neutral existentes: Account, Slot, BlockMeta e EntryUpdateParent.
+- Deriva `event_id` por `derive_event_identity`, serializa conteúdo normalizado em JSON canônico UTF-8 e persiste via `SQLiteGeyserRawStore` com `payload_encoding=normalized_json`.
+- Account data é codificado em Base64 sem perda; parent_block_id opaco é codificado em hexadecimal. Não são bytes originais protobuf.
+- `stream_id` e `stream_sequence` aparecem apenas em `RawDeliveryInput`; não entram na identidade lógica nem no payload normalizado.
+- Replay em outra stream mantém o mesmo event_id e adiciona delivery; alteração do conteúdo sob a mesma identidade vira conflito RAW imutável.
+- Versão do schema upstream altera o event_id e permanece registrada no payload.
+- O coordenador não altera o adapter protobuf, não cria cliente gRPC e não conecta provider.
+
+### Testes específicos adicionados
+- Persistência de JSON canônico e separação de delivery.
+- Replay entre reconnects com deduplicação RAW.
+- Conflito quando conteúdo muda sob mesma identidade.
+- Cobertura de Slot, BlockMeta e EntryUpdateParent.
+- Isolamento por versão de schema.
+- CI #1686 — run `44515088642`, pull_request, código HEAD `0beb6c26f2ac6833cb7ebff5861d208c2a1c307b`: completed/success; **544/544 testes OK** em 4,035 s; `python -m compileall -q src tests` aprovado.
+- Runs #1680 e #1684 falharam em asserções dos testes recém-criados (contrato de retorno de conflito e representação Base64); expectativas corrigidas antes do CI aprovado #1686.
+
+### Limites
+- Este é um coordenador offline chamado explicitamente pelo consumidor; não há loop/worker de stream nem conexão Yellowstone/Helius.
+- A camada normalizada agora é serializada e arquivada no RAW store como normalized_json; ainda não há projeções/tabelas normalizadas dedicadas, account-write index, timeline persistente, backfill ou recuperação de reinício.
+- Nenhum wire-byte capture; dados recebidos já decodificados não podem ser rotulados como protobuf_wire.
+- PR #23 permanece Draft e sem merge; main intocada.
+
+### Próxima etapa
+Construir projeções normalizadas dedicadas e versionadas (começando por account writes), mantendo RAW como fonte imutável e permitindo reconstrução. Não conectar provider.
+
+
+## 292. Projeção persistente e reconstruível de Geyser account writes — 19/11/2026
+
+### Entrega
+- Implementado na branch `feat/damm-v2-economic-reconciliation`, PR #23.
+- Arquivos:
+  - `src/smart_money_radar/storage/geyser_account_write_projection.py`
+  - `tests/test_geyser_account_write_projection.py`
+- Classe `SQLiteGeyserAccountWriteProjection`; APIs `rebuild()`, `get_checkpoint()`, `list_writes()`.
+- A projeção compartilha o banco Geyser dedicado, sem tocar no EventStore de transações.
+- Lê apenas RAW `account` em `normalized_json`; não finge decodificar wire bytes.
+- Preserva a identidade do RAW e campos de conta/ledger; dados binários permanecem reversíveis via Base64 e são acompanhados de tamanho e SHA-256.
+- Checkpoint próprio/versionado e geração de rebuild, independente do checkpoint de transporte.
+- Rebuild integral em uma transação: substitui projeção e checkpoint juntos; erro de validação preserva a geração anterior.
+- Estratégia full rebuild deliberada para não perder RAW tardio/backfill devido a cursor lexical; `source_max_event_id` é apenas diagnóstico.
+
+### Validação remota
+- CI #1693 — run `44516277804`, commit `b62e8660b4bc32c9d921e5fcf09bdfdb428fbb67`: SUCCESS; **550/550 testes OK** em 4,216 s; compileall aprovado.
+- Seis testes específicos aprovados: bytes/metadata, idempotência e geração, chegada tardia, eventos ignorados, rollback em payload inválido e isolamento do checkpoint de transporte.
+
+### Estado e limites
+- PR #23 permanece OPEN, Draft, sem merge; base `feat/damm-v2-referral-transfer-attribution`.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma alteração na main.
+- Nenhum provider conectado, nenhum wire capture, backfill real, timeline persistente, seleção canônica de fork, transições econômicas ou execução financeira.
+- A reconstrução integral é a primeira versão e ainda precisa de avaliação de desempenho/escala.
+
+### Próxima etapa
+Persistir/reconstruir a timeline de conta e os vínculos de banco/fork a partir do RAW e da projeção, mantendo histórico órfão e sem inferir canonicalidade por ordem de chegada. Antes de implementar, definir geração, atomicidade, rollback e checkpoints próprios dessa timeline. Não conectar provider.
+
+
+## 293. Timeline persistente e reconstruível de contas/bancos — 19/11/2026
+
+### Entrega
+- Implementado na branch `feat/damm-v2-economic-reconciliation`, PR #23.
+- Arquivos:
+  - `src/smart_money_radar/data_sources/geyser_account_timeline.py` — snapshot público `timeline_records()`.
+  - `src/smart_money_radar/storage/geyser_account_timeline_projection.py`.
+  - `tests/test_geyser_account_timeline_projection.py`.
+- Classe `SQLiteGeyserAccountTimelineProjection`; APIs `rebuild()`, `get_checkpoint()`, `list_account_writes()`, `list_banks()`, `list_gaps()`, `list_conflicts()`.
+- Usa `smr_geyser.sqlite`; RAW continua fonte imutável e `smr_events.sqlite` permanece isolado.
+- Rebuild reproduz primeira entrega sequenciada por evento lógico, ordenada por delivery_id. Timelines isoladas por source_id, evitando falso reconnect entre provedores.
+- Persiste continuidade de account writes (epoch, baseline, continuity_baseline), status do banco, nós de banco, vínculos exatos por blockhash, statuses, invalidações, substituições, gaps e conflitos.
+- Preserva banco invalidado e account writes relacionados; não apaga histórico nem declara fork canônico por ordem de chegada.
+- Checkpoint/generation versionados e separados dos checkpoints de transporte. Rebuild integral atômico; falha preserva geração anterior.
+- RAW sem entrega sequenciada é preservado no RAW, mas ignorado na timeline e contabilizado no checkpoint.
+
+### Validação
+- CI #1706 — run `44517573857`, commit `6bf265be4f9f7cd48ba1044ad19272c8b1a4095b`: SUCCESS; **559/559 testes OK**; compileall aprovado.
+- Nove testes novos específicos aprovados: persistência de timeline e bancos, vínculo pai exato, parent_block_id opaco, invalidação, checkpoint, chegada tardia, rollback por payload malformado, gap e isolamento de fontes.
+
+### Limites
+- Offline; nenhuma conexão Geyser/Helius, captura wire ou backfill real.
+- Não há seleção canônica automática, rollback canônico automático, tabela persistente de transições econômicas pre/post, BUY/SELL nem execução financeira.
+- Rebuild integral ainda requer avaliação de escala.
+- Eventos sem sequência de transporte conhecida não entram na timeline nesta versão.
+
+### Próxima etapa
+Projetar recuperação/backfill com checkpoints granulares, cobertura auditável e reconciliação de eventos RAW sem sequência. Continuar offline; não conectar provider.
+
+
+## 294. Recuperação de backfill e checkpoints granulares — 19/11/2026
+
+### Implementação
+- Criado `src/smart_money_radar/storage/geyser_recovery_store.py`.
+- Criado `tests/test_geyser_recovery_store.py`.
+- Classe `SQLiteGeyserRecoveryStore`, usando o mesmo `smr_geyser.sqlite`, isolado do `smr_events.sqlite`.
+- Migração de recovery versionada separadamente do schema RAW.
+- Tabelas:
+  - `geyser_backfill_jobs`: fonte, intervalo de slots, provider/adapter/schema, semântica da consulta, cursores opacos, estado, cobertura, contadores, tentativas, erro, evidência e timestamps.
+  - `geyser_backfill_attempts`: histórico imutável por tentativa, cursor inicial/final, estado, timestamps e erro.
+  - `geyser_projection_checkpoints`: checkpoint por nome/versão da projeção e `source_id`, geração, maior delivery/evento, contagens, eventos sem sequência, cobertura dos inputs e continuidade interrompida.
+- APIs de job: `create_backfill_job()`, `start_backfill_job()`, `update_backfill_progress()`, `finish_backfill_job()`, `recover_interrupted_jobs()`, `get_backfill_job()`, `list_backfill_jobs()`, `list_backfill_attempts()`.
+- API de projeção: `record_projection_checkpoint()` e `get_projection_checkpoint()`.
+- Estados de job PENDING/RUNNING/PARTIAL/COMPLETED/FAILED; cobertura COMPLETE/PARTIAL/UNKNOWN.
+- Retomada preserva o último cursor durável e cria número de tentativa crescente. Jobs RUNNING abandonados são marcados PARTIAL quando já receberam dados ou FAILED quando ainda vazios; cobertura nunca é promovida automaticamente.
+- Contadores não podem regredir. Apenas jobs RUNNING aceitam progresso/finalização. COMPLETE exige evidência estruturada de contrato confirmado, intervalo coberto, paginação esgotada, retenção verificada e semântica idêntica à consulta registrada.
+- Checkpoints de projeção são por fonte e versão. Geração e delivery_id não podem regredir. Cobertura COMPLETE é recusada quando há continuidade interrompida ou eventos sem sequência ignorados.
+- Checkpoint de projeção deve ser gravado somente depois do commit da geração. Se houver interrupção entre os dois commits, o checkpoint fica atrasado (seguro) e pode ser refeito; não se avança checkpoint antes da projeção.
+
+### Limites
+- Camada offline de persistência/controle; não há cliente, paginação, scheduler ou executor real de backfill.
+- Evidência de cobertura é fornecida pelo futuro adapter e registrada para auditoria; o store não prova independentemente as garantias do provider.
+- Cursores são opacos e não são comparados/interpretados.
+- O rebuild atual da timeline continua integral e ainda não chama automaticamente o novo checkpoint granular.
+- RAW e deliveries continuam imutáveis; não são sintetizados eventos ausentes, canonicalidade, BUY/SELL ou ordens.
+- Nenhum endpoint/credencial/cliente Yellowstone ou Helius, VPS, serviço pago ou operação on-chain foi conectado.
+
+### Testes e CI
+- Dez testes específicos adicionados para lifecycle, prova de cobertura, divergência de semântica, contadores monotônicos, recuperação após interrupção, retomada de cursor/tentativa, isolamento de fonte, cobertura fail-closed, monotonicidade do checkpoint e validação de estado/intervalo.
+- CI #1733 — run `44519550364`, commit `f90fd43bbbd03c7c03bfbf7b23ca5907e5d60066`: SUCCESS; **569/569 testes OK** em 4,343 s; `python -m compileall -q src tests` aprovado.
+- Runs #1727 e #1731 falharam em dois testes da etapa (expectativa incorreta sobre iniciar job PENDING e atualização do attempt interrompido); ambos corrigidos antes do CI #1733 aprovado.
+
+### Estado
+- PR #23 permanece Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`.
+- `main` não foi alterada.
+- Próxima ação: definir uma política auditável para RAW sem sequência, sem inventar ordem, e medir o custo do full rebuild com volume representativo. A integração do checkpoint por fonte ao rebuild foi concluída na seção 295.
+
+
+## 295. Integração do checkpoint granular ao rebuild da timeline — 19/11/2026
+
+### Implementação
+- Modificado `src/smart_money_radar/storage/geyser_account_timeline_projection.py`.
+- Modificado `tests/test_geyser_account_timeline_projection.py`.
+- `SQLiteGeyserAccountTimelineProjection.rebuild()` grava checkpoint de recovery para cada `source_id` somente depois do commit bem-sucedido da geração derivada.
+- Checkpoint registra nome/versão da projeção, geração, último delivery observado, último event reproduzido, contagem de deliveries, eventos projetados, entradas ignoradas, cobertura e continuidade interrompida.
+- Checkpoints são isolados por fonte. Contagem e maior delivery_id consideram todas as entregas da fonte, inclusive as que não apontam para evento RAW; last_event_id é o último evento sequenciado reproduzido.
+- A geração derivada continua sendo reconstruída integralmente e substituída atomicamente: account writes, bank lineage, gaps, conflitos e checkpoint global permanecem na mesma transação SQLite.
+- Depois do commit dessa geração, o recovery store grava os checkpoints por fonte em transação separada. Interrupção entre as fases deixa o checkpoint atrasado, nunca adiantado; novo full rebuild pode reconciliar.
+- Associação dos account writes aos event IDs RAW passou a usar chave determinística construída durante replay, evitando varredura repetida de todos os RAWs para cada escrita.
+
+### Política de cobertura
+- COMPLETE: todos os streams observados têm baseline declarado pelo adapter, sem checkpoint interrompido, gap/anomalia aberta, gap da timeline ou input ignorado.
+- PARTIAL: há baseline declarado, mas foi observada lacuna, interrupção, anomalia ou entrada ignorada.
+- UNKNOWN: não há checkpoint de transporte ou algum stream usa baseline first_observed_unverified.
+- COMPLETE significa continuidade de transporte desde baseline declarado; não prova completude do histórico do provider nem de intervalo de backfill.
+- RAW sem entrega sequenciada continua preservado e contabilizado, sem ordem artificial ou projeção na timeline.
+
+### Testes e CI
+- Quatro testes de integração: checkpoint por fonte após rebuild; UNKNOWN para baseline não verificado; PARTIAL para gap; isolamento entre fontes.
+- Teste de payload RAW malformado também confirma que falha no rebuild não avança checkpoint de recovery.
+- CI #1743 — run `44520328616`, commit de código `979e6841f348ae74de40d65b14411eb883b5cc64`: SUCCESS; **573/573 testes OK** em 5,904 s; `python -m compileall -q src tests` aprovado.
+
+### Limites
+- Full rebuild continua como mecanismo de recuperação/fallback; não há replay incremental.
+- RAW sem sequência ainda não entra na timeline; política específica para reconciliação permanece pendente.
+- COMPLETE não é prova de histórico integral do provider; backfill histórico permanece separado.
+- Offline: nenhum RPC, endpoint, cliente, credencial, serviço, VPS ou backfill ao vivo foi conectado.
+
+### Estado
+- PR #23 permanece Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`.
+- `main` permanece sem alteração.
+- Próxima ação: especificar e implementar política auditável para RAW sem sequência; depois medir o full rebuild com volume representativo, sem abandonar o fallback integral.
+
+
+## 296. Contrato inicial SolanaTransactionEvidenceBundle — 19/11/2026
+
+### Objetivo e decisão
+- Formalizada a necessidade de impedir que evidências de transações Solana distintas sejam combinadas na reconciliação econômica DAMM v2.
+- A identidade raiz é composta por `transaction_signature`, `slot`, `source_id` e SHA-256 do payload RPC canonicalizado.
+- O envelope deve ser construído a partir de um único payload original; decoders não devem receber listas independentes como se a origem comum estivesse garantida.
+- Evidências históricas (por exemplo, prestate de mint e snapshots withheld-fee) mantêm identidade/proveniência próprias e precisam de vínculo temporal demonstrável com a transação-alvo. Não devem ser forçadas a compartilhar a assinatura da transação-alvo.
+
+### Implementação inicial nesta branch
+- Branch: `feat/solana-transaction-evidence-bundle`.
+- Base: branch `feat/damm-v2-economic-reconciliation`, commit `4a517ca15499746ddd3f5522f112c80aaac1433b` (HEAD confirmado na consulta de 19/11/2026).
+- Criado `src/smart_money_radar/data_sources/solana_transaction_evidence_bundle.py`.
+- Criado `tests/test_solana_transaction_evidence_bundle.py`.
+- `build_solana_transaction_evidence_bundle()` recebe um único payload RPC e `source_id`; valida assinatura Solana em Base58 com 64 bytes, calcula SHA-256 sobre JSON canonicalizado e executa internamente os decoders de inventário de instruções, transfers SPL/Token-2022 e deltas pre/post.
+- A identidade do inventário é comparada com a assinatura e o slot do envelope.
+- Resultados incompletos dos decoders são preservados; `structurally_complete` permanece falso quando inventário ou deltas estão incompletos.
+- A camada é apenas de evidência: não classifica BUY/SELL, não reconcilia economia e não autoriza execução.
+
+### Testes adicionados
+- Payload válido e hash determinístico.
+- Wrapper padrão RPC `result`.
+- `source_id` ausente.
+- Assinatura ausente ou que não seja Base58 de 64 bytes.
+- Slot ausente/inválido, incluindo boolean.
+- Evidência de delta incompleta preservada como inelegível.
+- Payload não JSON rejeitado em vez de gerar hash de representação arbitrária.
+
+### Estado e limites
+- Commits da branch incluem contrato inicial `263c119d6f7fb6195e214062229096da629ae359`, testes `febb9ec60d5465077f1fe292ae11023644ddd67f`, validação de assinatura `8599339ea1e30c3c21db44a0f2607c45aa6920dd` e fixture de assinatura válida `aafa0fe6f52001d7382b86650395669f73d996a1`.
+- Registro Mestre atualizado nesta branch; validação CI ainda não consultada nesta atualização.
+- Ainda não existe integração deste envelope com `reconcile_damm_v2_economic_batch()`, contexts DAMM v2 ou snapshots históricos.
+- Ainda não há prova tipada de associação de contexts/eventos DAMM v2 ao envelope; essa integração deve ser uma etapa seguinte, com testes de mistura de assinatura, slot, fonte e payload.
+- Nenhum decoder existente foi modificado.
+- PR #34 criada como Draft contra `feat/damm-v2-economic-reconciliation`; nenhum merge foi realizado e `main` permanece intocada.
+
+### Próxima etapa
+Validar os testes e compileall em CI no HEAD desta branch. Em seguida, revisar o contrato contra os casos de proveniência DAMM v2 e desenhar a integração com contexts, transfer evidence e snapshots históricos antes de conectar o reconciliador econômico.
+
+
+### Atualização de CI e correção — PR #34 (19/11/2026)
+- Primeiro CI observado no HEAD `4eb9a90876f7d9a5f7712c7331bc92df3f6909de`: workflow `SMR tests`, run `44599405464`, job `135826377268`, FAILURE.
+- O job instalou o projeto e iniciou `PYTHONPATH=src python -m unittest discover -s tests -v`; foram executados 580 testes e 9 erros ficaram concentrados no novo módulo.
+- Causa confirmada nos logs: `_transaction_identity()` chamava `_is_valid_signature()`, mas a função não estava definida no arquivo naquele HEAD, gerando `NameError`.
+- Correção aplicada: definição explícita de `_is_valid_signature()` antes de `_transaction_identity()`, validando Base58 e comprimento decodificado de 64 bytes.
+- Commit corretivo: `4199bdc0dcc75956a5709ac635fd188d16e41a4b`.
+- CI do novo HEAD ainda precisa ser consultado; a correção não é considerada validada até o workflow correspondente terminar com sucesso.
+- PR #34 permanece Draft e sem merge; `main` não foi alterada.
+
+
+### CI após correção — PR #34 (19/11/2026)
+- HEAD validado: `63fe7019d365fe6fc51b50eeb2d2c3a53a24bb9e`.
+- Workflow `SMR tests`, run `44599723147`, job `135827505295`: SUCCESS.
+- `PYTHONPATH=src python -m unittest discover -s tests -v`: 580 testes executados em 4,506 s, sem falhas.
+- `python -m compileall -q src tests`: etapa concluída com sucesso.
+- A execução anterior com 9 erros foi corrigida pela inclusão efetiva de `_is_valid_signature()`; o HEAD validado inclui o código corretivo e este registro.
+- Esta validação confirma testes unitários e compilação no runner GitHub Actions/Python 3.12; não comprova integração econômica DAMM v2, proveniência de snapshots históricos, dados RPC reais ou execução em produção.
+- PR #34 continua Draft, aberta e sem merge. `main` permanece intocada.
+
+
+## 297. Integração inicial de associações e contexts DAMM v2 ao bundle — 19/11/2026
+
+### Objetivo
+Evitar que o chamador monte manualmente `contexts`, `transfers`, `evidence` e `balance_deltas` independentes e os entregue ao reconciliador como se sua origem comum estivesse comprovada.
+
+### Implementação nesta branch
+- Branch: `feat/solana-transaction-evidence-bundle`; PR #34 Draft, base `feat/damm-v2-economic-reconciliation`.
+- `DammV2SwapEventAssociation` passou a preservar `resolved_accounts`, resolvidas no próprio analyzer a partir da lista de contas da instrução DAMM v2 e do account-key table do mesmo payload. Índices booleanos, inválidos ou fora do intervalo não são aceitos como contas resolvidas.
+- A factory `build_solana_transaction_evidence_bundle()` agora executa `analyze_damm_v2_swap_events()` sobre o mesmo payload original usado pelos decoders de transfers e balance deltas.
+- Para cada associação MATCHED, a factory usa as contas resolvidas e o EvtSwap2 para chamar `decode_damm_v2_swap_accounts()`, construindo `DammV2SwapTransferContext`.
+- A factory chama `analyze_damm_v2_transfer_evidence()` com os contexts e a lista de transfers derivados do mesmo payload.
+- Associações não resolvidas, contas ausentes/inválidas ou inconsistência de contexto são registradas em `damm_v2_issues`; a camada não inventa contextos parciais.
+- `damm_v2_complete` exige cobertura de todas as associações por contexts e transfer evidence ATTRIBUTED.
+- Adicionada `reconcile_solana_transaction_damm_v2_bundle()`: recebe o bundle, não listas independentes; usa signature e slot da identidade raiz e bloqueia bundles sem associação, estruturalmente incompletos, com issues ou transfer evidence não atribuída.
+- O wrapper exige bundle criado pela factory validada (token privado interno), reduzindo composição acidental de objetos independentes. Isto é uma proteção de contrato interno, não uma fronteira criptográfica contra código hostil no mesmo processo.
+
+### Testes e validação
+- Teste positivo da cadeia de construção: payload -> associação DAMM -> contas resolvidas -> context -> transfer evidence.
+- Teste negativo para índice de conta inválido, que não cria context e deixa o bundle inelegível.
+- Testes do wrapper: ausência de transferências impede reconciliação; ausência de associações DAMM também bloqueia; bundle recomposto manualmente é rejeitado.
+- Uma execução intermediária teve 1 falha no fixture de teste por codificação incorreta de bytes zero na função Base58 de teste; o fixture foi corrigido. Não foi identificada falha equivalente no código de produção.
+- HEAD de código validado: `fee487e9da7522a6025b9c70df5dbd703dd129bd`.
+- CI `SMR tests`, run `44601037164`, job `135832185607`: SUCCESS; 584 testes em 4,448 s; `python -m compileall -q src tests` aprovado.
+- O CI comprova testes unitários e compilação no runner GitHub Actions; não comprova tráfego RPC real nem execução em produção.
+
+### Limites ainda existentes
+- Não há ainda fixture positivo de reconciliação econômica completa passando pela nova factory até resultado RECONCILED.
+- Snapshots históricos de mint/withheld continuam recebidos como evidências externas e precisam manter sua própria identidade, proveniência e vínculo temporal com a transação-alvo.
+- O envelope ainda não prova a proveniência externa dos snapshots históricos nem substitui a validação específica já implementada no reconciliador.
+- Não foi conectado a adapter operacional/RPC nem a execução financeira.
+- A PR #34 permanece Draft e sem merge; `main` permanece intocada.
+
+### Próxima etapa
+Criar fixture sintético de ponta a ponta que percorra factory -> associação -> contexts -> transfer evidence -> reconciliação econômica, incluindo snapshots históricos quando aplicável. O teste deve provar o caso RECONCILED e os bloqueios para assinatura/slot/payload divergentes antes de qualquer integração operacional.
+
+
+## 298. Fixture positivo end-to-end DAMM v2 e integridade do bundle — 19/11/2026
+
+### Fixture sintético positivo
+- Criado payload RPC sintético com swap DAMM v2 na instrução externa, duas transferências Token-2022 descendentes e EvtSwap2 descendente.
+- A instrução DAMM usa 14 contas resolvidas pelo account-key table.
+- Transfer input: bruto 100, fee explícita 5, crédito líquido 95.
+- Transfer output: bruto 90, fee 0, crédito líquido 90.
+- EvtSwap2 fixture consistente: included input 95, bruto input 100, output 90 e net output 90.
+- Snapshots pre/post incluem as quatro token accounts e owners esperados: carteira monitorada nos lados do usuário e pool authority nos vaults.
+- O teste atravessa a factory real: payload -> inventário -> transfer decoders -> balance deltas -> swap/EvtSwap2 association -> resolved accounts -> context -> transfer evidence -> bundle-only economic reconciler.
+- Resultado observado: `RECONCILED`, uma operação, quatro expected account deltas. Withheld fee e mint fee config permanecem `EXPECTED_NOT_VERIFIED`, corretamente sem alegação de verificação TLV.
+
+### Fixture negativo econômico
+- Alterada a quantidade post do token account do usuário de 900 para 901 sem mudar transfer/event evidence.
+- O reconciliador retorna `INCOMPLETE` por divergência de delta; nenhuma promoção indevida para RECONCILED.
+
+### Endurecimento de integridade do bundle
+- Durante a criação dos testes de identidade foi identificado que `dataclasses.replace()` preservava o token privado de factory e permitia substituir campos do bundle, inclusive signature/slot/hash e evidências, sem perder o token.
+- Corrigido com snapshot interno de referências imutáveis aos componentes produzidos pela factory; o wrapper verifica que identidade, inventário, transfers, balance deltas, associações, contexts, transfer evidence e issues são exatamente os objetos selados na construção.
+- Testes negativos confirmam bloqueio ao substituir assinatura, slot, payload SHA-256, transfers, contexts ou balance deltas.
+- Proteção é integridade de contrato contra recomposição acidental/uso normal de dataclasses; não é fronteira criptográfica contra código hostil com acesso introspectivo ao mesmo processo Python.
+
+### CI
+- HEAD de código validado: `1c9e6da69bf573f03b61d7da809fb8c6220affc3`.
+- Workflow `SMR tests`, run `44601942485`, job `135835372820`: SUCCESS.
+- 588 testes em 4,511 s; `python -m compileall -q src tests` aprovado.
+- A execução anterior no HEAD `22ba642eadfcc5b06d3e73b07b5443d72a007a75` também passou com 587 testes e provou os dois novos cenários end-to-end; a validação atual acrescenta os testes de substituição do bundle.
+- CI valida fixtures/unit tests e compilação; não comprova tráfego mainnet, estado TLV real ou integração provider.
+
+### Estado e pendências
+- PR #34 permanece Draft, aberta e sem merge; main intacta.
+- A fixture positiva econômica agora existe e passa.
+- Continuam pendentes snapshots históricos de mint/withheld com proveniência independente e validação temporal; especialmente teste de verificação TLV realista.
+- Ainda faltam testes dedicados de divergência de source_id dentro de um envelope de origem comum e auditoria final do diff completo antes de considerar PR pronta.
+- Não ligar a adapter RPC operacional nem execução financeira nesta etapa.
+
+### Próxima ação
+Revisar e formalizar o contrato de proveniência dos snapshots históricos de mint/withheld, incluindo vínculo inequívoco de source, assinatura, slot, ordem e referências pre/post; adicionar testes negativos de mistura e só então avaliar uma fixture positiva com fee state verificado.
+
+## 299. Proveniência vinculada de snapshots históricos mint/withheld — 19/11/2026
+
+### Contrato implementado
+- Snapshots históricos de mint e withheld agora carregam `source_id`, `ordering_domain_id` e `transaction_payload_sha256`, vinculando a evidência à mesma origem, ao mesmo domínio de ordenação e ao payload transacional usado no bundle.
+- `build_damm_v2_mint_fee_config_snapshots()` exige `source_id` e `ordering_domain_id` do prestate iguais aos da transação, além de SHA-256 válido do payload RPC. Calcula o SHA-256 dos bytes brutos do mint prestate, preserva esses bytes no snapshot e deriva `config_state` diretamente deles.
+- `verify_damm_v2_mint_fee_config()` exige source ID, ordering domain e payload hash esperados; compara assinatura, fonte, domínio, payload hash, epoch, slot, ordem, mint e posição exata da transferência.
+- O verifier recalcula o hash dos bytes do mint e decodifica novamente o TLV; rejeita bytes alterados ou config_state que não corresponda aos bytes.
+- `DammV2WithheldFeeSnapshot` preserva bytes brutos pre/post, SHA-256 individuais, source ID, hash do payload e referências separadas.
+- `verify_damm_v2_withheld_fee_deltas()` recalcula os hashes, redecodifica TransferFeeAmount dos bytes brutos e compara com `decoded_delta`; também exige source ID, ordering domain e hash do payload iguais aos da transação, assinatura/slot/ordem e `pre < transaction < post`.
+- `reconcile_solana_transaction_damm_v2_bundle()` propaga source ID e payload SHA-256 da identidade raiz para a reconciliação econômica. O caminho de cálculo de fee (`_calculate_fee_from_mint_snapshot`) também recalcula o hash e redecodifica os bytes brutos antes de usar a configuração.
+
+### Testes negativos adicionados
+- Snapshot de mint com source ID diferente.
+- Snapshot de mint com ordering domain diferente.
+- Snapshot withheld com ordering domain diferente.
+- Builder de mint rejeita prestate de outro ordering domain.
+- Snapshot withheld com source ID diferente.
+- Hash do payload transacional divergente para mint.
+- Hash do payload transacional divergente para withheld.
+- Bytes brutos do mint alterados sem atualizar o digest.
+- Bytes brutos withheld alterados sem atualizar o digest.
+- Builder de mint rejeita prestate de outra origem.
+- Testes anteriores de assinatura, slot, ordem, posição de inicialização, configuração e divergência de taxas continuam ativos.
+
+### Validação
+- HEAD de código validado: `7d6d30efd683668a258b8764d35e2585b80224ba`.
+- Workflow `SMR tests`, run `44606196108`, job `135850416062`: SUCCESS.
+- 598 testes em 4,818 s; `python -m compileall -q src tests` aprovado.
+- A validação inclui a distinção explícita entre fonte e domínio de ordenação; streams/conexões diferentes não podem ser comparadas apenas por compartilhar `source_id`.
+- O CI valida testes sintéticos/unitários e compilação; não comprova autenticidade do provider, coleta Geyser real, ordering real, mainnet ou execução em produção.
+
+### Limites explícitos
+- SHA-256 prova consistência dos bytes apresentados, não autenticidade do provider nem correção da ordem atribuída pelo adapter.
+- `source_id` precisa ser estável e representar o domínio real de origem/ordenação; a camada de ingestão ainda deve provar essa semântica.
+- Ainda não há adapter operacional que capture mint/account pre/post snapshots em mainnet e demonstre ordenação real.
+- Nenhuma execução financeira foi conectada.
+- PR #34 continua Draft e sem merge; `main` permanece intacta.
+
+### Próxima ação
+Auditar o diff completo da PR #34 e verificar se o contrato de snapshots, o bundle e a documentação estão coerentes. Depois, definir o contrato do adapter de ingestão Geyser/provider-neutral, sem conectar execução financeira.
+## 300. Contrato do adapter provider-neutral de snapshots históricos — 19/11/2026
+
+### Decisão de arquitetura
+- Criado `docs/SOLANA-HISTORICAL-SNAPSHOT-INGESTION-CONTRACT.md`.
+- Separadas três identidades: `source_id` (namespace estável provider/node), `ordering_domain_id` (domínio em que números de ordem são comparáveis) e `stream_id` (conexão/transporte).
+- Mesmo `source_id` não autoriza comparar sequência de streams diferentes. Para snapshots, `transaction_order`, `pre_snapshot_order` e `post_snapshot_order` precisam pertencer ao mesmo `ordering_domain_id`.
+- Em uma stream Yellowstone multiplexada, o domínio pode corresponder à conexão/stream; reconnect cria novo domínio, salvo prova de cursor global comum fornecida pelo provider.
+- `stream_sequence` não pode ser inferida de slot, write_version, timestamp, delivery_id, índice de instrução ou sequência de outra stream. `slot/write_version` permanecem metadados de ordem de ledger/account writes, com semântica distinta.
+- Builder e verifiers de mint/withheld agora exigem e comparam o domínio de ordenação. O caminho de cálculo de fee de mint também rejeita domínio diferente.
+- `reconcile_solana_transaction_damm_v2_bundle()` aceita `transaction_ordering_domain_id` explicitamente e propaga ao reconciliador.
+
+### Contrato do adapter definido
+- Normalizar transaction observations e account updates preservando payload/bytes originais, signature, slot, pubkey, owner, write_version, bank/fork metadata, source ID, ordering domain, stream ID e sequência.
+- Construir mint prestate apenas com bytes capturados antes da transação, mesma fonte/domínio, ordem menor e inventário de instruções completo; a versão atual também exige mesmo slot.
+- Construir withheld pre/post apenas de transição de token account vinculada à assinatura exata, mesma fonte/domínio e ordem `pre < transaction < post`; sem poststate vinculado, não inferir.
+- Gap, reconnect, baseline, fork não resolvido, conflito, owner/mint/pubkey divergente ou stream/domain diferente tornam a evidência inelegível.
+- A política de commitment/finality ainda precisa ser formalizada e representada de forma tipada antes de promover snapshots a VERIFIED em produção.
+- O documento define critérios de aceitação e testes de streams diferentes, gaps/reconnects, forks, assinatura, owner/mint, bytes adulterados e replay.
+- Nenhum provider foi conectado; Yellowstone/Helius continuam fontes candidatas, não dependências operacionais.
+
+### Validação
+- HEAD de código validado: `7d6d30efd683668a258b8764d35e2585b80224ba`.
+- CI `SMR tests`, run `44606196108`, job `135850416062`: SUCCESS; 598 testes em 4,818 s; compileall aprovado.
+- Commits posteriores desta seção são documentação apenas; nenhum código alterado após o HEAD validado.
+
+### Estado
+- PR #34 continua Draft, aberta, mergeable e sem merge.
+- `main` permanece intocada.
+- Próxima ação: auditar o contrato do adapter contra os normalizadores/timeline Geyser existentes e especificar a representação tipada de commitment/finality antes de qualquer adapter operacional.
+
+## 301. Política de commitment/finality e bloqueio de transições não finalizadas — 19/11/2026
+
+### Decisão
+- Estados de commitment não são equivalentes: PROCESSED e CONFIRMED são observações não finais; FINALIZED é somente declaração reportada pelo provider.
+- `commitment_state()` expõe `UNKNOWN`, `PROVIDER_REPORTED_PROCESSED`, `PROVIDER_REPORTED_CONFIRMED`, `PROVIDER_REPORTED_FINALIZED`, `DEAD`, `INVALIDATED` e `CONFLICTED`.
+- A elegibilidade de uma transição bank-scoped exige o banco do prestate e do poststate em estado provider-reported finalized.
+- Para transições entre bancos, cada ancestral explicitamente ligado na cadeia precisa estar finalizado e utilizável; ancestralidade ausente não é inferida.
+- Conflitos de blockhash/parent metadata contaminam a identidade do banco e invalidam o nó existente ou sua materialização posterior. Uma mensagem FINALIZED posterior não reabilita banco conflitante.
+- SLOT_DEAD, EntryUpdateParent e rollback permanecem bloqueios; RAW/orphaned evidence é preservada sem promoção.
+- FINALIZED não autentica criptograficamente o provider nem comprova consenso independente. Adapter operacional ainda exige política de autenticação, identidade de endpoint, integridade de transporte, reconnect e rollback.
+
+### Implementação
+- Branch: `fix/geyser-finalized-evidence-gate`, criada a partir do HEAD exato da PR #34 `e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`.
+- Arquivos de código/teste: `src/smart_money_radar/data_sources/geyser_bank_lineage.py`, `src/smart_money_radar/data_sources/geyser_account_timeline.py`, `tests/test_geyser_bank_lineage.py`, `tests/test_geyser_account_timeline.py`.
+- Documento: `docs/GEYSER-COMMITMENT-FINALITY-POLICY.md`.
+- Testes adicionados para progressão de commitment, ancestral finalizado, conflito de metadados e bloqueio de transição até finalização dos dois lados.
+
+### Estado de validação
+- Implementação enviada à branch isolada; CI ainda não executado/confirmado.
+- Nenhum provider foi conectado. Nenhuma execução financeira foi habilitada.
+- PR #34 e main não foram alteradas; nenhuma integração/merge foi feita.
+
+### Próxima etapa
+Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. Não promover FINALIZED a VERIFIED operacional até implementar confiança/autenticação do provider.
+
+
+### CI inicial e atualização dos fixtures — PR #35
+- Primeira execução `SMR tests`, run `44609714040`, job `135862746101`: FAILURE em 603 testes; 5 falhas estavam em `tests/test_geyser_bank_aware_timeline.py`, que ainda esperava transições com bancos apenas observados.
+- A falha confirmou a alteração semântica pretendida: os cenários positivos antigos precisavam declarar `SLOT_FINALIZED` nos bancos relevantes.
+- Fixtures atualizados para finalizar bancos e ancestrais nos casos positivos; adicionado teste de que `SLOT_DEAD` posterior revoga a elegibilidade mesmo após finalização.
+- Novo CI ainda pendente. Nenhum resultado de sucesso pode ser declarado até consulta ao run do HEAD atualizado.
+
+
+### Validação final da PR #35 — 19/11/2026
+- HEAD exato validado: `77b6702f1961c4591544b1c0a7f69da2fafa3cb4`.
+- Workflow `SMR tests`, run `44610018989`, job `135863814877`: SUCCESS.
+- `PYTHONPATH=src python -m unittest discover -s tests -v`: 604 testes executados em 4,133 s, sem falhas.
+- `python -m compileall -q src tests`: etapa concluída com sucesso.
+- A primeira execução no código antes da atualização dos fixtures falhou em 5 testes antigos que esperavam transições sem SLOT_FINALIZED; os fixtures foram corrigidos para refletir a nova regra. A validação final ocorreu no HEAD documental exato informado acima.
+- CI valida testes unitários e compilação; não autentica provider, não prova finalização em mainnet e não valida adapter operacional.
+- PR #35 continua Draft, aberta, mergeable e sem merge; PR #34 permanece sem alteração/merge; main não foi alterada.
+
+
+## 302. Auditoria de segurança final da PR #35 — 19/11/2026
+
+### Escopo revisado
+- Diff completo da PR #35: 7 arquivos, 247 adições e 2 remoções.
+- `geyser_bank_lineage.py`, `geyser_account_timeline.py` e testes bank-aware/lineage/timeline.
+- Estado do PR: OPEN, Draft, mergeable, sem merge; base `feat/solana-transaction-evidence-bundle`; HEAD de código validado `25279630ac0310343ac55425232ad65f68064efd`.
+
+### Resultado: achado que impede considerar a política completa
+- `AccountUpdateTimeline.transition_for()` preserva o caminho legado para updates sem `bank_id`: aceita predecessor linear imediato dentro do mesmo continuity_epoch.
+- Esse caminho não exige commitment/finality, como esperado para compatibilidade histórica, mas retorna a mesma estrutura `AccountStateTransition` usada pelo caminho bank-scoped, sem campo de proveniência/nível de confiança que distinga `LEGACY_UNSCOPED` de `BANK_PROVIDER_REPORTED_FINALIZED`.
+- Risco: um consumidor pode interpretar todas as transições retornadas como igualmente verificadas, apesar de as transições legadas não terem identidade bancária nem prova de finalização.
+- Não foi comprovado neste escopo que algum consumidor downstream esteja de fato promovendo tais transições a evidência operacional. Portanto, é uma lacuna de contrato/rotulagem, não um bug downstream observado.
+- Correção recomendada antes de adapter operacional: tipar a proveniência/confiança da transição (p.ex. `BANK_PROVIDER_REPORTED_FINALIZED` vs `LEGACY_UNSCOPED_UNVERIFIED`) ou separar APIs/coleções; qualquer consumidor que exija evidência finalizada deve rejeitar explicitamente o estado legado. Não inferir finalização para dados sem `bank_id`.
+
+### Propagação de conflitos e ancestrais
+- `_conflict()` marca a identidade afetada como conflicted e invalidated, inclusive quando o nó já existe; `_node()` também aplica a contaminação se o conflito preceder a materialização.
+- `is_bank_usable()` percorre os ancestrais explicitamente vinculados e retorna falso se encontrar nó morto/inválido; `is_bank_finalized()` também exige finalização e usabilidade de cada ancestral ligado.
+- `transition_for()` exige ambas as verificações para target e predecessor e, em pares cross-bank, exige `is_ancestor(...) is True`.
+- Revisão estática indica que conflito em ancestral ligado bloqueia a elegibilidade do descendente. Entretanto, a suíte atual não possui teste direto dedicado que crie descendente ligado, contamine depois o ancestral e prove que a transição deixa de ser retornada. Recomenda-se adicionar esse teste de regressão.
+- `SLOT_DEAD` mantém dead persistente; `EntryUpdateParent` invalida o banco específico; a transição legada não atravessa updates bank-scoped intermediários e respeita continuity_epoch/reconnect.
+
+### Conclusão
+- A regra bank-scoped está fail-closed para estados não finalizados e ancestrais explicitamente ligados, conforme o código revisado.
+- A PR #35 ainda não deve ser considerada completa para uso operacional até distinguir explicitamente transições legadas sem bank_id e adicionar o teste de taint de ancestral para descendente.
+- Nenhuma alteração de código foi feita nesta auditoria; apenas este registro foi acrescentado.
+- Nenhum provider foi conectado; nenhuma evidência foi promovida a VERIFIED; nenhuma execução financeira habilitada.
+
+### Próxima ação
+- Propor alteração mínima de contrato para rotular transições legadas como não verificadas e adicionar teste de regressão para conflito histórico de ancestral. Manter PR #35 Draft e sem merge até nova CI e revisão.
+
+
+## 303. Correções da auditoria PR #35 — implementação — 19/11/2026
+
+### Alterações implementadas na branch da PR #35
+- `AccountStateTransition` agora carrega `evidence_classification` explícito:
+  - `BANK_PROVIDER_REPORTED_FINALIZED` para transições bank-scoped que passaram os gates de usabilidade e finalização de ambos os bancos e ancestrais explicitamente ligados.
+  - `LEGACY_UNSCOPED_UNVERIFIED` para pareamento linear legado sem `bank_id`; preserva compatibilidade, mas não é evidência finalizada nem pode ser promovido a `VERIFIED`.
+- Docstrings e `docs/GEYSER-COMMITMENT-FINALITY-POLICY.md` esclarecem que consumidores que exigem evidência finalizada devem aceitar explicitamente apenas `BANK_PROVIDER_REPORTED_FINALIZED`.
+- Teste positivo verifica classificação bank-scoped.
+- Novo teste prova que transição sem `bank_id` retorna `LEGACY_UNSCOPED_UNVERIFIED`.
+- Novo teste de regressão constrói cadeia pai/filho finalizada, confirma inicialmente a transição e depois injeta blockhash conflitante no ancestral; a identidade ancestral é contaminada e a transição do descendente deixa de ser retornada.
+- Arquivos alterados: `src/smart_money_radar/data_sources/geyser_account_timeline.py`, `tests/test_geyser_bank_aware_timeline.py`, `docs/GEYSER-COMMITMENT-FINALITY-POLICY.md` e este Registro Mestre.
+
+### Estado de validação
+- Alterações gravadas na branch `fix/geyser-finalized-evidence-gate` por commits sequenciais.
+- HEAD atual da PR após as correções e atualização do registro: `19669153c460d49c5133653b7be8b79c05c45c5a`.
+- A revisão do diff confirmou a classificação mutuamente exclusiva no construtor: `LEGACY_UNSCOPED_UNVERIFIED` apenas quando `bank_id` está ausente; caso contrário, `BANK_PROVIDER_REPORTED_FINALIZED` somente após os gates bancários.
+- Workflow `SMR tests`, run `44611738575`, job `135869848269`: SUCCESS no merge ref da PR `8eb6d0136d35369f020ab76557e98d40a2f9aab1`, que incorpora o HEAD `19669153c460d49c5133653b7be8b79c05c45c5a` sobre a base `e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`.
+- `PYTHONPATH=src python -m unittest discover -s tests -v`: 606 testes executados em 4,133 s, todos aprovados; `python -m compileall -q src tests` também aprovado.
+- CI valida o conjunto integrado da PR, não provider mainnet nem adapter operacional.
+- PR #35 permanece Draft e sem merge; `main` permanece intacta.
+
+### Próxima ação
+- Fazer revisão final de segurança do diff após a CI aprovada; manter PR #35 Draft e sem merge até autorização explícita.
+
+
+## 304. Auditoria dos consumidores downstream de AccountStateTransition — 19/11/2026
+
+### Escopo e método
+- Revisado o snapshot da branch fix/geyser-finalized-evidence-gate, HEAD 4dc6b8bf8e70d2d26a0d80ebf7f1007e710e1e0a.
+- Inventário recursivo do Git tree: 54 módulos Python sob src/ e 60 arquivos de teste sob tests/.
+- Inspecionadas as referências de produção a AccountStateTransition, transition_for(), evidence_classification, is_bank_finalized(), is_bank_usable() e commitment_state(), além dos módulos de ingestão, storage/projections, serviços e CLI.
+
+### Resultado
+- Nenhum módulo Python de produção fora de data_sources/geyser_account_timeline.py referencia ou consome AccountStateTransition ou chama transition_for().
+- Nenhum consumidor downstream de produção atual foi encontrado que possa ignorar evidence_classification.
+- Chamadas transition_for() encontradas estão na própria implementação da Timeline e nos testes Geyser.
+- Os módulos de storage/projection, ingestão, serviços, dashboard e CLI revisados não promovem transições da Timeline a VERIFIED nem as consomem como autorização operacional.
+- Portanto, a classificação explícita adicionada na PR #35 não tem consumidor de produção atual que a ignore neste snapshot.
+
+### Limites
+- Esta conclusão é limitada ao snapshot e ao código versionado inspecionado; não prova comportamento de processos externos, forks ou código futuro.
+- Ainda não existe adapter operacional/provider integrado. Qualquer adapter futuro deve exigir explicitamente evidence_classification == BANK_PROVIDER_REPORTED_FINALIZED para caminhos que demandem evidência finalizada, e deve implementar separadamente autenticação do provider, identidade do endpoint, integridade do transporte, reconnect/rollback e controles de finalização.
+- PROVIDER_REPORTED_FINALIZED permanece uma declaração do provider, não prova criptográfica independente de consenso.
+- Nenhum arquivo de produção foi alterado nesta auditoria; apenas o Registro Mestre foi atualizado.
+
+### Conclusão e próxima ação
+- Auditoria downstream atual: sem achados de consumidores produtivos que ignorem a classificação.
+- PR #35 permanece Draft e sem merge; main intacta.
+- Próxima ação recomendada: revisão final do diff completo e confirmação do CI da implementação; depois, apresentar estado para decisão explícita sobre eventual merge, sem executá-lo automaticamente.
+
+
+## 305. Avaliação de integração PR #35 sobre PR #34 — 19/11/2026
+
+### Relação entre branches e PRs
+- PR #34: base `feat/damm-v2-economic-reconciliation`, HEAD `e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`, Draft, aberta, sem merge, mergeable.
+- PR #35: base `feat/solana-transaction-evidence-bundle`, HEAD `71acfdd603cf92d34b78298e6e8b9c524c48bae1`, Draft, aberta, sem merge, mergeable.
+- Comparação GitHub entre a base da PR #35 e seu HEAD: `ahead_by=19`, `behind_by=0`, `merge_base=e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`, idêntico ao HEAD/base atual da PR #34. Relação linear confirmada: PR #35 está diretamente construída sobre o HEAD da PR #34, sem divergência da base.
+- Diff específico da PR #35 contra a base PR #34: sete arquivos; política de finality, lineage, timeline, testes e Registro Mestre. Os arquivos e commits próprios da PR #34 permanecem como ancestralidade/base, não são reintroduzidos como mudanças da PR #35.
+
+### CI e compatibilidade
+- Após o commit documental da auditoria downstream, o workflow `SMR tests` executou no HEAD exato `71acfdd603cf92d34b78298e6e8b9c524c48bae1`: run `44612471809`, job `135872388784`, SUCCESS.
+- Etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso. Esta consulta confirma o sucesso do workflow completo; não foi obtido nesta consulta um total de testes distinto do registro anterior de 606.
+- O workflow é evento `pull_request` para PR #35 contra o HEAD/base `e3d3cba...` da PR #34, portanto valida a combinação proposta PR #34 + PR #35 no contexto de merge do GitHub.
+- A PR #35 preserva as alterações do bundle da PR #34 como ancestralidade e adiciona a política Geyser de finality; não foi observada divergência de base nem conflito reportado pelo GitHub.
+
+### Conclusão da avaliação
+- Integração proposta tecnicamente coerente: PR #35 é uma continuação direta da PR #34, sem commits da base ausentes ou divergentes.
+- O GitHub reporta ambas as PRs `mergeable=true`; PR #35 está Draft e não mergeada.
+- Isto é uma avaliação de compatibilidade, não autorização nem execução de merge. Nenhuma branch foi movida, nenhuma PR foi retargeted ou merged e `main` permanece intacta.
+- Sequência de integração, caso seja autorizada depois: integrar PR #35 na branch-base da PR #34 (não em `main`); confirmar o novo HEAD da PR #34 e executar/confirmar CI nesse HEAD atualizado; só então revisar a PR #34 como unidade antes de qualquer decisão posterior sobre `main`.
+
+### Estado
+- Avaliação concluída sem bloqueio estrutural identificado para a integração PR #35 -> PR #34.
+- Próxima ação: aguardar autorização expressa para integrar/mergear PR #35 na branch da PR #34. Não executar automaticamente.
+
+
+## 306. Integração da PR #35 na branch da PR #34 — 19/11/2026
+
+### Autorização e execução
+- Usuário autorizou explicitamente integrar a PR #35 à branch da PR #34; a autorização não incluiu merge em `main`.
+- Antes da integração, CI no HEAD exato da PR #35 `b1afc4b36d300a7f246c6d979ea7d96de23a3058` foi confirmado SUCCESS: workflow `SMR tests`, run `44612741281`.
+- PR #35 estava Draft; foi marcada Ready for review para permitir o merge autorizado.
+- PR #35 foi mergeada na sua base `feat/solana-transaction-evidence-bundle` usando merge commit, com expected head SHA `b1afc4b36d300a7f246c6d979ea7d96de23a3058`.
+- Merge commit: `bfba2128b47178d106723d7e284018923524a02e`.
+
+### Verificação posterior
+- PR #35: CLOSED/MERGED; merge commit confirmado `bfba2128b47178d106723d7e284018923524a02e`.
+- PR #34: continua OPEN/DRAFT, não mergeada; novo HEAD `bfba2128b47178d106723d7e284018923524a02e`, mergeable=true.
+- `main` verificada após o merge e permanece no SHA `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; não foi alterada.
+- CI do merge commit foi iniciado no evento PR #34; na consulta inicial, check `test` estava IN_PROGRESS. Não declarar a combinação final validada até concluir com SUCCESS.
+
+### Escopo e segurança
+- A integração ocorreu somente na branch da PR #34, conforme autorização.
+- Nenhuma alteração foi feita diretamente em `main`; nenhuma execução financeira ou conexão de provider foi habilitada.
+- PR #34 continua Draft para revisão do conjunto integrado. A integração da PR #35 não autoriza merge da PR #34 em `main`.
+
+### Próxima ação
+- Aguardar e verificar CI no HEAD `bfba2128b47178d106723d7e284018923524a02e` da PR #34. Se aprovado, revisar o conjunto integrado e atualizar este registro com o resultado. Nenhum merge adicional sem autorização expressa.
+
+
+## 307. Integração da PR #34 — SolanaTransactionEvidenceBundle e finality — 19/11/2026
+
+### Autorização e merge
+- O usuário autorizou explicitamente a integração em 19/11/2026.
+- PR #34: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/34
+- Branch de origem: `feat/solana-transaction-evidence-bundle`.
+- Branch de destino configurada na PR: `feat/damm-v2-economic-reconciliation` (não `main`).
+- HEAD aprovado: `268c5d523a9e1ae45b10b504de1cfe440fefa14b`.
+- CI pré-merge no HEAD exato: workflow `SMR tests`, run `44613188412`, SUCCESS.
+- PR #34 marcada Ready for review e mergeada pelo método merge.
+- Merge commit: `6d120e6b250a57539c39037843741442229c855e`.
+- GitHub confirmou PR #34 CLOSED/MERGED em 19/11/2026 20:56:20Z.
+- Branch `feat/damm-v2-economic-reconciliation` passou a apontar para o merge commit acima.
+- PR #23 continua como PR de integração subsequente; a atualização do HEAD da sua branch não equivale a merge da PR #23.
+
+### Validação pós-merge
+- Workflow `SMR tests`, run `44613711343`, executado no merge commit exato `6d120e6b250a57539c39037843741442229c855e`.
+- Conclusão: SUCCESS.
+- Job `test` (`135876655534`): SUCCESS.
+- Passos Install project, Run unit tests e Compile source and tests: SUCCESS.
+- A validação comprova o estado integrado no commit acima; não comprova integração com provider live, coleta de snapshots mainnet ou execução financeira.
+
+### Escopo integrado e limites preservados
+- Bundle transacional Solana com identidade por assinatura, slot, source_id e SHA-256 do payload canonicalizado; inventário de instruções, transfers e balance deltas derivados do mesmo payload.
+- Associação DAMM v2, contas resolvidas, contexts e transfer evidence vinculados ao bundle; reconciliação econômica recebe o bundle e falha fechado quando a evidência está incompleta ou inconsistente.
+- Snapshots históricos de mint/withheld preservam bytes brutos, hashes, source_id e ordering_domain_id; ordens de streams/domínios distintos não são comparadas sem garantia explícita.
+- Política Geyser commitment/finality integrada: PROCESSED/CONFIRMED não autorizam transição; bank-scoped transitions exigem estados e ancestrais explicitamente vinculados como PROVIDER_REPORTED_FINALIZED e utilizáveis; conflitos e SLOT_DEAD mantêm evidência inelegível.
+- `PROVIDER_REPORTED_FINALIZED` continua sendo declaração do provider, não autenticação criptográfica nem prova independente de consenso.
+- Nenhum adapter Geyser/provider live, snapshot mainnet capturado, sinal BUY/SELL, autorização de execução ou execução financeira foi criado por esta integração.
+
+### Estado das branches e próxima ação
+- PR #34: CLOSED/MERGED.
+- PR #35: CLOSED/MERGED dentro da PR #34.
+- Branch `feat/damm-v2-economic-reconciliation`: HEAD `6d120e6b250a57539c39037843741442229c855e`.
+- PR #23 permanece aberta/Draft, com destino `feat/damm-v2-referral-transfer-attribution`; não foi mergeada.
+- `main` verificada após o merge: permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Próxima ação: revisar a integração da PR #23 no seu destino configurado, sem alterar `main` e sem merge sem autorização explícita.
+
+
+## 308. Revisão técnica da PR #23 após integração PR #34/#35 — 19/11/2026
+
+### Snapshot revisado e CI
+- PR #23: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/23
+- Título: Reconcile DAMM v2 swap economics against token account deltas.
+- Estado durante a revisão: OPEN/DRAFT, mergeable=true, sem merge.
+- Branch head: `feat/damm-v2-economic-reconciliation`, snapshot revisado `8735ff4bd54b801925146df34825ee353efea54c`.
+- Branch base: `feat/damm-v2-referral-transfer-attribution`, HEAD `0567eb9c4981ba6ffc33e98a402292130667760a`.
+- Compare entre branch base e head: 298 commits à frente, 0 atrás; merge base igual ao HEAD da base.
+- CI no HEAD exato `8735ff4bd54b801925146df34825ee353efea54c`: workflow `SMR tests`, run `44613829010`, job `135876655534`, SUCCESS.
+- Log do job confirma 606 testes aprovados em 4,859s e `python -m compileall -q src tests` aprovado.
+- CI comprova suíte automatizada e compilação no snapshot; não comprova provider live, ingestão mainnet nem integridade operacional em produção.
+
+### Achados bloqueadores para aprovação técnica
+1. **Timeline persistida não aplica taint histórico de anomalias de transporte.**
+   - Em `src/smart_money_radar/storage/geyser_account_timeline_projection.py`, `rebuild()` seleciona a primeira delivery sequenciada de cada evento RAW (`MIN(delivery_id)` com `stream_sequence IS NOT NULL`) e reproduz o evento sem consultar a elegibilidade da sequência em `geyser_transport_anomalies`.
+   - A consulta de anomalias abertas é usada posteriormente apenas para calcular o checkpoint/coverage; não remove do replay os eventos afetados.
+   - Assim, uma sequência reutilizada por eventos distintos ou marcada por conflito de identidade pode deixar o primeiro evento da sequência dentro da Timeline, inclusive se a anomalia for posteriormente RESOLVED. O status administrativo RESOLVED não deve reabilitar evidência histórica.
+   - `AccountUpdateTimeline.transition_for()` não recebe a auditoria de anomalias de transporte; a classificação de banco/finality, por si só, não compensa a falta desse gate.
+   - Correção necessária: construir a projeção a partir de deliveries elegíveis segundo auditoria histórica por sequência, preservando taint mesmo após resolução administrativa; nenhuma sequência afetada pode fornecer transição elegível. Adicionar testes de colisão de sequência, conflito RAW, resolução administrativa posterior e ausência de transição para todas as deliveries afetadas.
+
+2. **A projeção não valida o SHA-256 armazenado do payload RAW antes de decodificar.**
+   - O SELECT de `rebuild()` lê `payload_bytes`, mas não seleciona `payload_sha256`; `_decode_event()` valida envelope/campos e Base64, mas não recalcula o digest contra o hash persistido.
+   - Um payload normalizado alterado para outro JSON ainda estruturalmente válido pode ser projetado apesar de divergir do hash registrado na linha RAW.
+   - O teste atual `test_bad_raw_payload_rolls_back_previous_generation` cobre Base64 inválido, mas não mutação válida que preserve a estrutura.
+   - Correção necessária: verificar SHA-256 dos bytes exatos antes de qualquer decode/projeção e falhar sem substituir a geração anterior; adicionar teste com alteração semântica válida e hash original preservado.
+
+### Achado de consistência/replay a resolver
+3. **Replay em ordem de chegada não recupera uma lacuna preenchida tardiamente.**
+   - A projeção ordena por `delivery_id`; `AccountUpdateTimeline.add()` classifica uma sequência menor/igual à última observada como conflito.
+   - O RAW store permite que a chegada tardia de uma sequência ausente feche a lacuna do checkpoint de transporte, mas o rebuild continua vendo a ordem de chegada e pode manter conflito/gap na Timeline.
+   - Exemplo a cobrir: sequência 1, depois 3, depois chegada tardia da 2. Definir explicitamente se backfill/replay pode reconstruir a ordem lógica pela sequência dentro do mesmo stream; se não puder, documentar a perda de elegibilidade como política, sem declarar continuidade completa. Não misturar streams/domínios diferentes.
+
+### Pontos aprovados nesta revisão
+- Bundle Solana vincula inventory, transfers e balance deltas ao mesmo payload canonicalizado e não produz classificação BUY/SELL.
+- Reconciliação DAMM v2 agrega deltas por token account e falha fechado diante de transferências não atribuídas que afetem contas do swap.
+- Snapshot de mint/withheld exige proveniência, hashes, assinatura/slot/ordem e ordering_domain_id compatíveis.
+- Estado withheld permanece EXPECTED_NOT_VERIFIED até conferência de TLV pre/post; VERIFIED depende de snapshots vinculados.
+- Política de finality preserva a distinção entre declaração PROVIDER_REPORTED_FINALIZED e prova criptográfica independente.
+- Storage RAW e recovery permanecem offline; nenhum adapter/provider live foi encontrado nesta etapa.
+
+### Decisão da revisão e estado
+- **PR #23 não aprovada para merge neste snapshot.** CI verde e mergeable=true não resolvem os achados de integridade acima.
+- Nenhum arquivo de produção foi alterado nesta revisão.
+- Registro Mestre atualizado nesta seção para preservar os achados e evitar reauditoria.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhum merge, retarget ou alteração de main foi executado.
+- Próxima ação recomendada: corrigir os dois bloqueadores de integridade em branch de trabalho, adicionar testes de regressão, validar CI no novo HEAD e então repetir a revisão focada. O achado de replay tardio deve ser resolvido/documentado antes de qualquer promoção operacional.
+
+
+## 309. Correções de integridade da Timeline Geyser — PR #36 — 19/11/2026
+
+### Branch isolada e escopo
+- Usuário autorizou explicitamente implementar os achados da revisão da PR #23 em 19/11/2026.
+- Para preservar a branch da PR #23 e a `main`, foi criada branch isolada `fix/geyser-timeline-raw-integrity` a partir do snapshot revisado `0d1188370d622aee34b3f2ea7060c8f606aa7034`.
+- PR stacked Draft #36: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/36
+- Destino da PR #36: `feat/damm-v2-economic-reconciliation`, que é a branch HEAD da PR #23; a PR #36 não foi mergeada.
+- PR #23 permanece aberta/Draft; sua branch não foi alterada por esta implementação.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+### Implementação
+- `src/smart_money_radar/storage/geyser_account_timeline_projection.py`:
+  - `PROJECTION_VERSION` incrementada de 1 para 2.
+  - Antes de decodificar payload normalizado selecionado para projeção, recalcula SHA-256 sobre os bytes RAW exatos e exige igualdade com `payload_sha256`; divergência lança ValueError dentro da transação, preservando a geração anterior.
+  - Delivery só é elegível se não existir anomalia histórica para a tupla exata `(source_id, stream_id, stream_sequence)`, independentemente de status OPEN ou RESOLVED.
+  - Evento lógico com qualquer conflito persistido em `geyser_raw_conflicts` é excluído da Timeline derivada; RAW e registros de conflito permanecem intactos.
+  - Delivery elegível é ordenada por `source_id, stream_id, stream_sequence, delivery_id`; sequência só é ordenada dentro da mesma stream. Troca de stream permanece fronteira de continuidade, sem comparação numérica entre streams.
+- `tests/test_geyser_account_timeline_projection.py` adiciona cobertura para: sequência contaminada mesmo após RESOLVED; identidade RAW conflitante excluída; mutação JSON estruturalmente válida com hash antigo causa rollback da geração; sequência tardia 2 reconstruída entre 1 e 3 no replay integral.
+- `docs/GEYSER-ACCOUNT-TIMELINE.md` documenta o contrato persistente v2, taint histórico, integridade SHA-256 e semântica de replay.
+
+### Evidência de CI
+- Commit de código/testes: `ceeaf82f1873dfdbe873120789d16dc08a79750b`.
+- Workflow `SMR tests`, run `44614876540`, job `135880748123`: SUCCESS.
+- Log do job: 609 testes aprovados em 4,712s; `python -m compileall -q src tests` aprovado.
+- Testes novos confirmados individualmente no log:
+  - `test_resolved_transport_anomaly_still_taints_every_delivery_of_sequence`
+  - `test_raw_identity_conflict_taints_original_event_from_timeline`
+  - `test_valid_json_payload_mutation_fails_raw_hash_and_rolls_back_generation`
+  - `test_late_arriving_sequence_is_replayed_in_stream_order`
+- CI push no commit de código/testes `ceeaf82f1873dfdbe873120789d16dc08a79750b`: run `44614876540`, job `135880748123`, SUCCESS, 609 testes em 4,712s e compileall SUCCESS. CI pull_request após a atualização da política documental: run `44615009546`, head `48b58391f4e091a85a742e06166ec62cca1d9259`, job `135881222296`, SUCCESS; log confirma os mesmos 609 testes em 4,713s, os quatro testes novos e compileall SUCCESS. O HEAD final da branch passou depois a `4e699dd1f57c967c0e00566c77b803580b766a93` apenas por atualização do Registro Mestre; nenhum arquivo de código ou teste foi alterado após o snapshot validado.
+
+### Limites e pendências
+- A revisão não cria adapter live nem consulta provider; não altera RAW; não infere sequência ausente; não declara fork canônico; não habilita execução financeira.
+- A projeção continua agrupando timelines por source; ao alternar streams, o modelo cria uma fronteira de continuidade conservadora. Não há comparação de sequência entre streams.
+- PR #36 está OPEN/DRAFT, sem merge. PR #23 está OPEN/DRAFT e ainda não aprovada para merge até a correção ser integrada e reavaliada.
+- Próxima ação: confirmar CI no HEAD final da PR #36, revisar o diff completo e os testes; então reavaliar se os bloqueadores da PR #23 foram resolvidos. Nenhum merge sem autorização explícita.
+
+
+## 310. Integração da PR #36 na branch da PR #23 — 19/11/2026
+
+### Autorização e merge
+- Em resposta ao pedido explícito de autorização para integrar a PR #36 na branch da PR #23, o usuário respondeu “Continua”, autorizando essa integração específica.
+- PR #36: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/36.
+- Branch de origem: `fix/geyser-timeline-raw-integrity`.
+- Branch de destino: `feat/damm-v2-economic-reconciliation`, HEAD da PR #23.
+- Antes do merge, PR #36 estava OPEN, Ready for review, mergeable=true, com HEAD exato `96ac001d8dc25b83a70fea6e171479f2a5cfbb25`.
+- CI no HEAD exato da PR #36: workflow `SMR tests`, run `44615167545`, SUCCESS; etapas Run unit tests e Compile source and tests SUCCESS.
+- PR #36 foi mergeada com método `merge`, usando expected_head_sha `96ac001d8dc25b83a70fea6e171479f2a5cfbb25`.
+- Merge commit: `5e61f7ac45d4ac205082b3cf638746d7b9359874`.
+- GitHub confirmou PR #36 CLOSED/MERGED em 19/11/2026.
+- PR #23 passou a apontar para o merge commit `5e61f7ac45d4ac205082b3cf638746d7b9359874`; segue OPEN/DRAFT, sem merge.
+
+### CI pós-merge e estado da PR #23
+- Dois checks `test` executaram no merge commit exato `5e61f7ac45d4ac205082b3cf638746d7b9359874`:
+  - workflow run `44616027232`, job `135884828901`: SUCCESS.
+  - workflow run `44616038524`, job `135884866313`: SUCCESS.
+- Em ambos os jobs, Run unit tests e Compile source and tests concluíram SUCCESS. Não registrar total de testes deste snapshot sem log que o confirme.
+- Após a conclusão, GitHub reportou PR #23 OPEN/DRAFT, mergeable=true.
+- Compare da PR #23: branch head `feat/damm-v2-economic-reconciliation` está 305 commits à frente e 0 atrás da base `feat/damm-v2-referral-transfer-attribution`; merge base `0567eb9c4981ba6ffc33e98a402292130667760a`.
+- `main` foi consultada após o merge e permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma alteração em main.
+
+### Efeito e limites
+- Os dois bloqueadores identificados na revisão anterior da PR #23 foram corrigidos na Timeline persistida: taint histórico de anomalias/conflitos RAW e verificação SHA-256 dos bytes RAW, com rollback.
+- Replay de sequência tardia foi definido e testado por ordenação dentro da mesma stream, sem comparar sequências entre streams.
+- As correções permanecem offline. Não houve integração de provider live, captura mainnet, autorização de BUY/SELL ou execução financeira.
+- A aprovação técnica anterior foi específica para as correções da PR #36; não equivale a aprovação final de todo o conjunto da PR #23 nem autorização para merge da PR #23 em sua base ou em `main`.
+
+### Próxima ação
+- Fazer revisão integrada focada da PR #23 no novo HEAD `5e61f7ac45d4ac205082b3cf638746d7b9359874`, com atenção às interfaces entre DAMM v2, SolanaTransactionEvidenceBundle, Token-2022 snapshots e Timeline/finality Geyser.
+- Apresentar achados e decisão técnica antes de qualquer merge da PR #23. `main` permanece intocada.
+
+## 311. Revalidação focada da PR #23 após integração PR #36 — 19/11/2026
+
+### Snapshot e evidências
+- Código integrado revisado no merge commit da PR #36: `5e61f7ac45d4ac205082b3cf638746d7b9359874`.
+- PR #23 permaneceu OPEN/DRAFT e não mergeada; branch de destino `feat/damm-v2-referral-transfer-attribution`.
+- CI pós-merge no commit `5e61f7ac45d4ac205082b3cf638746d7b9359874`: runs `44616027232` e `44616038524`, ambos SUCCESS; em ambos, Run unit tests e Compile source and tests SUCCESS.
+- Compare da PR #23: 305 commits ahead, 0 behind, merge base `0567eb9c4981ba6ffc33e98a402292130667760a`.
+- GitHub reportou PR #23 mergeable=true após atualização de estado; continua Draft.
+- HEAD documental posterior do Registro Mestre: `c4514e42c10b8a2a39bdefe25db7537f877393a3`. Esse commit altera apenas este registro; CI de código comprovado permanece no merge commit `5e61f7ac...`.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+### Revalidação dos achados anteriores
+- O gate de replay agora exclui qualquer delivery cuja tupla `(source_id, stream_id, stream_sequence)` tenha anomalia histórica, sem reabilitação por status RESOLVED.
+- Identidades de evento RAW com conflito registrado são excluídas da Timeline derivada.
+- SHA-256 é recalculado sobre os bytes persistidos exatos antes de decodificação; divergência aborta a transação e preserva a geração anterior.
+- Replay integral ordena por source/stream/sequence, permitindo inserir sequência tardia dentro da mesma stream sem comparar números de sequência entre streams.
+- Quatro testes de regressão específicos cobrem os casos anteriores; CI do merge commit concluiu com sucesso.
+- Os dois bloqueadores de integridade da revisão da PR #23 e o achado de replay tardio foram resolvidos no snapshot integrado.
+
+### Decisão e limites
+- Revisão focada pós-integração: os bloqueadores previamente registrados para a Timeline persistida foram eliminados; não foi identificado bloqueio novo decorrente da integração da PR #36.
+- A PR #23 pode avançar para a etapa de decisão de integração, mas permanece OPEN/DRAFT. Esta conclusão não executa aprovação formal no GitHub nem merge.
+- Ainda não existe adapter/provider live integrado, ingestão mainnet contínua, pipeline operacional de snapshots históricos, geração de SwapObservation/BUY/SELL ou execução financeira. A aprovação da camada offline não deve ser confundida com prontidão operacional do SMR.
+- Nenhuma alteração de código foi feita durante esta revalidação; somente este Registro Mestre foi atualizado.
+
+### Próxima ação
+- Apresentar ao usuário a decisão técnica e aguardar autorização expressa separada antes de marcar a PR #23 como Ready for review ou fazer merge na branch-base. `main` continua protegida e não autorizada para integração.
+
+## 312. Integração da PR #23 na branch-base da PR #22 — 19/11/2026
+
+### Autorização e merge
+- Usuário autorizou continuar com a integração da PR #23 na branch-base `feat/damm-v2-referral-transfer-attribution` em 19/11/2026.
+- PR #23 foi revalidada no HEAD `d08c146cb4f517842b1a950c08e27aad6f0bbd6b`; check `test` run `44616249711`, job `135885605685`, SUCCESS. Run unit tests e Compile source and tests: SUCCESS.
+- Compare imediatamente antes do merge: 307 commits ahead, 0 behind; merge base `0567eb9c4981ba6ffc33e98a402292130667760a`.
+- PR #23 foi marcada Ready for review e mergeada pelo método merge, com expected_head_sha `d08c146cb4f517842b1a950c08e27aad6f0bbd6b`.
+- Merge commit: `e45d9483f852b832bea81530e3a404578953a0de`.
+- GitHub confirmou PR #23 CLOSED/MERGED em 19/11/2026 21:12:16Z.
+- Branch de destino `feat/damm-v2-referral-transfer-attribution`, que é a head da PR #22, foi atualizada para `e45d9483f852b832bea81530e3a404578953a0de`.
+- PR #22 não foi mergeada; `main` não foi alterada.
+
+### CI pós-merge
+- No commit exato `e45d9483f852b832bea81530e3a404578953a0de`, GitHub iniciou dois checks `test`: run `44616389430` (job `135886106076`) e run `44616402476` (job `135886150325`).
+- Na última consulta, ambos estavam IN_PROGRESS. Não declarar CI pós-merge aprovado até confirmação SUCCESS.
+- CI aprovado no HEAD pré-merge da PR #23 permanece run `44616249711`; isso não substitui a validação do merge commit.
+
+### Estado e limites
+- PR #23: CLOSED/MERGED na branch da PR #22.
+- PR #22: permanece como PR de integração subsequente, sem merge.
+- `main` consultada após o merge e permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- A integração reúne a reconciliação econômica DAMM v2, bundle de evidências Solana, política de finality e correções de integridade da Timeline Geyser na branch de trabalho.
+- Não há, por esta integração, provider live habilitado, ingestão mainnet contínua, sinal BUY/SELL, autorização de execução ou operação financeira.
+
+### Próxima ação
+- Aguardar e verificar os dois checks no merge commit `e45d9483f852b832bea81530e3a404578953a0de`; se ambos SUCCESS, atualizar o Registro Mestre e seguir com revisão integrada da PR #22. Não fazer merge da PR #22 sem autorização expressa.
+
+### Complemento da validação pós-merge — 19/11/2026
+- Os dois checks no merge commit `e45d9483f852b832bea81530e3a404578953a0de` foram concluídos SUCCESS:
+  - Run `44616389430`, job `135886106076`: SUCCESS; Run unit tests e Compile source and tests SUCCESS.
+  - Run `44616402476`, job `135886150325`: SUCCESS; Run unit tests e Compile source and tests SUCCESS.
+- PR #22 consultada após a integração: OPEN/DRAFT, sem merge. GitHub reportou `mergeable=false` no snapshot consultado; isso precisa ser investigado na revisão da PR #22, não deve ser tratado como aprovado ou como conflito específico sem diagnóstico adicional.
+- `main` novamente verificada: permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Registro Mestre atualizado para refletir a conclusão dos dois checks. Este commit é exclusivamente documental.
+
+## 313. Diagnóstico de mergeability e revisão técnica integrada da PR #22 — 19/11/2026
+
+### Diagnóstico do estado de merge
+- Após a integração PR #23 → branch da PR #22, uma leitura inicial reportou `mergeable=false` no estado da PR #22.
+- Nova consulta direta ao endpoint GitHub da PR #22 confirmou `mergeable=true` e `mergeable_state=clean`; a consulta normalizada também retornou `mergeable=true`.
+- Compare atual entre base `feat/token2022-transfer-checked-with-fee` e head `feat/damm-v2-referral-transfer-attribution`: 327 commits ahead, 0 behind; merge base `46dcf389d4cb06973a5d82967ba99fa3965121be`.
+- Conclusão: o `mergeable=false` anterior era um estado transitório/desatualizado de cálculo do GitHub; não foi encontrado conflito ativo no snapshot posterior. Não foi necessário resolver conflitos nem alterar código.
+
+### CI no HEAD exato da PR #22
+- HEAD consultado: `d9ab2fbf78579449e3ed96639c9aa9a49b8d3f76`.
+- Workflow run `44616500146`, job `135886496789`: SUCCESS.
+- Logs confirmam `Ran 609 tests in 4.697s`, `OK`; `python -m compileall -q src tests` também SUCCESS.
+
+### Revisão técnica integrada
+- Escopo revisado: atribuição DAMM v2 input/output/referral, matriz FeeMode, inventário de instruções externas/CPI, decoders Token-2022, bundle de evidências Solana, reconciliação econômica por lote, snapshots de mint/withheld, Timeline Geyser, projeção persistida, RAW integrity e política de finality.
+- Referral: código exige descendência CPI confiável no mesmo outer instruction e anterior ao EvtSwap2; seleciona vault pela matriz FeeMode; valida destino referral, mint, Token Program, tipo checked, amount u64 positivo, fee explícita quando aplicável e não reutilização de transferências.
+- Testes de FeeMode cobrem as seis combinações collect_fee_mode/trade_direction; testes de referral cobrem vault token A/B, ausência, duplicidade, divergência de amount, flag incompatível, fee inválida e ordenação CPI.
+- Reconciliação econômica é por lote completo de swaps e por token account; não reparte arbitrariamente deltas entre swaps sequenciais; rejeita transferências não atribuídas que toquem contas envolvidas, snapshots incompletos, owner divergente e incompatibilidade bruto/líquido.
+- Bundle Solana deriva inventário, transfers, deltas, associações e contextos do mesmo payload canonicalizado; a reconciliação recebe o bundle de factory, sem listas independentes.
+- Correções PR #36 permanecem presentes: hash SHA-256 RAW verificado antes de projeção, taint histórico de anomalias/conflictos e replay em ordem de sequência dentro da stream.
+- Política Geyser mantém distinção entre provider-reported finalized e prova independente de consenso; estados legacy sem bank_id não podem ser promovidos a VERIFIED.
+- Não foi identificado novo bloqueador técnico no escopo revisado que impeça a conclusão desta fatia de atribuição/reconciliação offline.
+
+### Limites e decisão
+- Resultado da revisão: tecnicamente consistente para integração na cadeia de branches de desenvolvimento; não equivale a declarar o SMR operacional ou pronto para capital real.
+- `ATTRIBUTED` continua distinto de `MATCHED`; `RECONCILED` valida deltas base do lote, mas withheld/mint fee permanecem `EXPECTED_NOT_VERIFIED` até os verificadores históricos apropriados.
+- Não existe adapter live de provider validado nesta etapa; provenance fields e ordering domain dependem de implementação e garantias do coletor futuro.
+- PR #22 permanece OPEN/DRAFT. Esta revisão não alterou o estado da PR, não submeteu aprovação formal GitHub e não executou merge.
+- `main` permanece protegida e sem alteração; último SHA verificado `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+### Próxima ação
+- Próximo passo é decidir separadamente se a PR #22 deve ser marcada Ready for review e integrada à sua branch-base `feat/token2022-transfer-checked-with-fee`. Nenhum merge está autorizado por esta revisão.

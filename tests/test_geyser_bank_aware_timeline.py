@@ -141,6 +141,36 @@ class BankAwareAccountTimelineTests(unittest.TestCase):
         self.assertEqual(timeline.add(replay).status, "duplicate")
         self.assertEqual(len(timeline.events_for("wallet-account")), 1)
 
+    def test_legacy_unscoped_pair_does_not_skip_intervening_bank_scoped_write(self):
+        timeline = AccountUpdateTimeline()
+        before = normalize_account_update(
+            {
+                "slot": 100,
+                "account": {
+                    "pubkey": "wallet-account", "lamports": 1, "owner": "token-program",
+                    "executable": False, "rent_epoch": 0, "data": b"legacy",
+                    "write_version": 1, "txn_signature": "legacy-before",
+                },
+            },
+            stream_id="stream-1", stream_sequence=1, source="validator-A",
+        )
+        fork_scoped = _account(101, 10, "fork-write", 2, write_version=2)
+        target = normalize_account_update(
+            {
+                "slot": 102,
+                "account": {
+                    "pubkey": "wallet-account", "lamports": 3, "owner": "token-program",
+                    "executable": False, "rent_epoch": 0, "data": b"legacy-target",
+                    "write_version": 3, "txn_signature": "legacy-target",
+                },
+            },
+            stream_id="stream-1", stream_sequence=3, source="validator-A",
+        )
+        timeline.add(before)
+        timeline.add(fork_scoped)
+        timeline.add(target)
+        self.assertEqual(timeline.transition_for("legacy-target"), ())
+
 
 if __name__ == "__main__":
     unittest.main()

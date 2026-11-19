@@ -24,7 +24,7 @@ from smart_money_radar.storage.geyser_recovery_store import SQLiteGeyserRecovery
 
 
 PROJECTION_NAME = "geyser_account_timeline"
-PROJECTION_VERSION = 1
+PROJECTION_VERSION = 2
 
 
 def _u64(value, field):

@@ -8,7 +8,7 @@ from smart_money_radar.data_sources.geyser_bank_lineage import (
     NormalizedSlotUpdate,
 )
 from smart_money_radar.data_sources.geyser_ingestion import ingest_normalized_event
-from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore\nfrom smart_money_radar.storage.geyser_account_timeline_projection import (\n    SQLiteGeyserAccountTimelineProjection,\n)\nfrom smart_money_radar.storage.geyser_recovery_store import SQLiteGeyserRecoveryStore
 
 
 class GeyserNormalizedIngestionTests(unittest.TestCase):
@@ -47,6 +47,38 @@ class GeyserNormalizedIngestionTests(unittest.TestCase):
         checkpoint = store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")
         self.assertEqual(checkpoint["contiguous_sequence"], 1)
         store.close()
+
+    def test_resolved_sequence_collision_stays_excluded_from_timeline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "smr_geyser.sqlite"
+            store = SQLiteGeyserRawStore(database)
+            first = ingest_normalized_event(
+                store, self.account(sequence=1, data=b"first"),
+                schema_version="geyser-v16",
+            )
+            ingest_normalized_event(
+                store, self.account(sequence=1, data=b"second"),
+                schema_version="geyser-v16",
+            )
+            anomalies = store.list_transport_anomalies(
+                "yellowstone-mainnet", "stream-a", status="OPEN"
+            )
+            self.assertEqual(len(anomalies), 1)
+            store.resolve_transport_anomaly(
+                anomalies[0]["anomaly_id"], "Reviewed offline fixture"
+            )
+
+            projection = SQLiteGeyserAccountTimelineProjection(database)
+            summary = projection.rebuild()
+            self.assertEqual(summary["replayed_event_count"], 0)
+            self.assertEqual(summary["skipped_count"], 2)
+            recovery = SQLiteGeyserRecoveryStore(database)
+            checkpoint = recovery.get_projection_checkpoint(
+                "geyser_account_timeline", "yellowstone-mainnet"
+            )
+            self.assertTrue(checkpoint["continuity_interrupted"])
+            self.assertEqual(checkpoint["input_coverage_status"], "PARTIAL")
+            store.close()
 
     def test_reconnect_replay_keeps_event_id_and_adds_delivery(self):
         store = SQLiteGeyserRawStore(":memory:")

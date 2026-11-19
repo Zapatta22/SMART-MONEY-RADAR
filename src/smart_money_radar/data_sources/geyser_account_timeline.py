@@ -61,6 +61,7 @@ class _TimelineEntry:
     update: NormalizedAccountUpdate
     continuity_epoch: int
     baseline: bool = False
+    continuity_baseline: bool = False
 
 
 class AccountUpdateTimeline:
@@ -200,10 +201,13 @@ class AccountUpdateTimeline:
         if update.event_fingerprint in self._fingerprints:
             return TimelineInsertResult("duplicate", gap=gap)
 
-        baseline = update.pubkey not in self._events or update.pubkey in self._needs_baseline
-        if baseline:
+        continuity_baseline = update.pubkey in self._needs_baseline
+        baseline = update.pubkey not in self._events or continuity_baseline
+        if continuity_baseline:
             self._needs_baseline.discard(update.pubkey)
-        entry = _TimelineEntry(update, self._continuity_epoch, baseline)
+        entry = _TimelineEntry(
+            update, self._continuity_epoch, baseline, continuity_baseline
+        )
         entries = self._events.setdefault(update.pubkey, [])
         entries.append(entry)
         entries.sort(key=lambda item: item.update.ordering_key)
@@ -259,6 +263,7 @@ class AccountUpdateTimeline:
                 if (
                     update.txn_signature != txn_signature
                     or index == 0
+                    or entry.continuity_baseline
                     or (entry.baseline and update.bank_id is None)
                 ):
                     continue

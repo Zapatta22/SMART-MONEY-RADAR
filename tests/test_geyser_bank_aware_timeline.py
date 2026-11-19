@@ -184,6 +184,30 @@ class BankAwareAccountTimelineTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].pre_state.txn_signature, "before")
 
+    def test_reconnect_baseline_cannot_be_bypassed_by_late_ancestor_write(self):
+        timeline = AccountUpdateTimeline()
+        timeline.add_block_meta(_block(100, 10, "parent-hash", 99, "grandparent-hash"))
+        timeline.add_block_meta(_block(101, 11, "child-hash", 100, "parent-hash", 2))
+        timeline.add(_account(99, 9, "old-account-state", 1, write_version=1))
+        # A gap on another observed account marks wallet-account as requiring a new baseline.
+        other = normalize_account_update(
+            {
+                "slot": 101,
+                "account": {
+                    "pubkey": "other-account", "lamports": 1, "owner": "token-program",
+                    "executable": False, "rent_epoch": 0, "data": b"gap",
+                    "write_version": 1, "txn_signature": "gap",
+                },
+            },
+            stream_id="stream-1", stream_sequence=3, source="validator-A",
+        )
+        timeline.add(other)
+        target = _account(101, 11, "target-after-gap", 4, write_version=11)
+        timeline.add(target)
+        late_ancestor = _account(100, 10, "late-ancestor", 5, write_version=10)
+        timeline.add(late_ancestor)
+        self.assertEqual(timeline.transition_for("target-after-gap"), ())
+
 
 if __name__ == "__main__":
     unittest.main()

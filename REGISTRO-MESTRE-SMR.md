@@ -2752,16 +2752,19 @@ Revisar e formalizar o contrato de proveniência dos snapshots históricos de mi
 ## 299. Proveniência vinculada de snapshots históricos mint/withheld — 19/11/2026
 
 ### Contrato implementado
-- Snapshots históricos de mint e withheld agora carregam `source_id` e `transaction_payload_sha256`, vinculando a evidência à mesma origem e ao payload transacional usado no bundle.
-- `build_damm_v2_mint_fee_config_snapshots()` exige `source_id` do prestate igual ao da transação e SHA-256 válido do payload RPC. Calcula o SHA-256 dos bytes brutos do mint prestate, preserva esses bytes no snapshot e deriva `config_state` diretamente deles.
-- `verify_damm_v2_mint_fee_config()` exige source ID e payload hash esperados; compara assinatura, source ID, payload hash, epoch, slot, ordem, mint e posição exata da transferência.
+- Snapshots históricos de mint e withheld agora carregam `source_id`, `ordering_domain_id` e `transaction_payload_sha256`, vinculando a evidência à mesma origem, ao mesmo domínio de ordenação e ao payload transacional usado no bundle.
+- `build_damm_v2_mint_fee_config_snapshots()` exige `source_id` e `ordering_domain_id` do prestate iguais aos da transação, além de SHA-256 válido do payload RPC. Calcula o SHA-256 dos bytes brutos do mint prestate, preserva esses bytes no snapshot e deriva `config_state` diretamente deles.
+- `verify_damm_v2_mint_fee_config()` exige source ID, ordering domain e payload hash esperados; compara assinatura, fonte, domínio, payload hash, epoch, slot, ordem, mint e posição exata da transferência.
 - O verifier recalcula o hash dos bytes do mint e decodifica novamente o TLV; rejeita bytes alterados ou config_state que não corresponda aos bytes.
 - `DammV2WithheldFeeSnapshot` preserva bytes brutos pre/post, SHA-256 individuais, source ID, hash do payload e referências separadas.
-- `verify_damm_v2_withheld_fee_deltas()` recalcula os hashes, redecodifica TransferFeeAmount dos bytes brutos e compara com `decoded_delta`; também exige source ID e hash do payload iguais aos da transação, assinatura/slot/ordem e `pre < transaction < post`.
+- `verify_damm_v2_withheld_fee_deltas()` recalcula os hashes, redecodifica TransferFeeAmount dos bytes brutos e compara com `decoded_delta`; também exige source ID, ordering domain e hash do payload iguais aos da transação, assinatura/slot/ordem e `pre < transaction < post`.
 - `reconcile_solana_transaction_damm_v2_bundle()` propaga source ID e payload SHA-256 da identidade raiz para a reconciliação econômica. O caminho de cálculo de fee (`_calculate_fee_from_mint_snapshot`) também recalcula o hash e redecodifica os bytes brutos antes de usar a configuração.
 
 ### Testes negativos adicionados
 - Snapshot de mint com source ID diferente.
+- Snapshot de mint com ordering domain diferente.
+- Snapshot withheld com ordering domain diferente.
+- Builder de mint rejeita prestate de outro ordering domain.
 - Snapshot withheld com source ID diferente.
 - Hash do payload transacional divergente para mint.
 - Hash do payload transacional divergente para withheld.
@@ -2771,10 +2774,10 @@ Revisar e formalizar o contrato de proveniência dos snapshots históricos de mi
 - Testes anteriores de assinatura, slot, ordem, posição de inicialização, configuração e divergência de taxas continuam ativos.
 
 ### Validação
-- HEAD de código validado: `2470284ae8e5b584dd81958ba10d520beebc1366`.
-- Workflow `SMR tests`, run `44604894489`, job `135845841534`: SUCCESS.
-- 595 testes em 5,240 s; `python -m compileall -q src tests` aprovado.
-- O HEAD `6527b70d...` também passou com 595 testes; a validação final inclui a checagem adicional de bytes brutos dentro do caminho de cálculo de fee.
+- HEAD de código validado: `7d6d30efd683668a258b8764d35e2585b80224ba`.
+- Workflow `SMR tests`, run `44606196108`, job `135850416062`: SUCCESS.
+- 598 testes em 4,818 s; `python -m compileall -q src tests` aprovado.
+- A validação inclui a distinção explícita entre fonte e domínio de ordenação; streams/conexões diferentes não podem ser comparadas apenas por compartilhar `source_id`.
 - O CI valida testes sintéticos/unitários e compilação; não comprova autenticidade do provider, coleta Geyser real, ordering real, mainnet ou execução em produção.
 
 ### Limites explícitos
@@ -2786,3 +2789,32 @@ Revisar e formalizar o contrato de proveniência dos snapshots históricos de mi
 
 ### Próxima ação
 Auditar o diff completo da PR #34 e verificar se o contrato de snapshots, o bundle e a documentação estão coerentes. Depois, definir o contrato do adapter de ingestão Geyser/provider-neutral, sem conectar execução financeira.
+## 300. Contrato do adapter provider-neutral de snapshots históricos — 19/11/2026
+
+### Decisão de arquitetura
+- Criado `docs/SOLANA-HISTORICAL-SNAPSHOT-INGESTION-CONTRACT.md`.
+- Separadas três identidades: `source_id` (namespace estável provider/node), `ordering_domain_id` (domínio em que números de ordem são comparáveis) e `stream_id` (conexão/transporte).
+- Mesmo `source_id` não autoriza comparar sequência de streams diferentes. Para snapshots, `transaction_order`, `pre_snapshot_order` e `post_snapshot_order` precisam pertencer ao mesmo `ordering_domain_id`.
+- Em uma stream Yellowstone multiplexada, o domínio pode corresponder à conexão/stream; reconnect cria novo domínio, salvo prova de cursor global comum fornecida pelo provider.
+- `stream_sequence` não pode ser inferida de slot, write_version, timestamp, delivery_id, índice de instrução ou sequência de outra stream. `slot/write_version` permanecem metadados de ordem de ledger/account writes, com semântica distinta.
+- Builder e verifiers de mint/withheld agora exigem e comparam o domínio de ordenação. O caminho de cálculo de fee de mint também rejeita domínio diferente.
+- `reconcile_solana_transaction_damm_v2_bundle()` aceita `transaction_ordering_domain_id` explicitamente e propaga ao reconciliador.
+
+### Contrato do adapter definido
+- Normalizar transaction observations e account updates preservando payload/bytes originais, signature, slot, pubkey, owner, write_version, bank/fork metadata, source ID, ordering domain, stream ID e sequência.
+- Construir mint prestate apenas com bytes capturados antes da transação, mesma fonte/domínio, ordem menor e inventário de instruções completo; a versão atual também exige mesmo slot.
+- Construir withheld pre/post apenas de transição de token account vinculada à assinatura exata, mesma fonte/domínio e ordem `pre < transaction < post`; sem poststate vinculado, não inferir.
+- Gap, reconnect, baseline, fork não resolvido, conflito, owner/mint/pubkey divergente ou stream/domain diferente tornam a evidência inelegível.
+- A política de commitment/finality ainda precisa ser formalizada e representada de forma tipada antes de promover snapshots a VERIFIED em produção.
+- O documento define critérios de aceitação e testes de streams diferentes, gaps/reconnects, forks, assinatura, owner/mint, bytes adulterados e replay.
+- Nenhum provider foi conectado; Yellowstone/Helius continuam fontes candidatas, não dependências operacionais.
+
+### Validação
+- HEAD de código validado: `7d6d30efd683668a258b8764d35e2585b80224ba`.
+- CI `SMR tests`, run `44606196108`, job `135850416062`: SUCCESS; 598 testes em 4,818 s; compileall aprovado.
+- Commits posteriores desta seção são documentação apenas; nenhum código alterado após o HEAD validado.
+
+### Estado
+- PR #34 continua Draft, aberta, mergeable e sem merge.
+- `main` permanece intocada.
+- Próxima ação: auditar o contrato do adapter contra os normalizadores/timeline Geyser existentes e especificar a representação tipada de commitment/finality antes de qualquer adapter operacional.

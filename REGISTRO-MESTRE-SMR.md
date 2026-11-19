@@ -3619,3 +3619,20 @@ Commit da PR #9: \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`.
 CI #1370 (push, run \`44434546829\`) e CI #1371 (pull_request, run \`44434553632\`) concluídos com SUCCESS. Ambos executaram **170 testes aprovados** e \`python -m compileall -q src tests\` aprovado. O workflow #1371 corresponde ao HEAD atual da PR #9 e não está em \`action_required\`.
 
 A trilha de proveniência externa permanece a única lacuna específica da fixture: o manifesto de origem indicado em \`provenance_manifest\` e o payload bruto não estão versionados, portanto não foi possível revalidar o \`raw_sha256\` a partir do artefato bruto. Não foi fabricada evidência ausente. PR #9 segue OPEN, mergeable=true, não mergeada; PR #25 segue OPEN/DRAFT. Main continua no SHA \`5060bc65ddf181a4736fdb662c44c3fec0dd7259\`.
+
+
+## 241. Fechamento da rodada de teste da fixture CPMM/Jupiter — 19/11/2026
+
+A segunda revisão do teste consumidor confirmou a integridade criptográfica da projeção: o teste recalcula SHA-256 dos bytes de \`raydium-cpmm-jupiter-multiswap.json\` e compara com \`projection_sha256\` do manifesto, além de conferir schema, nome do arquivo, assinatura, slot e \`anonymized=true\`.
+
+Evidências:
+- PR #9 HEAD final desta rodada: \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`.
+- CI #1370, run \`44434546829\`, evento push: SUCCESS, 170 testes, compileall SUCCESS.
+- CI #1371, run \`44434553632\`, evento pull_request: SUCCESS, 170 testes, compileall SUCCESS.
+- PR #9 OPEN, não Draft, mergeable=true; base \`feat/solana-token-account-deltas\`.
+- PR #25 OPEN/DRAFT, mergeable=true; head documental \`94a3fa39a32849d427477db44c594fa127370c23\`.
+- \`main\` permanece em \`5060bc65ddf181a4736fdb662c44c3fec0dd7259\`.
+
+A única lacuna documental remanescente da fixture é a disponibilidade verificável do artefato bruto e do manifesto original apontado por \`provenance_manifest\`. O campo foi preservado para não apagar a referência histórica; não criamos substituto sintético nem declaramos o SHA bruto auditado. A fixture anonimizada, sua integridade SHA-256, seu consumo pelos decoders e o CI no HEAD atual estão validados.
+
+O commit desta atualização altera apenas este Registro Mestre em Markdown; o workflow \`smr-tests.yml\` filtra paths de código/testes/configuração e, portanto, não se espera CI para este commit documental isolado. Não houve merge, rebase, alteração na main ou execução financeira.

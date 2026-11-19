@@ -3604,3 +3604,18 @@ Próxima ação técnica recomendada: corrigir a proveniência/manifesto da fixt
 O campo \`provenance_manifest\` ainda nomeia \`39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.manifest.json\`, mas esse manifesto de origem não está versionado na árvore da PR. O bruto original também não está versionado. Não inventamos manifesto bruto, encoding, caminho ou SHA. A referência de proveniência externa precisa ser confirmada/arquivada conforme a política de fixtures antes de declarar a trilha documental integralmente fechada.
 
 Nenhum merge, rebase, aprovação manual de workflow, ordem financeira ou alteração na main foi executado. PR #25 segue OPEN/DRAFT; módulo permanece **92%** e revisão técnica **93%** até a revisão final da proveniência e da cadeia empilhada.
+
+
+## 240. Integridade criptográfica do manifesto da fixture CPMM/Jupiter — 19/11/2026
+
+Foi ampliado o teste consumidor da PR #9 para validar também o manifesto da projeção:
+- schema \`smr.anonymized-fixture.v1\`;
+- \`projection_file\` igual ao nome real do JSON;
+- SHA-256 do arquivo de projeção recalculado em runtime e comparado com \`projection_sha256\`;
+- assinatura e slot do manifesto iguais aos valores do payload;
+- \`anonymized=true\`.
+
+Commit da PR #9: \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`.
+CI #1370 (push, run \`44434546829\`) e CI #1371 (pull_request, run \`44434553632\`) concluídos com SUCCESS. Ambos executaram **170 testes aprovados** e \`python -m compileall -q src tests\` aprovado. O workflow #1371 corresponde ao HEAD atual da PR #9 e não está em \`action_required\`.
+
+A trilha de proveniência externa permanece a única lacuna específica da fixture: o manifesto de origem indicado em \`provenance_manifest\` e o payload bruto não estão versionados, portanto não foi possível revalidar o \`raw_sha256\` a partir do artefato bruto. Não foi fabricada evidência ausente. PR #9 segue OPEN, mergeable=true, não mergeada; PR #25 segue OPEN/DRAFT. Main continua no SHA \`5060bc65ddf181a4736fdb662c44c3fec0dd7259\`.

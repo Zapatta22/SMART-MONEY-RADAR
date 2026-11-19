@@ -2156,3 +2156,36 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - Implicação: rollback apenas por limiar de slot é insuficiente para distinguir forks/branches. A timeline implementada continua conservadora e só executa rollback quando recebe sinal externo explícito; ainda não resolve bank lineage automaticamente.
 - Próxima etapa de arquitetura: estender o envelope canônico para preservar `is_startup` e `bank_id`; normalizar slot lifecycle e invalidações de bank; associar account updates a block/bank lineage sem usar `write_version` como índice de instrução ou assumir canonicalidade por ordem de chegada. Só depois habilitar pareamento entre bancos distintos quando a relação pai/filho estiver demonstrada.
 - Nenhum código foi alterado nesta revisão documental; sem adapter protobuf, RPC/Helius, RAW ou SQLite.
+
+
+## 281. Identidade de bancos Yellowstone e linhagem de forks — 19/11/2026
+
+### Implementado na branch da PR23
+- `NormalizedAccountUpdate` agora preserva `bank_id` opcional e `is_startup`; startup com bank_id é rejeitado. O fingerprint inclui source, bank_id e is_startup.
+- `ordering_key` é somente `(slot, write_version)`; `stream_sequence` não é usada como desempate da ordem do ledger.
+- Novo módulo `src/smart_money_radar/data_sources/geyser_bank_lineage.py`:
+  - normalizadores provider-neutral para `SubscribeUpdateSlot`, `SubscribeUpdateBlockMeta` e `SubscribeUpdateEntryUpdateParent`;
+  - identidade do banco `(source_id, slot, bank_id)`; source_id é namespace estável entre reconexões e stream_id representa apenas transporte;
+  - `SLOT_CREATED_BANK` exige bank_id; FIRST_SHRED_RECEIVED/COMPLETED podem ficar sem banco;
+  - `SLOT_DEAD` com bank_id invalida aquele banco específico; sem bank_id invalida os bancos conhecidos e futuros do source/slot;
+  - `EntryUpdateParent` invalida o `cleared_bank_id`, preserva `parent_block_id` como bytes opacos e liga o banco substituto ao próximo CREATED_BANK apenas se houver exatamente um candidato;
+  - `parent_slot` isolado não escolhe fork. Link pai/filho só é estabelecido com correspondência exata `(parent_slot, parent_blockhash)` de block metadata;
+  - blockhashes ou parent metadata incompatíveis e substituições ambíguas viram conflitos sem mutação parcial;
+  - `is_ancestor` retorna None para linhagem incompleta; só retorna False quando a cadeia observada chega à raiz conhecida (slot 0).
+- A timeline linear falha fechada: não gera pre/post para account updates com bank_id ou startup, e não expõe um único current_state quando o histórico inclui bancos/forks ou apenas startup.
+- Testes novos em `tests/test_geyser_bank_lineage.py`, além da cobertura de account normalizer e timeline.
+- Contrato documentado em `docs/GEYSER-ACCOUNT-TIMELINE.md`.
+
+### Validação comprovada
+- CI #1609 — run `44455853310`, HEAD `06f41fe054ce2b51d5c804e431a84ed1f056d1b4`: **495/495 testes OK**, `compileall` aprovado; job completed/success.
+- CI #1608 — push para o mesmo HEAD: completed/success.
+- O CI #1584/#1583 falhou em uma expectativa de teste de ancestralidade incompleta; a regra foi corrigida para retornar None, e execuções posteriores passaram. O CI #1597 também capturou a mudança de assinatura de ordering_key antes da atualização do teste; corrigido no commit subsequente e validado. Não ocultar essas falhas históricas; os commits posteriores aprovados são a referência.
+
+### Estado do repositório
+- PR #23: OPEN, Draft, mergeable, sem merge; head `06f41fe054ce2b51d5c804e431a84ed1f056d1b4`; base `feat/damm-v2-referral-transfer-attribution`.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma alteração ou merge em main.
+- PR #22 continua separada. Nenhum serviço Geyser/Helius conectado; sem adapter protobuf oficial; sem RAW/SQLite/persistência e sem operações on-chain.
+- Schema de referência: rpcpool/yellowstone-grpc `yellowstone-grpc-proto/proto/geyser.proto`, consultado em 19/11/2026.
+
+### Próxima etapa
+Implementar adapter de fronteira para mensagens protobuf Yellowstone (ou mapping testável equivalente) que converta os campos binários pubkey/owner/signature e os eventos de slot/block/entry-parent para os contratos normalizados. Fixar a versão/schema de protocolo em fixtures; testar mensagens reais serializadas/deserializadas e replay/reconnect. Ainda não conectar endpoint nem habilitar captura contínua. Depois, integrar BankLineageTracker à timeline para reconstruir pre/post somente dentro da cadeia de bancos verificada; só então desenhar backfill e persistência.

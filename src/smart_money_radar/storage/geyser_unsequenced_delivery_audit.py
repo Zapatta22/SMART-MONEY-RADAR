@@ -22,6 +22,7 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
 
     def __init__(self, database_path: Path | str) -> None:
         self.database_path = str(database_path)
+        self.last_rebuild_metrics: dict[str, int] = {}
         if self.database_path == ":memory:":
             raise ValueError("a auditoria deve compartilhar o arquivo SQLite persistente do RAW store")
         path = Path(database_path)
@@ -140,6 +141,13 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                 ON eligible_geyser_audit_witnesses
                     (event_id, source_id, payload_sha256, delivery_id)
             """)
+            temp_page_count = connection.execute("PRAGMA temp.page_count").fetchone()[0]
+            temp_page_size = connection.execute("PRAGMA temp.page_size").fetchone()[0]
+            self.last_rebuild_metrics = {
+                "temp_db_pages": temp_page_count,
+                "temp_db_page_size_bytes": temp_page_size,
+                "temp_db_allocated_bytes": temp_page_count * temp_page_size,
+            }
 
             prior = connection.execute(
                 "SELECT generation FROM geyser_unsequenced_delivery_audit_checkpoint "

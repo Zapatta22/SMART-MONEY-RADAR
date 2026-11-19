@@ -52,9 +52,9 @@ class NormalizedAccountUpdate:
     is_startup: bool = False
 
     @property
-    def ordering_key(self) -> tuple[int, int, int]:
-        """Deterministic order: ledger slot, account write, then stream delivery."""
-        return (self.slot, self.write_version, self.stream_sequence)
+    def ordering_key(self) -> tuple[int, int]:
+        """Account-write key only; transport sequence is deliberately excluded."""
+        return (self.slot, self.write_version)
 
     @property
     def state_hash(self) -> str:

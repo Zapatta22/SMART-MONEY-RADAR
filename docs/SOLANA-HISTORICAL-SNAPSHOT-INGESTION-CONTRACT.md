@@ -192,5 +192,10 @@ compatível com a lista de transações, índices únicos e sem lacunas e
 correspondência de assinatura, conteúdo, meta e índice da transação.
 O JSON informa o índice no ledger, a sequência do frame do bloco e seu
 SHA-256. Um bloco filtrado que omite transações falha nessa validação.
-A comprovação do índice ainda precisa ser vinculada às contas históricas
-antes de verificar as taxas de um swap.
+Com `--damm-wallet`, a inspeção usa o índice comprovado para verificar o
+withheld de Token-2022 quando todos os destinos têm um par de estados no
+mesmo banco. O estado anterior deve estar ligado à transação imediatamente
+anterior no bloco e o estado posterior deve estar ligado à transação alvo.
+O verificador compara mint, bytes TLV, hashes e delta esperado. Sem cobertura
+dos pares, o withheld permanece como `EXPECTED_NOT_VERIFIED`. A configuração
+histórica das taxas do mint continua sem verificação.

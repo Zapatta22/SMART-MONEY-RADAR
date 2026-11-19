@@ -137,6 +137,28 @@ class AmmFeeSplitAndModeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             resolve_damm_fee_mode("ONLY_B", "A_TO_B", 1)
 
+    def test_inverse_is_minimal_across_small_fee_parameter_grid(self):
+        for basis_points in (0, 1, 100, 3_333, 9_999, 10_000):
+            for maximum_fee in (0, 1, 3, 20):
+                for net_amount in range(0, 20):
+                    with self.subTest(
+                        basis_points=basis_points,
+                        maximum_fee=maximum_fee,
+                        net_amount=net_amount,
+                    ):
+                        result = transfer_fee_gross_for_net(
+                            net_amount, basis_points, maximum_fee
+                        )
+                        self.assertEqual(
+                            result.gross_amount - result.fee_amount, net_amount
+                        )
+                        if result.gross_amount > 0:
+                            previous_gross = result.gross_amount - 1
+                            previous_net = previous_gross - calculate_transfer_fee(
+                                previous_gross, basis_points, maximum_fee
+                            )
+                            self.assertLess(previous_net, net_amount)
+
 
 if __name__ == "__main__":
     unittest.main()

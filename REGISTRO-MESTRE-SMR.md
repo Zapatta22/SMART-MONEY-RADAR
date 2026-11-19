@@ -3779,3 +3779,17 @@ O usuário autorizou expressamente a continuidade e as operações técnicas nec
 - CI do commit documental anterior `16efb6d7933d84fb60ee4dec04819f91824dc78e`: run `44436536921`, SUCCESS; log confirma 539 testes e compileall.
 - Nenhum swap real, assinatura ou execução financeira habilitada.
 - Progresso do módulo permanece 92%; revisão técnica 93%, pois a integração combinada #10 ainda não foi validada.
+
+## 249. Integração da PR #10 e validação combinada pendente — 19/11/2026
+
+Após reavaliar a topologia real das branches, confirmou-se que a PR #10 tinha como base a branch `feat/raydium-cpmm-transfer-reconciliation` (head `b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a`) e head próprio `e7c02adb3564fefb3a8c734098f5c92603eb4a7b`. A comparação contra o merge-base antigo mostrava 7 commits à frente e 4 atrás; GitHub reportava `mergeable=true`. O CI próprio da PR #10 havia passado (run `44223834918`, 181 testes e compileall), mas não era prova do resultado combinado.
+
+Com a autorização expressa do usuário, a PR #10 foi integrada à sua branch-base `feat/raydium-cpmm-transfer-reconciliation`:
+- PR #10: CLOSED/MERGED.
+- Merge commit: `a7e8a47a6ff29817d1ec13e2d2f965d6e857a425`.
+- CI disparado no merge commit: run `44437095983`, inicialmente `in_progress`.
+- A validação decisiva é o CI deste merge commit, pois ele testa a árvore resultante com os quatro commits da base e os sete commits da PR #10.
+
+Estado das dependências: PR #9 e PR #10 integradas em suas respectivas branches-base intermediárias; isso não significa integração na `main`. PR #25 continua OPEN/DRAFT. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+Próxima ação: acompanhar run `44437095983`, inspecionar o log e confirmar número de testes + compileall. Se falhar, diagnosticar e corrigir na branch de integração, sem avançar para a próxima dependência até fechar esta etapa. Progresso permanece módulo 92% / revisão técnica 93% até o CI combinado ser aprovado.

@@ -319,7 +319,7 @@ No provider connection or financial execution is authorized by this document.
 - Eventos RAW sem uma entrega com sequência conhecida são ignorados na timeline e contabilizados no checkpoint; RAW permanece preservado.
 
 ### Próxima etapa
-Integrar o checkpoint granular por fonte ao commit bem-sucedido do rebuild da timeline, de modo que uma interrupção entre projeção e checkpoint apenas deixe o checkpoint atrasado; em paralelo, definir uma política auditável para RAW sem sequência sem inventar ordem. Manter o full rebuild como fallback e continuar offline.
+Definir uma política auditável para RAW sem sequência sem inventar ordem, e medir o custo do full rebuild com volume representativo. A integração do checkpoint por fonte ao rebuild foi concluída nesta etapa.
 
 
 ## Offline recovery and backfill state store — 19/11/2026
@@ -352,3 +352,37 @@ Integrar o checkpoint granular por fonte ao commit bem-sucedido do rebuild da ti
 - Added `tests/test_geyser_recovery_store.py` for job lifecycle, complete-coverage evidence, query-contract mismatch, monotonic counters, restart recovery, cursor-preserving retry, source-scoped projection checkpoints, coverage fail-closed rules, generation monotonicity, and invalid state/range rejection.
 - CI #1733 — run `44519550364`, commit `f90fd43bbbd03c7c03bfbf7b23ca5907e5d60066`: SUCCESS; **569/569 tests OK** in 4.343 s; `python -m compileall -q src tests` passed.
 - Earlier runs #1727 and #1731 exposed two test expectation/attempt-audit defects; both were corrected before #1733. The successful run includes the corrected recovery behavior.
+
+
+## Timeline rebuild with source-scoped recovery checkpoints — 19/11/2026
+
+### Implemented
+
+- `SQLiteGeyserAccountTimelineProjection.rebuild()` now records a recovery checkpoint for each `source_id` after the full derived generation has committed successfully.
+- The checkpoint contains projection name/version, generation, last observed delivery ID, last replayed event ID, source delivery count, projected event count, skipped input count, input coverage status, and continuity-interrupted flag.
+- Source checkpoints are independent; two provider sources cannot advance or overwrite each other's progress.
+- Source delivery count and high-water delivery ID include all source deliveries, including deliveries that do not reference a RAW event. The last event ID remains the last replayed sequenced RAW event.
+- The rebuild still reads immutable RAW and atomically replaces the full derived timeline, bank lineage, gaps, conflicts, and global generation checkpoint in one SQLite transaction.
+- Only after that transaction commits does the recovery store advance per-source checkpoints. If the process stops between these phases, derived data is durable and the recovery checkpoint safely lags; a repeated full rebuild advances it later.
+- Account RAW event IDs are now associated through a deterministic in-memory key during replay, avoiding a repeated full scan of RAW rows for every account write.
+
+### Coverage policy applied by the timeline projection
+
+- `COMPLETE`: every observed stream for the source has an adapter-declared baseline, no transport checkpoint is interrupted, no open transport gaps/anomalies exist, no timeline continuity gap exists, and no input event was skipped.
+- `PARTIAL`: declared baseline exists, but the projection observes a gap, interruption, anomaly, or skipped input.
+- `UNKNOWN`: no stream checkpoint exists or any stream still uses the first-observed-unverified baseline.
+- This is transport/input continuity coverage only. It is not proof that a provider supplied the complete historical slot range; historical backfill coverage remains a separate backfill-job assertion.
+- Events without a sequenced delivery remain in immutable RAW and are counted as skipped; they are not assigned a fabricated order or inserted into the timeline.
+
+### Tests and CI
+
+- Four integration tests added for source-scoped checkpoint persistence after rebuild, UNKNOWN coverage for unverified baselines, PARTIAL coverage on a transport gap, and isolation between independent sources.
+- The malformed-payload rollback test now also verifies that a failed rebuild does not advance the recovery checkpoint.
+- CI #1743 — run `44520328616`, code commit `979e6841f348ae74de40d65b14411eb883b5cc64`: SUCCESS; **573/573 tests OK** in 5.904 s; `python -m compileall -q src tests` passed.
+
+### Limits
+
+- The full rebuild remains the recovery/fallback mechanism; this is not an incremental replay engine.
+- RAW events without sequence remain preserved but are not projected. A provider-specific reconciliation policy is still needed; no sequence is invented.
+- Coverage COMPLETE means continuity from declared stream baselines, not completeness of provider history or a requested backfill slot range.
+- Offline only: no provider client, RPC, Helius/Yellowstone endpoint, credentials, service, VPS, or live backfill was connected.

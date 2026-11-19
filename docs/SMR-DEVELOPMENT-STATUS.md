@@ -9,7 +9,7 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | Módulo | B/I/O | Marcos | Evidência disponível | Critério para fechar o módulo |
 |---|---|---:|---|---|
 | A. Infraestrutura e persistência | 1/0/0 | 33,3% | Na main há SQLite, checkpoints, backup/replay e CI. As PRs #40 e #42 revisam persistência de swaps, concorrência, migração e replay. | Integrar persistência de swaps no caminho normal. Validar migração e recuperação no ambiente operacional e observabilidade estruturada. |
-| B. Monitoramento Solana | 1/0/0 | 33,3% | Na main há RPC e WebSocket para monitoramento e coleta. A PR #43 integra offline auditoria Geyser, RAW e timeline. | Validar receptor, sequência compartilhada, persistência, reconexão, lacunas, duplicatas e replay com eventos do provider. |
+| B. Monitoramento Solana | 1/0/0 | 33,3% | Na main há RPC e WebSocket para monitoramento e coleta. As PRs #43–#45 integram auditoria, journal de frames exatos, replay e reconstrução offline da timeline. | Validar receptor, sequência compartilhada, persistência, reconexão, lacunas, duplicatas e replay com eventos do provider. |
 | C. Interpretação econômica | 1/0/0 | 33,3% | Na main há contratos de swap e parser conservador. As branches CPMM/DAMM v2 têm decodificadores, reconciliação e fixtures. | Integrar CPI, CPMM, DAMM v2, Token-2022 e wSOL. Validar evidência de BUY/SELL e rejeição da ambiguidade. |
 | D. Launch Radar | 0/0/0 | 0% | Catálogo de programas na main. | Integrar detecção de mints e pools, liquidez, permissões, concentração, volume, preço e sinais de fraude. |
 | E. Smart Money Radar | 1/0/0 | 33,3% | Monitor de carteiras com backfill e testes na main. | Validar histórico, acumulação, atividade coordenada e classificação de sinais com evidência. |
@@ -25,7 +25,7 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 - A PR #26 está aberta contra `feat/damm-v2-economic-reconciliation`. O histórico de #26 já contém #27 (rebuild com memória limitada) e #28 (elegibilidade de entregas) por meio da #30. A PR #29 segue aberta, mas sua árvore difere da #26 apenas nos registros e na documentação da política RAW. Conferir o delta residual antes de promover.
 - A PR #31 trata sequências anômalas e a #33, conflitos de linhagem. Ambas apontam para `feat/damm-v2-economic-reconciliation`. A #32 exclui sequências historicamente comprometidas e aponta para a branch da #26. Os três heads estão fora da história da #39.
 - A PR #39 está em Draft sobre `feat/token2022-transfer-checked-with-fee`; sua história já alcança `main` e `d08c146` (#23). A suíte offline da #39 tem 617 testes. Os campos de fonte, stream, domínio e sequência são declarados pelo chamador. A correção de proveniência verifica conteúdo protobuf, enquanto autenticação da origem e continuidade exigem o receptor compartilhado. Índice da transação no bloco e sequência de transporte têm finalidades distintas. A presença de meta, inclusive protobuf vazio, significa presença do campo. A evidência para classificação requer verificações adicionais.
-- A revisão do Yellowstone parte da #39 e verifica a correspondência dos bytes com a mensagem protobuf no nível correto. Seguem pendentes a integração com conta e slot, o armazenamento desses frames no RAW e os testes com captura do provider.
+- A revisão do Yellowstone parte da #39. A #44 adiciona schema SQLite v3 e armazenamento dos envelopes por entrega com verificação de SHA-256 no replay. A #45 reconstrói a timeline em memória a partir da sequência compartilhada entre conta, transação, slot e controle, preservando o baseline por conexão. A ingestão lógica persistente e a captura com provider seguem pendentes.
 
 ## Verificações executadas localmente
 
@@ -37,12 +37,14 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | `bcd647a` (#41) | 617 testes aprovados. `compileall` e `git diff --check` aprovados. Os testes protobuf são offline. |
 | `08e1bf5` (#42) | 252 testes aprovados. Uma verificação separada abriu um banco de `main@5060bc6`, preservou payload e checkpoint, processou a projeção multivenue e repetiu sem duplicar. `integrity_check` e `foreign_key_check` passaram. |
 | `1e9c1ba` (#43) | 639 testes aprovados após combinar #26, #31, #32 e #33. `compileall` e `git diff --check` aprovados. |
+| `abf3ac0` (#44) | 643 testes aprovados. Migração, replay após reinício, lacunas, duplicatas, colisões e hash verificados. |
+| `d51cfe2` (#45) | 645 testes aprovados, incluindo a continuidade da timeline e o decoder por descriptor. `compileall` e `git diff --check` aprovados. A verificação offline adicional com o schema upstream usou uma fixture de conta, uma transação sintética e um ping. |
 
 Validação operacional pendente. Permanecem pendentes a captura de eventos Yellowstone, recuperação ponta a ponta com provider, carga em volume representativo e implantação.
 
 ## Próxima tarefa prioritária
 
-Implementar a persistência do envelope protobuf por delivery e um receptor offline de frames Yellowstone sobre a PR #43. Demonstrar sequência compartilhada, hash do envelope após reinício e rejeição de colisões, lacunas e continuidade entre reconexões.
+Vincular a sequência verificada do journal Yellowstone às projeções SQLite e à ingestão lógica a partir da PR #45. Preservar a referência entre observações e entregas, separar domínios de reconexão e testar que uma lacuna, colisão ou falha de persistência impede a publicação de uma geração parcial ou de um checkpoint adiantado.
 
 A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguida da aplicação das correções nas branches descendentes da integração #14.
 
@@ -54,6 +56,8 @@ A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguid
 | [#41](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/41) | `codex/smr-yellowstone-wire-integrity` | `bcd647a` | `51ea578` (#39) |
 | [#42](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/42) | `codex/smr-cpmm-sqlite-regression` | `08e1bf5` | `4951eaf` (pilha CPMM de #14) |
 | [#43](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/43) | `codex/smr-geyser-stack-integration` | `1e9c1ba` | `bcd647a` (#41) |
+| [#44](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/44) | `codex/smr-yellowstone-frame-journal` | `abf3ac0` | `1e9c1ba` (#43) |
+| [#45](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/45) | `codex/smr-yellowstone-timeline-replay` | `d51cfe2` | `abf3ac0` (#44) |
 
 Use o SHA exibido no resumo do GitHub Actions para vincular a validação ao commit. Inicie a retomada pela tarefa prioritária acima.
 

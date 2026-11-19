@@ -32,15 +32,15 @@ from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
     SolanaTokenBalanceDeltaResult,
     decode_solana_token_account_balance_deltas,
 )
-_BUNDLE_FACTORY_TOKEN = object()
-
-
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SolanaInstructionInventory,
     SolanaTokenTransfer,
     decode_solana_instruction_inventory,
     decode_solana_token_transfers,
 )
+
+
+_BUNDLE_FACTORY_TOKEN = object()
 
 
 @dataclass(frozen=True)

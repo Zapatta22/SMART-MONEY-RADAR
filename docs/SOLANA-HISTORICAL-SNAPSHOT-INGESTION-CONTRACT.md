@@ -147,3 +147,12 @@ com cardinalidade incompatível interrompem a projeção. O consumidor deve
 concluir o replay antes de publicar resultados, pois um frame posterior pode
 revelar falha de integridade. Esta etapa não associa snapshots históricos nem
 atribui finalidade ao bundle.
+
+`transaction_evidence_at` materializa uma transação por sequência e confere as
+transições de conta no mesmo snapshot do journal. Exige assinatura não
+ambígua, conta presente na transação, slot e banco compatíveis e finalidade
+reportada pelo provedor para o par de estados. Um banco zero, ausente ou
+divergente, uma conta com conflito ou uma segunda conexão deixa a transição
+inelegível. A ordenação no transporte não é convertida em ordem de execução
+no ledger. A finalidade reportada fica explícita como proveniência e ainda
+depende da validação operacional do provedor.

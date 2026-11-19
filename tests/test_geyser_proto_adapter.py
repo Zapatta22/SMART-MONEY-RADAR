@@ -389,6 +389,64 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "divergem das tabelas"):
             list(receiver.replay_transaction_evidence())
 
+    def test_transaction_links_only_finalized_account_writes_in_its_bank_and_session(self):
+        account_frame = _parse("account_update")
+        account = account_frame.account
+        account.account.ClearField("txn_signature")
+        transaction_frame = _UPDATE.FromString(self.transaction_frame())
+        transaction = transaction_frame.transaction
+        transaction.slot = account.slot
+        transaction.bank_id = account.bank_id
+        info = transaction.transaction
+        info.transaction.message.header.num_required_signatures = 1
+        info.transaction.message.account_keys.append(account.account.pubkey)
+        info.meta.pre_balances.append(1)
+        info.meta.post_balances.append(1)
+
+        store = SQLiteGeyserRawStore(":memory:")
+        self.addCleanup(store.close)
+        receiver = self.receiver(store)
+        receiver.receive(account_frame.SerializeToString(), stream_sequence=40)
+        receiver.receive(transaction_frame.SerializeToString(), stream_sequence=41)
+        account.account.txn_signature = info.signature
+        account.account.write_version += 1
+        receiver.receive(account_frame.SerializeToString(), stream_sequence=42)
+
+        self.assertEqual(receiver.transaction_evidence_at(41).account_transitions, ())
+        slot_frame = _UPDATE()
+        slot_frame.slot.slot = account.slot
+        slot_frame.slot.bank_id = account.bank_id
+        slot_frame.slot.status = 2
+        receiver.receive(slot_frame.SerializeToString(), stream_sequence=43)
+        evidence = receiver.transaction_evidence_at(41)
+        transition, = evidence.account_transitions
+        self.assertEqual(transition.post_state.stream_sequence, 42)
+        self.assertEqual(transition.pre_state.stream_sequence, 40)
+        self.assertEqual(transition.evidence_classification, "BANK_PROVIDER_REPORTED_FINALIZED")
+
+        for stream, domain, bank_id in (
+            ("other-connection", "other-domain", transaction.bank_id),
+            ("unscoped", "unscoped-domain", 0),
+            ("sibling", "sibling-domain", transaction.bank_id + 1),
+        ):
+            isolated = self.receiver(store, stream=stream, domain=domain)
+            transaction.bank_id = bank_id
+            isolated.receive(transaction_frame.SerializeToString(), stream_sequence=40)
+            if stream != "other-connection":
+                account.account.ClearField("txn_signature")
+                account.account.write_version += 1
+                isolated.receive(account_frame.SerializeToString(), stream_sequence=41)
+                account.account.txn_signature = info.signature
+                account.account.write_version += 1
+                isolated.receive(account_frame.SerializeToString(), stream_sequence=42)
+                isolated.receive(slot_frame.SerializeToString(), stream_sequence=43)
+            self.assertEqual(isolated.transaction_evidence_at(40).account_transitions, ())
+
+        transaction.bank_id = account.bank_id
+        receiver.receive(transaction_frame.SerializeToString(), stream_sequence=44)
+        with self.assertRaisesRegex(ValueError, "assinatura Yellowstone ambígua"):
+            receiver.transaction_evidence_at(41)
+
     def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
         descriptors = descriptor_pb2.FileDescriptorSet()
         _UPDATE.DESCRIPTOR.file.CopyToProto(descriptors.file.add())

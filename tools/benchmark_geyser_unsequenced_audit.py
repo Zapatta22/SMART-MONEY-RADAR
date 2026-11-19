@@ -125,7 +125,6 @@ def run_rebuild_worker(database: Path, temp_store: str | None) -> dict:
         "memory_before_rebuild": before_memory,
         "memory_after_rebuild": after_memory,
         "temp_store_requested": temp_store or "DEFAULT",
-        "temp_store_requested": temp_store or "DEFAULT",
         **audit.last_rebuild_metrics,
     }
 
@@ -141,10 +140,12 @@ def benchmark_size(logical_events: int, temp_store: str | None = None) -> dict:
             [sys.executable, str(Path(__file__).resolve()),
              "--worker-db", str(database),
              "--temp-store", temp_store or "DEFAULT"],
-            check=True,
+            check=False,
             capture_output=True,
             text=True,
         )
+        if worker.returncode != 0:
+            raise RuntimeError(f"benchmark worker failed: {worker.stderr}")
         measured = json.loads(worker.stdout)
         summary = measured.pop("summary")
 

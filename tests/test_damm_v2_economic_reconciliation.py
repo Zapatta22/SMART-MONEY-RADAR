@@ -4,6 +4,7 @@ from smart_money_radar.data_sources.damm_v2_accounts import DammV2SwapAccounts
 from smart_money_radar.data_sources.damm_v2_analyzer import DammV2SwapEventAssociation
 from smart_money_radar.data_sources.damm_v2_decoder import DammV2EvtSwap2, DammV2SwapResult
 from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
+    DammV2ExpectedWithheldFeeDelta,
     reconcile_damm_v2_economic_batch,
 )
 from smart_money_radar.data_sources.damm_v2_transfer_analyzer import DammV2SwapTransferContext, DammV2TransferEvidence
@@ -444,8 +445,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         self.assertEqual(
             result.expected_withheld_fee_deltas,
             (
-                # The input transfer withheld five units at the input vault.
-                type(result.expected_withheld_fee_deltas[0])(
+                DammV2ExpectedWithheldFeeDelta(
                     token_account="vault-a",
                     mint="mint-a",
                     expected_withheld_delta_raw=5,

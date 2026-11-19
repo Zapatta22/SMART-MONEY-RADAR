@@ -65,6 +65,9 @@ class DammV2ExpectedTransferFee:
     mint: str
     gross_amount_raw: int
     expected_fee_raw: int
+    fee_source: Literal[
+        "EVT_SWAP2_NET", "TRANSFER_CHECKED_WITH_FEE", "MINT_PRESTATE"
+    ]
 
 
 @dataclass(frozen=True)
@@ -198,6 +201,53 @@ def _net_received(
     return expected_net
 
 
+
+
+def _calculate_fee_from_mint_snapshot(
+    snapshot: DammV2MintFeeConfigSnapshot,
+    transfer: SolanaTokenTransfer,
+    *,
+    transaction_epoch: int,
+    transaction_slot: int,
+    transaction_order: int,
+) -> int:
+    if snapshot.mint != transfer.mint:
+        raise ValueError("mint prestate diverge da transferência")
+    if (
+        snapshot.transfer_instruction_index != transfer.instruction_index
+        or snapshot.transfer_inner_instruction_index != transfer.inner_instruction_index
+    ):
+        raise ValueError("identidade do mint prestate diverge da transferência")
+    if (
+        snapshot.transaction_epoch != transaction_epoch
+        or snapshot.transaction_slot != transaction_slot
+        or snapshot.transaction_order != transaction_order
+    ):
+        raise ValueError("identidade epoch/slot/ordem do mint prestate diverge")
+    if (
+        isinstance(snapshot.pre_snapshot_order, bool)
+        or not isinstance(snapshot.pre_snapshot_order, int)
+        or snapshot.pre_snapshot_order >= transaction_order
+        or snapshot.mint_state_unchanged_before_transfer is not True
+    ):
+        raise ValueError("mint prestate não comprovado antes da transferência")
+    if (
+        not isinstance(snapshot.source, str) or not snapshot.source.strip()
+        or not isinstance(snapshot.pre_state_ref, str) or not snapshot.pre_state_ref.strip()
+    ):
+        raise ValueError("proveniência do mint prestate ausente")
+    if snapshot.config_state is None:
+        return 0
+    if (
+        not isinstance(snapshot.config_state, TransferFeeConfigState)
+        or 1 not in snapshot.config_state.extension_types
+    ):
+        raise ValueError("TransferFeeConfig prestate inválido")
+    rate = snapshot.config_state.fee_for_epoch(transaction_epoch)
+    return calculate_transfer_fee(
+        transfer.amount_raw, rate.basis_points, rate.maximum_fee
+    )
+
 def reconcile_damm_v2_economic_batch(
     contexts: Sequence[DammV2SwapTransferContext],
     evidence: Sequence[DammV2TransferEvidence],
@@ -205,6 +255,10 @@ def reconcile_damm_v2_economic_batch(
     all_transfers: Sequence[SolanaTokenTransfer],
     *,
     monitored_wallet: str,
+    mint_fee_snapshots: Sequence[DammV2MintFeeConfigSnapshot] = (),
+    transaction_epoch: int | None = None,
+    transaction_slot: int | None = None,
+    transaction_order: int | None = None,
 ) -> DammV2EconomicReconciliation:
     """Reconcilia todas as operações DAMM v2 do mesmo payload de transação.
 
@@ -251,7 +305,13 @@ def reconcile_damm_v2_economic_batch(
             raise ValueError("token account reutilizada com owners esperados divergentes")
         expected_owners[account] = owner
 
-    def add_expected_transfer_fee(transfer: SolanaTokenTransfer, net_amount: int) -> None:
+    def add_expected_transfer_fee(
+        transfer: SolanaTokenTransfer,
+        net_amount: int,
+        fee_source: Literal[
+            "EVT_SWAP2_NET", "TRANSFER_CHECKED_WITH_FEE", "MINT_PRESTATE"
+        ],
+    ) -> None:
         if transfer.program_id != TOKEN_2022_PROGRAM_ID:
             return
         if (
@@ -273,6 +333,7 @@ def reconcile_damm_v2_economic_batch(
             mint=transfer.mint,
             gross_amount_raw=transfer.amount_raw,
             expected_fee_raw=transfer.amount_raw - net_amount,
+            fee_source=fee_source,
         ))
 
     def add_expected_withheld(transfer: SolanaTokenTransfer, net_amount: int) -> None:
@@ -429,7 +490,12 @@ def reconcile_damm_v2_economic_batch(
                 expected, input_transfer.destination_account, input_transfer.mint,
                 input_transfer.decimals, input_net,
             )
-            add_expected_transfer_fee(input_transfer, input_net)
+            add_expected_transfer_fee(
+                input_transfer, input_net,
+                "TRANSFER_CHECKED_WITH_FEE"
+                if input_transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE"
+                else "EVT_SWAP2_NET",
+            )
             add_expected_withheld(input_transfer, input_net)
             _add_expected(
                 expected, output_transfer.source_account, output_transfer.mint,
@@ -439,7 +505,12 @@ def reconcile_damm_v2_economic_batch(
                 expected, output_transfer.destination_account, output_transfer.mint,
                 output_transfer.decimals, output_net,
             )
-            add_expected_transfer_fee(output_transfer, output_net)
+            add_expected_transfer_fee(
+                output_transfer, output_net,
+                "TRANSFER_CHECKED_WITH_FEE"
+                if output_transfer.instruction_type == "TRANSFER_CHECKED_WITH_FEE"
+                else "EVT_SWAP2_NET",
+            )
             add_expected_withheld(output_transfer, output_net)
 
             referral = item.referral_transfer
@@ -473,14 +544,48 @@ def reconcile_damm_v2_economic_batch(
                     raise ValueError("Token Program referral diverge do FeeMode")
                 if referral.mint != referral_mint:
                     raise ValueError("mint referral diverge do FeeMode")
-                referral_net = _net_received(
-                    referral, referral_fee,
-                    None if referral.program_id == TOKEN_2022_PROGRAM_ID
-                    and referral.instruction_type != "TRANSFER_CHECKED_WITH_FEE"
-                    else (
+                referral_fee_source = (
+                    "TRANSFER_CHECKED_WITH_FEE"
+                    if referral.instruction_type == "TRANSFER_CHECKED_WITH_FEE"
+                    else "MINT_PRESTATE"
+                )
+                if (
+                    referral.program_id == TOKEN_2022_PROGRAM_ID
+                    and referral.instruction_type == "TRANSFER_CHECKED"
+                ):
+                    if (
+                        transaction_epoch is None
+                        or transaction_slot is None
+                        or transaction_order is None
+                    ):
+                        raise ValueError(
+                            "referral Token-2022 TransferChecked exige epoch/slot/ordem e mint prestate"
+                        )
+                    matches = [
+                        snapshot for snapshot in mint_fee_snapshots
+                        if (
+                            snapshot.transfer_instruction_index == referral.instruction_index
+                            and snapshot.transfer_inner_instruction_index == referral.inner_instruction_index
+                            and snapshot.mint == referral.mint
+                        )
+                    ]
+                    if len(matches) != 1:
+                        raise ValueError(
+                            "referral Token-2022 exige exatamente um snapshot histórico de mint"
+                        )
+                    referral_fee_amount = _calculate_fee_from_mint_snapshot(
+                        matches[0], referral,
+                        transaction_epoch=transaction_epoch,
+                        transaction_slot=transaction_slot,
+                        transaction_order=transaction_order,
+                    )
+                    referral_expected_net = referral.amount_raw - referral_fee_amount
+                else:
+                    referral_expected_net = (
                         referral.amount_raw - (referral.fee_amount_raw or 0)
-                    ),
-                    "referral",
+                    )
+                referral_net = _net_received(
+                    referral, referral_fee, referral_expected_net, "referral"
                 )
                 _add_expected(
                     expected, referral.source_account, referral.mint,
@@ -490,7 +595,9 @@ def reconcile_damm_v2_economic_batch(
                     expected, referral.destination_account, referral.mint,
                     referral.decimals, referral_net,
                 )
-                add_expected_transfer_fee(referral, referral_net)
+                add_expected_transfer_fee(
+                    referral, referral_net, referral_fee_source
+                )
                 add_expected_withheld(referral, referral_net)
 
         expected_accounts = set(expected)

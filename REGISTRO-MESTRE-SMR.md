@@ -2643,12 +2643,12 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 - Payload não JSON rejeitado em vez de gerar hash de representação arbitrária.
 
 ### Estado e limites
-- Commits iniciais da branch: contrato `263c119d6f7fb6195e214062229096da629ae359`; testes `febb9ec60d5465077f1fe292ae11023644ddd67f`.
+- Commits iniciais da branch: contrato `263c119d6f7fb6195e214062229096da629ae359`; testes `febb9ec60d5465077f1fe292ae11023644ddd67f`; Registro Mestre `68bee4a5952b45a1e3e5bfb0ab6a2dc9463972fe` (substituído pelo commit documental subsequente).
 - Registro Mestre atualizado nesta branch; validação CI ainda não consultada nesta atualização.
 - Ainda não existe integração deste envelope com `reconcile_damm_v2_economic_batch()`, contexts DAMM v2 ou snapshots históricos.
 - Ainda não há prova tipada de associação de contexts/eventos DAMM v2 ao envelope; essa integração deve ser uma etapa seguinte, com testes de mistura de assinatura, slot, fonte e payload.
 - Nenhum decoder existente foi modificado.
-- Nenhuma PR foi criada, nenhum merge foi realizado e `main` permanece intocada.
+- PR #34 criada como Draft contra `feat/damm-v2-economic-reconciliation`; nenhum merge foi realizado e `main` permanece intocada.
 
 ### Próxima etapa
 Validar os testes e compileall em CI no HEAD desta branch. Em seguida, revisar o contrato contra os casos de proveniência DAMM v2 e desenhar a integração com contexts, transfer evidence e snapshots históricos antes de conectar o reconciliador econômico.

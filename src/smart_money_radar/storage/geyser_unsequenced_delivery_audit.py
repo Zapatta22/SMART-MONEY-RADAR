@@ -6,6 +6,7 @@ changes RAW events, deliveries, transport checkpoints, or transport anomalies.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
@@ -90,9 +91,10 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                     "SELECT DISTINCT event_id FROM geyser_raw_conflicts"
                 ).fetchall()
             }
-            open_anomalies = {
-                row[0] for row in connection.execute(
-                    "SELECT delivery_id FROM geyser_transport_anomalies WHERE status='OPEN'"
+            open_anomaly_sequences = {
+                (row[0], row[1], row[2]) for row in connection.execute(
+                    "SELECT DISTINCT source_id,stream_id,stream_sequence "
+                    "FROM geyser_transport_anomalies WHERE status='OPEN'"
                 ).fetchall()
             }
 
@@ -102,7 +104,8 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                 if (
                     sequence is not None and event_id is not None and conflict_id is None
                     and event_source == source_id and event_id not in raw_conflict_event_ids
-                    and delivery_id not in open_anomalies and payload_hash is not None
+                    and (source_id,stream_id,sequence) not in open_anomaly_sequences
+                    and payload_hash is not None
                 ):
                     key = (event_id, source_id, payload_hash)
                     sequenced_witnesses.setdefault(key, []).append(delivery_id)
@@ -121,18 +124,19 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
             for row in rows:
                 delivery_id,event_id,source_id,stream_id,sequence,conflict_id,event_source,payload_hash = row
                 witnesses: list[int] = []
+                if sequence is None:
+                    counts["unsequenced_count"] += 1
                 if conflict_id is not None or event_id is None or event_source != source_id:
                     classification,reason = "IDENTITY_CONFLICT","raw_identity_or_source_conflict"
                     counts["conflict_count"] += 1
                 elif event_id in raw_conflict_event_ids:
                     classification,reason = "IDENTITY_CONFLICT","event_identity_has_raw_conflict"
                     counts["conflict_count"] += 1
-                elif sequence is not None and delivery_id in open_anomalies:
+                elif sequence is not None and (source_id,stream_id,sequence) in open_anomaly_sequences:
                     classification,reason = "SEQUENCE_ANOMALY","open_transport_anomaly"
                 elif sequence is not None:
                     classification,reason = "SEQUENCED","transport_sequence_present"
                 else:
-                    counts["unsequenced_count"] += 1
                     witnesses = sequenced_witnesses.get(
                         (event_id,source_id,payload_hash), []
                     )
@@ -155,9 +159,7 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                  source_id,stream_id,stream_sequence,payload_sha256,witness_delivery_ids_json)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """, audit_rows)
-            completed_at = __import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc
-            ).isoformat()
+            completed_at = datetime.now(timezone.utc).isoformat()
             connection.execute("""
                 INSERT INTO geyser_unsequenced_delivery_audit_checkpoint
                 (projection_name,projection_version,policy_id,generation,delivery_count,

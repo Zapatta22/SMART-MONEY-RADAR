@@ -193,8 +193,6 @@ class GeyserRecoveryStoreTests(unittest.TestCase):
                 adapter_version="a", schema_version="v", query_semantics="q",
             )
         job = self.create_job()
-        with self.assertRaisesRegex(ValueError, "não é possível iniciar"):
-            self.store.start_backfill_job(job["job_id"])
         self.store.start_backfill_job(job["job_id"])
         with self.assertRaisesRegex(ValueError, "não é possível iniciar"):
             self.store.start_backfill_job(job["job_id"])

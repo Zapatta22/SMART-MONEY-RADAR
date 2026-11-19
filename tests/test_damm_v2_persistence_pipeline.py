@@ -764,5 +764,52 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
         )
 
 
+    def test_wallet_monitor_runs_real_damm_and_cpmm_pipelines_with_injected_fee_resolver(self):
+        import asyncio
+        from types import SimpleNamespace
+        from smart_money_radar.services.wallet_monitor import WalletMonitor
+        from smart_money_radar.settings import HeliusSettings
+
+        raw = _damm_two_swap2_reconciled_raw()
+        resolver_calls = []
+
+        class Source:
+            async def get_transaction_async(self, signature):
+                self.signature = signature
+                return raw
+
+        def fee_resolver(transaction, *, monitored_wallet, signature, rpc_endpoint):
+            resolver_calls.append((monitored_wallet, signature, rpc_endpoint))
+            return SimpleNamespace(proofs=(), reasons=(), unresolved_mints=())
+
+        monitor = WalletMonitor(
+            HeliusSettings(api_key="simulated-key"),
+            Source(),
+            self.store,
+            token2022_fee_proof_resolver=fee_resolver,
+        )
+
+        completed = asyncio.run(
+            monitor._collect_transaction("wallet", "signature")
+        )
+
+        self.assertTrue(completed)
+        self.assertEqual(resolver_calls, [("wallet", "signature", HeliusSettings(api_key="simulated-key").http_url)])
+        attempts = self.store.get_swap_reconciliation_attempts(
+            "wallet", "signature"
+        )
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(all(item["status"] == "MATCHED" for item in attempts))
+        operation_ids = [item["operation_id"] for item in attempts]
+        bundles = [self.store.get_swap_bundle(item) for item in operation_ids]
+        self.assertTrue(all(bundle is not None for bundle in bundles))
+        self.assertTrue(all(
+            bundle["evidence"].venue == "Meteora DAMM v2"
+            for bundle in bundles
+        ))
+        self.assertTrue(self.store.has_processed_signature("wallet", "signature"))
+        self.assertEqual(self.store.get_checkpoint("wallet"), "signature")
+
+
 if __name__ == "__main__":
     unittest.main()

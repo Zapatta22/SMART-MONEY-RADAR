@@ -102,6 +102,7 @@ class DammV2MintPrestate:
 @dataclass(frozen=True)
 class DammV2MintFeeConfigSnapshot:
     mint: str
+    transaction_signature: str
     transfer_instruction_index: int
     transfer_inner_instruction_index: int
     config_state: TransferFeeConfigState | None
@@ -224,6 +225,7 @@ def build_damm_v2_mint_fee_config_snapshots(
     mint_prestate_by_mint: Mapping[str, DammV2MintPrestate],
     instruction_inventory: SolanaInstructionInventory,
     *,
+    transaction_signature: str,
     transaction_epoch: int,
     transaction_slot: int,
     transaction_order: int,
@@ -240,6 +242,13 @@ def build_damm_v2_mint_fee_config_snapshots(
         raise TypeError("mint_prestate_by_mint deve ser um mapeamento")
     if not isinstance(instruction_inventory, SolanaInstructionInventory):
         raise TypeError("instruction_inventory inválido")
+    if (
+        not isinstance(transaction_signature, str)
+        or not transaction_signature.strip()
+        or instruction_inventory.transaction_signature != transaction_signature
+        or instruction_inventory.slot != transaction_slot
+    ):
+        raise ValueError("inventário não corresponde à assinatura/slot da transação")
     for label, value in (
         ("transaction_epoch", transaction_epoch),
         ("transaction_slot", transaction_slot),
@@ -305,6 +314,7 @@ def build_damm_v2_mint_fee_config_snapshots(
         config_state, inventory = cache[mint]
         snapshots.append(DammV2MintFeeConfigSnapshot(
             mint=mint,
+            transaction_signature=transaction_signature,
             transfer_instruction_index=transfer.instruction_index,
             transfer_inner_instruction_index=transfer.inner_instruction_index,
             config_state=config_state,
@@ -326,7 +336,10 @@ def _calculate_fee_from_mint_snapshot(
     transaction_epoch: int,
     transaction_slot: int,
     transaction_order: int,
+    transaction_signature: str,
 ) -> int:
+    if not isinstance(transaction_signature, str) or not transaction_signature.strip():
+        raise ValueError("transaction_signature é obrigatório")
     for label, value in (
         ("transaction_epoch", transaction_epoch),
         ("transaction_slot", transaction_slot),
@@ -334,6 +347,8 @@ def _calculate_fee_from_mint_snapshot(
     ):
         if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= (1 << 64) - 1:
             raise ValueError(f"{label} inválido")
+    if snapshot.transaction_signature != transaction_signature:
+        raise ValueError("assinatura do mint prestate diverge da transação")
     if snapshot.mint != transfer.mint:
         raise ValueError("mint prestate diverge da transferência")
     if (
@@ -412,6 +427,7 @@ def reconcile_damm_v2_economic_batch(
     transaction_epoch: int | None = None,
     transaction_slot: int | None = None,
     transaction_order: int | None = None,
+    transaction_signature: str | None = None,
 ) -> DammV2EconomicReconciliation:
     """Reconcilia todas as operações DAMM v2 do mesmo payload de transação.
 
@@ -735,6 +751,7 @@ def reconcile_damm_v2_economic_batch(
                         transaction_epoch=transaction_epoch,
                         transaction_slot=transaction_slot,
                         transaction_order=transaction_order,
+                        transaction_signature=transaction_signature,
                     )
                     referral_expected_net = referral.amount_raw - referral_fee_amount
                 else:
@@ -992,6 +1009,7 @@ def verify_damm_v2_mint_fee_config(
     transaction_epoch: int,
     transaction_slot: int,
     transaction_order: int,
+    transaction_signature: str,
 ) -> DammV2EconomicReconciliation:
     """Verifies each Token-2022 transfer fee against its mint pre-state.
 
@@ -1007,6 +1025,8 @@ def verify_damm_v2_mint_fee_config(
         raise TypeError("snapshots de mint devem ser uma sequência")
     if any(not isinstance(item, DammV2MintFeeConfigSnapshot) for item in snapshots):
         raise TypeError("snapshot de mint inválido")
+    if not isinstance(transaction_signature, str) or not transaction_signature.strip():
+        raise ValueError("transaction_signature é obrigatório")
     for label, value in (
         ("transaction_epoch", transaction_epoch),
         ("transaction_slot", transaction_slot),
@@ -1053,6 +1073,9 @@ def verify_damm_v2_mint_fee_config(
                 f"snapshot histórico de mint ausente para {expected.mint} "
                 f"instruction {expected.instruction_index}/{expected.inner_instruction_index}"
             )
+            continue
+        if snapshot.transaction_signature != transaction_signature:
+            mismatches.append(f"assinatura do snapshot diverge para {expected.mint}")
             continue
         if (
             isinstance(snapshot.transaction_epoch, bool)

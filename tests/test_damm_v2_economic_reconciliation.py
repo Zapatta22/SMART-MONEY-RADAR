@@ -21,7 +21,7 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SolanaTokenTransfer,
 )
 from smart_money_radar.data_sources.token2022_transfer_fee_state import (
-    TransferFeeAmountDelta,
+    decode_transfer_fee_amount_delta,
 )
 
 
@@ -104,6 +104,14 @@ def _evidence(context, input_transfer, output_transfer, referral=None):
         reason="fixture attribution",
         transfer_fee_review_required=True,
     )
+
+
+def _withheld_delta(pre, post):
+    def account_data(amount):
+        base = bytearray(165)
+        base[108] = 1
+        return bytes(base) + bytes([2]) + (2).to_bytes(2, "little") + (8).to_bytes(2, "little") + amount.to_bytes(8, "little")
+    return decode_transfer_fee_amount_delta(account_data(pre), account_data(post))
 
 
 def _deltas(values):
@@ -484,10 +492,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshot = DammV2WithheldFeeSnapshot(
             token_account="vault-a", mint="mint-a",
-            decoded_delta=TransferFeeAmountDelta(
-                pre_withheld_amount=10, post_withheld_amount=15,
-                delta=5, extension_types=(2,),
-            ),
+            decoded_delta=_withheld_delta(10, 15),
             transaction_signature="signature-1", transaction_slot=123,
             transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
             source="ordered-account-snapshot-fixture",
@@ -511,10 +516,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshot = DammV2WithheldFeeSnapshot(
             token_account="vault-a", mint="mint-a",
-            decoded_delta=TransferFeeAmountDelta(
-                pre_withheld_amount=10, post_withheld_amount=14,
-                delta=4, extension_types=(2,),
-            ),
+            decoded_delta=_withheld_delta(10, 14),
             transaction_signature="signature-1", transaction_slot=123,
             transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
             source="ordered-account-snapshot-fixture",
@@ -554,10 +556,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshot = DammV2WithheldFeeSnapshot(
             token_account="vault-a", mint="mint-a",
-            decoded_delta=TransferFeeAmountDelta(
-                pre_withheld_amount=10, post_withheld_amount=15,
-                delta=5, extension_types=(2,),
-            ),
+            decoded_delta=_withheld_delta(10, 15),
             transaction_signature="other-signature", transaction_slot=123,
             transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
             source="ordered-account-snapshot-fixture",
@@ -581,10 +580,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshot = DammV2WithheldFeeSnapshot(
             token_account="vault-a", mint="mint-a",
-            decoded_delta=TransferFeeAmountDelta(
-                pre_withheld_amount=10, post_withheld_amount=15,
-                delta=5, extension_types=(2,),
-            ),
+            decoded_delta=_withheld_delta(10, 15),
             transaction_signature="signature-1", transaction_slot=123,
             transaction_order=50, pre_snapshot_order=50, post_snapshot_order=51,
             source="ordered-account-snapshot-fixture",
@@ -608,10 +604,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshot = DammV2WithheldFeeSnapshot(
             token_account="vault-a", mint="mint-a",
-            decoded_delta=TransferFeeAmountDelta(
-                pre_withheld_amount=10, post_withheld_amount=15,
-                delta=5, extension_types=(2,),
-            ),
+            decoded_delta=_withheld_delta(10, 15),
             transaction_signature="signature-1", transaction_slot=123,
             transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
             source="ordered-account-snapshot-fixture",

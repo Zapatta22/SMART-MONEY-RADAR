@@ -2227,7 +2227,6 @@ Implementar adapter de fronteira para mensagens protobuf Yellowstone (ou mapping
 ### Limites preservados
 - Sem endpoint Yellowstone/Geyser, cliente gRPC, captura contínua, reconnect/replay automático, RAW/SQLite, backfill ou operações on-chain.
 - Sem promoção de commitment/canonicalidade. Sem integração do BankLineageTracker à timeline; pareamento pre/post bank-aware continua bloqueado até essa integração e testes de forks concorrentes.
-- A validação CI desta revisão será registrada após a execução no novo HEAD; até lá, os testes novos ainda não são considerados aprovados.
 
 
 ## 284. Validação do adapter protobuf Yellowstone — 19/11/2026

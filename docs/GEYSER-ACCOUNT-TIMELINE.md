@@ -181,3 +181,38 @@ contiguous write in the same epoch.
 Exact invalidation is tested at both the cleared bank and a descendant whose
 known parent chain passes through that bank. Such descendants are not usable
 for pre/post reconstruction after the ancestor is cleared or marked dead.
+
+
+## Persistent RAW-to-Timeline projection integrity (projection v2)
+
+The SQLite projection in `geyser_account_timeline_projection.py` is a
+rebuildable derived view. Before decoding a selected normalized RAW event, it
+recomputes SHA-256 over the exact stored `payload_bytes` and requires equality
+with the immutable `payload_sha256` column. A mismatch aborts the transaction;
+the prior projection generation and recovery checkpoints remain unchanged.
+
+A delivery is not eligible for timeline replay if its exact
+`(source_id, stream_id, stream_sequence)` has any row in
+`geyser_transport_anomalies`. This is historical taint: the exclusion applies
+whether the anomaly is OPEN or administratively RESOLVED. RESOLVED closes the
+operational interruption only; it does not rehabilitate the historical
+sequence or its deliveries.
+
+A logical RAW event identity with any row in `geyser_raw_conflicts` is also
+excluded from the derived timeline. The original RAW bytes, conflicting
+payload, and delivery records remain preserved for audit; projection exclusion
+does not delete or rewrite them.
+
+Eligible deliveries are selected deterministically by source, stream, sequence,
+and delivery ID. Sequence ordering is applied only within the same stream.
+Different streams are never compared numerically; a stream change remains a
+continuity boundary in the account timeline. This allows a full rebuild to
+place a late-arriving sequence 2 between previously received sequences 1 and 3
+for the same stream, while retaining conservative continuity across gaps,
+reconnects, and stream changes.
+
+The persistent projection version is now 2. These rules affect only derived
+projection eligibility and replay; they do not assign missing sequences,
+change RAW identity, infer a canonical fork, promote provider commitment, or
+authorize financial execution. Regression coverage lives in
+`tests/test_geyser_account_timeline_projection.py`.

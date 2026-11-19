@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "perf/geyser-audit-benchmark"
+      - "perf/geyser-audit-bounded-rebuild"
     paths:
       - "tools/benchmark_geyser_unsequenced_audit.py"
       - ".github/workflows/geyser-audit-benchmark.yml"

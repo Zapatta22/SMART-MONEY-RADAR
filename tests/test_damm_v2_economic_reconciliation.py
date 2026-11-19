@@ -5,7 +5,9 @@ from smart_money_radar.data_sources.damm_v2_analyzer import DammV2SwapEventAssoc
 from smart_money_radar.data_sources.damm_v2_decoder import DammV2EvtSwap2, DammV2SwapResult
 from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
     DammV2ExpectedWithheldFeeDelta,
+    DammV2WithheldFeeSnapshot,
     reconcile_damm_v2_economic_batch,
+    verify_damm_v2_withheld_fee_deltas,
 )
 from smart_money_radar.data_sources.damm_v2_transfer_analyzer import DammV2SwapTransferContext, DammV2TransferEvidence
 from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
@@ -466,6 +468,143 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                 [self.input, self.output],
                 monitored_wallet="",
             )
+
+
+    def test_verifies_withheld_tlv_delta_with_transaction_bound_snapshots(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshot = DammV2WithheldFeeSnapshot(
+            token_account="vault-a", mint="mint-a",
+            pre_withheld_amount_raw=10, post_withheld_amount_raw=15,
+            transaction_signature="signature-1", transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
+            source="ordered-account-snapshot-fixture",
+            pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
+        )
+        result = verify_damm_v2_withheld_fee_deltas(
+            base, [snapshot], transaction_signature="signature-1",
+            transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "RECONCILED")
+        self.assertEqual(result.withheld_fee_status, "VERIFIED")
+
+    def test_withheld_tlv_mismatch_fails_closed(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshot = DammV2WithheldFeeSnapshot(
+            token_account="vault-a", mint="mint-a",
+            pre_withheld_amount_raw=10, post_withheld_amount_raw=14,
+            transaction_signature="signature-1", transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
+            source="ordered-account-snapshot-fixture",
+            pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
+        )
+        result = verify_damm_v2_withheld_fee_deltas(
+            base, [snapshot], transaction_signature="signature-1",
+            transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("withheld diverge", result.reason)
+
+    def test_withheld_verification_requires_snapshot_for_each_fee_account(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        result = verify_damm_v2_withheld_fee_deltas(
+            base, [], transaction_signature="signature-1",
+            transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("snapshot withheld ausente", result.reason)
+
+    def test_withheld_verification_rejects_wrong_transaction_signature(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshot = DammV2WithheldFeeSnapshot(
+            token_account="vault-a", mint="mint-a",
+            pre_withheld_amount_raw=10, post_withheld_amount_raw=15,
+            transaction_signature="other-signature", transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
+            source="ordered-account-snapshot-fixture",
+            pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
+        )
+        result = verify_damm_v2_withheld_fee_deltas(
+            base, [snapshot], transaction_signature="signature-1",
+            transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("assinatura do snapshot diverge", result.reason)
+
+    def test_withheld_verification_requires_pre_transaction_and_post_transaction_order(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshot = DammV2WithheldFeeSnapshot(
+            token_account="vault-a", mint="mint-a",
+            pre_withheld_amount_raw=10, post_withheld_amount_raw=15,
+            transaction_signature="signature-1", transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=50, post_snapshot_order=51,
+            source="ordered-account-snapshot-fixture",
+            pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
+        )
+        result = verify_damm_v2_withheld_fee_deltas(
+            base, [snapshot], transaction_signature="signature-1",
+            transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("pre < transação < post", result.reason)
+
+    def test_withheld_verification_rejects_duplicate_account_snapshots(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshot = DammV2WithheldFeeSnapshot(
+            token_account="vault-a", mint="mint-a",
+            pre_withheld_amount_raw=10, post_withheld_amount_raw=15,
+            transaction_signature="signature-1", transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
+            source="ordered-account-snapshot-fixture",
+            pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
+        )
+        result = verify_damm_v2_withheld_fee_deltas(
+            base, [snapshot, snapshot], transaction_signature="signature-1",
+            transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "AMBIGUOUS")
+        self.assertIn("duplicado", result.reason)
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,7 @@ from smart_money_radar.data_sources.raydium_cpmm_transfer_reconciliation import 
 )
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     SPL_TOKEN_PROGRAM_ID,
+    TOKEN_2022_PROGRAM_ID,
     SolanaTokenTransfer,
 )
 from smart_money_radar.domain.models import build_swap_operation_id
@@ -96,6 +97,40 @@ def _matched():
         output_token_account_delta_raw=900000,
         input_vault_delta_raw=1250000,
         output_vault_delta_raw=-900000,
+    )
+
+
+
+def _matched_with_token2022_fees():
+    matched = _matched()
+    accounts = replace(
+        matched.swap.accounts,
+        input_token_program=TOKEN_2022_PROGRAM_ID,
+        output_token_program=TOKEN_2022_PROGRAM_ID,
+    )
+    swap = replace(matched.swap, accounts=accounts)
+    input_transfer = replace(
+        matched.input_transfer,
+        program_id=TOKEN_2022_PROGRAM_ID,
+        program_name="Token-2022",
+        instruction_type="TRANSFER_CHECKED_WITH_FEE",
+        fee_amount_raw=10,
+    )
+    output_transfer = replace(
+        matched.output_transfer,
+        program_id=TOKEN_2022_PROGRAM_ID,
+        program_name="Token-2022",
+        instruction_type="TRANSFER_CHECKED_WITH_FEE",
+        fee_amount_raw=45,
+    )
+    return replace(
+        matched,
+        swap=swap,
+        input_transfer=input_transfer,
+        output_transfer=output_transfer,
+        output_amount_raw=899955,
+        input_vault_delta_raw=1249990,
+        output_token_account_delta_raw=899955,
     )
 
 
@@ -255,6 +290,32 @@ class SwapDomainBundleBuilderTests(unittest.TestCase):
     def test_rejects_invalid_reference_mint(self):
         with self.assertRaisesRegex(ValueError, "reference_mints"):
             self._build(reference_mints=[INPUT_MINT, ""])
+
+    def test_builds_bundle_with_token2022_gross_debit_and_net_credit(self):
+        bundle = self._build(matched=_matched_with_token2022_fees())[0]
+        self.assertEqual(bundle.observation.input_amount, Decimal("1.25"))
+        self.assertEqual(bundle.observation.output_amount, Decimal("0.899955"))
+        self.assertIn("input_transfer_fee_raw:10", bundle.evidence.evidence)
+        self.assertIn("output_transfer_fee_raw:45", bundle.evidence.evidence)
+        self.assertIn("wallet_input_debit_raw:1250000", bundle.evidence.evidence)
+        self.assertIn("wallet_output_credit_net_raw:899955", bundle.evidence.evidence)
+
+    def test_rejects_wrong_net_output_amount_for_token2022_fee(self):
+        matched = replace(_matched_with_token2022_fees(), output_amount_raw=900000)
+        with self.assertRaisesRegex(ValueError, "Quantidade líquida de saída"):
+            self._build(matched=matched)
+
+    def test_rejects_fee_variant_not_owned_by_token2022_program(self):
+        matched = _matched_with_token2022_fees()
+        transfer = replace(matched.output_transfer, program_id=SPL_TOKEN_PROGRAM_ID)
+        with self.assertRaisesRegex(ValueError, "Taxa explícita"):
+            self._build(matched=replace(matched, output_transfer=transfer))
+
+    def test_rejects_fee_field_on_non_fee_transfer_variant(self):
+        matched = _matched()
+        transfer = replace(matched.output_transfer, fee_amount_raw=1)
+        with self.assertRaisesRegex(ValueError, "taxa não suportada"):
+            self._build(matched=replace(matched, output_transfer=transfer))
 
 
 if __name__ == "__main__":

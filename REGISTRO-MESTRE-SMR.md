@@ -3383,3 +3383,13 @@ Validação após remoção:
 - PR #25 continua OPEN/DRAFT, mergeable=true, base #24, head `74ba9146797f93af52939ff669fa4a07d03b9070`; nenhuma alteração na `main`.
 
 Progresso estimado: módulo **92%**, revisão técnica **90%**. Permanecem: revisão final de detalhes não centrais da PR #25, avaliação/decisão sobre fixture única com swaps positivos simultâneos DAMM v2 + CPMM e revisão da cadeia de merge em ordem. Nenhuma PR foi mergeada; não fazer merge sem autorização explícita.
+
+
+## 232. CI de conferência após atualização do Registro Mestre — 19/11/2026
+
+- A atualização documental da seção 231 gerou o commit `6b79175951c6e20e3d1546667e22e812c0f85099`.
+- CI #1357, run `44430303073`, SUCCESS nesse commit.
+- Suíte: 538 testes aprovados; `python -m compileall -q src tests` aprovado.
+- PR #25 foi consultada após a atualização: OPEN/DRAFT, mergeable=true, head `6b79175951c6e20e3d1546667e22e812c0f85099`, base `feat/damm-v2-swap-domain-adapter`. Não mergeada.
+- A branch main continua sem alteração por esta sequência de commits.
+- Estado estimado mantido: módulo **92%**; revisão técnica **90%**. Não elevar o percentual até fechar a revisão final dos arquivos remanescentes e decidir explicitamente a lacuna de fixture simultânea DAMM v2 + CPMM.

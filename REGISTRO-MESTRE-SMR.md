@@ -2907,10 +2907,12 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 
 ### Estado de validação
 - Alterações gravadas na branch `fix/geyser-finalized-evidence-gate` por commits sequenciais.
-- HEAD atual da PR após as correções: `53666547c569c37adc6313d62ac5b51f31fa4b0a`.
+- HEAD atual da PR após as correções e atualização do registro: `19669153c460d49c5133653b7be8b79c05c45c5a`.
 - A revisão do diff confirmou a classificação mutuamente exclusiva no construtor: `LEGACY_UNSCOPED_UNVERIFIED` apenas quando `bank_id` está ausente; caso contrário, `BANK_PROVIDER_REPORTED_FINALIZED` somente após os gates bancários.
-- Consulta de workflows associada ao HEAD atual não retornou execução; CI ainda não está comprovado neste HEAD. Não declarar testes aprovados.
+- Workflow `SMR tests`, run `44611738575`, job `135869848269`: SUCCESS no merge ref da PR `8eb6d0136d35369f020ab76557e98d40a2f9aab1`, que incorpora o HEAD `19669153c460d49c5133653b7be8b79c05c45c5a` sobre a base `e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`.
+- `PYTHONPATH=src python -m unittest discover -s tests -v`: 606 testes executados em 4,133 s, todos aprovados; `python -m compileall -q src tests` também aprovado.
+- CI valida o conjunto integrado da PR, não provider mainnet nem adapter operacional.
 - PR #35 permanece Draft e sem merge; `main` permanece intacta.
 
 ### Próxima ação
-- Obter execução CI para o HEAD `53666547c569c37adc6313d62ac5b51f31fa4b0a`; examinar resultados e corrigir qualquer falha antes de nova revisão de segurança.
+- Fazer revisão final de segurança do diff após a CI aprovada; manter PR #35 Draft e sem merge até autorização explícita.

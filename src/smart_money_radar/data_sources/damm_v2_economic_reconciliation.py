@@ -578,10 +578,18 @@ def verify_damm_v2_withheld_fee_deltas(
         if snapshot.transaction_signature != transaction_signature:
             mismatches.append(f"assinatura do snapshot diverge para {expected.token_account}")
             continue
-        if snapshot.transaction_slot != transaction_slot:
+        if (
+            isinstance(snapshot.transaction_slot, bool)
+            or not isinstance(snapshot.transaction_slot, int)
+            or snapshot.transaction_slot != transaction_slot
+        ):
             mismatches.append(f"slot do snapshot diverge para {expected.token_account}")
             continue
-        if snapshot.transaction_order != transaction_order:
+        if (
+            isinstance(snapshot.transaction_order, bool)
+            or not isinstance(snapshot.transaction_order, int)
+            or snapshot.transaction_order != transaction_order
+        ):
             mismatches.append(f"ordem da transação diverge para {expected.token_account}")
             continue
         order_values = (
@@ -606,6 +614,8 @@ def verify_damm_v2_withheld_fee_deltas(
         decoded = snapshot.decoded_delta
         if (
             not isinstance(decoded, TransferFeeAmountDelta)
+            or not isinstance(decoded.extension_types, tuple)
+            or any(isinstance(item, bool) or not isinstance(item, int) for item in decoded.extension_types)
             or 2 not in decoded.extension_types
         ):
             mismatches.append(f"delta TLV TransferFeeAmount ausente/inválido para {expected.token_account}")
@@ -618,7 +628,11 @@ def verify_damm_v2_withheld_fee_deltas(
             mismatches.append(f"quantidade withheld inválida para {expected.token_account}")
             continue
         observed_delta = decoded.post_withheld_amount - decoded.pre_withheld_amount
-        if decoded.delta != observed_delta:
+        if (
+            isinstance(decoded.delta, bool)
+            or not isinstance(decoded.delta, int)
+            or decoded.delta != observed_delta
+        ):
             mismatches.append(f"delta TLV inconsistente para {expected.token_account}")
             continue
         if observed_delta != expected.expected_withheld_delta_raw:

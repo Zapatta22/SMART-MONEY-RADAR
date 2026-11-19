@@ -2121,3 +2121,13 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - Nenhum código/teste foi alterado após a validação #1561; as atualizações finais são apenas descrição da PR/registro.
 - Nenhuma RPC/Helius, RAW, SQLite, importação, checkpoint ou operação on-chain foi executada.
 - Próxima etapa de implementação: normalizador de account updates Yellowstone/Geyser e timeline por pubkey, usando `write_version`, `txn_signature`, slot e stream sequence; parear pre/post, preservar startup baseline e detectar lacunas/replay/rollback antes de qualquer reconciliação real.
+
+
+## 278. CI final da cadeia de snapshots históricos — 19/11/2026
+
+- HEAD da PR #23: `0ce2bf7e2e6811afd3eca8c3d7f44a982cc30a6e`.
+- CI #1562 (`44449119065`) no HEAD atual: completed/success, **451 testes OK**, compileall aprovado.
+- A atualização do Registro Mestre e descrição da PR após CI #1561 foram documentais; nenhum código/teste mudou.
+- PR #23 continua OPEN/DRAFT, `mergeable=true`, `mergeable_state=clean`, sem merge; PR #22 permanece Draft.
+- `main` continua `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Próxima implementação definida: normalizador provider-neutral de Yellowstone/Geyser account updates e timeline por pubkey, preservando slot, write_version, txn_signature e stream sequence; construir pareamento pre/post, startup baseline, recuperação de lacunas/replay e descarte de forks antes de conectar Helius ou outro provider.

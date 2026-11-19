@@ -213,7 +213,7 @@ class AccountUpdateTimeline:
         if not entries:
             return None
         # Without a BankLineageTracker this linear view cannot choose a fork.
-        if any(entry.update.bank_id is not None for entry in entries):
+        if any(entry.update.bank_id is not None or entry.update.is_startup for entry in entries):
             return None
         return entries[-1].update
 

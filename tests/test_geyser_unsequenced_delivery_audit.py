@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,6 +44,10 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         return ingest_normalized_event(
             self.raw, self.event(**kwargs), schema_version="geyser-v16"
         )
+
+    def test_temp_store_is_not_an_operational_audit_option(self):
+        with self.assertRaises(TypeError):
+            SQLiteGeyserUnsequencedDeliveryAudit(self.db, temp_store="MEMORY")
 
     def test_unsequenced_delivery_without_witness_remains_unresolved(self):
         result = self.ingest()
@@ -120,6 +125,8 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         self.ingest()
         self.audit.rebuild()
         previous = self.audit.get_checkpoint()
+        previous_rows = self.audit.list_deliveries()
+        raw_counts = self.raw.counts()
         with sqlite3.connect(self.db) as connection:
             connection.execute("""
                 CREATE TRIGGER reject_audit_insert
@@ -129,7 +136,9 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(sqlite3.DatabaseError, "forced audit failure"):
             self.audit.rebuild()
         self.assertEqual(self.audit.get_checkpoint()["generation"], previous["generation"])
-        self.assertEqual(len(self.audit.list_deliveries()), 1)
+        self.assertEqual(self.audit.list_deliveries(), previous_rows)
+        self.assertEqual(self.raw.counts(), raw_counts)
+        self.assertEqual(self.raw.integrity_check(), ["ok"])
 
     def test_different_sources_never_reconcile_each_other(self):
         first = self.ingest(source="source-a")
@@ -209,6 +218,92 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         self.assertEqual(summary["unsequenced_count"], 2)
         self.assertEqual(summary["reconciled_count"], 2)
 
+    def test_rebuild_streams_across_multiple_delivery_batches(self):
+        received_at = "2026-11-19T12:00:00+00:00"
+        for index in range(501):
+            event_id = f"batch-event-{index:04d}"
+            self.raw.ingest(
+                RawEventInput(
+                    event_id=event_id,
+                    source_id="source-a",
+                    event_kind="account",
+                    schema_version="geyser-v16",
+                    payload_encoding="normalized_json",
+                    payload_bytes=f"payload-{index}".encode("ascii"),
+                ),
+                RawDeliveryInput(
+                    stream_id="unsequenced",
+                    stream_sequence=None,
+                    received_at=received_at,
+                ),
+            )
+            self.raw.ingest(
+                RawEventInput(
+                    event_id=event_id,
+                    source_id="source-a",
+                    event_kind="account",
+                    schema_version="geyser-v16",
+                    payload_encoding="normalized_json",
+                    payload_bytes=f"payload-{index}".encode("ascii"),
+                ),
+                RawDeliveryInput(
+                    stream_id="replay",
+                    stream_sequence=index + 1,
+                    received_at=received_at,
+                ),
+            )
+
+        summary = self.audit.rebuild()
+        self.assertEqual(summary["delivery_count"], 1002)
+        self.assertEqual(summary["unsequenced_count"], 501)
+        self.assertEqual(summary["reconciled_count"], 501)
+        rows = self.audit.list_deliveries("UNSEQUENCED_RECONCILED")
+        self.assertEqual(len(rows), 501)
+        self.assertTrue(all(len(row["witness_delivery_ids"]) == 1 for row in rows))
+        self.assertEqual(self.raw.integrity_check(), ["ok"])
+
+    def test_high_cardinality_witnesses_are_complete_and_sorted(self):
+        unsequenced = self.ingest()
+        witness_count = 4096
+        received_at = "2026-11-19T16:00:00+00:00"
+        with sqlite3.connect(self.db) as connection:
+            connection.executemany(
+                """INSERT INTO geyser_raw_deliveries
+                (event_id,source_id,stream_id,stream_sequence,delivery_kind,received_at)
+                VALUES (?,?,?,?,?,?)""",
+                [
+                    (
+                        unsequenced.event_id,
+                        "source-a",
+                        "mass-replay",
+                        sequence,
+                        "replay",
+                        received_at,
+                    )
+                    for sequence in range(1, witness_count + 1)
+                ],
+            )
+            expected_witness_ids = [
+                row[0] for row in connection.execute(
+                    """SELECT delivery_id FROM geyser_raw_deliveries
+                       WHERE event_id=? AND stream_sequence IS NOT NULL
+                       ORDER BY delivery_id""",
+                    (unsequenced.event_id,),
+                )
+            ]
+
+        summary = self.audit.rebuild()
+        row = next(
+            item for item in self.audit.list_deliveries()
+            if item["delivery_id"] == unsequenced.delivery_id
+        )
+        self.assertEqual(summary["reconciled_count"], 1)
+        self.assertEqual(len(row["witness_delivery_ids"]), witness_count)
+        self.assertEqual(row["witness_delivery_ids"], expected_witness_ids)
+        self.assertEqual(row["witness_delivery_ids"], sorted(row["witness_delivery_ids"]))
+        self.assertIsNone(row["stream_sequence"])
+        self.assertEqual(self.raw.integrity_check(), ["ok"])
+
     def test_unsequenced_event_is_not_projected_into_timeline_or_checkpoint(self):
         self.ingest()
         timeline = SQLiteGeyserAccountTimelineProjection(self.db)
@@ -221,6 +316,30 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         self.assertIsNotNone(checkpoint)
         self.assertEqual(checkpoint["projected_event_count"], 0)
         self.assertEqual(checkpoint["skipped_unsequenced_count"], 1)
+
+    def test_concurrent_rebuilds_are_serialized_and_advance_generations(self):
+        self.ingest()
+        self.ingest(sequence=20, stream="replay")
+        auditors = [
+            SQLiteGeyserUnsequencedDeliveryAudit(self.db),
+            SQLiteGeyserUnsequencedDeliveryAudit(self.db),
+        ]
+        start = threading.Barrier(2)
+
+        def rebuild(auditor):
+            start.wait(timeout=10)
+            return auditor.rebuild()
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(rebuild, auditor) for auditor in auditors]
+            results = [future.result(timeout=45) for future in futures]
+
+        self.assertEqual(sorted(result["generation"] for result in results), [1, 2])
+        self.assertEqual(self.audit.get_checkpoint()["generation"], 2)
+        self.assertEqual(self.audit.get_checkpoint()["delivery_count"], 2)
+        self.assertEqual(len(self.audit.list_deliveries()), 2)
+        self.assertEqual(self.raw.integrity_check(), ["ok"])
 
     def test_schema_migration_version_is_recorded(self):
         with sqlite3.connect(self.db) as connection:

@@ -266,27 +266,34 @@ class BankLineageTracker:
             self._fingerprints.add(event.fingerprint)
             return BankUpdateResult("inserted")
 
+        pending_key = (event.source_id, event.slot)
+        pending = self._pending_replacements.get(pending_key, [])
+        if event.status == "SLOT_CREATED_BANK" and len(pending) > 1:
+            return self._conflict(
+                key, "ambiguous_replacement",
+                "mais de um bank_id foi invalidado antes do SLOT_CREATED_BANK",
+            )
+
+        existing_node = self._banks.get(key)
+        if (
+            existing_node is not None
+            and event.parent_slot is not None
+            and existing_node.parent_slot is not None
+            and existing_node.parent_slot != event.parent_slot
+        ):
+            return self._conflict(key, "parent_slot_changed", "bank recebeu parent_slot incompatível")
+
         node = self._node(key)
         if event.parent_slot is not None:
-            if node.parent_slot is not None and node.parent_slot != event.parent_slot:
-                return self._conflict(key, "parent_slot_changed", "bank recebeu parent_slot incompatível")
             node.parent_slot = event.parent_slot
         node.statuses.add(event.status)
 
-        if event.status == "SLOT_CREATED_BANK":
-            pending_key = (event.source_id, event.slot)
-            pending = self._pending_replacements.get(pending_key, [])
-            if len(pending) == 1:
-                old_key = pending.pop(0)
-                node.replaces_bank = old_key
-                self._node(old_key).invalidated = True
-                if not pending:
-                    self._pending_replacements.pop(pending_key, None)
-            elif len(pending) > 1:
-                return self._conflict(
-                    key, "ambiguous_replacement",
-                    "mais de um bank_id foi invalidado antes do SLOT_CREATED_BANK",
-                )
+        if event.status == "SLOT_CREATED_BANK" and len(pending) == 1:
+            old_key = pending.pop(0)
+            node.replaces_bank = old_key
+            self._node(old_key).invalidated = True
+            if not pending:
+                self._pending_replacements.pop(pending_key, None)
         self._fingerprints.add(event.fingerprint)
         return BankUpdateResult("inserted", key)
 
@@ -296,9 +303,10 @@ class BankLineageTracker:
         if event.fingerprint in self._fingerprints:
             return BankUpdateResult("duplicate")
         key = BankKey(event.source_id, event.slot, event.cleared_bank_id)
-        node = self._node(key)
-        if node.parent_slot is not None and node.parent_slot != event.parent_slot:
+        existing_node = self._banks.get(key)
+        if existing_node is not None and existing_node.parent_slot is not None and existing_node.parent_slot != event.parent_slot:
             return self._conflict(key, "parent_slot_changed", "EntryUpdateParent trouxe parent_slot incompatível")
+        node = self._node(key)
         node.invalidated = True
         node.cleared_by_parent_update = True
         node.parent_slot = event.parent_slot
@@ -311,16 +319,17 @@ class BankLineageTracker:
         if event.fingerprint in self._fingerprints:
             return BankUpdateResult("duplicate")
         key = BankKey(event.source_id, event.slot, event.bank_id)
-        node = self._node(key)
-        if node.blockhash is not None and node.blockhash != event.blockhash:
+        existing_node = self._banks.get(key)
+        if existing_node is not None and existing_node.blockhash is not None and existing_node.blockhash != event.blockhash:
             return self._conflict(key, "blockhash_changed", "mesmo bank_id recebeu blockhash diferente")
-        if node.parent_slot is not None and node.parent_slot != event.parent_slot:
+        if existing_node is not None and existing_node.parent_slot is not None and existing_node.parent_slot != event.parent_slot:
             return self._conflict(key, "parent_slot_changed", "slot update e block metadata discordam")
-        if node.parent_blockhash is not None and (
-            node.parent_blockhash != event.parent_blockhash
-            or node.parent_slot != event.parent_slot
+        if existing_node is not None and existing_node.parent_blockhash is not None and (
+            existing_node.parent_blockhash != event.parent_blockhash
+            or existing_node.parent_slot != event.parent_slot
         ):
             return self._conflict(key, "parent_block_identity_changed", "metadados de pai incompatíveis")
+        node = self._node(key)
         node.blockhash = event.blockhash
         node.parent_slot = event.parent_slot
         node.parent_blockhash = event.parent_blockhash

@@ -1914,3 +1914,17 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - O resultado comprova compatibilidade de código/testes com a base intermediária atual, mas não valida transações RAW mainnet nem reconciliação econômica DAMM v2. `ATTRIBUTED` permanece evidência estrutural, nunca `MATCHED`.
 - Nenhuma operação RPC/Helius, leitura/escrita de RAW, SQLite, importação, checkpoint ou operação on-chain foi realizada.
 - Próxima ação: revisão final dos invariantes e dos limites semânticos de referral antes de decidir se a PR pode sair de Draft.
+
+
+## 263. Auditoria estática final da atribuição referral PR #22 — 19/11/2026
+
+- A matriz `resolve_damm_fee_mode` seleciona token A apenas para `BOTH_TOKEN + B_TO_A`; nos demais modos/direções suportados, seleciona token B. Isso corresponde ao mapeamento FeeMode documentado para `BOTH_TOKEN`, `ONLY_B` e `COMPOUNDING`.
+- A seleção da transferência exige mesma instrução externa, descendência CPI demonstrável, posição anterior ao EvtSwap2, origem no vault do token de cobrança e destino na referral token account.
+- A validação posterior confere programa Token, mint, presença de decimals, tipo suportado, amount bruto positivo u64, coerência de `TransferCheckedWithFee`/fee explícita e igualdade do bruto com `EvtSwap2.swap_result.referral_fee`.
+- A unicidade é verificada por papel e globalmente entre operações; duplicidade ou reutilização não é promovida a `ATTRIBUTED`.
+- Casos ausentes, ambíguos, malformados, não executados ou inconsistentes permanecem fail-closed. O teste temporal pós-EvtSwap2 foi aprovado no CI.
+- Limite semântico identificado e mantido explícito: o módulo exige `decimals` presente, mas não consulta o mint para comparar o número de casas decimais. Para transferências executadas, a validação de decimals é imposta pelo programa Token no processamento on-chain; a camada atual não decodifica estado do mint nem prova epoch. Essa prova pertence à reconciliação com estado histórico, não deve ser inferida da atribuição isolada.
+- CI combinado #1456 no merge commit sincronizado: **393 testes OK** e compileall aprovado. O commit posterior `2fa5ed8856e48d7e474547fdaec10100dd57f10d` alterou somente este Registro Mestre.
+- Resultado da auditoria: nenhum bloqueio estrutural adicional identificado dentro do escopo de atribuição; permanecem as limitações econômicas já declaradas. Isso não equivale a auditoria de transações RAW mainnet nem a aprovação para execução financeira.
+- PR #22 permanece OPEN/DRAFT, mergeable/clean; não integrada. `main` permanece `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Próxima etapa técnica após decisão de revisão: especificar reconciliação econômica por operação usando EvtSwap2, transfers input/output/referral, fees explícitas/implícitas, withheld histórico e deltas por conta/vault, sem dividir arbitrariamente deltas agregados entre swaps sequenciais.

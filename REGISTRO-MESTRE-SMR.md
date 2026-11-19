@@ -3079,3 +3079,41 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - Registro Mestre atualizado nesta seção para preservar os achados e evitar reauditoria.
 - `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhum merge, retarget ou alteração de main foi executado.
 - Próxima ação recomendada: corrigir os dois bloqueadores de integridade em branch de trabalho, adicionar testes de regressão, validar CI no novo HEAD e então repetir a revisão focada. O achado de replay tardio deve ser resolvido/documentado antes de qualquer promoção operacional.
+
+
+## 309. Correções de integridade da Timeline Geyser — PR #36 — 19/11/2026
+
+### Branch isolada e escopo
+- Usuário autorizou explicitamente implementar os achados da revisão da PR #23 em 19/11/2026.
+- Para preservar a branch da PR #23 e a `main`, foi criada branch isolada `fix/geyser-timeline-raw-integrity` a partir do snapshot revisado `0d1188370d622aee34b3f2ea7060c8f606aa7034`.
+- PR stacked Draft #36: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/36
+- Destino da PR #36: `feat/damm-v2-economic-reconciliation`, que é a branch HEAD da PR #23; a PR #36 não foi mergeada.
+- PR #23 permanece aberta/Draft; sua branch não foi alterada por esta implementação.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+### Implementação
+- `src/smart_money_radar/storage/geyser_account_timeline_projection.py`:
+  - `PROJECTION_VERSION` incrementada de 1 para 2.
+  - Antes de decodificar payload normalizado selecionado para projeção, recalcula SHA-256 sobre os bytes RAW exatos e exige igualdade com `payload_sha256`; divergência lança ValueError dentro da transação, preservando a geração anterior.
+  - Delivery só é elegível se não existir anomalia histórica para a tupla exata `(source_id, stream_id, stream_sequence)`, independentemente de status OPEN ou RESOLVED.
+  - Evento lógico com qualquer conflito persistido em `geyser_raw_conflicts` é excluído da Timeline derivada; RAW e registros de conflito permanecem intactos.
+  - Delivery elegível é ordenada por `source_id, stream_id, stream_sequence, delivery_id`; sequência só é ordenada dentro da mesma stream. Troca de stream permanece fronteira de continuidade, sem comparação numérica entre streams.
+- `tests/test_geyser_account_timeline_projection.py` adiciona cobertura para: sequência contaminada mesmo após RESOLVED; identidade RAW conflitante excluída; mutação JSON estruturalmente válida com hash antigo causa rollback da geração; sequência tardia 2 reconstruída entre 1 e 3 no replay integral.
+- `docs/GEYSER-ACCOUNT-TIMELINE.md` documenta o contrato persistente v2, taint histórico, integridade SHA-256 e semântica de replay.
+
+### Evidência de CI
+- Commit de código/testes: `ceeaf82f1873dfdbe873120789d16dc08a79750b`.
+- Workflow `SMR tests`, run `44614876540`, job `135880748123`: SUCCESS.
+- Log do job: 609 testes aprovados em 4,712s; `python -m compileall -q src tests` aprovado.
+- Testes novos confirmados individualmente no log:
+  - `test_resolved_transport_anomaly_still_taints_every_delivery_of_sequence`
+  - `test_raw_identity_conflict_taints_original_event_from_timeline`
+  - `test_valid_json_payload_mutation_fails_raw_hash_and_rolls_back_generation`
+  - `test_late_arriving_sequence_is_replayed_in_stream_order`
+- CI push no commit de código/testes `ceeaf82f1873dfdbe873120789d16dc08a79750b`: run `44614876540`, job `135880748123`, SUCCESS, 609 testes em 4,712s e compileall SUCCESS. CI pull_request após a atualização da política documental: run `44615009546`, head `48b58391f4e091a85a742e06166ec62cca1d9259`, job `135881222296`, SUCCESS; log confirma os mesmos 609 testes em 4,713s, os quatro testes novos e compileall SUCCESS. O HEAD final da branch passou depois a `4e699dd1f57c967c0e00566c77b803580b766a93` apenas por atualização do Registro Mestre; nenhum arquivo de código ou teste foi alterado após o snapshot validado.
+
+### Limites e pendências
+- A revisão não cria adapter live nem consulta provider; não altera RAW; não infere sequência ausente; não declara fork canônico; não habilita execução financeira.
+- A projeção continua agrupando timelines por source; ao alternar streams, o modelo cria uma fronteira de continuidade conservadora. Não há comparação de sequência entre streams.
+- PR #36 está OPEN/DRAFT, sem merge. PR #23 está OPEN/DRAFT e ainda não aprovada para merge até a correção ser integrada e reavaliada.
+- Próxima ação: confirmar CI no HEAD final da PR #36, revisar o diff completo e os testes; então reavaliar se os bloqueadores da PR #23 foram resolvidos. Nenhum merge sem autorização explícita.

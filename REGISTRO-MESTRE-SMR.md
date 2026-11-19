@@ -2785,12 +2785,33 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - Commit de implementação: `ea4f84965b7b7c41e3b17e461e8bfaca84600cdf`.
 - Commit do teste multi-lote: `970ed5efce7a7fb96aed6e993551a3aab90ab8a3`.
 
-### Validação e limites
-- Até este registro, não foi consultado resultado de CI para o HEAD `970ed5efce7a7fb96aed6e993551a3aab90ab8a3`; portanto, implementação, testes completos e compileall ainda não estão declarados aprovados.
-- O benchmark comparativo nas mesmas escalas (1k, 10k, 50k e 100k eventos lógicos) ainda precisa ser executado e comparado ao baseline da seção 300.
-- O caminho SQL evita estruturas globais O(N) em Python, mas a tabela TEMP e o índice consomem espaço em disco/cache SQLite; custo de I/O e comportamento sob concorrência ainda precisam ser medidos.
-- A lista de IDs testemunhas de um único evento é serializada em uma string JSON pelo SQLite; casos patológicos com cardinalidade extrema por evento merecem avaliação específica.
+### Validação comprovada
+- CI `SMR tests` run #1770, ID `44560521402`, no HEAD `4ef7ad0393c2d8796f897274c3b7aaefb7cee6ef`: SUCCESS.
+- Log confirma o teste multi-lote e `Ran 588 tests in 6.612s`, `OK`; etapa `python -m compileall -q src tests` concluída com SUCCESS.
+- Job `geyser-audit-benchmark` do run #1770: SUCCESS; artefato `geyser-audit-bounded-rebuild-results`, ID `14549585032`.
+- Workflow dedicado de benchmark #5, run ID `44560521447`: SUCCESS, mesma fixture e mesmas quatro escalas.
+
+### Comparação com o baseline da seção 300
+| Eventos lógicos | Deliveries | Baseline: rebuild | Novo: rebuild | Baseline: pico Python | Novo: pico Python |
+|---:|---:|---:|---:|---:|---:|
+| 1.000 | 2.000 | 0,063325 s | 0,028314 s | 1,38 MiB | 0,59 MiB |
+| 10.000 | 20.000 | 0,644407 s | 0,305129 s | 14,35 MiB | 0,42 MiB |
+| 50.000 | 100.000 | 3,666561 s | 1,694234 s | 75,15 MiB | 0,60 MiB |
+| 100.000 | 200.000 | 7,331397 s | 3,194474 s | 150,48 MiB | 0,42 MiB |
+
+- Tempo de rebuild melhorou entre 52,6% e 56,4% (aproximadamente 2,1–2,3x mais rápido) nas quatro escalas.
+- Pico de alocações Python caiu 57,2% na escala de 2 mil deliveries e entre 97,1% e 99,7% nas três escalas maiores. Na escala de 200 mil deliveries, caiu de 150,48 MiB para 0,42 MiB.
+- Em todas as escalas, as classificações permaneceram exatamente as esperadas: uma `SEQUENCED` e uma `UNSEQUENCED_RECONCILED` por evento lógico.
+- Contagens RAW de eventos/deliveries permaneceram intactas e `PRAGMA integrity_check` retornou `ok` em todas as escalas.
+- O teste adicional atravessou mais de um lote de leitura e verificou 501 reconciliações, testemunhas individuais e integridade SQLite.
+
+### Limites e interpretação
+- `tracemalloc` mede alocações Python, não RSS total nem todas as alocações internas do SQLite/C; portanto, 0,42 MiB não representa o consumo total do processo.
+- A nova estratégia transfere estruturas de trabalho para tabela TEMP e índice SQLite; o benchmark sintético não mediu espaço temporário em disco, pressão de cache, concorrência, latência de ingestão nem workload real de provider.
+- O tempo medido inclui `tracemalloc` ativo e deve ser comparado apenas com o baseline executado sob o mesmo método/runner.
+- A lista de IDs testemunhas de um único evento ainda é materializada como JSON em uma string pelo SQLite; cardinalidade extrema por evento permanece uma limitação a testar.
 - Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+- PR #27 continua Draft, aberta e sem merge; PR #26 permanece inalterada e Draft; `main` intacta.
 
 ### Próxima ação
 - Obter CI verde no HEAD atual (suíte completa e compileall); corrigir falhas com evidência antes de benchmark.

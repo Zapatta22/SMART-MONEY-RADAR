@@ -3230,3 +3230,29 @@ Precedência e efeito:
 - A branch `main` não foi modificada por esta operação. Nenhum provider/RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
 - Próxima ação: aguardar e inspecionar a CI disparada por esta atualização documental, confirmando que o runner usa a base #26. Em seguida, revisar o diff e o estado das PRs sem repetir os testes já aprovados.
 - Não fazer merge sem autorização explícita e específica do usuário.
+
+
+## 313. CI e benchmark confirmados após correção da base da PR #30 — 19/11/2026
+
+### Execuções no HEAD atual da branch
+- HEAD da branch: `b58c8a19d3cd22f91c19ad508f5ccbdf4f0afa45`.
+- A PR #30 usa base `feat/geyser-unsequenced-raw-audit`, HEAD `f0d63038411cc4207fae910a3ef168e3af443784`.
+- Workflow **SMR tests**, run ID `44587193741`, run #1833: SUCCESS.
+- Job `test`: SUCCESS; log confirma `Ran 593 tests in 6.723s`; etapa `python -m compileall -q src tests` SUCCESS.
+- Workflow **Geyser audit benchmark**, run ID `44587193771`, run #49: SUCCESS.
+- Os logs confirmam checkout do merge ref `33604cae9e8a0c333079a592a9bc447d6496c440`, criado por GitHub para integrar o HEAD `b58c8a19d3cd22f91c19ad508f5ccbdf4f0afa45` à base #26 `f0d63038411cc4207fae910a3ef168e3af443784`. Assim, esta rodada valida a PR #30 já com a base corrigida.
+
+### Resultados do benchmark desta rodada
+- Artefato `geyser-audit-benchmark-results`, ID `14562735206`, SHA-256 do ZIP `0eadcc6e601df32f7e3d0fbaf17d94f108492f8882de8157adbc3cef842d4670`.
+- Escalas sintéticas: 1.000, 10.000, 50.000 e 100.000 eventos lógicos (2.000, 20.000, 100.000 e 200.000 deliveries). Todas as escalas apresentaram classificações esperadas, contagens RAW preservadas e `integrity_check=["ok"]`.
+- Escala máxima: 100.000 eventos lógicos / 200.000 deliveries; rebuild 6,510442 s; throughput 30.719,88 deliveries/s; pico RSS do worker 29,06 MiB; TEMP SQLite 24.399.872 bytes; tracemalloc 0,60 MiB; 100.000 `SEQUENCED` e 100.000 `UNSEQUENCED_RECONCILED`.
+- Fanout alto: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,230718 s; pico RSS 28,93 MiB; TEMP SQLite 2.088.960 bytes; todas as testemunhas preservadas; `integrity_check=["ok"]`.
+- Comparação TEMP no cenário de 100.000 eventos: DEFAULT 6,498656 s / 28,96 MiB RSS; FILE 6,494436 s / 28,94 MiB; MEMORY 6,471898 s / 53,29 MiB. A diferença temporal de MEMORY é irrelevante frente ao aumento de aproximadamente 24,3 MiB de RSS; manter DEFAULT/file-backed.
+- Limites: benchmark sintético em runner Linux/GitHub Actions. RSS/VmHWM mede a vida útil do worker, não somente rebuild; TEMP pages × page size mede alocação lógica SQLite, não bytes físicos escritos. Não extrapolar diretamente para Termux, VPS ou produção.
+
+### Estado atualizado e próxima ação
+- A lacuna de CI identificada na seção 312 foi resolvida: os dois workflows passaram no merge ref atual da PR #30 com a base #26.
+- PR #30 permanece OPEN/DRAFT, `merged=false`, `mergeable=true`; HEAD `b58c8a19d3cd22f91c19ad508f5ccbdf4f0afa45`; 44 commits e 8 arquivos alterados conforme snapshot consultado.
+- PRs #26, #27, #28 e #29 continuam abertas/Draft e sem merge. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhum provider/RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+- Próxima ação: revisão final somente leitura do diff e das relações entre PRs #26–#30, sem repetir testes e sem fazer merge. Não fazer merge sem autorização explícita e específica do usuário.

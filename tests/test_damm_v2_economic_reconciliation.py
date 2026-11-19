@@ -6,7 +6,9 @@ from smart_money_radar.data_sources.damm_v2_decoder import DammV2EvtSwap2, DammV
 from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
     DammV2ExpectedWithheldFeeDelta,
     DammV2MintFeeConfigSnapshot,
+    DammV2MintPrestate,
     DammV2WithheldFeeSnapshot,
+    build_damm_v2_mint_fee_config_snapshots,
     reconcile_damm_v2_economic_batch,
     verify_damm_v2_mint_fee_config,
     verify_damm_v2_withheld_fee_deltas,
@@ -26,6 +28,9 @@ from smart_money_radar.data_sources.token2022_transfer_fee_state import (
     TransferFeeConfigState,
     TransferFeeRate,
     decode_transfer_fee_amount_delta,
+)
+from smart_money_radar.data_sources.solana_token_transfer_decoder import (
+    decode_solana_instruction_inventory,
 )
 
 
@@ -117,6 +122,38 @@ def _withheld_delta(pre, post):
         return bytes(base) + bytes([2]) + (2).to_bytes(2, "little") + (8).to_bytes(2, "little") + amount.to_bytes(8, "little")
     return decode_transfer_fee_amount_delta(account_data(pre), account_data(post))
 
+
+
+
+def _mint_account_data(basis_points=None, maximum_fee=100, newer_epoch=10):
+    base = bytearray(166)
+    base[45] = 1
+    base[165] = 1
+    if basis_points is None:
+        return bytes(base)
+    payload = (
+        bytes(64) + (0).to_bytes(8, "little")
+        + (0).to_bytes(8, "little") + maximum_fee.to_bytes(8, "little")
+        + basis_points.to_bytes(2, "little")
+        + newer_epoch.to_bytes(8, "little") + maximum_fee.to_bytes(8, "little")
+        + basis_points.to_bytes(2, "little")
+    )
+    return bytes(base) + (1).to_bytes(2, "little") + (108).to_bytes(2, "little") + payload
+
+
+def _instruction_inventory(signature="signature-1", slot=123):
+    raw = {
+        "transaction": {
+            "signatures": [signature],
+            "message": {
+                "accountKeys": ["placeholder"],
+                "instructions": [],
+            },
+        },
+        "meta": {"err": None, "innerInstructions": []},
+        "slot": slot,
+    }
+    return decode_solana_instruction_inventory(raw)
 
 
 def _mint_fee_snapshots(input_bps=500, input_max_fee=100, input_epoch=10):

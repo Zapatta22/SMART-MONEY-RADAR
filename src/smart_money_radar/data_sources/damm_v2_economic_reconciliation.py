@@ -328,9 +328,10 @@ def build_damm_v2_mint_fee_config_snapshots(
             not isinstance(prestate.source, str) or not prestate.source.strip()
             or not isinstance(prestate.state_ref, str) or not prestate.state_ref.strip()
             or prestate.source_id != source_id
-            or prestate.ordering_domain_id != ordering_domain_id
         ):
             raise ValueError(f"proveniência/source_id do mint prestate ausente ou divergente para {mint}")
+        if prestate.ordering_domain_id != ordering_domain_id:
+            raise ValueError(f"ordering_domain_id do mint prestate ausente ou divergente para {mint}")
         actual_state_sha256 = hashlib.sha256(prestate.account_data).hexdigest()
         if mint not in cache:
             inventory = collect_transfer_fee_config_init_positions(

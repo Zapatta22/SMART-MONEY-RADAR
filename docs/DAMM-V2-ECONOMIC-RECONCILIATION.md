@@ -4,7 +4,7 @@
 
 O módulo `damm_v2_economic_reconciliation.py` compara evidências atribuídas de input/output/referral com os deltas pre/post de token accounts. A validação é feita para o lote completo de swaps DAMM v2 da transação, não dividindo deltas líquidos arbitrariamente entre swaps sequenciais.
 
-O resultado `RECONCILED` é uma evidência econômica validada no nível do lote; não cria `SwapObservation`, BUY/SELL, sinal, recomendação nem autorização de execução.
+O resultado `RECONCILED` significa que as transferências atribuídas e os deltas base pre/post por token account conferem no lote completo. Não significa que o estado TLV de withheld fees ou a configuração/epoch histórica do mint tenham sido verificados. Não cria `SwapObservation`, BUY/SELL, sinal, recomendação nem autorização de execução.
 
 ## Invariantes de input e output
 
@@ -45,3 +45,12 @@ Movimentos externos que atinjam as mesmas token accounts também podem provocar 
 - O módulo não consulta estado do mint nem escolhe epoch; não recalcula a taxa Token-2022 a partir de configuração histórica.
 - `RECONCILED` não equivale à classificação BUY/SELL e não é, sozinho, condição suficiente para execução.
 - Nenhuma RPC/Helius, fixture RAW, SQLite, checkpoint ou operação on-chain é executada.
+
+
+## Ownership e withheld fees
+
+- O reconciliador exige `monitored_wallet` explicitamente; as token accounts de input e output precisam declarar esse owner nos snapshots.
+- Os dois vaults do pool precisam declarar `pool_authority` como owner. O `payer` não é usado como substituto do owner econômico.
+- O resultado expõe `expected_withheld_fee_deltas`: para cada transferência Token-2022, bruto menos crédito spendable é registrado como aumento esperado de withheld na conta destino.
+- `withheld_fee_status=EXPECTED_NOT_VERIFIED` significa que o delta foi derivado e conciliado com o saldo base, mas o TLV `TransferFeeAmount.withheld_amount` pre/post ainda não foi lido e comparado. `NOT_REQUIRED` significa que não houve fee retida esperada.
+- Não inferir epoch nem taxa histórica a partir do estado atual do mint. A próxima camada deve receber snapshots históricos comprovados do mint e das token accounts, validar o epoch aplicável e comparar o delta real de withheld por conta.

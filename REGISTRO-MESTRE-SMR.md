@@ -2447,3 +2447,35 @@ Formalizar a derivação determinística de `event_id` por tipo de evento e vers
 
 ### Próxima etapa
 Integrar o helper ao contrato de ingestão RAW sem acoplar identidade a transporte; depois implementar persistência normalizada com versionamento e diagnósticos. Não conectar provider.
+
+
+## 291. Coordenador offline de ingestão normalizada para RAW Geyser — 19/11/2026
+
+### Escopo implementado
+- Criado `src/smart_money_radar/data_sources/geyser_ingestion.py`.
+- Criado `tests/test_geyser_ingestion.py`.
+- API pública: `ingest_normalized_event(store, event, schema_version=..., delivery_kind=...)`.
+- Suporta os quatro contratos provider-neutral existentes: Account, Slot, BlockMeta e EntryUpdateParent.
+- Deriva `event_id` por `derive_event_identity`, serializa conteúdo normalizado em JSON canônico UTF-8 e persiste via `SQLiteGeyserRawStore` com `payload_encoding=normalized_json`.
+- Account data é codificado em Base64 sem perda; parent_block_id opaco é codificado em hexadecimal. Não são bytes originais protobuf.
+- `stream_id` e `stream_sequence` aparecem apenas em `RawDeliveryInput`; não entram na identidade lógica nem no payload normalizado.
+- Replay em outra stream mantém o mesmo event_id e adiciona delivery; alteração do conteúdo sob a mesma identidade vira conflito RAW imutável.
+- Versão do schema upstream altera o event_id e permanece registrada no payload.
+- O coordenador não altera o adapter protobuf, não cria cliente gRPC e não conecta provider.
+
+### Testes específicos adicionados
+- Persistência de JSON canônico e separação de delivery.
+- Replay entre reconnects com deduplicação RAW.
+- Conflito quando conteúdo muda sob mesma identidade.
+- Cobertura de Slot, BlockMeta e EntryUpdateParent.
+- Isolamento por versão de schema.
+- Validação geral será registrada após CI final.
+
+### Limites
+- Este é um coordenador offline chamado explicitamente pelo consumidor; não há loop/worker de stream nem conexão Yellowstone/Helius.
+- A camada normalizada agora é serializada e arquivada no RAW store como normalized_json; ainda não há projeções/tabelas normalizadas dedicadas, account-write index, timeline persistente, backfill ou recuperação de reinício.
+- Nenhum wire-byte capture; dados recebidos já decodificados não podem ser rotulados como protobuf_wire.
+- PR #23 permanece Draft e sem merge; main intocada.
+
+### Próxima etapa
+Construir projeções normalizadas dedicadas e versionadas (começando por account writes), mantendo RAW como fonte imutável e permitindo reconstrução. Não conectar provider.

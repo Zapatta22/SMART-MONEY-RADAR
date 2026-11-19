@@ -911,7 +911,6 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             _instruction_inventory(),
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
-        ,
             source_id="rpc-a", transaction_payload_sha256="a" * 64
         )
         result = _reconcile(
@@ -1018,7 +1017,6 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             _instruction_inventory(),
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
-        ,
             source_id="rpc-a", transaction_payload_sha256="a" * 64
         )
         self.assertEqual(len(snapshots), 2)

@@ -1990,3 +1990,18 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - PR #23 permanece OPEN/DRAFT, mergeable/clean, sem merge; PR #22 permanece Draft; `main` continua `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 - Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
 - Próxima ação: desenhar o contrato de snapshots TLV com assinatura/slot/ordem verificáveis e integrá-lo ao resultado da reconciliação, sem confundir bytes válidos com proveniência histórica comprovada.
+
+
+## 269. Verificação de withheld vinculada à transação — 19/11/2026
+
+- Adicionado `DammV2WithheldFeeSnapshot` e `verify_damm_v2_withheld_fee_deltas` ao módulo de reconciliação econômica.
+- O verifier exige que a reconciliação base esteja `RECONCILED`, recebe snapshots TLV decodificados e exige correspondência de token account/mint, assinatura, slot e ordem da transação.
+- Exige `pre_snapshot_order < transaction_order < post_snapshot_order` no mesmo domínio de ordenação, refs pre/post distintos e fonte identificada. Os valores TLV precisam vir de `TransferFeeAmountDelta` produzido pelo decoder.
+- Compara o delta observado `post_withheld - pre_withheld` com `expected_withheld_fee_deltas`. Correspondência integral resulta em `withheld_fee_status=VERIFIED`; ausência/divergência resulta em `INCOMPLETE`; snapshots duplicados resultam em `AMBIGUOUS`.
+- Testes usam bytes TLV de conta decodificados pelo `decode_transfer_fee_amount_delta`, e cobrem correspondência, divergência, snapshot ausente, assinatura errada, ordem temporal inválida e duplicidade.
+- Commits: verifier `277d1e3e9ddf3d2955d5ad9d830df6e64b56bd2c`; endurecimento de metadados `8891627bf164ee175fb7a2bb1190b4e82c93dc1b`; testes `eaec0c945c3e21942cffcdd8301a3c957357c622` e `934bc0f20b78fa189e67b1a08ebb11074f846739`; documentação `0f72ecbcadb93856c07dffe5afa1debabb9b8d0c`.
+- CI #1487 (`44445935062`) e #1488 (`44445941647`) no HEAD funcional `8891627bf164ee175fb7a2bb1190b4e82c93dc1b`: completed/success, **422 testes OK**, compileall aprovado.
+- Limite de proveniência: os refs/ordem são contrato do coletor, não prova criptográfica automática. Nenhum adapter real de arquivo histórico/Geyser foi conectado nesta etapa. A configuração histórica do mint/epoch também permanece pendente.
+- PR #23 continua OPEN/DRAFT, mergeable/clean, sem merge; PR #22 Draft; `main` intacta.
+- Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima etapa: definir a fonte de dados real que consegue fornecer snapshots account-data exatos e ordenados em torno da transação, e ligar esse adapter ao verifier sem aceitar `getAccountInfo` atual como estado histórico.

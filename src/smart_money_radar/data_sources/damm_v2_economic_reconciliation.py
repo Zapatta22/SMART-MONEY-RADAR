@@ -211,16 +211,33 @@ def _calculate_fee_from_mint_snapshot(
     transaction_slot: int,
     transaction_order: int,
 ) -> int:
+    for label, value in (
+        ("transaction_epoch", transaction_epoch),
+        ("transaction_slot", transaction_slot),
+        ("transaction_order", transaction_order),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= (1 << 64) - 1:
+            raise ValueError(f"{label} inválido")
     if snapshot.mint != transfer.mint:
         raise ValueError("mint prestate diverge da transferência")
     if (
-        snapshot.transfer_instruction_index != transfer.instruction_index
+        isinstance(snapshot.transfer_instruction_index, bool)
+        or not isinstance(snapshot.transfer_instruction_index, int)
+        or snapshot.transfer_instruction_index != transfer.instruction_index
+        or isinstance(snapshot.transfer_inner_instruction_index, bool)
+        or not isinstance(snapshot.transfer_inner_instruction_index, int)
         or snapshot.transfer_inner_instruction_index != transfer.inner_instruction_index
     ):
         raise ValueError("identidade do mint prestate diverge da transferência")
     if (
-        snapshot.transaction_epoch != transaction_epoch
+        isinstance(snapshot.transaction_epoch, bool)
+        or not isinstance(snapshot.transaction_epoch, int)
+        or snapshot.transaction_epoch != transaction_epoch
+        or isinstance(snapshot.transaction_slot, bool)
+        or not isinstance(snapshot.transaction_slot, int)
         or snapshot.transaction_slot != transaction_slot
+        or isinstance(snapshot.transaction_order, bool)
+        or not isinstance(snapshot.transaction_order, int)
         or snapshot.transaction_order != transaction_order
     ):
         raise ValueError("identidade epoch/slot/ordem do mint prestate diverge")
@@ -279,6 +296,10 @@ def reconcile_damm_v2_economic_batch(
         raise TypeError("balance_deltas inválido")
     if not isinstance(all_transfers, Sequence) or isinstance(all_transfers, (str, bytes)):
         raise TypeError("all_transfers deve ser uma sequência")
+    if not isinstance(mint_fee_snapshots, Sequence) or isinstance(mint_fee_snapshots, (str, bytes)):
+        raise TypeError("mint_fee_snapshots deve ser uma sequência")
+    if any(not isinstance(item, DammV2MintFeeConfigSnapshot) for item in mint_fee_snapshots):
+        raise TypeError("mint_fee_snapshots contém snapshot inválido")
     if any(not isinstance(transfer, SolanaTokenTransfer) for transfer in all_transfers):
         raise TypeError("all_transfers contém transferência inválida")
     if len({id(transfer) for transfer in all_transfers}) != len(all_transfers):

@@ -2862,6 +2862,7 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 
 ### Estado e próxima ação
 - PR #27 permanece OPEN/DRAFT, `merged=false`; PR #26 permanece OPEN/DRAFT e sem alteração; `main` permanece intacta.
+- HEAD atual da PR #27: `03c2c425b451c35427b656e0e6f2626bcf9a9023`; CI #1786 e benchmark #19 validaram o commit de código/workflows `e3763dd47f6ede8b5dfc3fc16b8ec11fc6f835e7`; o commit posterior `03c2c42...` atualizou somente o Registro Mestre.
 - HEAD de código/testes e workflows validado pelo CI: `e3763dd47f6ede8b5dfc3fc16b8ec11fc6f835e7`.
 - Próxima revisão técnica: investigar a diferença entre o pico RSS (~87 MiB) e `tracemalloc` (~0,6 MiB), além de medir se TEMP SQLite está em memória ou em arquivo no runner e como o comportamento varia com cache/disco. Preservar a serialização completa, ordenação, atomicidade e rollback.
 - Não fazer merge sem revisão e aprovação explícitas.

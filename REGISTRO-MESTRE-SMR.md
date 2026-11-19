@@ -2005,3 +2005,19 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - PR #23 continua OPEN/DRAFT, mergeable/clean, sem merge; PR #22 Draft; `main` intacta.
 - Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
 - Próxima etapa: definir a fonte de dados real que consegue fornecer snapshots account-data exatos e ordenados em torno da transação, e ligar esse adapter ao verifier sem aceitar `getAccountInfo` atual como estado histórico.
+
+
+## 270. Verificação histórica de TransferFeeConfig/epoch por transferência — 19/11/2026
+
+- Adicionado `decode_transfer_fee_config_optional(mint_data)`: valida mint base e TLV e retorna `None` quando TransferFeeConfig não existe; `decode_transfer_fee_config` permanece estrito e lança erro quando ausente.
+- Cada transferência Token-2022 reconciliada agora gera `DammV2ExpectedTransferFee` com identidade outer/inner, mint, bruto e taxa esperada derivada do líquido confirmado pelo evento/TransferCheckedWithFee.
+- Criado `DammV2MintFeeConfigSnapshot` e `verify_damm_v2_mint_fee_config`: exige snapshot por transferência específica, mesma identidade de mint/instrução, epoch/slot/ordem, prestate anterior e confirmação do adapter de que o mint não mudou antes da transferência dentro da transação.
+- Com TransferFeeConfig presente, seleciona older/newer fee pelo epoch fornecido e recalcula a taxa com `calculate_transfer_fee` (arredondamento ceil e cap). Sem extensão, a taxa calculada é zero.
+- `mint_fee_config_status=VERIFIED` só quando todas as transferências Token-2022 do lote conferem. O verifier não deriva epoch do slot; o adapter precisa fornecer epoch historicamente correto.
+- Referral Token-2022 por TransferChecked padrão continua fail-closed na reconciliação base, pois o líquido ainda precisa ser calculado com a configuração histórica antes de agregar os deltas; isso permanece próximo trabalho.
+- Testes novos cobrem extensão ausente/presente, configuração divergente, snapshot faltante/duplicado, prestate que não antecede a transação, mudança de mint antes da transferência e seleção older/newer por epoch.
+- Commits: decoder opcional `fe00a88a57b5a5a3b71dab142e268efb8551dced`; testes decoder `0f8a2f446a27bd89fed3179c4b47c77dfc8ced7a`; verifier inicial `8ff00ddfe9aa1423242f4f52ac7cf808c90c4daa`; validação estrita `7bb619375c6817788b821db9d57728cac977c8d8`; testes `892fab8a6a84d30188be2ccbb2fef56c2324be51` e `e5b2c43f5607fbe9083eb38c77363de72ae90e87`; documentação `2337d74a559ea33c3a0004d6493cc662dd20c014`.
+- CI #1503 (`44446452613`) e #1504 (`44446458291`) no HEAD funcional/teste `e5b2c43f5607fbe9083eb38c77363de72ae90e87`: completed/success, **431 testes OK**, compileall aprovado.
+- CI #1505 (`44446566545`) no HEAD `2337d74a559ea33c3a0004d6493cc662dd20c014`: completed/success, **431 testes OK**, compileall aprovado.
+- PR #23 permanece OPEN/DRAFT, sem merge; PR #22 permanece Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: usar a configuração histórica validada para calcular o crédito líquido da referral Token-2022 padrão e só então fechar os deltas agregados por conta.

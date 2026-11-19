@@ -98,7 +98,7 @@ class OfflineFixtureStructureInspectorTests(unittest.TestCase):
         report = inspect_manifest(secret_path, 1)
         rendered = json.dumps(report, ensure_ascii=False)
         self.assertFalse(report["integrity_valid"])
-        self.assertIn("manifesto inacessível", rendered)
+        self.assertIn("manifesto ou payload inacessível", rendered)
         self.assertNotIn(str(secret_path), rendered)
         self.assertNotIn("WalletSignatureMustNotLeak", rendered)
 
@@ -136,6 +136,66 @@ class OfflineFixtureStructureInspectorTests(unittest.TestCase):
         self.assertTrue(report["manifest_declares_wallet_address"])
         self.assertNotIn(wallet, rendered)
         self.assertNotIn(signature, rendered)
+
+    def test_rejects_symlinked_manifest_outside_authorized_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            authorized = root / "authorized"
+            outside = root / "outside"
+            authorized.mkdir()
+            outside.mkdir()
+            outside_manifest = outside / "secret.manifest.json"
+            outside_manifest.write_text(json.dumps({"signature": "SensitiveSignature"}))
+            link = authorized / "linked.manifest.json"
+            link.symlink_to(outside_manifest)
+            report = inspect_manifest(link, 1, authorized)
+
+        rendered = json.dumps(report)
+        self.assertFalse(report["integrity_valid"])
+        self.assertFalse(report["structure_valid"])
+        self.assertNotIn("SensitiveSignature", rendered)
+        self.assertNotIn(str(outside_manifest), rendered)
+
+    def test_rejects_symlinked_raw_payload_outside_authorized_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            authorized = root / "authorized"
+            outside = root / "outside"
+            authorized.mkdir()
+            outside.mkdir()
+            signature = "6" * 64
+            payload = {
+                "result": {
+                    "slot": 123,
+                    "transaction": {
+                        "signatures": [signature],
+                        "message": {"accountKeys": [], "instructions": []},
+                    },
+                    "meta": {"err": None},
+                }
+            }
+            raw = json.dumps(payload).encode()
+            outside_raw = outside / "secret.raw.json"
+            outside_raw.write_bytes(raw)
+            link = authorized / "linked.raw.json"
+            link.symlink_to(outside_raw)
+            manifest_path = authorized / "linked.manifest.json"
+            manifest_path.write_text(json.dumps({
+                "signature": signature,
+                "slot": 123,
+                "commitment": "finalized",
+                "encoding": "json",
+                "raw_file": "linked.raw.json",
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "anonymized": False,
+            }))
+            report = inspect_manifest(manifest_path, 1, authorized)
+
+        rendered = json.dumps(report)
+        self.assertFalse(report["integrity_valid"])
+        self.assertFalse(report["structure_valid"])
+        self.assertNotIn(signature, rendered)
+        self.assertNotIn(str(outside_raw), rendered)
 
 
 if __name__ == "__main__":

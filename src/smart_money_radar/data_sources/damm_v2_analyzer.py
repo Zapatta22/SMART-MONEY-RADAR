@@ -180,7 +180,8 @@ def analyze_damm_v2_swap_events(
     meta = payload.get("meta")
     if not isinstance(tx, dict) or not isinstance(meta, dict):
         return []
-    if meta.get("err") is not None:
+    # A ausência de meta.err não comprova sucesso on-chain.
+    if "err" not in meta or meta.get("err") is not None:
         return []
     message = tx.get("message")
     if not isinstance(message, dict):

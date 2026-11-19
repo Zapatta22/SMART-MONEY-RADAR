@@ -179,7 +179,7 @@ def main(argv=None) -> None:
     database_path = Path(
         os.environ.get("SMR_DB_PATH", "data/smr_history.sqlite3")
     ).expanduser()
-    event_store = SQLiteEventStore(database_path)
+    event_store = SQLiteEventStore(database_path, read_only=True)
     server = None
     try:
         server = create_read_only_server(

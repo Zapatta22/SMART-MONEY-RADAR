@@ -84,8 +84,9 @@ class GeyserNormalizedIngestionTests(unittest.TestCase):
         self.assertEqual(changed.status, "conflict")
         self.assertIsNotNone(changed.conflict_id)
         raw = store.get_raw_event(first.event_id)
-        self.assertIn(b"original", raw["payload_bytes"])
-        self.assertNotIn(b"changed", raw["payload_bytes"])
+        stored_payload = json.loads(raw["payload_bytes"])["payload"]
+        self.assertEqual(stored_payload["data_base64"], "b3JpZ2luYWw=")
+        self.assertNotEqual(stored_payload["data_base64"], "Y2hhbmdlZA==")
         store.close()
 
     def test_slot_block_meta_and_entry_parent_use_normalized_payloads(self):

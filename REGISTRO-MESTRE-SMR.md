@@ -2966,3 +2966,233 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - **Integração ainda não pode ser considerada totalmente aprovada** enquanto a Timeline puder selecionar deliveries sequenciadas com conflito RAW ou anomalia aberta.
 - Próxima ação recomendada: preparar uma correção isolada para a elegibilidade da Timeline, com testes que demonstrem exclusão de conflito RAW e anomalia aberta, e teste que escolha uma delivery elegível posterior quando a primeira sequenciada for inelegível. Reexecutar CI somente na branch que receber essa correção.
 - PR #23, #26 e #27 permanecem OPEN/DRAFT e sem merge. `main` permanece intacta. Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+
+## 306. Correção de elegibilidade da Timeline Geyser — PR #28 — 19/11/2026
+
+### Branch e PR
+- Branch isolada: `fix/geyser-timeline-delivery-eligibility`.
+- Base exata: HEAD da PR #26, `f0d63038411cc4207fae910a3ef168e3af443784`.
+- PR #28: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/28
+- Título: `fix(geyser): enforce delivery eligibility in account timeline`.
+- PR aberta como Draft; sem merge. A PR #27 permanece paralela, também baseada na PR #26.
+- A correção não altera `main`, RAW, deliveries, checkpoints de transporte nem a projeção separada de auditoria.
+
+### Implementação
+Arquivo `src/smart_money_radar/storage/geyser_account_timeline_projection.py`:
+- A subconsulta de seleção da delivery agora exige `d2.source_id=e.source_id`.
+- Exige `stream_sequence IS NOT NULL`.
+- Exclui delivery com `conflict_id IS NOT NULL`.
+- Exclui todos os eventos com qualquer registro em `geyser_raw_conflicts`.
+- Exclui delivery cuja chave exata `source_id + stream_id + stream_sequence` tenha anomalia de transporte em estado `OPEN`.
+- A seleção continua usando o menor `delivery_id` **entre as deliveries elegíveis**. Se a primeira delivery sequenciada for inelegível, uma reentrega posterior elegível do mesmo evento pode ser escolhida.
+- Nenhuma sequência é transferida; a Timeline decodifica a delivery que efetivamente passou pelo predicado de elegibilidade.
+
+### Testes de regressão adicionados
+Arquivo `tests/test_geyser_account_timeline_projection.py`:
+1. `test_raw_identity_conflict_excludes_event_from_timeline`: evento com conflito RAW não gera account write na Timeline.
+2. `test_open_transport_anomaly_skips_first_delivery_for_later_eligible_replay`: delivery inicial com anomalia aberta é ignorada; reentrega idêntica em outra stream, sequenciada e elegível, é selecionada. A continuidade com o evento anterior da stream elegível é preservada, sem criar baseline artificial.
+- Os testes anteriores de continuidade, gaps, bank lineage, recuperação e rollback permanecem no conjunto.
+
+### CI comprovada
+- Workflow `SMR tests`, run #1815, ID `44577404211`, commit de código/testes `cd070c47661582f0ea2c7566c4b7ac17585268fc`: SUCCESS.
+- Job `test`: instalação concluída, suíte completa `Ran 589 tests in 4.952s — OK`; `compileall -q src tests` também concluído com sucesso.
+- Run #1814, ID `44577367109`, commit anterior de implementação `81f61281f864151a30f56aa0fa75a7cbcc566ab8`: SUCCESS.
+- A atualização documental posterior não altera código nem testes; não exige nova execução de CI.
+
+### Estado e pendências
+- PR #28 é uma correção isolada e validada por CI para o achado da seção 305.
+- Revisão final concluída: PR #28 permanece OPEN/DRAFT, `merged=false`, `mergeable=true`; base SHA coincide com o HEAD da PR #26. O workflow PR #28 run ID `44577550530` também concluiu SUCCESS no HEAD documental `abc8a1a591f65d0dc525c2cf633fa6b6524fce50`.
+- PR #23, #26, #27 e #28 permanecem sem merge. `main` intacta.
+- Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain conectado.
+
+
+
+## 307. Revisão conjunta de arquitetura e integração das PRs Geyser #26, #27 e #28 — 19/11/2026
+
+### Escopo e resultado
+- Revisadas em conjunto a política/auditoria RAW sem sequência (PR #26), a otimização de rebuild em lotes e TEMP SQLite (PR #27) e a elegibilidade da Account Timeline (PR #28).
+- Resultado: **nenhuma divergência semântica bloqueadora identificada** entre a política de reconciliação, o conjunto de testemunhas elegíveis e o predicado de seleção da Timeline.
+- A otimização da PR #27 preserva o contrato da PR #26. A PR #28 corrige a seleção da Timeline sem alterar RAW nem a auditoria.
+- Revisão não autoriza merge. Todas as PRs permanecem Draft/abertas; main permanece intacta.
+
+### Equivalência semântica auditada
+A PR #26 e a versão otimizada da PR #27 selecionam testemunhas sequenciadas com os mesmos requisitos:
+- `stream_sequence IS NOT NULL`;
+- `event_id` não nulo e evento RAW existente;
+- `delivery.conflict_id IS NULL`;
+- `event.source_id = delivery.source_id`;
+- hash RAW não nulo;
+- nenhum conflito RAW associado ao `event_id`;
+- nenhuma anomalia de transporte OPEN para a chave exata `source_id + stream_id + stream_sequence`.
+
+A Timeline da PR #28 aplica o mesmo núcleo de elegibilidade para a delivery efetivamente projetada: sequência presente, fonte igual à do evento, sem `conflict_id`, sem conflito RAW do evento e sem anomalia OPEN na chave exata da delivery. O schema RAW declara `payload_sha256 NOT NULL`, portanto a ausência de filtro explícito de hash na Timeline não cria uma classe divergente no schema atual.
+
+Precedência e efeito:
+- Conflito de identidade impede projeção/reconciliação; a Timeline exclui o evento e a auditoria classifica `IDENTITY_CONFLICT`.
+- Anomalia OPEN impede que a delivery seja testemunha/projetada; a auditoria classifica delivery sequenciada afetada como `SEQUENCE_ANOMALY`.
+- Delivery sem sequência continua sem sequência; pode ser `UNSEQUENCED_RECONCILED` apenas por referência a testemunhas elegíveis, nunca pela transferência de sequência.
+- A Timeline seleciona o menor `delivery_id` entre deliveries elegíveis, permitindo replay elegível posterior quando uma delivery anterior é inelegível.
+- `COMPLETE/PARTIAL/UNKNOWN` e checkpoints de transporte não são reescritos pela auditoria.
+
+### Revisão da otimização PR #27
+- TEMP table é conexão-local e materializa somente testemunhas elegíveis; índice usa `event_id + source_id + payload_sha256 + delivery_id`.
+- Leitura da auditoria é feita com `fetchmany(500)`; gravação em lotes mantém o working set de Python limitado.
+- Consulta das testemunhas preserva todos os IDs em ordem determinística; nenhuma sequência é transferida.
+- `BEGIN IMMEDIATE` envolve rebuild, projeção e checkpoint; a falha reverte a geração/checkpoint. Testes cobrem rollback e concorrência entre instâncias.
+- A otimização não muda `POLICY_ID`, classificações, códigos de motivo ou schema persistente.
+- Benchmarks e limites de interpretação permanecem os da seção 304: fixture sintética, runner compartilhado, VmHWM do worker inteiro, não métrica exclusiva do rebuild nem previsão de produção.
+
+### Integração entre branches
+- PR #26: base `feat/damm-v2-economic-reconciliation` em `4a517ca15499746ddd3f5522f112c80aaac1433b`; HEAD `f0d63038411cc4207fae910a3ef168e3af443784`.
+- PR #27: base PR #26 em `f0d63038411cc4207fae910a3ef168e3af443784`; HEAD `d281daea02dc8d93c7159c5095d8a47579becf7c`.
+- PR #28: base PR #26 em `f0d63038411cc4207fae910a3ef168e3af443784`; HEAD documental antes deste registro `b6cd259f6cc2e08dd9238ef72b27a4633cb85c92`.
+- Os arquivos de código e testes de PR #27 e #28 não se sobrepõem. Ambas alteram `REGISTRO-MESTRE-SMR.md`; portanto, apesar de cada PR estar individualmente mergeable contra a base atual, a integração conjunta exige rebase/atualização e resolução do histórico documental. Não tratar o estado `mergeable=true` individual como prova de que as duas podem ser integradas em sequência sem ajuste.
+- Sequência recomendada para futura integração: manter PR #26 como base; integrar uma PR filha por vez, atualizar/rebasear a outra sobre a base avançada, resolver o Registro Mestre e validar o diff combinado antes de seguir. A ordem entre #27 e #28 pode ser escolhida na etapa de integração; não há dependência de código entre elas.
+- PR #23 permanece ancestral/base acima da PR #26; sua integração continua separada.
+
+### Evidências atuais de CI e estado remoto
+- PR #26 HEAD `f0d63038411cc4207fae910a3ef168e3af443784`: check-run `test` SUCCESS, run ID `44548677924`.
+- PR #27 HEAD `d281daea02dc8d93c7159c5095d8a47579becf7c`: check-runs `test` e `benchmark` SUCCESS, IDs `44574595397` e `44574595312`.
+- PR #28 HEAD anterior a este commit documental `b6cd259f6cc2e08dd9238ef72b27a4633cb85c92`: check-run `test` SUCCESS, run ID `44577659605`.
+- PR #26, #27 e #28 estavam OPEN/DRAFT, `merged=false`, `mergeable=true` em consulta individual. PR #27 e #28 baseadas no mesmo HEAD da PR #26.
+- `main` confirmada em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; sem alteração.
+- Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain conectado.
+
+### Pendências reais e próxima ação
+1. Não há correção de código adicional exigida pela revisão conjunta atual.
+2. Antes de qualquer merge, executar integração controlada das PRs filhas na branch-base da PR #26, resolvendo o conflito potencial do Registro Mestre e revisando o diff combinado.
+3. Depois, validar a PR #26 resultante contra sua base PR #23; só então decidir a integração posterior com PR #23.
+4. Não fazer merge de nenhuma PR sem ordem explícita do usuário.
+
+## 308. Atualização 2026-11-19 — integração controlada PR #27 + PR #28 validada
+
+### Branch temporária e escopo
+- Branch: `integration/geyser-pr27-pr28`.
+- PR temporária #29: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/29.
+- Base exata: PR #26 / branch `feat/geyser-unsequenced-raw-audit`, SHA `f0d63038411cc4207fae910a3ef168e3af443784`.
+- HEAD validado: `1512c47113f34fcd184cd6813d3da5158d094820`.
+- PR #29 permanece OPEN/DRAFT, `merged=false), `mergeable=true). A descrição identifica a PR como validação temporária e instrui não fazer merge.
+- Diff combinado: 8 arquivos, 1.027 adições e 74 remoções.
+- Arquivos combinados: workflow de benchmark, workflow SMR tests, auditoria de deliveries Geyser sem sequência, testes da auditoria, ferramenta de benchmark, projeção Timeline de conta, testes da Timeline e Registro Mestre com seções 300–307.
+- PRs #26, #27 e #28 originais não foram modificadas por esta integração controlada.
+
+### Validação CI no mesmo HEAD
+- Workflow SMR tests: run `44580544704`, SUCCESS. Log confirma `Ran 593 tests`, resultado OK, e `python -m compileall -q src tests` aprovado.
+- Workflow Geyser audit benchmark: run `44580544811`, SUCCESS. Job `benchmark`, execução do benchmark sintético e upload do artefato concluídos com sucesso.
+- Ambos os workflows foram disparados para o mesmo HEAD `1512c47113f34fcd184cd6813d3da5158d094820`; nenhuma nova execução manual foi necessária.
+- Artefato: `geyser-audit-benchmark-results`, ID `14559085293`, SHA-256 `c3ced6ec55bf5c394cfc5ac3bd2b7e35319b1001cf51bce64682b2c0faa0e391`, expiração indicada 2027-02-17. ZIP baixado e conteúdo JSON inspecionado.
+
+### Resultado técnico do benchmark integrado
+- Fixture sintética principal: 100.000 eventos lógicos / 200.000 deliveries; classificação: 100.000 `SEQUENCED` e 100.000 `UNSEQUENCED_RECONCILED`; SQLite `integrity_check=ok).
+- Modo DEFAULT na comparação: 5,978 s, 33.456,54 deliveries/s, pico RSS 28,97 MiB.
+- Modo FILE: 5,827 s, 34.323,01 deliveries/s, pico RSS 28,88 MiB.
+- Modo MEMORY: 5,801 s, 34.478,41 deliveries/s, pico RSS 53,37 MiB.
+- O modo MEMORY elevou o pico RSS em aproximadamente 24,4 MiB frente ao DEFAULT, para ganho de throughput inferior a 4%; não há justificativa demonstrada para adotá-lo como padrão.
+- Fanout alto: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,220 s, pico RSS 28,8 MiB, `integrity_check=ok`.
+- Em outro cenário de escala, 200.000 deliveries foram reconstruídas em 5,850 s (~34.189,51 deliveries/s), pico RSS 28,91 MiB e `integrity_check=ok`.
+- Interpretação: evidência sintética em runner Linux/GitHub Actions; não é benchmark de Termux, VPS ou produção, não comprova bytes físicos escritos nem filesystem efetivo em produção. VmHWM/RSS representa o worker, não exclusivamente o rebuild.
+- Recomendação mantida: DEFAULT/file-backed; não alterar sem medição representativa no ambiente-alvo.
+
+### Estado remoto após validação
+- PR #26: OPEN/DRAFT, não mergeada, base PR #23 em `4a517ca15499746ddd3f5522f112c80aaac1433b`, HEAD `f0d63038411cc4207fae910a3ef168e3af443784`, mergeable.
+- PR #27: OPEN/DRAFT, não mergeada, base PR #26, HEAD `d281daea02dc8d93c7159c5095d8a47579becf7c`, mergeable.
+- PR #28: OPEN/DRAFT, não mergeada, base PR #26, HEAD `61ecdde08e66a6707e13ceb09fd54372e672c859`, mergeable.
+- PR #29: OPEN/DRAFT, não mergeada, base PR #26, HEAD `1512c47113f34fcd184cd6813d3da5158d094820`, mergeable; exclusivamente temporária.
+- `main` confirmada intacta em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhum merge foi executado. Nenhum RPC/provider, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+### Conclusão e próxima ação
+- A integração conjunta de código/testes das PRs #27 e #28 sobre a base #26 passou em CI e benchmark; não foi encontrada falha de integração nesta validação.
+- Isso valida o conjunto combinado no HEAD da PR #29, mas não autoriza merge automático das PRs originais nem transforma a PR temporária #29 em PR final.
+- Próxima etapa: revisão final do diff combinado e escolha explícita da estratégia de integração permanente. Preservar a base ancestral PR #23/#26 e resolver a documentação sem duplicar seções. Depois da decisão, validar o HEAD final da branch de integração permanente e só então solicitar autorização específica para merge.
+- Não fechar nem mergear a PR #29 nesta etapa; mantê-la como evidência reproduzível até a decisão sobre integração permanente.
+
+## 309. Validação final do HEAD documental da integração Geyser — 19/11/2026
+
+### CI no HEAD atualizado
+- Após registrar a seção 308, o commit 267f7512871d8bbab1414822413c2c11da18264c disparou automaticamente nova execução de ambos os workflows.
+- SMR tests: run 44581283469, job test SUCCESS. Log confirma Ran 593 tests in 5.319s; python -m compileall -q src tests concluiu com sucesso. Nenhuma falha.
+- Geyser audit benchmark: run 44581283368, job benchmark SUCCESS. Benchmark sintético e upload do artefato concluídos com sucesso.
+- Ambos os workflows apontam para o mesmo HEAD 267f7512871d8bbab1414822413c2c11da18264c.
+
+### Benchmark e artefato da execução final
+- Artefato geyser-audit-benchmark-results, ID 14559665298, SHA-256 457084e0646e213ae0e0a6f90241af59321c70fb02e9a2e0725d2035517b45a0, expiração indicada 2027-02-17. ZIP baixado e JSON interno inspecionado.
+- Escala principal de 100.000 eventos lógicos / 200.000 deliveries: rebuild 4,997681 s, throughput 40.018,56 deliveries/s, pico RSS do worker 28,99 MiB, TEMP SQLite 24.399.872 bytes, tracemalloc 0,60 MiB; 100.000 classificações SEQUENCED e 100.000 UNSEQUENCED_RECONCILED; contagens RAW preservadas e integrity_check=["ok"].
+- Fanout: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,199967 s, pico RSS 28,90 MiB, TEMP SQLite 2.088.960 bytes, 10.000 IDs completos e ordenados, integrity_check=["ok"].
+- Comparação de TEMP em 100.000 eventos: DEFAULT 5,014738 s / 28,98 MiB RSS; FILE 4,986653 s / 28,95 MiB; MEMORY 5,005368 s / 53,37 MiB. Não há ganho de velocidade material do modo MEMORY; mantém-se DEFAULT/file-backed.
+- Em todas as quatro escalas (2 mil, 20 mil, 100 mil e 200 mil deliveries), classificações esperadas, contagens RAW e integridade SQLite passaram.
+- Limite: fixture sintética em runner Linux/GitHub Actions. RSS inclui vida útil do worker (imports/construção), não apenas rebuild; TEMP pages são alocação lógica SQLite, não medição de bytes físicos escritos. Não extrapolar diretamente para Termux/VPS/produção.
+
+### Revisão do diff e estado remoto
+- Revisão do diff combinado confirmou que o rebuild da auditoria usa TEMP table/index local à conexão, leitura em lotes de 500, transação BEGIN IMMEDIATE, inserção em lotes, IDs de testemunhas ordenados e nenhuma transferência de sequência. A Timeline escolhe a menor delivery_id entre deliveries sequenciadas elegíveis, exigindo mesma fonte, ausência de conflito RAW e ausência de anomalia OPEN na chave exata da delivery.
+- Os testes integrados cobrem lote acima de 500, fanout de 4.096 testemunhas, rollback, concorrência de rebuilds, conflito RAW e replay elegível posterior quando a primeira delivery é inelegível.
+- PR #29 permanece OPEN/DRAFT, merged=false, mergeable=true, base feat/geyser-unsequenced-raw-audit em f0d63038411cc4207fae910a3ef168e3af443784, HEAD 267f7512871d8bbab1414822413c2c11da18264c, diff 8 arquivos (+1.070/-74).
+- PRs #26, #27 e #28 permanecem OPEN/DRAFT e não mergeadas; seus HEADs não foram alterados por esta revisão.
+- Branch integration/geyser-pr27-pr28 aponta para 267f7512871d8bbab1414822413c2c11da18264c; main continua intacta em 5060bc65ddf181a4736fdb662c44c3fec0dd7259.
+- Nenhum merge foi executado. Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+### Conclusão e próximo passo
+- A combinação PR #27 + PR #28 sobre a base PR #26 passou na suíte completa, compilação, benchmark e revisão do diff no HEAD 267f751...
+- A integração está tecnicamente validada no ambiente CI, mas ainda não foi integrada permanentemente à cadeia de PRs nem à main.
+- Próxima etapa: preparar a estratégia de incorporação permanente sem duplicar commits/documentação entre PRs #27, #28 e #29; manter a PR #29 como candidata Draft e preservar todas as branches até a decisão de merge.
+- Esta validação não autoriza merge. Não fazer merge sem aprovação explícita e específica do usuário.
+
+
+## 310. Terceira validação da integração Geyser no HEAD documental final — 19/11/2026
+
+### CI confirmada no commit f6664760b23d0b65be7fc8e301d8cce6627773cf
+- Workflow **SMR tests**, run ID `44582227274`, run #1828: SUCCESS.
+- Job `test`: instalação, suíte unitária e compilação concluídos com sucesso.
+- Log completo confirma `Ran 593 tests in 6.745s` e resultado `OK`; `python -m compileall -q src tests` também passou.
+- Workflow **Geyser audit benchmark**, run ID `44582227405`, run #45: SUCCESS.
+- Job `benchmark`: benchmark sintético e upload do artefato concluídos com sucesso.
+- Ambos os workflows foram executados para o mesmo HEAD documental `f6664760b23d0b65be7fc8e301d8cce6627773cf`; nenhuma execução manual foi iniciada.
+
+### Artefato e resultados inspecionados
+- Artefato `geyser-audit-benchmark-results`, ID `14560500979`, SHA-256 `023531df5bcccf63c24606ad9c9acd63c66d3ae4f7d231f44fbe0b12a2436d6d`; criado em 2026-11-19 17:55:51Z, expiração 2027-02-17 17:54:53Z.
+- ZIP baixado e JSON interno `benchmark-results.json` inspecionado.
+- Escala principal: 100.000 eventos lógicos / 200.000 deliveries; rebuild 6,592466 s; throughput 30.337,66 deliveries/s; pico RSS do worker 28,98 MiB; TEMP SQLite 24.399.872 bytes; tracemalloc 0,60 MiB.
+- Classificações: 100.000 `SEQUENCED` e 100.000 `UNSEQUENCED_RECONCILED`; contagens RAW preservadas e `integrity_check=["ok"]`.
+- Fanout alto: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,236675 s; pico RSS 28,90 MiB; TEMP SQLite 2.088.960 bytes; todas as 10.000 testemunhas preservadas; `integrity_check=["ok"]`.
+- Quatro escalas (2.000, 20.000, 100.000 e 200.000 deliveries) mantiveram as classificações esperadas, contagens RAW e integridade SQLite.
+- Comparação TEMP em 100.000 eventos: DEFAULT 6,646549 s / 28,97 MiB RSS; FILE 6,612447 s / 29,06 MiB; MEMORY 6,535911 s / 53,39 MiB. MEMORY teve pequena diferença de tempo nesta execução, mas elevou o pico RSS em aproximadamente 24,4 MiB; a evidência continua insuficiente para justificar MEMORY como padrão. Manter DEFAULT/file-backed.
+- Limites: fixture sintética em runner Linux/GitHub Actions. RSS/VmHWM mede a vida útil do worker, não somente o rebuild; TEMP pages × page size representa alocação lógica SQLite, não bytes físicos escritos. Não extrapolar diretamente para Termux, VPS ou produção.
+
+### Estado remoto conferido após a CI
+- Branch `integration/geyser-pr27-pr28` / PR temporária #29 aponta para HEAD `f6664760b23d0b65be7fc8e301d8cce6627773cf`.
+- PR #29: OPEN/DRAFT, `merged=false`, `mergeable=true`, base `feat/geyser-unsequenced-raw-audit` em `f0d63038411cc4207fae910a3ef168e3af443784`; continua identificada como validação temporária, com instrução explícita para não fazer merge.
+- PRs originais #26, #27 e #28 permanecem abertas/Draft e sem merge; não foram modificadas por esta rodada.
+- `main` foi consultada novamente e permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhum merge foi executado. Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+### Conclusão e próxima ação
+- A integração conjunta de PR #27 + PR #28 sobre a base PR #26 passou novamente na suíte completa de 593 testes, compilação, benchmark e inspeção do artefato no HEAD documental final.
+- Não há falha nova indicada por esta rodada. A evidência é de CI/benchmark sintético, não de execução operacional em ambiente real.
+- Próxima etapa: preparar a incorporação permanente de forma controlada, definindo a cadeia de branches/PRs e evitando duplicação de commits e seções do Registro Mestre. Manter PR #29 como candidata temporária até essa decisão.
+- Não fazer merge de #26, #27, #28 ou #29 sem autorização explícita e específica do usuário.
+
+
+## 311. CI e benchmark confirmados após atualização documental da seção 310 — 19/11/2026
+
+### CI do commit documental 6a40966c64d5c2c52a8e82fb1f77a7e3af4a681e
+- Workflow **SMR tests**, run ID `44582752853`, run #1829: SUCCESS.
+- Job `test`: SUCCESS; log confirma `Ran 593 tests in 5.298s`, resultado `OK`; etapa `python -m compileall -q src tests` também SUCCESS.
+- Workflow **Geyser audit benchmark**, run ID `44582752878`, run #46: SUCCESS.
+- Job `benchmark`: SUCCESS; execução sintética e upload do artefato concluídos.
+- Os dois workflows foram disparados para o commit `6a40966c64d5c2c52a8e82fb1f77a7e3af4a681e`. Como PR #29 é uma PR aberta, o runner fez checkout do merge ref temporário `7fb9353b70bdde58fcaaa4570cf9d7ed1ae40552`, que combina esse HEAD com a base PR #26; a execução corresponde à validação da PR, não a um merge na branch base.
+
+### Artefato da execução
+- Artefato `geyser-audit-benchmark-results`, ID `14560140889`, SHA-256 `f9d2d172325b98a96e874113a813210838cdc3f98dd68ac16995ffda3dac83a0`; ZIP baixado e JSON interno inspecionado.
+- Escala principal: 100.000 eventos lógicos / 200.000 deliveries; rebuild 5,757790 s; throughput 34.735,55 deliveries/s; pico RSS do worker 28,93 MiB; TEMP SQLite 24.399.872 bytes; tracemalloc 0,60 MiB.
+- Classificações: 100.000 `SEQUENCED` e 100.000 `UNSEQUENCED_RECONCILED`; contagens RAW preservadas; `integrity_check=["ok"]`.
+- Fanout alto: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,212787 s; pico RSS 28,93 MiB; TEMP SQLite 2.088.960 bytes; todas as 10.000 testemunhas preservadas; `integrity_check=["ok"]`.
+- Escalas 2.000, 20.000, 100.000 e 200.000 deliveries passaram com classificações esperadas, contagens RAW preservadas e integridade SQLite OK.
+- Comparação TEMP em 100.000 eventos: DEFAULT 5,800909 s / 28,98 MiB RSS; FILE 5,803232 s / 28,95 MiB; MEMORY 5,751945 s / 53,28 MiB. A diferença temporal de MEMORY é pequena e não compensa o aumento de aproximadamente 24,3 MiB de RSS; manter DEFAULT/file-backed.
+- Limites: benchmark sintético em runner Linux/GitHub Actions. RSS/VmHWM mede a vida útil do worker; TEMP pages × page size mede alocação lógica SQLite, não bytes físicos escritos. Não extrapolar diretamente para Termux, VPS ou produção.
+
+### Estado e próxima ação
+- A atualização documental da seção 310 foi validada por 593 testes, compileall e benchmark no fluxo da PR #29.
+- PR #29 continua OPEN/DRAFT, `merged=false`, `mergeable=true`; branch `integration/geyser-pr27-pr28`. PRs originais #26, #27 e #28 continuam sem merge.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Nenhum merge foi executado; nenhum provider/RPC/credencial/VPS/dado real/execução on-chain foi conectado.
+- Próxima etapa: decidir e preparar a estratégia de incorporação permanente das PRs #27 e #28 na cadeia baseada em #26, sem duplicar commits ou documentação. A PR #29 permanece apenas como validação temporária; não mergear sem autorização explícita.

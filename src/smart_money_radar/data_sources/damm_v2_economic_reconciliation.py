@@ -33,6 +33,7 @@ from smart_money_radar.data_sources.token2022_transfer_fee_state import (
     TransferFeeConfigState,
     collect_transfer_fee_config_init_positions,
     decode_transfer_fee_config_optional,
+    decode_transfer_fee_amount_delta,
 )
 
 
@@ -119,6 +120,7 @@ class DammV2MintFeeConfigSnapshot:
     source_id: str = ""
     transaction_payload_sha256: str = ""
     pre_state_sha256: str = ""
+    pre_state_data: bytes = b""
 
 
 @dataclass(frozen=True)
@@ -138,6 +140,8 @@ class DammV2WithheldFeeSnapshot:
     transaction_payload_sha256: str = ""
     pre_state_sha256: str = ""
     post_state_sha256: str = ""
+    pre_state_data: bytes = b""
+    post_state_data: bytes = b""
 
 
 def _add_expected(
@@ -350,6 +354,7 @@ def build_damm_v2_mint_fee_config_snapshots(
             source_id=prestate.source_id,
             transaction_payload_sha256=transaction_payload_sha256,
             pre_state_sha256=actual_state_sha256,
+            pre_state_data=prestate.account_data,
         ))
     return tuple(snapshots)
 
@@ -1021,14 +1026,26 @@ def verify_damm_v2_withheld_fee_deltas(
             or not isinstance(snapshot.pre_state_ref, str) or not snapshot.pre_state_ref.strip()
             or not isinstance(snapshot.post_state_ref, str) or not snapshot.post_state_ref.strip()
             or snapshot.pre_state_ref == snapshot.post_state_ref
+            or not isinstance(snapshot.pre_state_data, bytes)
+            or not isinstance(snapshot.post_state_data, bytes)
+            or hashlib.sha256(snapshot.pre_state_data).hexdigest() != snapshot.pre_state_sha256
+            or hashlib.sha256(snapshot.post_state_data).hexdigest() != snapshot.post_state_sha256
             or len(snapshot.pre_state_sha256) != 64
-            or any(ch not in "0123456789abcdef" for ch in snapshot.pre_state_sha256)
             or len(snapshot.post_state_sha256) != 64
-            or any(ch not in "0123456789abcdef" for ch in snapshot.post_state_sha256)
         ):
             mismatches.append(f"proveniência/hash de snapshot ausente para {expected.token_account}")
             continue
+        try:
+            decoded_from_raw = decode_transfer_fee_amount_delta(
+                snapshot.pre_state_data, snapshot.post_state_data
+            )
+        except (TypeError, ValueError):
+            mismatches.append(f"bytes TLV pre/post inválidos para {expected.token_account}")
+            continue
         decoded = snapshot.decoded_delta
+        if decoded != decoded_from_raw:
+            mismatches.append(f"delta TLV não corresponde aos bytes pre/post para {expected.token_account}")
+            continue
         if (
             not isinstance(decoded, TransferFeeAmountDelta)
             or not isinstance(decoded.extension_types, tuple)
@@ -1226,10 +1243,19 @@ def verify_damm_v2_mint_fee_config(
         if (
             not isinstance(snapshot.source, str) or not snapshot.source.strip()
             or not isinstance(snapshot.pre_state_ref, str) or not snapshot.pre_state_ref.strip()
+            or not isinstance(snapshot.pre_state_data, bytes)
+            or hashlib.sha256(snapshot.pre_state_data).hexdigest() != snapshot.pre_state_sha256
             or len(snapshot.pre_state_sha256) != 64
-            or any(ch not in "0123456789abcdef" for ch in snapshot.pre_state_sha256)
         ):
             mismatches.append(f"proveniência do mint ausente para {expected.mint}")
+            continue
+        try:
+            decoded_prestate = decode_transfer_fee_config_optional(snapshot.pre_state_data)
+        except (TypeError, ValueError):
+            mismatches.append(f"bytes TLV do mint prestate inválidos para {expected.mint}")
+            continue
+        if decoded_prestate != snapshot.config_state:
+            mismatches.append(f"config_state não corresponde aos bytes do mint prestate para {expected.mint}")
             continue
         if snapshot.config_state is None:
             calculated_fee = 0

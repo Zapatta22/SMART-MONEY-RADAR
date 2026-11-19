@@ -1863,3 +1863,14 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Último estado consultado: job `test` em andamento; checkout e setup Python concluídos, instalação do projeto em andamento; suíte unitária e compileall ainda não iniciados. Não declarar aprovação até conclusão.
 - O commit documental desta seção não altera código ou testes; a validação funcional pendente é a do HEAD de teste acima.
 - PR #22 continua Draft e sem merge. Não alterar `main`; manter `ATTRIBUTED` distinto de reconciliação econômica.
+
+
+## 96. CI #1455 aprovado após teste temporal de referral (18/11/2026)
+
+- Run GitHub Actions #1455 (`44443611154`), job `test`, no commit funcional/teste `97c38c9434bc2e5ff2a5a91390cb4b9709a12e76`: **completed/success**.
+- Suíte completa: **365 testes aprovados** (`Ran 365 tests`, `OK`).
+- O novo teste `test_rejects_referral_transfer_occurring_after_evt_swap2` foi executado e passou.
+- Etapa `Compile source and tests`: concluída com sucesso.
+- O HEAD atual da PR #22 avançou depois para `104928c3640a5ed4195cc7560e5d7b78c604a4c8`, apenas com atualização documental desta seção anterior e da seção 95; nenhum arquivo de código/teste mudou após o commit validado.
+- PR #22 continua aberta, Draft, sem merge. A aprovação CI valida a suíte e compilação no commit funcional/teste indicado; não valida RAW mainnet nem reconciliação econômica DAMM v2.
+- Nenhuma alteração em `main`, operação on-chain, RPC/Helius, RAW, SQLite, importação ou checkpoint.

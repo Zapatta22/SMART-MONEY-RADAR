@@ -217,6 +217,13 @@ class SwapDomainBundleBuilderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "descendente do CPI"):
             self._build(matched=wrong_cpi)
 
+        untrusted_cpi = replace(
+            matched,
+            input_transfer=replace(matched.input_transfer, cpi_path_valid=False),
+        )
+        with self.assertRaisesRegex(ValueError, "caminho CPI confiável"):
+            self._build(matched=untrusted_cpi)
+
     def test_rejects_matched_result_missing_balance_delta_evidence(self):
         matched = _matched()
         missing_delta = replace(matched, input_vault_delta_raw=None)

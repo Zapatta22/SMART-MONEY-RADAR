@@ -1622,6 +1622,60 @@ PR #16 permanece Draft, aberto e não integrado; `main` intacta.
 - Matriz de FeeMode documentada na seção 12.10: collect_fee_mode + direção definem fees_on_input, fees_on_token_a e o mint/vault de cobrança; referral_fee é transferido separadamente e split_fees registra protocol_fee líquido de referral. Reconciliador deverá validar a transferência referral quando has_referral.
 
 
+## 82. PR #17 — aritmética pura de taxas DAMM v2 / Token-2022 (18/11/2026)
+
+- Confirmada sincronização local PR16: `HEAD=0d951fc`, branch `feat/offline-fixture-inspector`, acompanhando `origin`, árvore limpa.
+- Criada branch `feat/damm-v2-economic-fee-math` a partir do head PR16 `0d951fc5413d0f83a328c71e76055e1f1f58c05b`; PR #17 aberto como Draft, base PR16, não integrado.
+- Novo módulo `src/smart_money_radar/data_sources/damm_v2_fee_math.py`: aritmética pura para TransferFee Token-2022 (gross/net, ceil, maximum_fee, taxa 100%, overflow), taxas AMM DAMM (included/excluded, denominador 1e9, rounding up), split claiming/compounding/protocol/referral (rounding down) e matriz de seis FeeMode.
+- Novo teste `tests/test_damm_v2_fee_math.py`: 18 métodos de teste sintéticos determinísticos, sem rede, DB, relógio ou RAW.
+- Nova documentação `docs/DAMM-V2-ARITMETICA-TAXAS.md` descreve fontes oficiais, regras reproduzidas e limites.
+- Fontes Meteora fixadas em `18936b18c26708f6e9b52cacc01ea2f99868ba8e`; Token-2022 TransferFee interface consultada para ceil/cap/inversão.
+- Importante: isto valida primitivas aritméticas, não a reconciliação de uma operação. Não decodifica bytes/configuração histórica de mint ou epoch, não modela a curva/amount_left de PartialFill, não atribui transferências/deltas, não verifica referral on-chain e não produz MATCHED nem SwapObservation.
+- CI do PR #17 ainda não apareceu na consulta inicial; não declarar testes aprovados até workflow terminar. Clone local PR17 ainda não foi criado nem sincronizado.
+- PR #16 permanece Draft e não integrado; PR #17 permanece Draft e não integrado; `main` intacta. Nenhum RAW foi alterado/enviado. Nenhuma importação, SQLite, RPC/Helius, checkpoint ou operação on-chain.
+- Próxima ação: acompanhar CI do PR #17; corrigir falhas e então sincronizar branch PR17 no Termux para executar os 17 testes focais e a suíte completa. Após validação, avançar para decodificação explícita de TransferFeeConfig/TransferFeeAmount e depois reconciliador econômico fail-closed.
+
+
+## 83. Validação local e CI do PR #17 — aritmética de taxas DAMM v2 / Token-2022 (18/11/2026)
+
+### Validação local no Termux
+- Clone separado criado em `$HOME/SMART-MONEY-RADAR-PR17`, sem tocar na cópia original nem nos clones PR15/PR16.
+- Branch confirmada: `feat/damm-v2-economic-fee-math`; HEAD local `99ce0ce`; árvore de trabalho limpa e sincronizada com origin.
+- Testes focais de `test_damm_v2_fee_math.py`: **18/18 aprovados** (a suíte efetiva contém 18 métodos de teste, embora a seção 82 tenha descrito originalmente 17 casos).
+- Suíte completa: **327 testes aprovados** (`Ran 327 tests`, `OK`).
+- `python -m compileall -q src tests` executado sem erro.
+- ResourceWarnings de HTTPError/SQLite apareceram em alguns testes, sem falha; permanecem como observação técnica, não como falha da suíte.
+
+### CI
+- Commit validado: `99ce0ce3b3d76b97e86fd52d2855c34a01011b33`.
+- Workflow `SMR tests`, run `44260221128` (#484): **success**.
+- O status combinado não retornou status contexts adicionais; a aprovação é sustentada pelo workflow concluído com sucesso.
+
+### Interpretação e limites
+- Aritmética isolada está validada localmente e no CI; isso não equivale a reconciliação econômica DAMM v2 completa.
+- Ainda faltam decoder dos bytes de TransferFeeConfig/TransferFeeAmount com seleção histórica de epoch, curva executada de PartialFill, atribuição exclusiva de referral e demais transferências, conciliação bruta/líquida com EvtSwap2 e deltas por operação.
+- Os cinco RAW locais continuam sem reconciliação econômica confirmada; resultados anteriores de cobertura permanecem fail-closed.
+- Não foi executada importação, criação/migração SQLite, RPC/Helius, checkpoint, trade ou operação on-chain. Nenhum RAW ou mapa de carteira foi enviado ao GitHub.
+
+PR #17 continua Draft, aberto e não integrado; PR #16 continua Draft e não integrado; `main` permanece intacta.
+
+### Próxima etapa técnica
+Implementar, isoladamente e com testes sintéticos, o decoder de estado Token-2022 (`TransferFeeConfig` e `TransferFeeAmount`), incluindo seleção da taxa aplicável ao epoch histórico e validação de bytes/offsets. Não iniciar reconciliador nem persistência até essa camada ser revisada.
+
+
+## 84. Bloqueio de evidência CPI não confiável na reconciliação CPMM (18/11/2026)
+
+- Correção autorizada pelo usuário para o finding da auditoria de integração: o decoder já marcava `SolanaTokenTransfer.cpi_path_valid=False` após `stackHeight` ausente/inconsistente, mas dois consumidores aceitavam a transferência sem consultar o indicador.
+- Em `raydium_cpmm_transfer_reconciliation.py`, `_is_descendant()` agora rejeita transferências internas cujo `cpi_path_valid` não seja explicitamente `True`. Swaps externos continuam usando o escopo do grupo `innerInstructions` associado à instrução externa, sem exigir prova de descendência CPI interna.
+- Em `swap_bundle_builder.py`, `_validate_transfer_evidence()` revalida o indicador no limite do domínio para swaps internos; evidência CPI não confiável gera `ValueError` e não pode produzir `SwapDomainBundle`.
+- Testes de regressão adicionados: caminho aparentemente descendente com `cpi_path_valid=False` resulta `INCOMPLETE`; builder rejeita reconciliação marcada MATCHED quando a transferência interna tem caminho não confiável; teste preserva o comportamento de swap externo escopado ao grupo externo.
+- Commits GitHub na branch `feat/damm-v2-economic-fee-math`: `cf8773983b2c14ea8293cedf6c2724844229aa98` (reconciliação), `8f357b9f0b92c3b14efdcf3b1a9b80656cba2fc7` (limite do domínio), `feea909deeb50723badb015eebdef17d787aa4bf` (teste de reconciliação), `0dbcd4f184063de2c4d891d3c0b1c428602000bd` (teste do builder) e `3ea650b642311210bd052bf4ca33d27807c82c10` (teste de preservação do swap externo).
+- CI confirmado no HEAD `bf70082019880e14c6281e672bbcd43f51e32a03`: workflow `SMR tests`, run #513 (`44266056128`), **success**; etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso.
+- Escopo: nenhuma alteração em `main`, RAW fixtures, banco de dados, imports de dados, RPC/Helius, checkpoints, persistência ou operações on-chain. PR #17 permanece Draft e não integrado; PR #18 não foi alterado.
+- Efeito colateral de integração identificado, sem alteração no PR #18: como sua branch foi criada sobre o antigo head do PR #17 (`58606137e3d096e19b34eb84bae604101c07fef`), a comparação atual mostra PR #18 divergente da nova base: 16 commits à frente e 6 atrás; `mergeable=false`. Nenhum rebase/update foi executado nele.
+- Próxima ação: decidir e executar separadamente a atualização/rebase da branch do PR #18 para incorporar a nova base do PR #17, mantendo ambos em Draft e sem merge.
+
+
 ## 250. Integração das dependências CPMM e segurança do painel local — 19/11/2026
 
 ### Integrações concluídas em branches intermediárias
@@ -1689,3 +1743,25 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - Nenhuma reconciliação econômica, importação histórica, RPC, gravação, checkpoint ou execução financeira foi habilitada.
 - Próxima etapa da cadeia: auditar PR #17 (matemática econômica/fees DAMM v2), sem presumir que os campos de evento já equivalem a quantidades reconciliadas.
 - `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+
+
+## 254. PR #17 — validação de aritmética e sincronização pendente — 19/11/2026
+
+- A fonte Token-2022 foi fixada em `solana-program/token-2022@875693f53c77534b46f0d06bdf781430870f8177`; Meteora permanece fixada em `MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f99868ba8e`.
+- Correção conforme a fonte oficial: `get_excluded_fee_amount` permite taxa AMM de 100% e retorna líquido zero; `get_included_fee_amount` rejeita 100% porque a inversão divide por denominador zero. Teste dedicado cobre a assimetria.
+- Teste adicional verifica minimalidade da inversão Token-2022 numa grade de basis points, maximum_fee e net amounts.
+- CI do head PR #17 após essas correções: run `44439675835`, job `135277096545`, SUCCESS; **330 testes OK** e compileall aprovado.
+- A PR #17 também reforça o fail-closed do Raydium CPMM: swap interno exige `cpi_path_valid=True`; swap externo continua escopado pelo grupo `innerInstructions` da instrução externa. Testes cobrem ambos.
+- PR #17 permanece OPEN/DRAFT. A base `feat/offline-fixture-inspector` avançou 26 commits após a criação da branch; será incorporada por merge commit controlado e validada em CI combinado antes de integrar a PR.
+- Aritmética pura validada não é reconciliação econômica: ainda faltam decodificação de estado histórico de mint/epoch, leitura de TransferFeeAmount, cálculo de PartialFill, atribuição exclusiva de referral/transferências e conciliação com deltas e EvtSwap2.
+- Nenhum RAW, mint state, RPC, SQLite, checkpoint ou execução on-chain foi acessado/alterado por esta etapa. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+## 255. CI combinado PR #17 + PR #16 aprovado — 19/11/2026
+
+- A branch `feat/damm-v2-economic-fee-math` foi sincronizada com a base `feat/offline-fixture-inspector` por merge commit `adddfac41326cf7061cf0e80f734ffb4ae26fc96`, com a base `533dbf1ef95aba0099ab1cfe797dafc33eece2d2` como segundo parent.
+- Compare da árvore sincronizada: `ahead_by=20`, `behind_by=0`; GitHub reporta `mergeable=true`.
+- CI da árvore combinada: runs `44439855614` (push) e `44439847810` (PR), ambos SUCCESS. Os logs confirmam **339 testes OK** e `python -m compileall -q src tests`.
+- Os testes incluem aritmética Token-2022/DAMM, caso de taxa AMM 100%, minimalidade do gross-up, correção de proveniência CPI do Raydium e toda a base offline/painel do PR #16.
+- PR #17 pode sair de Draft e ser integrada à branch-base intermediária `feat/offline-fixture-inspector`; depois validar CI no merge commit.
+- A integração não habilita decodificação histórica de mint/epoch, PartialFill, reconciliação econômica, importação, RPC, SQLite write, checkpoint ou execução.

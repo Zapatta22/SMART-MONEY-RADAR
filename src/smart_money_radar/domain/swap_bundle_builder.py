@@ -91,6 +91,10 @@ def _validate_transfer_evidence(
     ):
         raise ValueError(f"Transferência de {label} não pertence ao grupo da instrução CPMM.")
     if swap.inner_instruction_index is not None:
+        if transfer.cpi_path_valid is not True:
+            raise ValueError(
+                f"Transferência de {label} não tem caminho CPI confiável."
+            )
         if (
             swap.stack_height is None
             or transfer.stack_height is None

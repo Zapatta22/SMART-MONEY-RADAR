@@ -47,6 +47,7 @@ def _tx(instructions, inner=None, keys=None):
             "err": None,
             "innerInstructions": [] if inner is None else inner,
         },
+        "slot": 123,
     }
 
 

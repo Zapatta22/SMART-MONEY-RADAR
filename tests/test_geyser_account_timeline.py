@@ -172,6 +172,66 @@ class AccountUpdateTimelineTests(unittest.TestCase):
         timeline.add(update)
         with self.assertRaisesRegex(ValueError, "BankLineageTracker"):
             timeline.rollback_from_slot(100)
+
+    def test_bank_scoped_transition_requires_finalized_pre_and_post_bank(self):
+        from smart_money_radar.data_sources.geyser_bank_lineage import normalize_slot_update
+        timeline = AccountUpdateTimeline()
+        def bank_update(version, signature, sequence):
+            return normalize_account_update(
+                {"slot": 100, "bank_id": 7,
+                 "account": {"pubkey": "account-A", "lamports": version,
+                  "owner": "owner-program", "executable": False, "rent_epoch": 0,
+                  "data": bytes([version]), "write_version": version,
+                  "txn_signature": signature}},
+                stream_id="stream-1", stream_sequence=sequence)
+        def status(value, sequence):
+            return normalize_slot_update(
+                {"slot": 100, "status": value, "bank_id": 7, "parent": 99},
+                source_id="yellowstone", stream_id="stream-1",
+                stream_sequence=sequence)
+        timeline.add_slot_update(status("SLOT_CREATED_BANK", 1))
+        timeline.add(bank_update(1, "pre", 2))
+        timeline.add(bank_update(2, "target", 3))
+        self.assertEqual(timeline.transition_for("target"), ())
+        timeline.add_slot_update(status("SLOT_PROCESSED", 4))
+        self.assertEqual(timeline.transition_for("target"), ())
+        timeline.add_slot_update(status("SLOT_CONFIRMED", 5))
+        self.assertEqual(timeline.transition_for("target"), ())
+        timeline.add_slot_update(status("SLOT_FINALIZED", 6))
+        transitions = timeline.transition_for("target")
+        self.assertEqual(len(transitions), 1)
+        self.assertEqual(transitions[0].pre_state.txn_signature, "pre")
+
+    def test_finalized_child_does_not_authorize_unfinalized_prestate_ancestor(self):
+        from smart_money_radar.data_sources.geyser_bank_lineage import normalize_block_meta, normalize_slot_update
+        timeline = AccountUpdateTimeline()
+        def block(slot, bank_id, blockhash, parent_slot, parent_hash, sequence):
+            return normalize_block_meta(
+                {"slot": slot, "bank_id": bank_id, "blockhash": blockhash,
+                 "parent_slot": parent_slot, "parent_blockhash": parent_hash},
+                source_id="yellowstone", stream_id="stream-1", stream_sequence=sequence)
+        def status(slot_number, bank_id, sequence):
+            value = "SLOT_FINALIZED" if bank_id == 11 else "SLOT_PROCESSED"
+            return normalize_slot_update(
+                {"slot": slot_number, "status": value, "bank_id": bank_id,
+                 "parent": slot_number - 1},
+                source_id="yellowstone", stream_id="stream-1", stream_sequence=sequence)
+        def update(slot_number, bank_id, version, signature, sequence):
+            return normalize_account_update(
+                {"slot": slot_number, "bank_id": bank_id,
+                 "account": {"pubkey": "account-A", "lamports": version,
+                  "owner": "owner-program", "executable": False, "rent_epoch": 0,
+                  "data": bytes([version]), "write_version": version,
+                  "txn_signature": signature}},
+                stream_id="stream-1", stream_sequence=sequence)
+        timeline.add_block_meta(block(100, 10, "parent-hash", 99, "grand-hash", 1))
+        timeline.add_block_meta(block(101, 11, "child-hash", 100, "parent-hash", 2))
+        timeline.add_slot_update(status(100, 10, 3))
+        timeline.add_slot_update(status(101, 11, 4))
+        timeline.add(update(100, 10, 1, "pre", 5))
+        timeline.add(update(101, 11, 2, "target", 6))
+        self.assertEqual(timeline.transition_for("target"), ())
+
     def test_accounts_are_tracked_independently(self):
         timeline = AccountUpdateTimeline()
         timeline.add(_update(pubkey="A", slot=100, write_version=1, signature="a1", sequence=1))

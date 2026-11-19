@@ -177,6 +177,44 @@ class BankLineageTrackerTests(unittest.TestCase):
             stream_id="conn-1", stream_sequence=1,
         )
         self.assertEqual(tracker.account_bank_status(account), "bank_observed_finalized")
+
+    def test_commitment_state_does_not_promote_processed_or_confirmed(self):
+        tracker = BankLineageTracker()
+        key = BankKey("yellowstone", 101, 77)
+        tracker.add_slot_update(_slot(101, "SLOT_CREATED_BANK", bank_id=77, parent=100))
+        self.assertEqual(tracker.commitment_state(key), "UNKNOWN")
+        tracker.add_slot_update(_slot(101, "SLOT_PROCESSED", bank_id=77, parent=100, sequence=2))
+        self.assertEqual(tracker.commitment_state(key), "PROVIDER_REPORTED_PROCESSED")
+        self.assertFalse(tracker.is_bank_finalized(key))
+        tracker.add_slot_update(_slot(101, "SLOT_CONFIRMED", bank_id=77, parent=100, sequence=3))
+        self.assertEqual(tracker.commitment_state(key), "PROVIDER_REPORTED_CONFIRMED")
+        self.assertFalse(tracker.is_bank_finalized(key))
+        tracker.add_slot_update(_slot(101, "SLOT_FINALIZED", bank_id=77, parent=100, sequence=4))
+        self.assertEqual(tracker.commitment_state(key), "PROVIDER_REPORTED_FINALIZED")
+        self.assertTrue(tracker.is_bank_finalized(key))
+
+    def test_finalized_child_requires_finalized_linked_ancestors(self):
+        tracker = BankLineageTracker()
+        parent = BankKey("yellowstone", 100, 10)
+        child = BankKey("yellowstone", 101, 11)
+        tracker.add_block_meta(_block(101, 11, "child-hash", 100, "parent-hash"))
+        tracker.add_block_meta(_block(100, 10, "parent-hash", 99, "grandparent-hash", sequence=2))
+        tracker.add_slot_update(_slot(100, "SLOT_PROCESSED", bank_id=10, parent=99, sequence=3))
+        tracker.add_slot_update(_slot(101, "SLOT_FINALIZED", bank_id=11, parent=100, sequence=4))
+        self.assertTrue(tracker.is_ancestor(parent, child))
+        self.assertFalse(tracker.is_bank_finalized(child))
+        tracker.add_slot_update(_slot(100, "SLOT_FINALIZED", bank_id=10, parent=99, sequence=5))
+        self.assertTrue(tracker.is_bank_finalized(child))
+
+    def test_conflicting_bank_metadata_taints_existing_bank(self):
+        tracker = BankLineageTracker()
+        key = BankKey("yellowstone", 101, 11)
+        tracker.add_block_meta(_block(101, 11, "hash-a", 100, "parent-hash"))
+        conflict = tracker.add_block_meta(_block(101, 11, "hash-b", 100, "parent-hash", sequence=2))
+        self.assertEqual(conflict.status, "conflict")
+        self.assertEqual(tracker.commitment_state(key), "CONFLICTED")
+        self.assertFalse(tracker.is_bank_usable(key))
+
     def test_bank_scoped_updates_are_not_paired_by_linear_timeline(self):
         from smart_money_radar.data_sources.geyser_account_timeline import AccountUpdateTimeline
         timeline = AccountUpdateTimeline()

@@ -7,6 +7,7 @@ Isso evita repartir arbitrariamente deltas líquidos entre swaps sequenciais.
 Não cria SwapObservation, BUY/SELL, sinal ou autorização de execução.
 """
 from collections.abc import Mapping, Sequence
+import hashlib
 from dataclasses import dataclass, replace
 from typing import Literal
 
@@ -32,6 +33,7 @@ from smart_money_radar.data_sources.token2022_transfer_fee_state import (
     TransferFeeConfigState,
     collect_transfer_fee_config_init_positions,
     decode_transfer_fee_config_optional,
+    decode_transfer_fee_amount_delta,
 )
 
 
@@ -97,6 +99,8 @@ class DammV2MintPrestate:
     snapshot_order: int
     source: str
     state_ref: str
+    source_id: str = ""
+    ordering_domain_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -114,6 +118,11 @@ class DammV2MintFeeConfigSnapshot:
     transfer_fee_init_inventory_complete: bool
     source: str
     pre_state_ref: str
+    source_id: str = ""
+    transaction_payload_sha256: str = ""
+    pre_state_sha256: str = ""
+    pre_state_data: bytes = b""
+    ordering_domain_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -129,6 +138,13 @@ class DammV2WithheldFeeSnapshot:
     source: str
     pre_state_ref: str
     post_state_ref: str
+    source_id: str = ""
+    transaction_payload_sha256: str = ""
+    pre_state_sha256: str = ""
+    post_state_sha256: str = ""
+    pre_state_data: bytes = b""
+    post_state_data: bytes = b""
+    ordering_domain_id: str = ""
 
 
 def _add_expected(
@@ -229,6 +245,9 @@ def build_damm_v2_mint_fee_config_snapshots(
     transaction_epoch: int,
     transaction_slot: int,
     transaction_order: int,
+    source_id: str,
+    transaction_payload_sha256: str,
+    ordering_domain_id: str,
 ) -> tuple[DammV2MintFeeConfigSnapshot, ...]:
     """Builds per-transfer mint fee snapshots from ordered transaction evidence.
 
@@ -249,6 +268,16 @@ def build_damm_v2_mint_fee_config_snapshots(
         or instruction_inventory.slot != transaction_slot
     ):
         raise ValueError("inventário não corresponde à assinatura/slot da transação")
+    if not isinstance(source_id, str) or not source_id.strip():
+        raise ValueError("source_id do prestate é obrigatório")
+    if (
+        not isinstance(transaction_payload_sha256, str)
+        or len(transaction_payload_sha256) != 64
+        or any(ch not in "0123456789abcdef" for ch in transaction_payload_sha256)
+    ):
+        raise ValueError("transaction_payload_sha256 inválido")
+    if not isinstance(ordering_domain_id, str) or not ordering_domain_id.strip():
+        raise ValueError("ordering_domain_id é obrigatório")
     for label, value in (
         ("transaction_epoch", transaction_epoch),
         ("transaction_slot", transaction_slot),
@@ -298,8 +327,12 @@ def build_damm_v2_mint_fee_config_snapshots(
         if (
             not isinstance(prestate.source, str) or not prestate.source.strip()
             or not isinstance(prestate.state_ref, str) or not prestate.state_ref.strip()
+            or prestate.source_id != source_id
         ):
-            raise ValueError(f"proveniência do mint prestate ausente para {mint}")
+            raise ValueError(f"proveniência/source_id do mint prestate ausente ou divergente para {mint}")
+        if prestate.ordering_domain_id != ordering_domain_id:
+            raise ValueError(f"ordering_domain_id do mint prestate ausente ou divergente para {mint}")
+        actual_state_sha256 = hashlib.sha256(prestate.account_data).hexdigest()
         if mint not in cache:
             inventory = collect_transfer_fee_config_init_positions(
                 instruction_inventory, mint
@@ -326,6 +359,11 @@ def build_damm_v2_mint_fee_config_snapshots(
             transfer_fee_init_inventory_complete=inventory.complete,
             source=prestate.source,
             pre_state_ref=prestate.state_ref,
+            source_id=prestate.source_id,
+            transaction_payload_sha256=transaction_payload_sha256,
+            pre_state_sha256=actual_state_sha256,
+            pre_state_data=prestate.account_data,
+            ordering_domain_id=prestate.ordering_domain_id,
         ))
     return tuple(snapshots)
 
@@ -337,9 +375,22 @@ def _calculate_fee_from_mint_snapshot(
     transaction_slot: int,
     transaction_order: int,
     transaction_signature: str,
+    transaction_source_id: str,
+    transaction_payload_sha256: str,
+    transaction_ordering_domain_id: str,
 ) -> int:
     if not isinstance(transaction_signature, str) or not transaction_signature.strip():
         raise ValueError("transaction_signature é obrigatório")
+    if not isinstance(transaction_source_id, str) or not transaction_source_id.strip():
+        raise ValueError("transaction_source_id é obrigatório")
+    if (
+        not isinstance(transaction_payload_sha256, str)
+        or len(transaction_payload_sha256) != 64
+        or any(ch not in "0123456789abcdef" for ch in transaction_payload_sha256)
+    ):
+        raise ValueError("transaction_payload_sha256 inválido")
+    if not isinstance(transaction_ordering_domain_id, str) or not transaction_ordering_domain_id.strip():
+        raise ValueError("transaction_ordering_domain_id é obrigatório")
     for label, value in (
         ("transaction_epoch", transaction_epoch),
         ("transaction_slot", transaction_slot),
@@ -349,6 +400,24 @@ def _calculate_fee_from_mint_snapshot(
             raise ValueError(f"{label} inválido")
     if snapshot.transaction_signature != transaction_signature:
         raise ValueError("assinatura do mint prestate diverge da transação")
+    if (
+        not isinstance(transaction_ordering_domain_id, str)
+        or not transaction_ordering_domain_id.strip()
+        or snapshot.ordering_domain_id != transaction_ordering_domain_id
+    ):
+        raise ValueError("ordering_domain_id do mint prestate diverge da transação")
+    if (
+        not isinstance(transaction_source_id, str) or not transaction_source_id.strip()
+        or snapshot.source_id != transaction_source_id
+    ):
+        raise ValueError("source_id do mint prestate diverge da transação")
+    if (
+        not isinstance(transaction_payload_sha256, str)
+        or snapshot.transaction_payload_sha256 != transaction_payload_sha256
+        or len(snapshot.pre_state_sha256) != 64
+        or any(ch not in "0123456789abcdef" for ch in snapshot.pre_state_sha256)
+    ):
+        raise ValueError("hash/proveniência do mint prestate diverge ou está ausente")
     if snapshot.mint != transfer.mint:
         raise ValueError("mint prestate diverge da transferência")
     if (
@@ -402,8 +471,16 @@ def _calculate_fee_from_mint_snapshot(
     if (
         not isinstance(snapshot.source, str) or not snapshot.source.strip()
         or not isinstance(snapshot.pre_state_ref, str) or not snapshot.pre_state_ref.strip()
+        or not isinstance(snapshot.pre_state_data, bytes)
+        or hashlib.sha256(snapshot.pre_state_data).hexdigest() != snapshot.pre_state_sha256
     ):
-        raise ValueError("proveniência do mint prestate ausente")
+        raise ValueError("proveniência/hash do mint prestate ausente ou divergente")
+    try:
+        decoded_config = decode_transfer_fee_config_optional(snapshot.pre_state_data)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("bytes TLV do mint prestate inválidos") from exc
+    if decoded_config != snapshot.config_state:
+        raise ValueError("config_state não corresponde aos bytes do mint prestate")
     if snapshot.config_state is None:
         return 0
     if (
@@ -428,6 +505,9 @@ def reconcile_damm_v2_economic_batch(
     transaction_slot: int | None = None,
     transaction_order: int | None = None,
     transaction_signature: str | None = None,
+    transaction_source_id: str | None = None,
+    transaction_payload_sha256: str | None = None,
+    transaction_ordering_domain_id: str | None = None,
 ) -> DammV2EconomicReconciliation:
     """Reconcilia todas as operações DAMM v2 do mesmo payload de transação.
 
@@ -752,6 +832,9 @@ def reconcile_damm_v2_economic_batch(
                         transaction_slot=transaction_slot,
                         transaction_order=transaction_order,
                         transaction_signature=transaction_signature,
+                        transaction_source_id=transaction_source_id,
+                        transaction_payload_sha256=transaction_payload_sha256,
+                        transaction_ordering_domain_id=transaction_ordering_domain_id,
                     )
                     referral_expected_net = referral.amount_raw - referral_fee_amount
                 else:
@@ -871,6 +954,9 @@ def verify_damm_v2_withheld_fee_deltas(
     transaction_signature: str,
     transaction_slot: int,
     transaction_order: int,
+    transaction_source_id: str,
+    transaction_payload_sha256: str,
+    transaction_ordering_domain_id: str,
 ) -> DammV2EconomicReconciliation:
     """Verifies expected withheld increments against provenance-bound TLV snapshots.
 
@@ -888,6 +974,16 @@ def verify_damm_v2_withheld_fee_deltas(
         raise TypeError("snapshot withheld inválido")
     if not isinstance(transaction_signature, str) or not transaction_signature.strip():
         raise ValueError("transaction_signature é obrigatório")
+    if not isinstance(transaction_source_id, str) or not transaction_source_id.strip():
+        raise ValueError("transaction_source_id é obrigatório")
+    if (
+        not isinstance(transaction_payload_sha256, str)
+        or len(transaction_payload_sha256) != 64
+        or any(ch not in "0123456789abcdef" for ch in transaction_payload_sha256)
+    ):
+        raise ValueError("transaction_payload_sha256 inválido")
+    if not isinstance(transaction_ordering_domain_id, str) or not transaction_ordering_domain_id.strip():
+        raise ValueError("transaction_ordering_domain_id é obrigatório")
     for label, value in (("transaction_slot", transaction_slot), ("transaction_order", transaction_order)):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"{label} inválido")
@@ -925,6 +1021,15 @@ def verify_damm_v2_withheld_fee_deltas(
         if snapshot.transaction_signature != transaction_signature:
             mismatches.append(f"assinatura do snapshot diverge para {expected.token_account}")
             continue
+        if snapshot.source_id != transaction_source_id:
+            mismatches.append(f"source_id do snapshot diverge para {expected.token_account}")
+            continue
+        if snapshot.ordering_domain_id != transaction_ordering_domain_id:
+            mismatches.append(f"ordering_domain_id do snapshot diverge para {expected.token_account}")
+            continue
+        if snapshot.transaction_payload_sha256 != transaction_payload_sha256:
+            mismatches.append(f"hash do payload da transação diverge para {expected.token_account}")
+            continue
         if (
             isinstance(snapshot.transaction_slot, bool)
             or not isinstance(snapshot.transaction_slot, int)
@@ -955,10 +1060,26 @@ def verify_damm_v2_withheld_fee_deltas(
             or not isinstance(snapshot.pre_state_ref, str) or not snapshot.pre_state_ref.strip()
             or not isinstance(snapshot.post_state_ref, str) or not snapshot.post_state_ref.strip()
             or snapshot.pre_state_ref == snapshot.post_state_ref
+            or not isinstance(snapshot.pre_state_data, bytes)
+            or not isinstance(snapshot.post_state_data, bytes)
+            or hashlib.sha256(snapshot.pre_state_data).hexdigest() != snapshot.pre_state_sha256
+            or hashlib.sha256(snapshot.post_state_data).hexdigest() != snapshot.post_state_sha256
+            or len(snapshot.pre_state_sha256) != 64
+            or len(snapshot.post_state_sha256) != 64
         ):
             mismatches.append(f"proveniência/hash de snapshot ausente para {expected.token_account}")
             continue
+        try:
+            decoded_from_raw = decode_transfer_fee_amount_delta(
+                snapshot.pre_state_data, snapshot.post_state_data
+            )
+        except (TypeError, ValueError):
+            mismatches.append(f"bytes TLV pre/post inválidos para {expected.token_account}")
+            continue
         decoded = snapshot.decoded_delta
+        if decoded != decoded_from_raw:
+            mismatches.append(f"delta TLV não corresponde aos bytes pre/post para {expected.token_account}")
+            continue
         if (
             not isinstance(decoded, TransferFeeAmountDelta)
             or not isinstance(decoded.extension_types, tuple)
@@ -1010,6 +1131,9 @@ def verify_damm_v2_mint_fee_config(
     transaction_slot: int,
     transaction_order: int,
     transaction_signature: str,
+    transaction_source_id: str,
+    transaction_payload_sha256: str,
+    transaction_ordering_domain_id: str,
 ) -> DammV2EconomicReconciliation:
     """Verifies each Token-2022 transfer fee against its mint pre-state.
 
@@ -1027,6 +1151,14 @@ def verify_damm_v2_mint_fee_config(
         raise TypeError("snapshot de mint inválido")
     if not isinstance(transaction_signature, str) or not transaction_signature.strip():
         raise ValueError("transaction_signature é obrigatório")
+    if not isinstance(transaction_source_id, str) or not transaction_source_id.strip():
+        raise ValueError("transaction_source_id é obrigatório")
+    if (
+        not isinstance(transaction_payload_sha256, str)
+        or len(transaction_payload_sha256) != 64
+        or any(ch not in "0123456789abcdef" for ch in transaction_payload_sha256)
+    ):
+        raise ValueError("transaction_payload_sha256 inválido")
     for label, value in (
         ("transaction_epoch", transaction_epoch),
         ("transaction_slot", transaction_slot),
@@ -1076,6 +1208,15 @@ def verify_damm_v2_mint_fee_config(
             continue
         if snapshot.transaction_signature != transaction_signature:
             mismatches.append(f"assinatura do snapshot diverge para {expected.mint}")
+            continue
+        if snapshot.source_id != transaction_source_id:
+            mismatches.append(f"source_id do snapshot diverge para {expected.mint}")
+            continue
+        if snapshot.ordering_domain_id != transaction_ordering_domain_id:
+            mismatches.append(f"ordering_domain_id do snapshot diverge para {expected.mint}")
+            continue
+        if snapshot.transaction_payload_sha256 != transaction_payload_sha256:
+            mismatches.append(f"hash do payload da transação diverge para {expected.mint}")
             continue
         if (
             isinstance(snapshot.transaction_epoch, bool)
@@ -1148,8 +1289,19 @@ def verify_damm_v2_mint_fee_config(
         if (
             not isinstance(snapshot.source, str) or not snapshot.source.strip()
             or not isinstance(snapshot.pre_state_ref, str) or not snapshot.pre_state_ref.strip()
+            or not isinstance(snapshot.pre_state_data, bytes)
+            or hashlib.sha256(snapshot.pre_state_data).hexdigest() != snapshot.pre_state_sha256
+            or len(snapshot.pre_state_sha256) != 64
         ):
             mismatches.append(f"proveniência do mint ausente para {expected.mint}")
+            continue
+        try:
+            decoded_prestate = decode_transfer_fee_config_optional(snapshot.pre_state_data)
+        except (TypeError, ValueError):
+            mismatches.append(f"bytes TLV do mint prestate inválidos para {expected.mint}")
+            continue
+        if decoded_prestate != snapshot.config_state:
+            mismatches.append(f"config_state não corresponde aos bytes do mint prestate para {expected.mint}")
             continue
         if snapshot.config_state is None:
             calculated_fee = 0

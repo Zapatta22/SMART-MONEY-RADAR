@@ -3255,3 +3255,12 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - CI #1343 (run 44428050448) disparado automaticamente para o novo HEAD 1f2167162a1f61cf35b817f12678fda90273e0fd; no momento deste registro, estava IN_PROGRESS, com instalação concluída e suíte de testes em execução. Resultado ainda não conhecido; não declarar validação pós-sincronização até conclusão SUCCESS.
 - A main continua intacta em 5060bc65ddf181a4736fdb662c44c3fec0dd7259. Nenhuma ordem, assinatura de transação ou gravação em banco de produção foi executada.
 - Próxima ação: aguardar e inspecionar CI #1343; se SUCCESS, atualizar a descrição da PR e prosseguir com revisão final da cadeia. Se falhar, diagnosticar apenas a falha nova, sem repetir validações anteriores sem necessidade.
+
+
+### Resultado da validação pós-sincronização — CI #1343 — 19/11/2026
+
+- CI #1343 (run 44428050448) SUCCESS no commit de sincronização 1f2167162a1f61cf35b817f12678fda90273e0fd. Logs confirmam 535 testes executados em 4,262s, todos OK, e etapa compileall concluída com sucesso.
+- Comparação da PR #25 com a base após sincronização: 503 commits à frente, 0 atrás. A PR continua OPEN/DRAFT e mergeable=true; não foi mergeada.
+- O Registro Mestre foi atualizado depois da execução do CI, gerando o commit 14728293ff2785d6e2fd422b603b6d482647538b. Esse commit contém apenas esta atualização documental; o resultado CI #1343 corresponde ao commit de sincronização 1f2167162a1f61cf35b817f12678fda90273e0fd.
+- Estado atual da branch feat/damm-v2-transaction-pipeline: 14728293ff2785d6e2fd422b603b6d482647538b. Main permanece em 5060bc65ddf181a4736fdb662c44c3fec0dd7259.
+- Próxima ação: revisão final dos diffs e checks da cadeia #21–#25, sem merge até que a revisão esteja concluída. A fixture única com swaps positivos simultâneos DAMM v2 + Raydium CPMM continua sendo uma cobertura adicional desejável, não um resultado já comprovado.

@@ -224,10 +224,25 @@ Validation:
 - CI #1645, run `44462300540`, push: SUCCESS; 522/522 tests and `python -m compileall -q src tests` passed on `92ba36d494e23932d11ec4b7c25ffd9afebe2916`.
 - CI #1646, run `44462306301`, pull_request: SUCCESS; 522/522 tests and compileall passed on the same commit.
 
-Explicitly not implemented in this slice:
-- no live Yellowstone/Helius client or wire-byte capture boundary;
-- no automatic event identity derivation from protobuf messages; the caller must supply a stable event_id;
-- no transport/continuity/backfill checkpoints, sequence-gap reconciliation, normalized-event projection, account-write persistence, timeline generations, backfill jobs, or restart orchestration;
-- no connection to a provider, credentials, continuous capture, or financial/on-chain execution.
+The offline transport checkpoint/gap slice is also implemented in PR #23:
+- schema migration v2 adds `geyser_transport_checkpoints`, `geyser_transport_gaps`, and `geyser_transport_anomalies`;
+- `register_stream(source_id, stream_id, initial_sequence)` records an adapter-declared first expected sequence before ingestion;
+- if no explicit registration exists, the first observed sequence becomes a baseline marked `first_observed_unverified`; this does not prove that earlier sequences were delivered;
+- `contiguous_sequence` advances only through sequences with durable delivery rows. A later sequence creates explicit missing ranges, is retained, and does not move the contiguous checkpoint across the gap;
+- out-of-order arrivals can close a gap only after every sequence from the baseline through the observed high-water mark is present. Superseded and resolved gap records remain auditable;
+- replay of the same event at the same sequence is idempotent for continuity. A different event reusing a sequence, an unidentifiable RAW identity conflict, or a sequence before the declared baseline creates an open transport anomaly and interrupts the checkpoint;
+- anomalies require an explicit resolution note; resolving an anomaly does not clear the interrupted flag while any gap or other open anomaly remains;
+- RAW event, delivery, gap/anomaly evidence, and transport checkpoint update share the same SQLite transaction. A forced gap-write failure test proves that RAW, delivery, and checkpoint changes all roll back together;
+- transport checkpoints are scoped by `(source_id, stream_id)`; reconnects must use a new stream_id. This store does not infer sequence-reset semantics.
 
-The next implementation slice must review event identity derivation and add durable transport checkpoint/gap contracts before any live ingestion is considered. No provider connection or financial execution is authorized by this document.
+Validation of the transport slice:
+- CI #1660, run `44508678117`, push: SUCCESS; 530/530 tests and `python -m compileall -q src tests` passed on `b470a5eb02025512569d83d667d82ddc55a33ec5`.
+- CI #1661, run `44508689458`, pull_request: SUCCESS; 530/530 tests and compileall passed on the same commit.
+- Earlier runs #1654–#1659 exposed a test assertion mismatch in the expected error message for late baseline registration; corrected before the successful HEAD above.
+
+Still not implemented:
+- automatic deterministic event_id derivation from protobuf messages; the caller must supply a stable event_id;
+- continuity checkpoints/epochs, normalized-event projection, account-write persistence, timeline generations, backfill jobs, or restart orchestration;
+- live Yellowstone/Helius client, wire-byte capture boundary, provider connection, credentials, continuous capture, or financial/on-chain execution.
+
+The next implementation slice should review deterministic event identity per event kind and schema version, then add normalized-event persistence only after its identity and versioning contract is approved. No provider connection or financial execution is authorized by this document.

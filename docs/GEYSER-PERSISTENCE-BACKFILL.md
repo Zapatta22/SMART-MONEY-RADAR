@@ -243,20 +243,21 @@ Validation of the transport slice:
 - CI #1665, run `44508987457`, pull_request: SUCCESS; 531/531 tests and compileall passed on the same commit.
 - Earlier runs #1654–#1659 exposed a test assertion mismatch in the expected error message for late baseline registration; corrected before the successful HEAD above.
 
-Implemented deterministic event identity for normalized Geyser events:
-- `src/smart_money_radar/data_sources/geyser_event_identity.py` defines `IDENTITY_VERSION = "geyser-event-id:v1"`, `EventIdentity`, and `derive_event_identity(event, schema_version=...)`;
-- canonical SHA-256 identity includes identity-contract version, explicit upstream schema version, event kind, and the logical key for Account, Slot, BlockMeta, or EntryUpdateParent;
-- transport `stream_id` and `stream_sequence` are excluded, so reconnect/replay does not change the logical event identity;
-- payload fields intentionally excluded from the logical key remain protected by immutable RAW content comparison. Reusing an identity with changed bytes is a conflict, not a second event or silent duplicate;
-- this helper accepts provider-neutral normalized event objects. It does not decode protobuf, capture wire bytes, persist events, or automatically invoke itself from the transport adapter; the future ingestion coordinator must call it and pass its `event_id` to RAW storage;
-- `protobuf_wire` provenance remains valid only when bytes were captured before protobuf decoding. The current adapter receives decoded objects.
+Implemented deterministic event identity and offline normalized ingestion:
+- `src/smart_money_radar/data_sources/geyser_event_identity.py` defines the versioned event identity contract.
+- `src/smart_money_radar/data_sources/geyser_ingestion.py` exposes `ingest_normalized_event(store, event, schema_version=...)` for Account, Slot, BlockMeta, and EntryUpdateParent.
+- The coordinator derives the deterministic `event_id`, serializes provider-neutral normalized content as canonical UTF-8 JSON (`payload_encoding=normalized_json`), and persists it through the immutable RAW store.
+- Transport `stream_id` and `stream_sequence` are persisted only as a separate delivery; they are excluded from the canonical payload and logical identity.
+- Account bytes are represented losslessly as Base64 in normalized JSON; opaque EntryUpdateParent bytes are represented as hex. This is a normalized representation, not protobuf wire capture.
+- Reconnect replay with the same logical event creates another delivery but does not duplicate the RAW event. Changed content under the same logical event ID becomes an immutable RAW conflict.
+- The coordinator is offline and does not create a gRPC client, connect to a provider, or claim to capture original protobuf wire bytes.
 
 Validation for deterministic identity:
 - CI #1674, run `44510167848`, pull_request event, HEAD `bde85727630b4f37994852c67594a9c70887d1a3`: SUCCESS; **539/539 tests OK** in 3.843 s; `python -m compileall -q src tests` passed.
 
 Still not implemented:
-- automatic invocation of the identity helper by a transport/ingestion coordinator and normalized-event persistence;
+- account/slot/block_meta/entry_update_parent normalized-event ingestion through `data_sources/geyser_ingestion.py`, deterministic `normalized_json` serialization, and automatic event identity + separate delivery persistence;
 - continuity checkpoints/epochs, account-write persistence, timeline generations, backfill jobs, or restart orchestration;
-- live Yellowstone/Helius client, wire-byte capture boundary, provider connection, credentials, continuous capture, or financial/on-chain execution.
+- live Yellowstone/Helius client, original protobuf wire-byte capture boundary, provider connection, credentials, continuous capture, or financial/on-chain execution.
 
 No provider connection or financial execution is authorized by this document.

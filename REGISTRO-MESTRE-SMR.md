@@ -2110,3 +2110,14 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - Documentação atualizada no commit `803aec1307436db9f39dcad321122eceacb467ba`; CI #1559 (`44448848178`) no mesmo HEAD: completed/success, **451 testes OK**, compileall aprovado.
 - Este trabalho foi apenas pesquisa documental e atualização do Registro Mestre; nenhuma credencial, RPC, Helius, RAW, SQLite ou operação on-chain foi usada.
 - Próxima ação: implementar normalizador provider-neutral de mensagens Geyser e timeline/pairer por pubkey/write_version/txn_signature, incluindo startup baseline, lacunas/replay, múltiplos updates no mesmo slot e rollback.
+
+
+## 277. CI final da pesquisa de snapshots e estado atual da PR23 — 19/11/2026
+
+- PR #23 HEAD: `e80c9179eb8c0587a47d0cb4425c5171449b0358`; base `feat/damm-v2-referral-transfer-attribution`.
+- CI #1561 (`44448957990`) no HEAD atual: completed/success, **451 testes OK**, compileall aprovado.
+- PR #23 permanece OPEN/DRAFT, `mergeable=true`, `mergeable_state=clean`; não integrada. PR #22 continua Draft.
+- Compare da PR #23: 85 commits à frente, 0 atrás, oito arquivos próprios. `main` permanece `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhum código/teste foi alterado após a validação #1561; as atualizações finais são apenas descrição da PR/registro.
+- Nenhuma RPC/Helius, RAW, SQLite, importação, checkpoint ou operação on-chain foi executada.
+- Próxima etapa de implementação: normalizador de account updates Yellowstone/Geyser e timeline por pubkey, usando `write_version`, `txn_signature`, slot e stream sequence; parear pre/post, preservar startup baseline e detectar lacunas/replay/rollback antes de qualquer reconciliação real.

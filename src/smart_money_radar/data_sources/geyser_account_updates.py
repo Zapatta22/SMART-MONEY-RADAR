@@ -81,6 +81,7 @@ class NormalizedAccountUpdate:
     def event_fingerprint(self) -> str:
         """Fingerprint including transaction identity and ledger ordering."""
         payload = {
+            "source": self.source,
             "pubkey": self.pubkey,
             "slot": self.slot,
             "write_version": self.write_version,

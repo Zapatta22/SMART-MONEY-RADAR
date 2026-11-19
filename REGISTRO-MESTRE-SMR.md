@@ -2907,9 +2907,10 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 
 ### Estado de validação
 - Alterações gravadas na branch `fix/geyser-finalized-evidence-gate` por commits sequenciais.
-- Último commit de código/documentação antes deste registro será conferido com HEAD da PR e CI.
-- Não declarar testes aprovados até consultar CI no HEAD exato.
+- HEAD atual da PR após as correções: `53666547c569c37adc6313d62ac5b51f31fa4b0a`.
+- A revisão do diff confirmou a classificação mutuamente exclusiva no construtor: `LEGACY_UNSCOPED_UNVERIFIED` apenas quando `bank_id` está ausente; caso contrário, `BANK_PROVIDER_REPORTED_FINALIZED` somente após os gates bancários.
+- Consulta de workflows associada ao HEAD atual não retornou execução; CI ainda não está comprovado neste HEAD. Não declarar testes aprovados.
 - PR #35 permanece Draft e sem merge; `main` permanece intacta.
 
 ### Próxima ação
-- Conferir diff completo e iniciar CI da PR #35; examinar resultados e corrigir qualquer falha antes de nova revisão de segurança.
+- Obter execução CI para o HEAD `53666547c569c37adc6313d62ac5b51f31fa4b0a`; examinar resultados e corrigir qualquer falha antes de nova revisão de segurança.

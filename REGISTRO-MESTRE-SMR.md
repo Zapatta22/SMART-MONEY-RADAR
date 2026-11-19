@@ -2252,19 +2252,20 @@ Implementar adapter de fronteira para mensagens protobuf Yellowstone (ou mapping
 - Testes novos em `tests/test_geyser_bank_aware_timeline.py`: mesma bank, cadeia cross-bank comprovada, forks irmãos, parent_slot sem blockhash, EntryUpdateParent, ancestral morto, metadados fora de ordem, reconexão e replay.
 
 ### Validação
+- Validação final registrada na seção 286: CI #1633/#1634, 515/515 testes e compileall aprovados no commit funcional `d5b21774e8210096dc5c41e842c3c2d0a9434054`.
 
 ### Limites
 - Não há endpoint Yellowstone conectado, captura contínua, replay/reconnect de rede, persistência RAW/SQLite, backfill ou operações on-chain.
 - Não há promoção de commitment nem seleção de fork canônico. Transição é evidência de estados observados em banco/linhagem verificados, não decisão de compra/venda.
 
 ### Próxima etapa
-Após CI aprovado, revisar a semântica de invalidação de descendants e adicionar testes para ordem de eventos e rollback exato sob forks concorrentes; só então desenhar persistência/backfill.
+Concluída na seção 286: invalidação de descendants, updates fora de ordem, replay/reconnect e rollback exato foram implementados e testados. A próxima frente é o contrato de persistência/backfill.
 
 
 ## 286. Validação final da integração bank-aware e proteção de forks — 19/11/2026
 
 ### Estado final do código
-- Commit funcional/documental validado: `d5b21774e8210096dc5c41e842c3c2d0a9434054`.
+- Commit funcional validado: `d5b21774e8210096dc5c41e842c3c2d0a9434054` (código e testes). Commit HEAD atual da branch: `a09a18c834c5cea0ff7920d55c56e0a57a51d862` (somente documentação/Registro após a validação de código).
 - `AccountUpdateTimeline` integra o `BankLineageTracker` por padrão ou por injeção; recebe Slot, BlockMeta e EntryUpdateParent através de métodos explícitos.
 - Transição bank-scoped exige banco pre e post observado/utilizável, mesma fonte estável e:
   - identidade exata do mesmo banco; ou
@@ -2282,7 +2283,7 @@ Após CI aprovado, revisar a semântica de invalidação de descendants e adicio
 - CI intermediário #1621/#1622 encontrou dois problemas nas fixtures de teste (replay com estado alterado e write_version repetido no reconnect); as fixtures foram corrigidas. As execuções #1625–#1634 passaram; os dois últimos runs acima validam o HEAD final.
 
 ### Estado GitHub e segurança
-- PR #23: OPEN, Draft, `merged=false`, `mergeable=true`; HEAD `d5b21774e8210096dc5c41e842c3c2d0a9434054`; base `feat/damm-v2-referral-transfer-attribution`.
+- PR #23: OPEN, Draft, `merged=false`; HEAD atual `a09a18c834c5cea0ff7920d55c56e0a57a51d862`; base `feat/damm-v2-referral-transfer-attribution`. O código/testes validados estão no pai `d5b21774e8210096dc5c41e842c3c2d0a9434054`; o commit HEAD seguinte alterou apenas docs/Registro.
 - `main` intacta: `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Nenhum merge.
 - Nenhum endpoint Yellowstone/Helius conectado; sem captura contínua, reconnect/replay de rede, RAW/SQLite, backfill ou execução on-chain/financeira.
 

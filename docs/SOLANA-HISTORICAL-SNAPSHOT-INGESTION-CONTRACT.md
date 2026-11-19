@@ -182,3 +182,15 @@ a reconciliação incompleta. O resultado pode reconciliar transferências e
 deltas da transação com taxas históricas ainda marcadas como
 `EXPECTED_NOT_VERIFIED`. Este caminho não usa sequência de transporte como
 ordem no bloco, nem cria snapshots históricos.
+
+### Índice no bloco comprovado no journal
+
+O argumento opcional `--block-sequence` indica o envelope de bloco a conferir
+durante a mesma leitura do journal. O comando exige banco finalizado, hash
+compatível com os metadados do banco, mesmo slot e banco, total executado
+compatível com a lista de transações, índices únicos e sem lacunas e
+correspondência de assinatura, conteúdo, meta e índice da transação.
+O JSON informa o índice no ledger, a sequência do frame do bloco e seu
+SHA-256. Um bloco filtrado que omite transações falha nessa validação.
+A comprovação do índice ainda precisa ser vinculada às contas históricas
+antes de verificar as taxas de um swap.

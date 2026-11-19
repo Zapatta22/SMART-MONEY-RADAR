@@ -16,6 +16,16 @@ from smart_money_radar.data_sources.solana_transaction_evidence_bundle import (
 
 
 @dataclass(frozen=True)
+class YellowstoneBlockOrder:
+    """Transaction index corroborated by a complete block in the same journal."""
+
+    blockhash: str
+    transaction_index: int
+    block_sequence: int
+    block_wire_sha256: str
+
+
+@dataclass(frozen=True)
 class YellowstoneTransactionEvidence:
     """Keep wire identity separate from the derived JSON evidence identity."""
 
@@ -24,6 +34,7 @@ class YellowstoneTransactionEvidence:
     transaction_accounts: frozenset[str]
     account_transitions: tuple[AccountStateTransition, ...] = ()
     provider_reported_finalized: bool = False
+    block_order: YellowstoneBlockOrder | None = None
 
     def reconcile_damm_v2(self, *, monitored_wallet: str) -> DammV2EconomicReconciliation:
         """Reconcile archive-derived economics without claiming historical fee verification."""
@@ -35,6 +46,40 @@ class YellowstoneTransactionEvidence:
         return reconcile_solana_transaction_damm_v2_bundle(
             self.bundle, monitored_wallet=monitored_wallet,
         )
+
+
+def verify_yellowstone_block_order(
+    block: Message, *, observation: NormalizedTransactionObservation,
+    block_sequence: int, block_wire_sha256: str,
+) -> YellowstoneBlockOrder:
+    if (block.slot, block.bank_id) != (observation.slot, observation.bank_id):
+        raise ValueError("o bloco diverge do slot ou banco da transação Yellowstone")
+    transactions = block.transactions
+    indices = {item.index for item in transactions}
+    signatures = {item.signature for item in transactions}
+    if (len(transactions) != block.executed_transaction_count
+            or len(indices) != len(transactions)
+            or len(signatures) != len(transactions)
+            or any(index >= len(transactions) for index in indices)):
+        raise ValueError("bloco Yellowstone incompleto ou com índices/assinaturas duplicados")
+    if any(not item.transaction.signatures or item.transaction.signatures[0] != item.signature
+           for item in transactions):
+        raise ValueError("assinatura de transação diverge dentro do bloco Yellowstone")
+    matches = [
+        item for item in transactions
+        if _base58_encode(item.signature, field="block transaction signature", expected_length=64)
+        == observation.transaction_signature
+    ]
+    if not matches:
+        raise ValueError("transação Yellowstone ausente do bloco")
+    item, = matches
+    if (item.index != observation.transaction_index
+            or item.is_vote != observation.is_vote
+            or item.transaction.SerializeToString(deterministic=True) != observation.transaction_payload
+            or (item.meta.SerializeToString(deterministic=True) if item.HasField("meta") else None)
+            != observation.meta_payload):
+        raise ValueError("índice ou conteúdo da transação diverge no bloco Yellowstone")
+    return YellowstoneBlockOrder(block.blockhash, item.index, block_sequence, block_wire_sha256)
 
 
 def _instruction(item: Message) -> dict:

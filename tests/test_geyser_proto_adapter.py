@@ -161,6 +161,12 @@ def _protobuf_update_class():
     fld(transaction_update, "transaction", 1, T.TYPE_MESSAGE, ".geyser.SubscribeUpdateTransactionInfo")
     fld(transaction_update, "slot", 2, T.TYPE_UINT64)
     fld(transaction_update, "bank_id", 3, T.TYPE_UINT64)
+    block = msg("SubscribeUpdateBlock")
+    fld(block, "slot", 1, T.TYPE_UINT64)
+    fld(block, "blockhash", 2, T.TYPE_STRING)
+    repeated(block, "transactions", 6, T.TYPE_MESSAGE, ".geyser.SubscribeUpdateTransactionInfo")
+    fld(block, "executed_transaction_count", 9, T.TYPE_UINT64)
+    fld(block, "bank_id", 14, T.TYPE_UINT64)
     msg("SubscribeUpdatePing")
     request = msg("SubscribeRequest")
     ping_request = msg("SubscribeRequestPing")
@@ -179,6 +185,7 @@ def _protobuf_update_class():
         ("account", 2, "SubscribeUpdateAccount"), ("slot", 3, "SubscribeUpdateSlot"),
         ("block_meta", 7, "SubscribeUpdateBlockMeta"),
         ("transaction", 4, "SubscribeUpdateTransaction"),
+        ("block", 5, "SubscribeUpdateBlock"),
         ("entry_update_parent", 13, "SubscribeUpdateEntryUpdateParent"),
         ("ping", 6, "SubscribeUpdatePing"),
     ):
@@ -665,6 +672,64 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         receiver.receive(slot.SerializeToString(), stream_sequence=42)
         invalidated = receiver.transaction_evidence_at(40)
         self.assertEqual(invalidated.reconcile_damm_v2(monitored_wallet=wallet).status, "INCOMPLETE")
+
+    def test_block_order_uses_membership_and_not_wire_sequence(self):
+        frame = _UPDATE.FromString(self.transaction_frame())
+        tx = frame.transaction
+        tx.bank_id = 25
+        info = tx.transaction
+        info.index = 0
+        info.transaction.message.header.num_required_signatures = 1
+        info.transaction.message.account_keys.append(bytes([1]) * 32)
+        info.meta.pre_balances.append(5)
+        info.meta.post_balances.append(5)
+        block_frame = _UPDATE()
+        block = block_frame.block
+        block.slot, block.bank_id = tx.slot, tx.bank_id
+        block.blockhash = _b58(bytes([9]) * 32)
+        block.executed_transaction_count = 1
+        block.transactions.add().CopyFrom(info)
+
+        meta = _UPDATE()
+        meta.block_meta.slot, meta.block_meta.bank_id = tx.slot, tx.bank_id
+        meta.block_meta.blockhash = block.blockhash
+        meta.block_meta.parent_slot = tx.slot - 1
+        meta.block_meta.parent_blockhash = _b58(bytes([8]) * 32)
+        finalized = _UPDATE()
+        finalized.slot.slot, finalized.slot.bank_id = tx.slot, tx.bank_id
+        finalized.slot.status = 2
+
+        store = SQLiteGeyserRawStore(":memory:")
+        self.addCleanup(store.close)
+        receiver = self.receiver(store)
+        wire = receiver.receive(block_frame.SerializeToString(), stream_sequence=40)
+        receiver.receive(frame.SerializeToString(), stream_sequence=41)
+        receiver.receive(meta.SerializeToString(), stream_sequence=42)
+        with self.assertRaisesRegex(ValueError, "sem finalidade"):
+            receiver.transaction_evidence_at(41, block_sequence=40)
+        receiver.receive(finalized.SerializeToString(), stream_sequence=43)
+
+        evidence = receiver.transaction_evidence_at(41, block_sequence=40)
+        self.assertEqual(evidence.block_order.transaction_index, 0)
+        self.assertEqual(evidence.block_order.block_sequence, 40)
+        self.assertEqual(evidence.block_order.block_wire_sha256, wire.payload_sha256)
+        self.assertIsNone(receiver.transaction_evidence_at(41).block_order)
+
+        block.executed_transaction_count = 2
+        receiver.receive(block_frame.SerializeToString(), stream_sequence=44)
+        with self.assertRaisesRegex(ValueError, "bloco Yellowstone incompleto"):
+            receiver.transaction_evidence_at(41, block_sequence=44)
+
+        block.executed_transaction_count = 1
+        block.transactions[0].meta.fee = 9000
+        receiver.receive(block_frame.SerializeToString(), stream_sequence=45)
+        with self.assertRaisesRegex(ValueError, "conteúdo da transação diverge"):
+            receiver.transaction_evidence_at(41, block_sequence=45)
+
+        block.blockhash = _b58(bytes([6]) * 32)
+        receiver.receive(block_frame.SerializeToString(), stream_sequence=46)
+        with self.assertRaisesRegex(ValueError, "hash do bloco diverge"):
+            receiver.transaction_evidence_at(41, block_sequence=46)
 
     def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
         descriptors = descriptor_pb2.FileDescriptorSet()

@@ -86,11 +86,14 @@ class DammV2EconomicReconciliation:
 @dataclass(frozen=True)
 class DammV2MintFeeConfigSnapshot:
     mint: str
+    transfer_instruction_index: int
+    transfer_inner_instruction_index: int
     config_state: TransferFeeConfigState | None
     transaction_epoch: int
     transaction_slot: int
     transaction_order: int
     pre_snapshot_order: int
+    mint_state_unchanged_before_transfer: bool
     source: str
     pre_state_ref: str
 
@@ -726,11 +729,11 @@ def verify_damm_v2_mint_fee_config(
     transaction_slot: int,
     transaction_order: int,
 ) -> DammV2EconomicReconciliation:
-    """Verifies each inferred/explicit Token-2022 fee against the mint pre-state.
+    """Verifies each Token-2022 transfer fee against its mint pre-state.
 
-    A missing TransferFeeConfig extension is represented by config_state=None,
-    but only when the adapter decoded the exact pre-transaction mint bytes with
-    decode_transfer_fee_config_optional.
+    The snapshot is tied to one exact transfer instruction. The adapter must
+    prove the mint config did not change earlier in the transaction before
+    that transfer; otherwise the batch remains incomplete.
     """
     if not isinstance(reconciliation, DammV2EconomicReconciliation):
         raise TypeError("reconciliation inválida")
@@ -745,7 +748,7 @@ def verify_damm_v2_mint_fee_config(
         ("transaction_slot", transaction_slot),
         ("transaction_order", transaction_order),
     ):
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= (1 << 64) - 1:
             raise ValueError(f"{label} inválido")
 
     if not reconciliation.expected_transfer_fees:
@@ -757,22 +760,35 @@ def verify_damm_v2_mint_fee_config(
             )
         return replace(reconciliation, mint_fee_config_status="NOT_REQUIRED")
 
-    by_mint = {}
+    by_transfer = {}
     for snapshot in snapshots:
-        if snapshot.mint in by_mint:
+        key = (
+            snapshot.transfer_instruction_index,
+            snapshot.transfer_inner_instruction_index,
+            snapshot.mint,
+        )
+        if key in by_transfer:
             return replace(
                 reconciliation,
                 status="AMBIGUOUS",
                 mint_fee_config_status="EXPECTED_NOT_VERIFIED",
-                reason=f"snapshot de mint duplicado para {snapshot.mint}",
+                reason=f"snapshot de mint duplicado para transferência {key}",
             )
-        by_mint[snapshot.mint] = snapshot
+        by_transfer[key] = snapshot
 
     mismatches = []
     for expected in reconciliation.expected_transfer_fees:
-        snapshot = by_mint.get(expected.mint)
+        key = (
+            expected.instruction_index,
+            expected.inner_instruction_index,
+            expected.mint,
+        )
+        snapshot = by_transfer.get(key)
         if snapshot is None:
-            mismatches.append(f"snapshot histórico de mint ausente para {expected.mint}")
+            mismatches.append(
+                f"snapshot histórico de mint ausente para {expected.mint} "
+                f"instruction {expected.instruction_index}/{expected.inner_instruction_index}"
+            )
             continue
         if (
             isinstance(snapshot.transaction_epoch, bool)
@@ -796,11 +812,26 @@ def verify_damm_v2_mint_fee_config(
             mismatches.append(f"ordem da transação diverge para {expected.mint}")
             continue
         if (
+            isinstance(snapshot.transfer_instruction_index, bool)
+            or not isinstance(snapshot.transfer_instruction_index, int)
+            or snapshot.transfer_instruction_index != expected.instruction_index
+            or isinstance(snapshot.transfer_inner_instruction_index, bool)
+            or not isinstance(snapshot.transfer_inner_instruction_index, int)
+            or snapshot.transfer_inner_instruction_index != expected.inner_instruction_index
+        ):
+            mismatches.append(f"identidade da transferência diverge para {expected.mint}")
+            continue
+        if (
             isinstance(snapshot.pre_snapshot_order, bool)
             or not isinstance(snapshot.pre_snapshot_order, int)
             or snapshot.pre_snapshot_order >= transaction_order
         ):
             mismatches.append(f"prestate do mint não antecede a transação para {expected.mint}")
+            continue
+        if snapshot.mint_state_unchanged_before_transfer is not True:
+            mismatches.append(
+                f"estado do mint pode ter mudado antes da transferência {expected.instruction_index}/{expected.inner_instruction_index}"
+            )
             continue
         if (
             not isinstance(snapshot.source, str) or not snapshot.source.strip()
@@ -811,6 +842,9 @@ def verify_damm_v2_mint_fee_config(
         if snapshot.config_state is None:
             calculated_fee = 0
         elif isinstance(snapshot.config_state, TransferFeeConfigState):
+            if 1 not in snapshot.config_state.extension_types:
+                mismatches.append(f"TransferFeeConfig TLV ausente para {expected.mint}")
+                continue
             rate = snapshot.config_state.fee_for_epoch(transaction_epoch)
             calculated_fee = calculate_transfer_fee(
                 expected.gross_amount_raw,
@@ -837,5 +871,5 @@ def verify_damm_v2_mint_fee_config(
     return replace(
         reconciliation,
         mint_fee_config_status="VERIFIED",
-        reason=reconciliation.reason + "; transfer fees Token-2022 conferidas com config/epoch prestate",
+        reason=reconciliation.reason + "; transfer fees Token-2022 conferidas com config/epoch prestate por instrução",
     )

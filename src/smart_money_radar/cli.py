@@ -43,6 +43,7 @@ def _parser() -> argparse.ArgumentParser:
     evidence.add_argument("--stream", required=True)
     evidence.add_argument("--domain", required=True)
     evidence.add_argument("--sequence", type=int, required=True)
+    evidence.add_argument("--block-sequence", type=int, help="comprova o índice usando o frame do bloco")
     evidence.add_argument("--damm-wallet", help="reconcilia DAMM v2 para esta carteira Solana")
     capture = subparsers.add_parser(
         "geyser-capture", help="captura um fluxo Yellowstone TLS com limites de duração e frames"
@@ -102,14 +103,15 @@ def _inspect_geyser_evidence(args: argparse.Namespace) -> None:
     except (DecodeError, TypeError) as exc:
         raise ValueError("descriptor Yellowstone inválido") from exc
 
-    if not 0 <= args.sequence <= (1 << 63) - 1:
-        raise ValueError("sequência fora do intervalo do journal Yellowstone")
+    for sequence in (args.sequence, args.block_sequence):
+        if sequence is not None and not 0 <= sequence <= (1 << 63) - 1:
+            raise ValueError("sequência fora do intervalo do journal Yellowstone")
     store = SQLiteGeyserRawStore(args.database, read_only=True)
     try:
         receiver = YellowstoneFrameReceiver(
             store, decode, source_id=args.source, stream_id=args.stream, ordering_domain_id=args.domain,
         )
-        evidence = receiver.transaction_evidence_at(args.sequence)
+        evidence = receiver.transaction_evidence_at(args.sequence, block_sequence=args.block_sequence)
         if evidence is None:
             raise ValueError("nenhuma transação na sequência informada")
         observation, bundle = evidence.observation, evidence.bundle
@@ -139,6 +141,8 @@ def _inspect_geyser_evidence(args: argparse.Namespace) -> None:
                 for transition in evidence.account_transitions
             ],
         }
+        if evidence.block_order is not None:
+            report["block_order"] = asdict(evidence.block_order)
         if args.damm_wallet is not None:
             result = evidence.reconcile_damm_v2(monitored_wallet=args.damm_wallet)
             report["damm_v2"] = {

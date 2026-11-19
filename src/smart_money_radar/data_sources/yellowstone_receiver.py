@@ -3,6 +3,7 @@
 from collections import Counter
 from collections.abc import Callable, Iterator
 from dataclasses import replace
+import hashlib
 
 from google.protobuf import descriptor_pb2, message_factory
 from google.protobuf.message import DecodeError, Message
@@ -21,6 +22,7 @@ from smart_money_radar.data_sources.geyser_transaction_updates import Normalized
 from smart_money_radar.data_sources.yellowstone_transaction_evidence import (
     YellowstoneTransactionEvidence,
     project_yellowstone_evidence,
+    verify_yellowstone_block_order,
 )
 from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore, WireFrameReceipt
 
@@ -87,12 +89,12 @@ class YellowstoneFrameReceiver:
         self,
     ) -> Iterator[tuple[int, NormalizedGeyserEvent | NormalizedTransactionObservation | None]]:
         """Decode a consistent stream snapshot, including coordinates of control frames."""
-        for sequence, _, event in self._replay_frames():
+        for sequence, _, _, event in self._replay_frames():
             yield sequence, event
 
     def replay_transaction_evidence(self) -> Iterator[YellowstoneTransactionEvidence]:
         """Derive Solana decoder evidence while replay verifies the wire journal."""
-        for _, frame, event in self._replay_frames():
+        for _, _, frame, event in self._replay_frames():
             if isinstance(event, NormalizedTransactionObservation):
                 yield project_yellowstone_evidence(frame, event)
 
@@ -106,14 +108,21 @@ class YellowstoneFrameReceiver:
                 ordering_domain_id=self._ordering_domain_id, stream_sequence=sequence,
                 raw_message_bytes=payload,
             )
-            yield sequence, frame, event
+            yield sequence, payload, frame, event
 
-    def transaction_evidence_at(self, stream_sequence: int) -> YellowstoneTransactionEvidence | None:
+    def transaction_evidence_at(
+        self, stream_sequence: int, *, block_sequence: int | None = None,
+    ) -> YellowstoneTransactionEvidence | None:
         """Resolve a transaction and its finalized account transitions in one wire snapshot."""
         timeline = AccountUpdateTimeline()
         signatures: Counter[str] = Counter()
         evidence = None
-        for sequence, frame, event in self._replay_frames():
+        block = None
+        block_digest = None
+        for sequence, payload, frame, event in self._replay_frames():
+            if sequence == block_sequence and frame.WhichOneof("update_oneof") == "block":
+                block = frame.block
+                block_digest = hashlib.sha256(payload).hexdigest()
             self._apply_timeline_event(timeline, sequence, event)
             if isinstance(event, NormalizedTransactionObservation):
                 signatures[event.transaction_signature] += 1
@@ -124,11 +133,24 @@ class YellowstoneFrameReceiver:
         observation = evidence.observation
         if signatures[observation.transaction_signature] != 1:
             raise ValueError("assinatura Yellowstone ambígua no domínio")
+        tracker = timeline.bank_lineage_tracker
+        bank_key = BankKey(observation.source_id, observation.slot, observation.bank_id or 0)
         if (not observation.bank_id or not evidence.bundle.structurally_complete
-                or timeline.bank_lineage_tracker.is_bank_finalized(
-                    BankKey(observation.source_id, observation.slot, observation.bank_id),
-                ) is not True):
+                or tracker.is_bank_finalized(bank_key) is not True):
+            if block_sequence is not None:
+                raise ValueError("banco sem finalidade para comprovar a ordem no bloco")
             return evidence
+        block_order = None
+        if block_sequence is not None:
+            bank = next(node for node in tracker.banks if node.key == bank_key)
+            if block is None or block_digest is None:
+                raise ValueError("frame de bloco Yellowstone ausente na sequência informada")
+            if not bank.blockhash or bank.blockhash != block.blockhash:
+                raise ValueError("hash do bloco diverge dos metadados do banco Yellowstone")
+            block_order = verify_yellowstone_block_order(
+                block, observation=observation, block_sequence=block_sequence,
+                block_wire_sha256=block_digest,
+            )
         conflicted_accounts = {item.pubkey for item in timeline.conflicts}
         matching = [
             update for update in timeline.transition_for(observation.transaction_signature)
@@ -144,6 +166,7 @@ class YellowstoneFrameReceiver:
         return replace(
             evidence,
             provider_reported_finalized=True,
+            block_order=block_order,
             account_transitions=tuple(update for update in matching if counts[update.pubkey] == 1),
         )
 

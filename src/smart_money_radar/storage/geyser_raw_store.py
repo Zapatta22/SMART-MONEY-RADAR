@@ -270,6 +270,11 @@ class SQLiteGeyserRawStore:
                     COMMIT;
                 """)
 
+            connection.execute("""
+                CREATE INDEX IF NOT EXISTS idx_geyser_wire_stream_frame
+                ON geyser_wire_frames(source_id, stream_id, frame_id)
+            """)
+
     def register_frame_stream(
         self, source_id: str, stream_id: str, ordering_domain_id: str, initial_sequence: int
     ) -> None:

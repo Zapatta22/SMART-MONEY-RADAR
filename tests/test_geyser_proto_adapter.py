@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 from pathlib import Path
 import unittest
 
@@ -16,6 +17,9 @@ from smart_money_radar.data_sources.geyser_proto_adapter import (
 
 from smart_money_radar.data_sources.yellowstone_receiver import (
     YellowstoneFrameReceiver, load_yellowstone_decoder,
+)
+from smart_money_radar.storage.geyser_account_timeline_projection import (
+    SQLiteGeyserAccountTimelineProjection,
 )
 from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
 
@@ -393,6 +397,60 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertTrue(records[0].baseline)
         self.assertEqual(records[0].update.stream_id, "connection-b")
+
+    def test_persistent_timeline_rebuild_is_atomic_and_isolated_by_connection(self):
+        account = _parse("account_update").SerializeToString()
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "wire.sqlite3"
+            store = SQLiteGeyserRawStore(database)
+            first = self.receiver(store)
+            written = first.receive(account, stream_sequence=40)
+            second = self.receiver(store, stream="connection-b", domain="domain-b")
+            second.receive(account, stream_sequence=40)
+            projection = SQLiteGeyserAccountTimelineProjection(database)
+            self.assertEqual(projection.rebuild_wire(first), 1)
+            self.assertEqual(projection.rebuild_wire(second), 1)
+            generation, rows = projection.list_wire_account_writes(*first.scope)
+            self.assertEqual(generation, 1)
+            self.assertEqual(rows[0]["frame_id"], written.frame_id)
+            self.assertEqual(rows[0]["payload_sha256"], written.payload_sha256)
+
+            with sqlite3.connect(database) as connection:
+                connection.execute(
+                    """CREATE TRIGGER reject_wire_projection BEFORE INSERT ON geyser_wire_timeline_writes
+                       BEGIN SELECT RAISE(ABORT, 'forced projection failure'); END"""
+                )
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "forced projection failure"):
+                projection.rebuild_wire(first)
+            self.assertEqual(projection.list_wire_account_writes(*first.scope), (1, rows))
+            with sqlite3.connect(database) as connection:
+                connection.execute("DROP TRIGGER reject_wire_projection")
+
+            changed = _UPDATE.FromString(account)
+            changed.account.account.write_version += 1
+            changed_wire = changed.SerializeToString()
+            real_rebuild = first.rebuild_account_timeline
+
+            def append_during_rebuild():
+                timeline = real_rebuild()
+                first.receive(changed_wire, stream_sequence=41)
+                return timeline
+
+            with patch.object(first, "rebuild_account_timeline", side_effect=append_during_rebuild):
+                with self.assertRaisesRegex(RuntimeError, "journal mudou"):
+                    projection.rebuild_wire(first)
+            with self.assertRaisesRegex(ValueError, "desatualizada"):
+                projection.list_wire_account_writes(*first.scope)
+            self.assertEqual(projection.list_wire_account_writes(*second.scope)[0], 1)
+            self.assertEqual(projection.rebuild_wire(first), 2)
+            _, refreshed = projection.list_wire_account_writes(*first.scope)
+            self.assertEqual([row["stream_sequence"] for row in refreshed], [40, 41])
+            self.assertEqual(first.receive(account, stream_sequence=41).status, "collision")
+            with self.assertRaisesRegex(ValueError, "desatualizada"):
+                projection.list_wire_account_writes(*first.scope)
+            with self.assertRaisesRegex(ValueError, "anomalia histórica"):
+                projection.rebuild_wire(first)
+            self.assertEqual(projection.list_wire_account_writes(*second.scope)[0], 1)
 
     def test_malformed_frame_remains_auditable_and_taints_domain(self):
         store = SQLiteGeyserRawStore(":memory:")

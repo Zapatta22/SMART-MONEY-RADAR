@@ -2711,3 +2711,19 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - Próxima ação: obter novo workflow run para o commit `f5dc79b677a70b0a536b3644ba2fcbe5c02f9dc4`; confirmar os 587 testes e compileall. Se houver nova falha, inspecionar logs antes de alterar código.
 - Após CI verde, prosseguir para benchmark de escala/memória da auditoria.
 - Não fazer merge sem autorização explícita.
+
+## 299. CI verde após correção da expectativa do teste — 19/11/2026
+
+### Validação comprovada
+- Workflow `SMR tests`, run #1760, ID `44548456403`, associado ao commit de correção `f5dc79b677a70b0a536b3644ba2fcbe5c02f9dc4`: SUCCESS.
+- Job `test`: SUCCESS.
+- Log confirma `Ran 587 tests in 5.029s` e `OK`.
+- Etapa `Compile source and tests` executada e concluída com SUCCESS (`python -m compileall -q src tests`).
+- A correção de teste foi suficiente; nenhum código de produção foi alterado nesta correção.
+- O commit de documentação anterior `1740eaff3684bd1492c56695ef1b0039f8c27e19` também iniciou o run #1761; consultar seu resultado separadamente antes de afirmar que o HEAD documental mais recente está validado.
+
+### Estado atualizado
+- O commit de código `f5dc79b...` tem suíte completa (587 testes) e compileall aprovados.
+- PR #26 continua Draft, aberta e sem merge; `main` intacta.
+- Próxima ação: confirmar o resultado do run #1761 para o HEAD com o Registro Mestre atualizado; em seguida iniciar a avaliação de desempenho/memória do rebuild da auditoria, sem alterar a política de evidência.
+- Não fazer merge sem autorização explícita.

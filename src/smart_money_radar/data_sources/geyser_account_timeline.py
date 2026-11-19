@@ -39,7 +39,11 @@ class AccountTimelineConflict:
 
 @dataclass(frozen=True)
 class AccountStateTransition:
-    """A transaction-linked post-state and its immediately preceding observed state."""
+    """A transaction-linked post-state with explicit evidence provenance.
+
+    LEGACY_UNSCOPED_UNVERIFIED preserves historical linear pairing only; it is
+    not commitment-verified and must never satisfy a VERIFIED evidence gate.
+    """
 
     pubkey: str
     txn_signature: str
@@ -279,10 +283,10 @@ class AccountUpdateTimeline:
     def transition_for(
         self, txn_signature: str, *, pubkey: str | None = None
     ) -> tuple[AccountStateTransition, ...]:
-        """Return pre/post states only when their bank relationship is proven.
+        """Return transitions with provenance that distinguishes legacy observations.
 
         Non-bank-scoped legacy updates retain the original same-epoch linear
-        rule. Bank-scoped updates require both banks to be observed and usable.
+        rule but are explicitly marked unverified. Bank-scoped updates require both banks to be observed and usable.
         Cross-bank pairs additionally require an exact verified ancestor edge
         chain; a shared slot, parent slot number, or delivery order is not enough.
         """

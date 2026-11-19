@@ -1676,6 +1676,146 @@ Implementar, isoladamente e com testes sintéticos, o decoder de estado Token-20
 - Próxima ação: decidir e executar separadamente a atualização/rebase da branch do PR #18 para incorporar a nova base do PR #17, mantendo ambos em Draft e sem merge.
 
 
+## 85. PR #18 — decoder de estado TransferFee Token-2022 (18/11/2026)
+
+- Branch `feat/token2022-transfer-fee-state-decoder` criada sobre o head do PR #17 (`58606137e3d096e19b34eb84bae604101c07fef`), sem alterar `main`.
+- PR #18 aberto como Draft, base `feat/damm-v2-economic-fee-math`, head documental inicial `26bfdd773eb10cd8d15688498ac6f3cf07bc0bf2`; não integrado.
+- Criado `src/smart_money_radar/data_sources/token2022_transfer_fee_state.py`: decoder TLV estrito para `TransferFeeConfig` (108 bytes) e `TransferFeeAmount` (8 bytes), tipo de conta Mint/Account, cabeçalho little-endian, offsets 165/166 e validação de payload.
+- `TransferFeeConfigState.fee_for_epoch(epoch)` escolhe newer quando epoch >= newer.epoch; caso contrário older. Epoch é argumento explícito, nunca inferido pelo decoder.
+- Criado `tests/test_token2022_transfer_fee_state.py` com 12 testes sintéticos: epoch boundary, withheld, extensão desconhecida, padding zero, tipo incorreto, ausência, truncamento, tamanho, duplicação, basis points e tipos inválidos.
+- Criado `docs/TOKEN2022-TRANSFER-FEE-STATE-DECODER.md` com layout e limites.
+- Fonte consultada: `solana-program/token-2022`, `interface/src/extension/transfer_fee/mod.rs` e `interface/src/extension/mod.rs` no branch main em 18/11/2026. Discriminantes 1/2 e AccountType Mint=1/Account=2 confirmados.
+- Testes locais e CI ainda pendentes; não declarar decoder validado. O PR #18 foi criado Draft; mergeability ainda não é conclusiva e não será integrado nesta etapa.
+- Limites: authorities permanecem bytes opacos; withheld_amount isolado não prova taxa de uma transferência; decoder não consulta RPC, não persiste, não atribui transferências, não reconcilia e não cria SwapObservation.
+- Nenhum RAW foi alterado/enviado. Nenhuma importação, SQLite, RPC/Helius, checkpoint, trade ou operação on-chain.
+
+### Próxima ação
+Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte completa, compileall, HEAD e status. Corrigir qualquer falha antes de ampliar o decoder ou iniciar reconciliação econômica.
+
+
+### Validação local e CI do PR #18 — 18/11/2026
+
+- Clone separado confirmado em `$HOME/SMART-MONEY-RADAR-PR18`, branch `feat/token2022-transfer-fee-state-decoder`, HEAD local `0d2b906`, árvore limpa e sincronizada com origin.
+- Testes focais: 12/12 OK.
+- Suíte completa: 339 testes OK.
+- `python -m compileall -q src tests`: concluído sem erro (o encadeamento do comando chegou a `git rev-parse` e `git status`).
+- CI GitHub run `44261319172` (#490): completed/success no commit `0d2b9069072d3547b3dce8d79a77b31c4bf67ff9`.
+- Foram observados ResourceWarnings não fatais em testes preexistentes de HTTP/SQLite; não houve falha. Isso não comprova ausência de vazamentos e não foi escopo corrigido nesta etapa.
+- Conclusão: PR18 tem validação local e CI aprovados para o head atual. Continua Draft, aberto e não integrado. Nenhuma integração autorizada.
+
+
+### Revisão defensiva adicional do decoder PR #18
+- Revisão do código identificou que o parser verificava AccountType e TLV, mas não validava explicitamente os bytes de padding do Mint entre o fim da base de 82 bytes e o AccountType no offset 165.
+- Corrigido `decode_transfer_fee_config()` para rejeitar qualquer byte não zero nesse intervalo.
+- Adicionado teste negativo `test_rejects_nonzero_mint_padding`.
+- Atualizada a documentação do decoder. Commits de correção: `409574205c9fafd971e75dde60385e04e88b62c6` (código), `204a4ae54cdf32dd9245534915da84b90c334ace` (teste), `3f7c9eb75ff292ef29b9adf3d1a227f219293a83` (documentação).
+- Os resultados prévios 12/12 focais, 339 testes e CI #490/#491 referem-se ao código anterior à correção. A nova versão ainda requer validação local e CI. Não considerar o head novo validado.
+
+
+### Auditoria de compatibilidade TLV do PR #18 — 18/11/2026
+
+- Revisão comparativa com o iterador oficial try_for_each_tlv_extension_type em solana-program/token-2022/interface/src/extension/mod.rs.
+- Encontrada divergência de compatibilidade: o decoder rejeitava uma cauda final de um byte e rejeitava bytes após o marcador TLV Uninitialized (tipo 0), enquanto o iterador oficial encerra a leitura nesses casos (a cauda de um byte pode ocorrer durante realocação).
+- Ajustado _read_extensions() para: (a) encerrar quando resta menos de 2 bytes; (b) encerrar ao encontrar tipo Uninitialized; (c) continuar rejeitando cabeçalho incompleto de entrada não terminadora e payload truncado.
+- Adicionados dois testes: cauda de um byte durante realocação e terminador Uninitialized.
+- Atualizada a documentação para registrar a semântica compatível com Token-2022.
+- Commits desta correção: código c60d99d8cbb088a3999ae2813f9bd8864e088bc1, testes 73d26dc303cc9508865fc673f7d8dbf4443ea749, documentação ab4f947bfb35ba590b830bf2a1ff28afd55224d4.
+- A validação CI #495 (340 testes) refere-se ao head anterior e8b30976efe36de2878efec79b8d25035ac3efbc; não valida estas alterações novas.
+- Estado: aguardando CI no novo head. PR permanece Draft, aberto e não integrado.
+
+
+### CI corretivo da compatibilidade TLV — 18/11/2026
+
+- Primeira execução após os novos testes: run 44264725856 (#499), falhou em 2 testes focais porque os literais binários foram gravados com barras invertidas duplicadas; os testes não estavam fornecendo os bytes pretendidos.
+- Corrigidos os literais para bytes reais: cauda 0x7f e terminador 00 00 seguido por bytes residuais.
+- Commit corretivo dos testes: ab6d994ddf2e7adf86039c3a4bf3ba4bce9b2888.
+- Novo CI do PR: run 44264858445 (#503), evento pull_request, associado ao head ab6d994ddf2e7adf86039c3a4bf3ba4bce9b2888; estado observado: queued.
+- A execução #499 não deve ser usada como validação final. A execução #495 (340 testes) valida apenas o head anterior e8b3097.
+- Próxima ação: consultar o resultado do run #503, confirmar todos os testes e compileall, depois revisar novamente o diff completo e a mergeability do PR. Não integrar nem remover o estado Draft nesta etapa.
+
+
+### Validação CI após correção TLV — resultado confirmado
+
+- CI #503 (run 44264858445), commit de código/testes ab6d994ddf2e7adf86039c3a4bf3ba4bce9b2888: success; 342 testes executados; etapa compileall concluída com sucesso.
+- CI #504 (run 44264912053), head ac0390a0d8fc285ba906bcf05453898f2bf3efae: success; 342 testes executados; etapa compileall concluída com sucesso.
+- Os 2 testes novos de compatibilidade TLV passaram na execução #503/#504; total de testes do decoder: 15.
+- O head ac0390a é uma atualização documental do Registro Mestre sobre o resultado corretivo; o código e os testes validados permanecem nos commits c60d99d, 73d26dc e ab6d994.
+- PR #18 continua aberto, Draft, não integrado, mergeable=true; base feat/damm-v2-economic-fee-math; branch está 15 commits à frente e 0 atrás da base. Nenhuma review registrada.
+- Não alterar main nem integrar. Próxima ação: revisão final do diff e decisão explícita sobre retirar Draft/merge em etapa separada.
+
+### Integração das branches PR #17 e PR #18 — 18/11/2026
+- Branch `feat/token2022-transfer-fee-state-decoder` atualizada por merge commit para incorporar o HEAD atual `fd0f73284039bacc4ec4e6b6a88def21f813ce0d` do PR #17.
+- O histórico original do PR #18 foi preservado como segundo parent do merge commit; o HEAD do PR #17 é o primeiro parent.
+- O Registro Mestre foi consolidado: seção 84 registra a correção CPI do PR #17 e a seção 85 preserva o registro técnico do decoder Token-2022 do PR #18.
+- Nenhum PR foi integrado; ambos permanecem Draft. `main` não foi modificada.
+- CI do merge commit `c04fafcfd50b810b56cacbf1f110d703f29b8c10`: workflow `SMR tests`, run #515 (`44266493751`), **success**; `Run unit tests` e `Compile source and tests` concluídos com sucesso.
+- Próxima ação: revisar o diff integrado do PR #18 e confirmar se a mergeability permanece estável; não retirar Draft nem integrar sem autorização.
+
+
+## 86. Atualização documental final do PR #18 — sincronização e CI (18/11/2026)
+
+- PR #18 permanece aberto, Draft e não integrado; branch `feat/token2022-transfer-fee-state-decoder`, base `feat/damm-v2-economic-fee-math`.
+- A branch do PR #18 incorpora o head do PR #17 `fd0f73284039bacc4ec4e6b6a88def21f813ce0d`. Comparação atual entre esse head e o head do PR #18 `769bf4ba07b697f615c00be6c22006d3dc7edb39`: **18 commits à frente, 0 atrás**; merge base igual ao head do PR #17.
+- O diff próprio do PR #18 contra a base atual contém exatamente quatro arquivos: este Registro Mestre, `docs/TOKEN2022-TRANSFER-FEE-STATE-DECODER.md`, `src/smart_money_radar/data_sources/token2022_transfer_fee_state.py` e `tests/test_token2022_transfer_fee_state.py`. A correção CPI do PR #17 está na base e não é duplicada no diff próprio do PR #18.
+- CI GitHub Actions `SMR tests`, run #517 (`44266570005`), associado ao HEAD `769bf4ba07b697f615c00be6c22006d3dc7edb39`: **completed/success**. Job `test`, etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso.
+- CI #515 também havia passado no merge commit da sincronização. O resultado #517 é a validação final registrada para o HEAD documental atual.
+- Revisão estática final do decoder não encontrou bloqueio técnico evidente: TLV, tipos/tamanhos das extensões, offsets, padding, truncamentos/duplicações, terminador `Uninitialized`, cauda final de um byte e seleção older/newer por epoch estão cobertos pela implementação/testes e alinhados ao comportamento oficial consultado.
+- Limites preservados: decoder offline; não consulta RPC, não infere epoch, não persiste, não atribui taxas a transferências/swaps, não reconcilia e não cria `SwapObservation`. `withheld_amount` isolado não prova taxa aplicada. Testes/CI não equivalem a validação econômica em nova fixture mainnet.
+- Nenhuma alteração em `main`, RAW fixtures, banco de dados, imports, RPC/Helius, checkpoints ou operações on-chain. PR #17 e PR #18 continuam Draft e não integrados.
+- A descrição do PR #18 foi alinhada aos resultados atuais nesta mesma atualização. Próxima decisão permanece separada: revisão/decisão formal sobre retirar Draft e eventual integração; nenhum merge está autorizado ou executado por esta atualização documental.
+
+
+## 87. CI da atualização documental final do PR #18 — 18/11/2026
+
+- O commit documental `5e1448e13f7ec45878409ccc6c31b37066087f64` atualizou a seção 86 e alinhou a descrição do PR #18.
+- Comparação após esse commit: **19 commits à frente, 0 atrás** do head do PR #17 `fd0f73284039bacc4ec4e6b6a88def21f813ce0d`; merge base igual ao head da base. O diff próprio continua com quatro arquivos.
+- CI GitHub Actions `SMR tests`, run #518 (`44267390443`), associado exatamente ao commit `5e1448e13f7ec45878409ccc6c31b37066087f64`: **completed/success**. Job `test`, etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso.
+- PR #18 continua aberto, Draft e não integrado. PR #17 continua aberto, Draft e não integrado. `main` permanece intacta.
+- Nenhuma alteração de código foi feita nesta atualização documental. Nenhuma fixture RAW, banco de dados, importação, RPC/Helius, checkpoint ou operação on-chain foi tocada.
+
+
+## 88. Confirmação final do CI #519 e estado do PR #18 — 18/11/2026
+
+- Workflow GitHub Actions `SMR tests`, run #519 (`44267551234`), associado ao HEAD `ad8d9e84a7fd28e2d457ff90ffffe77f840fb210`: **completed/success**.
+- Job `test`: sucesso. Etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso.
+- Comparação do HEAD PR #18 contra o HEAD da base PR #17 (`fd0f73284039bacc4ec4e6b6a88def21f813ce0d`): **20 commits à frente, 0 atrás**; merge base igual ao HEAD da base.
+- Diff próprio da branch PR #18 contra a base: quatro arquivos — este Registro Mestre, documentação do decoder, módulo `token2022_transfer_fee_state.py` e seus testes. A correção CPI permanece na base PR #17, sem duplicação no diff próprio do PR #18.
+- PR #18 permanece aberto, Draft e não integrado; PR #17 permanece aberto, Draft e não integrado. `main` permanece intacta.
+- Esta confirmação não representa validação com fixture RAW mainnet, reconciliação econômica de swap, execução em tempo real ou prontidão operacional. Nenhum RPC/Helius, banco, importação, checkpoint, fixture RAW ou operação on-chain foi executado.
+
+
+## 89. CI do registro atualizado — 18/11/2026
+
+- O commit documental `e316669fdceb3cee7e31e55808d272ccbf3ef58f` registrou o resultado final do CI #519 e o compare de PR #18.
+- CI GitHub Actions `SMR tests`, run #520 (`44268850500`), associado exatamente a esse commit: **completed/success**. Job `test`, etapa `Run unit tests` e etapa `Compile source and tests` concluídas com sucesso.
+- A comparação permanece em **21 commits à frente, 0 atrás** do head da base PR #17; merge base igual ao head da base.
+- PR #17 e PR #18 continuam abertos, Draft e não integrados. `main` permanece intacta.
+- CI aprovado valida a suíte automatizada e compileall do repositório nesse commit; não substitui validação com fixtures RAW mainnet, nem demonstra reconciliação econômica DAMM v2 ou operação realtime.
+
+
+## 90. Preparação da próxima camada — Meteora DAMM v2 EvtSwap2 (18/11/2026)
+
+- CI #521 (`44268921382`) no HEAD `59d6ee91d6ffdd02929ae99fce7a4be7e8c156b0`: **completed/success**; job `test`, testes unitários e compileall aprovados.
+- Criada Issue #19: `Implementar decoder isolado do evento Meteora DAMM v2 EvtSwap2`, para especificar o próximo módulo sem ampliar indevidamente o escopo do decoder Token-2022.
+- Criada branch `feat/meteora-damm-v2-evtswap2-decoder` a partir do HEAD validado do PR #18 (`59d6ee91d6ffdd02929ae99fce7a4be7e8c156b0`). Ainda sem commits próprios ou alterações de código.
+- Auditoria de documentação oficial confirmou que DAMM v2 emite `EvtSwap2` por Anchor event-CPI e documenta modos ExactIn/PartialFill/ExactOut, direção A→B/B→A, valores de taxa, transfer-fee fields e snapshots de reservas.
+- Encontrada uma proteção de compatibilidade necessária: o changelog oficial registra a substituição de `partner_fee` por `claiming_fee` + `compounding_fee`. Parsers antigos com `partner_fee` não podem ser usados como schema atual.
+- Antes de implementar, a revisão exata do IDL/código on-chain e os discriminators devem ser fixados e verificados. A documentação atual, isoladamente, não é suficiente para assumir layout binário deployed.
+- Escopo da próxima camada: decoder offline e fail-closed do evento; associação ao swap externo somente com caminho CPI confiável. Sem reconciliação econômica, classificação BUY/SELL, persistência, RPC, RAW ou operação on-chain.
+- PR #17 e PR #18 permanecem Draft, abertos e não integrados; `main` permanece intacta.
+
+
+## 91. Correção de rota: decoder EvtSwap2 já existia; PR #20 encerrado sem merge (18/11/2026)
+
+- Auditoria do repositório revelou que a implementação do evento DAMM v2 já existe em `src/smart_money_radar/data_sources/damm_v2_decoder.py`, fixada em `MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f99868ba8e`.
+- O decoder existente já valida `EVENT_CPI_TAG` (`e445a52e51cb9a1d`), discriminator `EvtSwap2` (`bd4233a826507599`), tamanho total 196 bytes, Borsh bool, direção, collect_fee_mode e swap_mode; usa o schema atual `claiming_fee` + `compounding_fee`.
+- O projeto também já possui `damm_v2_analyzer.py` para associação estrutural swap↔evento por grupo externo, stackHeight e caminho CPI; `damm_v2_accounts.py` valida que pool do evento corresponde à conta pool da instrução; `damm_v2_transfer_analyzer.py` atribui transferências descendentes e evita reutilização entre operações.
+- Portanto, o novo decoder separado criado no branch `feat/meteora-damm-v2-evtswap2-decoder` era redundante e continha envelope Anchor em ordem de bytes incorreta. PR #20 foi fechado deliberadamente sem merge. Nenhum arquivo duplicado foi incorporado à base PR #18. A branch auxiliar fica abandonada; não usar como base de trabalho.
+- Issue #19 foi renomeada para auditar e avançar a reconciliação econômica DAMM v2 usando os módulos existentes.
+- Próximo trabalho correto: auditar invariantes de ponta a ponta entre `EvtSwap2`, transferências atribuídas, taxas Token-2022 por epoch e deltas de token accounts/vaults por operação. Não criar outro decoder.
+- Nenhuma alteração em `main`, RAW fixtures, banco, imports, RPC/Helius, checkpoints ou operações on-chain.
+
+
 ## 250. Integração das dependências CPMM e segurança do painel local — 19/11/2026
 
 ### Integrações concluídas em branches intermediárias
@@ -1765,3 +1905,25 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - Os testes incluem aritmética Token-2022/DAMM, caso de taxa AMM 100%, minimalidade do gross-up, correção de proveniência CPI do Raydium e toda a base offline/painel do PR #16.
 - PR #17 pode sair de Draft e ser integrada à branch-base intermediária `feat/offline-fixture-inspector`; depois validar CI no merge commit.
 - A integração não habilita decodificação histórica de mint/epoch, PartialFill, reconciliação econômica, importação, RPC, SQLite write, checkpoint ou execução.
+
+
+
+## 256. PR #18 — decoder Token-2022 alinhado ao parser oficial e CI local — 19/11/2026
+
+- PR #18 continua OPEN/DRAFT, base `feat/damm-v2-economic-fee-math`, head `feat/token2022-transfer-fee-state-decoder`.
+- CI final do código do PR #18: run `44440551264`, job `135280013271`, SUCCESS; **351 testes OK** e `python -m compileall -q src tests` aprovado.
+- Fonte oficial fixada: `solana-program/token-2022@875693f53c77534b46f0d06bdf781430870f8177`. Decoder agora valida o estado base Mint/TokenAccount, tags COption, estado Frozen, padding, colisão de tamanho Multisig 355, tipos TLV conhecidos 0–28 e limites/duplicações.
+- Tipos TLV conhecidos não alvo são preservados em `extension_types`; tipos desconhecidos falham fechados. O chamador deve inspecionar essa lista e bloquear extensões fora do escopo, como taxas confidenciais ou hooks.
+- A seleção de taxa continua exigindo epoch explícito; o decoder não consulta Clock, RPC ou estado atual. O owner do account não é validado pelo parser e precisa ser comprovado pelo chamador.
+- O decoder não associa TransferFeeAmount a uma transferência, não reconcilia bruto/líquido/withheld por operação e não persiste dados.
+- Próxima ação: incorporar a base atual do PR #17 à branch #18 por merge commit controlado; rodar CI combinado antes de retirar Draft ou integrar.
+- Nenhum acesso RPC, SQLite, importação histórica, checkpoint, assinatura ou operação financeira. `main` continua em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+## 257. CI combinado PR #18 + PR #17 aprovado — 19/11/2026
+
+- Branch `feat/token2022-transfer-fee-state-decoder` sincronizada com a base `feat/damm-v2-economic-fee-math` pelo merge commit `f79278c8c80dd9d13ec075021f29c6c174c094ea`; a base `caffd20bdec5472097b6beca4dc647c2e2e4280a` é ancestral do resultado.
+- Compare: `ahead_by=33`, `behind_by=0`; GitHub informa `mergeable=true`.
+- CI combinado: runs `44440708372` (push) e `44440714225` (PR), ambos SUCCESS; logs confirmam **361 testes OK** e `python -m compileall -q src tests`.
+- O CI inclui o decoder de estado Token-2022 estrito e a base de aritmética DAMM v2/Token-2022, além do painel e diagnósticos read-only.
+- PR #18 pode sair de Draft e ser integrada à base intermediária `feat/damm-v2-economic-fee-math`; depois validar o CI do merge commit.
+- Limite mantido: decoder não valida owner on-chain, não escolhe epoch automaticamente, não associa withheld amount a transferência nem reconcilia economicamente.

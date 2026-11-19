@@ -2613,3 +2613,42 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 - PR #23 permanece Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`.
 - `main` permanece sem alteração.
 - Próxima ação: especificar e implementar política auditável para RAW sem sequência; depois medir o full rebuild com volume representativo, sem abandonar o fallback integral.
+
+
+## 296. Contrato inicial SolanaTransactionEvidenceBundle — 19/11/2026
+
+### Objetivo e decisão
+- Formalizada a necessidade de impedir que evidências de transações Solana distintas sejam combinadas na reconciliação econômica DAMM v2.
+- A identidade raiz é composta por `transaction_signature`, `slot`, `source_id` e SHA-256 do payload RPC canonicalizado.
+- O envelope deve ser construído a partir de um único payload original; decoders não devem receber listas independentes como se a origem comum estivesse garantida.
+- Evidências históricas (por exemplo, prestate de mint e snapshots withheld-fee) mantêm identidade/proveniência próprias e precisam de vínculo temporal demonstrável com a transação-alvo. Não devem ser forçadas a compartilhar a assinatura da transação-alvo.
+
+### Implementação inicial nesta branch
+- Branch: `feat/solana-transaction-evidence-bundle`.
+- Base: branch `feat/damm-v2-economic-reconciliation`, commit `4a517ca15499746ddd3f5522f112c80aaac1433b` (HEAD confirmado na consulta de 19/11/2026).
+- Criado `src/smart_money_radar/data_sources/solana_transaction_evidence_bundle.py`.
+- Criado `tests/test_solana_transaction_evidence_bundle.py`.
+- `build_solana_transaction_evidence_bundle()` recebe um único payload RPC e `source_id`; calcula SHA-256 sobre JSON canonicalizado e executa internamente os decoders de inventário de instruções, transfers SPL/Token-2022 e deltas pre/post.
+- A identidade do inventário é comparada com a assinatura e o slot do envelope.
+- Resultados incompletos dos decoders são preservados; `structurally_complete` permanece falso quando inventário ou deltas estão incompletos.
+- A camada é apenas de evidência: não classifica BUY/SELL, não reconcilia economia e não autoriza execução.
+
+### Testes adicionados
+- Payload válido e hash determinístico.
+- Wrapper padrão RPC `result`.
+- `source_id` ausente.
+- Assinatura ausente.
+- Slot ausente/inválido, incluindo boolean.
+- Evidência de delta incompleta preservada como inelegível.
+- Payload não JSON rejeitado em vez de gerar hash de representação arbitrária.
+
+### Estado e limites
+- Commits iniciais da branch: contrato `263c119d6f7fb6195e214062229096da629ae359`; testes `febb9ec60d5465077f1fe292ae11023644ddd67f`.
+- Registro Mestre atualizado nesta branch; validação CI ainda não consultada nesta atualização.
+- Ainda não existe integração deste envelope com `reconcile_damm_v2_economic_batch()`, contexts DAMM v2 ou snapshots históricos.
+- Ainda não há prova tipada de associação de contexts/eventos DAMM v2 ao envelope; essa integração deve ser uma etapa seguinte, com testes de mistura de assinatura, slot, fonte e payload.
+- Nenhum decoder existente foi modificado.
+- Nenhuma PR foi criada, nenhum merge foi realizado e `main` permanece intocada.
+
+### Próxima etapa
+Validar os testes e compileall em CI no HEAD desta branch. Em seguida, revisar o contrato contra os casos de proveniência DAMM v2 e desenhar a integração com contexts, transfer evidence e snapshots históricos antes de conectar o reconciliador econômico.

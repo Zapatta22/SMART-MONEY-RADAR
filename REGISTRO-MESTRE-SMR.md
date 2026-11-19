@@ -2576,4 +2576,4 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 ### Estado
 - PR #23 permanece Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`.
 - `main` não foi alterada.
-- Próxima ação após CI: revisar falhas, corrigir se necessário, validar integração segura dos checkpoints granulares com o rebuild da timeline, mantendo a reconstrução integral como fallback e sem conectar provider.
+- Próxima ação: integrar o checkpoint granular por fonte ao rebuild da timeline, gravando-o somente após a geração derivada estar confirmada; definir também a política para RAW sem sequência. Preservar full rebuild como fallback e permanecer offline.

@@ -2860,3 +2860,34 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - A primeira execução no código antes da atualização dos fixtures falhou em 5 testes antigos que esperavam transições sem SLOT_FINALIZED; os fixtures foram corrigidos para refletir a nova regra. A validação final ocorreu no HEAD documental exato informado acima.
 - CI valida testes unitários e compilação; não autentica provider, não prova finalização em mainnet e não valida adapter operacional.
 - PR #35 continua Draft, aberta, mergeable e sem merge; PR #34 permanece sem alteração/merge; main não foi alterada.
+
+
+## 302. Auditoria de segurança final da PR #35 — 19/11/2026
+
+### Escopo revisado
+- Diff completo da PR #35: 7 arquivos, 247 adições e 2 remoções.
+- `geyser_bank_lineage.py`, `geyser_account_timeline.py` e testes bank-aware/lineage/timeline.
+- Estado do PR: OPEN, Draft, mergeable, sem merge; base `feat/solana-transaction-evidence-bundle`; HEAD de código validado `25279630ac0310343ac55425232ad65f68064efd`.
+
+### Resultado: achado que impede considerar a política completa
+- `AccountUpdateTimeline.transition_for()` preserva o caminho legado para updates sem `bank_id`: aceita predecessor linear imediato dentro do mesmo continuity_epoch.
+- Esse caminho não exige commitment/finality, como esperado para compatibilidade histórica, mas retorna a mesma estrutura `AccountStateTransition` usada pelo caminho bank-scoped, sem campo de proveniência/nível de confiança que distinga `LEGACY_UNSCOPED` de `BANK_PROVIDER_REPORTED_FINALIZED`.
+- Risco: um consumidor pode interpretar todas as transições retornadas como igualmente verificadas, apesar de as transições legadas não terem identidade bancária nem prova de finalização.
+- Não foi comprovado neste escopo que algum consumidor downstream esteja de fato promovendo tais transições a evidência operacional. Portanto, é uma lacuna de contrato/rotulagem, não um bug downstream observado.
+- Correção recomendada antes de adapter operacional: tipar a proveniência/confiança da transição (p.ex. `BANK_PROVIDER_REPORTED_FINALIZED` vs `LEGACY_UNSCOPED_UNVERIFIED`) ou separar APIs/coleções; qualquer consumidor que exija evidência finalizada deve rejeitar explicitamente o estado legado. Não inferir finalização para dados sem `bank_id`.
+
+### Propagação de conflitos e ancestrais
+- `_conflict()` marca a identidade afetada como conflicted e invalidated, inclusive quando o nó já existe; `_node()` também aplica a contaminação se o conflito preceder a materialização.
+- `is_bank_usable()` percorre os ancestrais explicitamente vinculados e retorna falso se encontrar nó morto/inválido; `is_bank_finalized()` também exige finalização e usabilidade de cada ancestral ligado.
+- `transition_for()` exige ambas as verificações para target e predecessor e, em pares cross-bank, exige `is_ancestor(...) is True`.
+- Revisão estática indica que conflito em ancestral ligado bloqueia a elegibilidade do descendente. Entretanto, a suíte atual não possui teste direto dedicado que crie descendente ligado, contamine depois o ancestral e prove que a transição deixa de ser retornada. Recomenda-se adicionar esse teste de regressão.
+- `SLOT_DEAD` mantém dead persistente; `EntryUpdateParent` invalida o banco específico; a transição legada não atravessa updates bank-scoped intermediários e respeita continuity_epoch/reconnect.
+
+### Conclusão
+- A regra bank-scoped está fail-closed para estados não finalizados e ancestrais explicitamente ligados, conforme o código revisado.
+- A PR #35 ainda não deve ser considerada completa para uso operacional até distinguir explicitamente transições legadas sem bank_id e adicionar o teste de taint de ancestral para descendente.
+- Nenhuma alteração de código foi feita nesta auditoria; apenas este registro foi acrescentado.
+- Nenhum provider foi conectado; nenhuma evidência foi promovida a VERIFIED; nenhuma execução financeira habilitada.
+
+### Próxima ação
+- Propor alteração mínima de contrato para rotular transições legadas como não verificadas e adicionar teste de regressão para conflito histórico de ancestral. Manter PR #35 Draft e sem merge até nova CI e revisão.

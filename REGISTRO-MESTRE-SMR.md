@@ -1679,3 +1679,13 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - CI da árvore combinada: run `44439231241`, job `135275637353`, SUCCESS; log confirma **318 testes**, `OK`, e `python -m compileall -q src tests`.
 - Esse CI valida conjuntamente os artefatos DAMM v2/offline do PR #16 com EventStore read-only, dashboard e diagnósticos do PR #15. Nenhuma importação histórica ou execução foi feita.
 - PR #16 permanece OPEN/DRAFT até a conversão para ready e merge autorizado; a próxima validação será o CI do merge commit na branch-base `feat/reconciliation-diagnostics`.
+
+## 253. CI do merge PR #16 concluído — 19/11/2026
+
+- PR #16 CLOSED/MERGED na branch intermediária `feat/reconciliation-diagnostics`.
+- Merge commit: `24ccb262b52bda0f20dac0db1b3e499156f9fc51`.
+- CI do merge commit: run `44439364246`, job `135276068763`, SUCCESS; log confirma **318 testes**, `OK`, e `python -m compileall -q src tests`.
+- A base DAMM v2 offline, o planejador histórico dry-run, os auditores redigidos e a camada de painel read-only foram validados em conjunto.
+- Nenhuma reconciliação econômica, importação histórica, RPC, gravação, checkpoint ou execução financeira foi habilitada.
+- Próxima etapa da cadeia: auditar PR #17 (matemática econômica/fees DAMM v2), sem presumir que os campos de evento já equivalem a quantidades reconciliadas.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.

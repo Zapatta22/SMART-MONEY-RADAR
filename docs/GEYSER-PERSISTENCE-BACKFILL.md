@@ -57,7 +57,7 @@ One row per unique source event content. Proposed fields:
 - `payload_sha256`: SHA-256 of exactly those stored bytes;
 - `first_received_at`: first observed receipt time.
 
-The identity must not include `stream_id` or `stream_sequence`: these describe a delivery, not the source event content. The implementation must define canonical identity inputs per event kind and version; a hash alone is an integrity check, not a substitute for a collision-safe uniqueness contract.
+The identity must not include `stream_id` or `stream_sequence`: these describe a delivery, not the source event content. The versioned identity contract is implemented in `src/smart_money_radar/data_sources/geyser_event_identity.py` as `derive_event_identity(event, schema_version=...)`. It hashes canonical JSON containing the identity-contract version, upstream schema version, event kind, and event-kind-specific logical key. A hash alone is an integrity check, not a substitute for the RAW store's conflict detection.
 
 If an existing event identity is presented with different bytes, preserve the conflicting observation and record an integrity conflict. Never overwrite the original row or silently treat the conflict as a duplicate.
 
@@ -92,7 +92,7 @@ Proposed logical tables:
 - `geyser_timeline_generations`: generation ID, input high-water marks, normalizer/projection versions, build status, timestamps, and diagnostics;
 - `geyser_orphaned_events`: references to retained events excluded from a current projection, with reason, invalidating evidence, and generation.
 
-The account-write logical key must include the stable source namespace, account identity, slot, bank identity where present, write_version, and startup semantics. The implementation must explicitly define behavior for messages without bank_id and for repeated keys with differing state. Existing fingerprints support deduplication but do not authorize dropping conflicts.
+The account event key includes stable source namespace, pubkey, slot, write_version, bank_id, and startup semantics. Slot events use source, slot, status, and bank_id; BlockMeta uses source, slot, and bank_id; EntryUpdateParent uses source, slot, and cleared_bank_id. Payload fields excluded from the key remain subject to RAW payload/hash conflict checks. Account updates without bank_id retain a null bank component; they are not silently joined to bank-scoped events.
 
 Projection rebuilds must preserve:
 - observed versus invalidated/orphaned state;
@@ -243,9 +243,19 @@ Validation of the transport slice:
 - CI #1665, run `44508987457`, pull_request: SUCCESS; 531/531 tests and compileall passed on the same commit.
 - Earlier runs #1654–#1659 exposed a test assertion mismatch in the expected error message for late baseline registration; corrected before the successful HEAD above.
 
+Implemented deterministic event identity for normalized Geyser events:
+- `src/smart_money_radar/data_sources/geyser_event_identity.py` defines `IDENTITY_VERSION = "geyser-event-id:v1"`, `EventIdentity`, and `derive_event_identity(event, schema_version=...)`;
+- canonical SHA-256 identity includes identity-contract version, explicit upstream schema version, event kind, and the logical key for Account, Slot, BlockMeta, or EntryUpdateParent;
+- transport `stream_id` and `stream_sequence` are excluded, so reconnect/replay does not change the logical event identity;
+- payload fields intentionally excluded from the logical key remain protected by immutable RAW content comparison. Reusing an identity with changed bytes is a conflict, not a second event or silent duplicate;
+- this helper accepts provider-neutral normalized event objects. It does not decode protobuf, capture wire bytes, persist events, or automatically invoke itself from the transport adapter; the future ingestion coordinator must call it and pass its `event_id` to RAW storage;
+- `protobuf_wire` provenance remains valid only when bytes were captured before protobuf decoding. The current adapter receives decoded objects.
+
+Validation for deterministic identity is pending CI at this point in the document. The exact commit/run and test count will be added after the workflow completes.
+
 Still not implemented:
-- automatic deterministic event_id derivation from protobuf messages; the caller must supply a stable event_id;
-- continuity checkpoints/epochs, normalized-event projection, account-write persistence, timeline generations, backfill jobs, or restart orchestration;
+- automatic invocation of the identity helper by a transport/ingestion coordinator and normalized-event persistence;
+- continuity checkpoints/epochs, account-write persistence, timeline generations, backfill jobs, or restart orchestration;
 - live Yellowstone/Helius client, wire-byte capture boundary, provider connection, credentials, continuous capture, or financial/on-chain execution.
 
-The next implementation slice should review deterministic event identity per event kind and schema version, then add normalized-event persistence only after its identity and versioning contract is approved. No provider connection or financial execution is authorized by this document.
+No provider connection or financial execution is authorized by this document.

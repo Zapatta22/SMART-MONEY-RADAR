@@ -323,4 +323,6 @@ def reconcile_solana_transaction_damm_v2_bundle(
         transaction_slot=bundle.identity.slot,
         transaction_order=transaction_order,
         transaction_signature=bundle.identity.transaction_signature,
+        transaction_source_id=bundle.identity.source_id,
+        transaction_payload_sha256=bundle.identity.payload_sha256,
     )

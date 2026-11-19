@@ -39,9 +39,12 @@ class YellowstoneFrameReceiver:
 
     def __init__(
         self, store: SQLiteGeyserRawStore, decode: Callable[[bytes], Message], *,
-        source_id: str, stream_id: str, ordering_domain_id: str, initial_sequence: int,
+        source_id: str, stream_id: str, ordering_domain_id: str, initial_sequence: int | None = None,
     ) -> None:
-        store.register_frame_stream(source_id, stream_id, ordering_domain_id, initial_sequence)
+        if initial_sequence is None:
+            store.require_frame_stream(source_id, stream_id, ordering_domain_id)
+        else:
+            store.register_frame_stream(source_id, stream_id, ordering_domain_id, initial_sequence)
         self._store = store
         self._decode = decode
         self._source_id = source_id

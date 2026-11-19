@@ -1,6 +1,8 @@
 """Wire-level adapter tests against a pinned Yellowstone schema subset."""
 import base64
 import hashlib
+from contextlib import redirect_stdout
+from io import StringIO
 import json
 import sqlite3
 from tempfile import TemporaryDirectory
@@ -10,6 +12,7 @@ import unittest
 
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
+from smart_money_radar.cli import main
 from smart_money_radar.data_sources.geyser_proto_adapter import (
     adapt_account_update,
     adapt_subscribe_update,
@@ -446,6 +449,47 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         receiver.receive(transaction_frame.SerializeToString(), stream_sequence=44)
         with self.assertRaisesRegex(ValueError, "assinatura Yellowstone ambígua"):
             receiver.transaction_evidence_at(41)
+
+    def test_cli_inspects_archived_evidence_without_write_or_helius(self):
+        descriptors = descriptor_pb2.FileDescriptorSet()
+        _UPDATE.DESCRIPTOR.file.CopyToProto(descriptors.file.add())
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "journal #1.sqlite"
+            descriptor = root / "yellowstone.desc"
+            descriptor.write_bytes(descriptors.SerializeToString())
+            store = SQLiteGeyserRawStore(database)
+            frame = _UPDATE.FromString(self.transaction_frame())
+            info = frame.transaction.transaction
+            info.transaction.message.header.num_required_signatures = 1
+            info.transaction.message.account_keys.append(bytes([7]) * 32)
+            info.meta.pre_balances.append(1)
+            info.meta.post_balances.append(1)
+            receiver = self.receiver(store)
+            receipt = receiver.receive(frame.SerializeToString(), stream_sequence=40)
+            store.close()
+            before = hashlib.sha256(database.read_bytes()).hexdigest()
+            args = [
+                "geyser-evidence", str(database), "--descriptor", str(descriptor),
+                "--source", "validator-a", "--stream", "connection-a", "--domain", "domain-a",
+                "--sequence", "40",
+            ]
+            output = StringIO()
+            with patch("smart_money_radar.cli.HeliusSettings.from_environment",
+                       side_effect=AssertionError("offline")), redirect_stdout(output):
+                main(args)
+            report = json.loads(output.getvalue())
+            self.assertEqual(report["wire_sha256"], receipt.payload_sha256)
+            self.assertTrue(report["structurally_complete"])
+            self.assertEqual(report["account_transitions"], [])
+            self.assertEqual(hashlib.sha256(database.read_bytes()).hexdigest(), before)
+
+            with self.assertRaisesRegex(SystemExit, "nenhuma transação"):
+                main([*args[:-1], "41"])
+            absent = root / "missing.sqlite"
+            with self.assertRaises(SystemExit):
+                main([args[0], str(absent), *args[2:]])
+            self.assertFalse(absent.exists())
 
     def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
         descriptors = descriptor_pb2.FileDescriptorSet()

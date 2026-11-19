@@ -156,3 +156,18 @@ divergente, uma conta com conflito ou uma segunda conexão deixa a transição
 inelegível. A ordenação no transporte não é convertida em ordem de execução
 no ledger. A finalidade reportada fica explícita como proveniência e ainda
 depende da validação operacional do provedor.
+
+### Inspeção operacional de um journal local
+
+Com o descriptor compilado do schema confiável, execute:
+
+```bash
+smr geyser-evidence journal.sqlite --descriptor yellowstone.desc \
+  --source validator-a --stream connection-a --domain domain-a --sequence 40
+```
+
+O comando abre um arquivo existente em modo somente leitura, sem migrar o
+schema, e valida o snapshot antes de emitir JSON com hashes, diagnóstico dos
+decodificadores e proveniência das transições. A inspeção usa exclusivamente
+o arquivo local e o descriptor. Um domínio interrompido, uma assinatura
+ambígua ou uma sequência sem transação produz erro.

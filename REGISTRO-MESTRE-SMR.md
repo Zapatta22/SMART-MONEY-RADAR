@@ -2819,3 +2819,49 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - Obter CI verde no HEAD atual (suíte completa e compileall); corrigir falhas com evidência antes de benchmark.
 - Depois executar o mesmo benchmark da seção 300, nas mesmas quatro escalas, comparar tempo e pico Python e validar classificações, IDs de testemunhas, contagens RAW e integridade SQLite.
 - Manter esta branch isolada; não fazer merge nem alterar PR #26 ou `main` sem nova decisão explícita.
+
+
+## 302. Cardinalidade de testemunhas, RSS e alocação TEMP SQLite — 19/11/2026
+
+### Objetivo e alterações
+- Continuação autorizada da revisão da otimização da auditoria Geyser na branch isolada `perf/geyser-audit-bounded-rebuild`.
+- Adicionada métrica `last_rebuild_metrics` no auditor para observar páginas e bytes alocados no banco TEMP SQLite após materialização da tabela/índice de testemunhas. Métrica é diagnóstica e não altera schema persistente nem retorno de `rebuild()`.
+- Benchmark passou a executar o rebuild em processo filho isolado após a preparação da fixture, medindo `ru_maxrss` (RSS high-water mark) sem incluir a memória usada pelo processo pai para semear o banco.
+- Benchmark também mede páginas TEMP SQLite (`PRAGMA temp.page_count * temp.page_size`) e adiciona cenário de fanout com um evento lógico, uma delivery sem sequência e 10.000 testemunhas sequenciadas.
+- Adicionado teste `test_high_cardinality_witnesses_are_complete_and_sorted`: uma delivery sem sequência e 4.096 testemunhas; confirma todos os IDs, ordenação crescente, nenhuma transferência de sequência e integridade RAW/SQLite.
+- Teste de rollback fortalecido: após falha forçada na inserção da nova geração, compara todas as linhas projetadas anteriores, checkpoint, contagens RAW e `integrity_check`.
+- Removido job de benchmark duplicado do workflow de testes; benchmark permanece no workflow dedicado `.github/workflows/geyser-audit-benchmark.yml`.
+
+### CI e artefato
+- PR CI #1786, run ID `44561492702`, HEAD `e3763dd47f6ede8b5dfc3fc16b8ec11fc6f835e7`: SUCCESS.
+- Log confirma `test_high_cardinality_witnesses_are_complete_and_sorted ... ok`, `Ran 589 tests in 6.388s`, `OK`; `python -m compileall -q src tests` executado com sucesso.
+- Workflow dedicado Geyser audit benchmark #19, run ID `44561492784`: SUCCESS.
+- Artefato `geyser-audit-benchmark-results`, ID `14550045706`, disponível até 2027-02-17.
+
+### Medições no processo isolado
+| Eventos lógicos | Deliveries | RSS pico do processo | TEMP SQLite alocado | Pico tracemalloc | Rebuild |
+|---:|---:|---:|---:|---:|---:|
+| 1.000 | 2.000 | 25,77 MiB | 253.952 B | 0,59 MiB | 0,048756 s |
+| 10.000 | 20.000 | 31,42 MiB | 2.428.928 B | 0,59 MiB | 0,514730 s |
+| 50.000 | 100.000 | 55,80 MiB | 12.156.928 B | 0,60 MiB | 2,641332 s |
+| 100.000 | 200.000 | 87,12 MiB | 24.399.872 B | 0,60 MiB | 5,300452 s |
+
+### Fanout de alta cardinalidade
+- Cenário sintético: 1 evento lógico, 1 delivery sem sequência e 10.000 deliveries sequenciadas elegíveis.
+- Resultado: 10.000 IDs de testemunha completos e ordenados; 10.001 deliveries RAW preservadas; `integrity_check == ok`.
+- Rebuild: 0,305554 s; pico `tracemalloc`: 0,61 MiB; RSS high-water mark: 87,12 MiB; alocação TEMP SQLite: 510 páginas × 4.096 bytes = 2.088.960 bytes (~1,99 MiB).
+- O teste unitário independente com 4.096 testemunhas também passou.
+
+### Interpretação e limites
+- `ru_maxrss` é o pico residente do processo filho que executou o rebuild; a preparação da fixture foi feita no processo pai e não compõe esse pico. É uma medida de processo no runner Linux, não uma medição em Android/Termux nem em produção.
+- `temp_db_allocated_bytes` mede páginas do banco TEMP SQLite no ponto instrumentado; não deve ser interpretado automaticamente como bytes físicos gravados em disco. O modo efetivo de armazenamento temporário, I/O físico e comportamento sob pressão de disco/cache ainda precisam de medição específica.
+- A memória Python permaneceu próxima de 0,6 MiB, mas RSS chegou a 87,12 MiB nas escalas maiores e no fanout de 10 mil. Isso demonstra que `tracemalloc` sozinho não representa o custo total; a atribuição detalhada do RSS entre SQLite, alocadores nativos e cache ainda não foi estabelecida.
+- O fanout de 10 mil não perdeu nem reordenou testemunhas, mas continua exigindo materialização de um JSON completo por delivery sem sequência. Não aumentar esse limite sem testar limites de tamanho, cardinalidade extrema e custos nativos.
+- Tempos variaram em relação ao benchmark anterior; runner compartilhado/contenda e método isolado mudaram. Não usar estes tempos como comparação direta com a tabela da seção 301.
+- Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+### Estado e próxima ação
+- PR #27 permanece OPEN/DRAFT, `merged=false`; PR #26 permanece OPEN/DRAFT e sem alteração; `main` permanece intacta.
+- HEAD de código/testes e workflows validado pelo CI: `e3763dd47f6ede8b5dfc3fc16b8ec11fc6f835e7`.
+- Próxima revisão técnica: investigar a diferença entre o pico RSS (~87 MiB) e `tracemalloc` (~0,6 MiB), além de medir se TEMP SQLite está em memória ou em arquivo no runner e como o comportamento varia com cache/disco. Preservar a serialização completa, ordenação, atomicidade e rollback.
+- Não fazer merge sem revisão e aprovação explícitas.

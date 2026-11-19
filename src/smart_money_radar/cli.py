@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -44,6 +45,7 @@ def _parser() -> argparse.ArgumentParser:
     evidence.add_argument("--domain", required=True)
     evidence.add_argument("--sequence", type=int, required=True)
     evidence.add_argument("--block-sequence", type=int, help="comprova o índice usando o frame do bloco")
+    evidence.add_argument("--epoch-schedule", type=Path, help="resposta getEpochSchedule da rede do journal")
     evidence.add_argument("--damm-wallet", help="reconcilia DAMM v2 para esta carteira Solana")
     capture = subparsers.add_parser(
         "geyser-capture", help="captura um fluxo Yellowstone TLS com limites de duração e frames"
@@ -103,6 +105,8 @@ def _inspect_geyser_evidence(args: argparse.Namespace) -> None:
     except (DecodeError, TypeError) as exc:
         raise ValueError("descriptor Yellowstone inválido") from exc
 
+    if args.epoch_schedule is not None and (args.damm_wallet is None or args.block_sequence is None):
+        raise ValueError("--epoch-schedule exige --damm-wallet e --block-sequence")
     for sequence in (args.sequence, args.block_sequence):
         if sequence is not None and not 0 <= sequence <= (1 << 63) - 1:
             raise ValueError("sequência fora do intervalo do journal Yellowstone")
@@ -144,7 +148,19 @@ def _inspect_geyser_evidence(args: argparse.Namespace) -> None:
         if evidence.block_order is not None:
             report["block_order"] = asdict(evidence.block_order)
         if args.damm_wallet is not None:
-            result = evidence.reconcile_damm_v2(monitored_wallet=args.damm_wallet)
+            epoch = None
+            if args.epoch_schedule is not None:
+                from smart_money_radar.data_sources.solana_epoch_schedule import epoch_for_slot
+
+                schedule = args.epoch_schedule.read_bytes()
+                epoch = epoch_for_slot(json.loads(schedule), observation.slot)
+                report["epoch_schedule"] = {
+                    "epoch": epoch, "sha256": hashlib.sha256(schedule).hexdigest(),
+                    "provenance": "operator_supplied",
+                }
+            result = evidence.reconcile_damm_v2(
+                monitored_wallet=args.damm_wallet, transaction_epoch=epoch,
+            )
             report["damm_v2"] = {
                 "status": result.status,
                 "operation_count": result.operation_count,

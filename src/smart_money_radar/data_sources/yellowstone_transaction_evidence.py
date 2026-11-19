@@ -7,9 +7,13 @@ from google.protobuf.message import Message
 
 from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
     DammV2EconomicReconciliation,
+    DammV2MintPrestate,
     DammV2WithheldFeeSnapshot,
+    build_damm_v2_mint_fee_config_snapshots,
+    verify_damm_v2_mint_fee_config,
     verify_damm_v2_withheld_fee_deltas,
 )
+from smart_money_radar.data_sources.geyser_account_updates import NormalizedAccountUpdate
 from smart_money_radar.data_sources.geyser_account_timeline import AccountStateTransition
 from smart_money_radar.data_sources.geyser_proto_adapter import _base58_encode
 from smart_money_radar.data_sources.geyser_transaction_updates import NormalizedTransactionObservation
@@ -44,8 +48,11 @@ class YellowstoneTransactionEvidence:
     account_transitions: tuple[AccountStateTransition, ...] = ()
     provider_reported_finalized: bool = False
     block_order: YellowstoneBlockOrder | None = None
+    mint_prestates: tuple[NormalizedAccountUpdate, ...] = ()
 
-    def reconcile_damm_v2(self, *, monitored_wallet: str) -> DammV2EconomicReconciliation:
+    def reconcile_damm_v2(
+        self, *, monitored_wallet: str, transaction_epoch: int | None = None,
+    ) -> DammV2EconomicReconciliation:
         """Reconcile economics and verify withheld fees when adjacent states are proven."""
         if not self.provider_reported_finalized:
             return DammV2EconomicReconciliation(
@@ -55,6 +62,8 @@ class YellowstoneTransactionEvidence:
         result = reconcile_solana_transaction_damm_v2_bundle(
             self.bundle, monitored_wallet=monitored_wallet,
         )
+        if transaction_epoch is not None and result.status == "RECONCILED":
+            result = self._verify_mint_fees(result, transaction_epoch)
         if result.status != "RECONCILED" or not result.expected_withheld_fee_deltas:
             return result
         order = self.block_order
@@ -112,6 +121,43 @@ class YellowstoneTransactionEvidence:
             transaction_source_id=observation.source_id, transaction_payload_sha256=payload_hash,
             transaction_ordering_domain_id=observation.ordering_domain_id,
         )
+
+    def _verify_mint_fees(
+        self, result: DammV2EconomicReconciliation, epoch: int,
+    ) -> DammV2EconomicReconciliation:
+        if self.block_order is None or not result.expected_transfer_fees:
+            return result
+        observation = self.observation
+        order = 2 * self.block_order.transaction_index
+        snapshots_by_mint = {
+            state.pubkey: DammV2MintPrestate(
+                state.pubkey, state.data, state.slot, order - 1, "yellowstone-journal",
+                f"{observation.stream_id}:{state.stream_sequence}", observation.source_id,
+                observation.ordering_domain_id,
+            )
+            for state in self.mint_prestates if state.owner == TOKEN_2022_PROGRAM_ID
+        }
+        if any(fee.mint not in snapshots_by_mint for fee in result.expected_transfer_fees):
+            return result
+        identity = {
+            "transaction_signature": observation.transaction_signature,
+            "transaction_slot": observation.slot,
+            "transaction_order": order,
+            "transaction_epoch": epoch,
+            "transaction_payload_sha256": self.bundle.identity.payload_sha256,
+        }
+        try:
+            snapshots = build_damm_v2_mint_fee_config_snapshots(
+                self.bundle.damm_v2_transfer_evidence, snapshots_by_mint,
+                self.bundle.instruction_inventory, source_id=observation.source_id,
+                ordering_domain_id=observation.ordering_domain_id, **identity,
+            )
+            return verify_damm_v2_mint_fee_config(
+                result, snapshots, transaction_source_id=observation.source_id,
+                transaction_ordering_domain_id=observation.ordering_domain_id, **identity,
+            )
+        except (TypeError, ValueError) as exc:
+            return replace(result, status="INCOMPLETE", reason=str(exc))
 
 
 def verify_yellowstone_block_order(

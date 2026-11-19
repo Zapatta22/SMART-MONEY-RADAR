@@ -199,3 +199,18 @@ anterior no bloco e o estado posterior deve estar ligado à transação alvo.
 O verificador compara mint, bytes TLV, hashes e delta esperado. Sem cobertura
 dos pares, o withheld permanece como `EXPECTED_NOT_VERIFIED`. A configuração
 histórica das taxas do mint continua sem verificação.
+
+### Configuração histórica da taxa do mint
+
+Com `--damm-wallet` e `--block-sequence`, passe uma resposta arquivada de
+`getEpochSchedule` da rede capturada via `--epoch-schedule CAMINHO`. A
+inspeção deriva o epoch a partir do slot, valida as fronteiras de warmup e
+inclui o SHA-256 do arquivo com a proveniência `operator_supplied`. O
+arquivo é fornecido pelo operador e precisa corresponder à rede capturada.
+
+O verifier usa apenas mints Token-2022 cujo estado está associado à
+transação imediatamente anterior do mesmo banco comprovado. O caminho
+confere a taxa ativa para o epoch e mantém `EXPECTED_NOT_VERIFIED` se
+faltarem todos os estados exigidos. A verificação é posterior à reconciliação
+base. Casos que exigem o prestate para calcular o fee de referral antes da
+reconciliação base seguem incompletos.

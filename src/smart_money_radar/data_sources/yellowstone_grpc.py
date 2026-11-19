@@ -53,6 +53,7 @@ def capture_yellowstone(
         store, decode, source_id=source_id, stream_id=stream_id,
         ordering_domain_id=domain, initial_sequence=0,
     )
+    store.start_capture_session(source_id, stream_id)
     pending: Queue[bytes | None] = Queue()
 
     def requests():
@@ -88,7 +89,8 @@ def capture_yellowstone(
             pending.put(None)
             if call is not None:
                 call.cancel()
-    return YellowstoneCapture(stream_id, domain, frames, outcome)
+    frame_count = store.finish_capture_session(source_id, stream_id, outcome)
+    return YellowstoneCapture(stream_id, domain, frame_count, outcome)
 
 
 def capture_yellowstone_sessions(

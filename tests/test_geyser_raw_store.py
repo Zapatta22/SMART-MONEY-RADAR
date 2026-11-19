@@ -219,6 +219,39 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
             store.register_stream("yellowstone-mainnet", "stream-a", 1)
         store.close()
 
+    def test_schema_v3_is_readable_and_migrates_without_inventing_capture_outcomes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "capture.sqlite"
+            store = SQLiteGeyserRawStore(path)
+            scope = ("provider", "stream", "domain")
+            store.register_frame_stream(*scope, 0)
+            store.close()
+            with sqlite3.connect(path) as connection:
+                connection.execute("DROP TABLE geyser_capture_sessions")
+                connection.execute("DELETE FROM geyser_schema_migrations WHERE version = 4")
+            read_only = SQLiteGeyserRawStore(path, read_only=True)
+            self.assertEqual(list(read_only.iter_wire_frames(*scope)), [])
+            self.assertIsNone(read_only.get_capture_session(*scope[:2]))
+            read_only.close()
+
+            store = SQLiteGeyserRawStore(path)
+            self.assertIsNone(store.get_capture_session(*scope[:2]))
+            store.start_capture_session(*scope[:2])
+            active = store.get_capture_session(*scope[:2])
+            self.assertIsNone(active["outcome"])
+            self.assertIsNone(active["finished_at"])
+            self.assertEqual(store.finish_capture_session(*scope[:2], "deadline_exceeded"), 0)
+            with self.assertRaisesRegex(ValueError, "já finalizada"):
+                store.append_wire_frame(
+                    source_id=scope[0], stream_id=scope[1], ordering_domain_id=scope[2],
+                    stream_sequence=0, payload=b"frame", frame_kind="ping",
+                )
+            store.close()
+
+            read_only = SQLiteGeyserRawStore(path, read_only=True)
+            self.assertEqual(read_only.get_capture_session(*scope[:2])["outcome"], "deadline_exceeded")
+            read_only.close()
+
     def test_schema_v2_migration_preserves_logical_raw_and_checkpoint(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "smr_geyser.sqlite"
@@ -229,9 +262,10 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
             checkpoint = store.get_transport_checkpoint(original.source_id, "stream-a")
             store.close()
             with sqlite3.connect(path) as connection:
+                connection.execute("DROP TABLE geyser_capture_sessions")
                 connection.execute("DROP TABLE geyser_wire_frames")
                 connection.execute("DROP TABLE geyser_frame_streams")
-                connection.execute("DELETE FROM geyser_schema_migrations WHERE version = 3")
+                connection.execute("DELETE FROM geyser_schema_migrations WHERE version >= 3")
 
             upgraded = SQLiteGeyserRawStore(path)
             self.assertEqual(upgraded.get_transport_checkpoint(original.source_id, "stream-a"), checkpoint)
@@ -251,6 +285,7 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
                 connection.execute("DROP TABLE geyser_transport_anomalies")
                 connection.execute("DROP TABLE geyser_transport_gaps")
                 connection.execute("DROP TABLE geyser_transport_checkpoints")
+                connection.execute("DROP TABLE geyser_capture_sessions")
                 connection.execute("DROP TABLE geyser_wire_frames")
                 connection.execute("DROP TABLE geyser_frame_streams")
                 connection.execute("DELETE FROM geyser_schema_migrations WHERE version > 1")

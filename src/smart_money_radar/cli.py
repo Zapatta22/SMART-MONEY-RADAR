@@ -145,6 +145,9 @@ def _inspect_geyser_evidence(args: argparse.Namespace) -> None:
                 for transition in evidence.account_transitions
             ],
         }
+        session = store.get_capture_session(observation.source_id, observation.stream_id)
+        if session is not None:
+            report["capture_session"] = session
         if evidence.block_order is not None:
             report["block_order"] = asdict(evidence.block_order)
         if args.damm_wallet is not None:

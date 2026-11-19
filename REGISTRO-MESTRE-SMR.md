@@ -3117,3 +3117,37 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - A projeção continua agrupando timelines por source; ao alternar streams, o modelo cria uma fronteira de continuidade conservadora. Não há comparação de sequência entre streams.
 - PR #36 está OPEN/DRAFT, sem merge. PR #23 está OPEN/DRAFT e ainda não aprovada para merge até a correção ser integrada e reavaliada.
 - Próxima ação: confirmar CI no HEAD final da PR #36, revisar o diff completo e os testes; então reavaliar se os bloqueadores da PR #23 foram resolvidos. Nenhum merge sem autorização explícita.
+
+
+## 310. Integração da PR #36 na branch da PR #23 — 19/11/2026
+
+### Autorização e merge
+- Em resposta ao pedido explícito de autorização para integrar a PR #36 na branch da PR #23, o usuário respondeu “Continua”, autorizando essa integração específica.
+- PR #36: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/36.
+- Branch de origem: `fix/geyser-timeline-raw-integrity`.
+- Branch de destino: `feat/damm-v2-economic-reconciliation`, HEAD da PR #23.
+- Antes do merge, PR #36 estava OPEN, Ready for review, mergeable=true, com HEAD exato `96ac001d8dc25b83a70fea6e171479f2a5cfbb25`.
+- CI no HEAD exato da PR #36: workflow `SMR tests`, run `44615167545`, SUCCESS; etapas Run unit tests e Compile source and tests SUCCESS.
+- PR #36 foi mergeada com método `merge`, usando expected_head_sha `96ac001d8dc25b83a70fea6e171479f2a5cfbb25`.
+- Merge commit: `5e61f7ac45d4ac205082b3cf638746d7b9359874`.
+- GitHub confirmou PR #36 CLOSED/MERGED em 19/11/2026.
+- PR #23 passou a apontar para o merge commit `5e61f7ac45d4ac205082b3cf638746d7b9359874`; segue OPEN/DRAFT, sem merge.
+
+### CI pós-merge e estado da PR #23
+- Dois checks `test` executaram no merge commit exato `5e61f7ac45d4ac205082b3cf638746d7b9359874`:
+  - workflow run `44616027232`, job `135884828901`: SUCCESS.
+  - workflow run `44616038524`, job `135884866313`: SUCCESS.
+- Em ambos os jobs, Run unit tests e Compile source and tests concluíram SUCCESS. Não registrar total de testes deste snapshot sem log que o confirme.
+- Após a conclusão, GitHub reportou PR #23 OPEN/DRAFT, mergeable=true.
+- Compare da PR #23: branch head `feat/damm-v2-economic-reconciliation` está 305 commits à frente e 0 atrás da base `feat/damm-v2-referral-transfer-attribution`; merge base `0567eb9c4981ba6ffc33e98a402292130667760a`.
+- `main` foi consultada após o merge e permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma alteração em main.
+
+### Efeito e limites
+- Os dois bloqueadores identificados na revisão anterior da PR #23 foram corrigidos na Timeline persistida: taint histórico de anomalias/conflitos RAW e verificação SHA-256 dos bytes RAW, com rollback.
+- Replay de sequência tardia foi definido e testado por ordenação dentro da mesma stream, sem comparar sequências entre streams.
+- As correções permanecem offline. Não houve integração de provider live, captura mainnet, autorização de BUY/SELL ou execução financeira.
+- A aprovação técnica anterior foi específica para as correções da PR #36; não equivale a aprovação final de todo o conjunto da PR #23 nem autorização para merge da PR #23 em sua base ou em `main`.
+
+### Próxima ação
+- Fazer revisão integrada focada da PR #23 no novo HEAD `5e61f7ac45d4ac205082b3cf638746d7b9359874`, com atenção às interfaces entre DAMM v2, SolanaTransactionEvidenceBundle, Token-2022 snapshots e Timeline/finality Geyser.
+- Apresentar achados e decisão técnica antes de qualquer merge da PR #23. `main` permanece intocada.

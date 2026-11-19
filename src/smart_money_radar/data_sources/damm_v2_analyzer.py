@@ -307,6 +307,7 @@ def analyze_damm_v2_swap_events(
                     swap_ref.stack_height, swap_ref.instruction,
                     event_ref.inner_instruction_index, event_ref.cpi_path,
                     event_ref.stack_height, event_ref.event,
+                    swap_ref.resolved_accounts,
                 ))
                 continue
         if possible_event_indexes:

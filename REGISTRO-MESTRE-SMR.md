@@ -2361,3 +2361,46 @@ Revisar o contrato documental e, em etapa separada, iniciar apenas os contratos 
 
 ### Próxima etapa técnica
 Revisar e formalizar derivação de identidade por tipo de evento; depois implementar checkpoints de transporte e gaps com transação atômica, sem conectar provider. Só após essa camada devem entrar persistência normalizada e reconstrução da timeline.
+
+
+## 289. Checkpoints de transporte Geyser e gaps persistentes — 19/11/2026
+
+### Escopo implementado
+- Continuação da seção 288, exclusivamente na branch `feat/damm-v2-economic-reconciliation`, PR #23.
+- Evoluída a migração do banco Geyser para schema v2 em `src/smart_money_radar/storage/geyser_raw_store.py`.
+- Adicionadas tabelas `geyser_transport_checkpoints`, `geyser_transport_gaps` e `geyser_transport_anomalies`.
+- Mantido o banco dedicado; nenhum checkpoint de carteira do `SQLiteEventStore` foi reutilizado.
+
+### Semântica comprovada
+- Checkpoint por `(source_id, stream_id)`, separado de identidade RAW e de ledger order.
+- `register_stream(source_id, stream_id, initial_sequence)` permite declarar o primeiro número esperado antes da ingestão.
+- Se a stream não for registrada previamente, o primeiro sequence observado vira baseline `first_observed_unverified`; isso não prova cobertura de sequência anterior.
+- `contiguous_sequence` só avança através de deliveries persistidas sem lacunas. Sequence posterior é preservado, gap é registrado e checkpoint contíguo não salta o intervalo.
+- Eventos fora de ordem podem preencher gaps. Registros substituídos e resolvidos permanecem auditáveis.
+- Replay do mesmo evento na mesma sequence não cria colisão. Evento diferente reutilizando sequence, conflito de identidade RAW não identificável ou sequence anterior ao baseline declarado gera anomalia aberta e interrompe checkpoint.
+- Anomalias exigem resolução explícita com nota. Resolver uma anomalia não remove interrupção enquanto houver gap ou outra anomalia aberta.
+- RAW, delivery, gap/anomalia e atualização do checkpoint são atômicos na mesma transação SQLite. Teste com trigger de falha na inserção do gap prova rollback conjunto.
+- Reconnect deve usar novo `stream_id`; semântica de reset de sequence não é inferida.
+
+### Testes e CI
+- Adicionados 8 testes de checkpoints, baseline, sequência fora de ordem, fechamento de gaps, replay, colisão, resolução de anomalia e rollback atômico.
+- CI #1660 — run `44508678117`, push, commit `b470a5eb02025512569d83d667d82ddc55a33ec5`: completed/success; **530/530 testes OK** em 3,839 s; `python -m compileall -q src tests` aprovado.
+- CI #1661 — run `44508689458`, pull_request, mesmo commit: completed/success; **530/530 testes OK** em 4,090 s; compileall aprovado.
+- Runs #1654–#1659 tiveram falha apenas na asserção do texto esperado para registro tardio de baseline; mensagem/validação foi corrigida e os dois runs finais passaram.
+
+### Commits desta etapa
+- `99a6773` — schema v2 e primeira implementação de checkpoint/gap.
+- `d4d4f06` — correção crítica para impedir avanço do checkpoint através de gap aberto.
+- `32cf299` — testes de checkpoints, gaps, replay e rollback.
+- `a72d782` — conflitos RAW passam a interromper transporte.
+- `be8b20e` — cobertura de conflito de identidade RAW.
+- `b470a5eb02025512569d83d667d82ddc55a33ec5` — correção do registro tardio de baseline; HEAD funcional validado por CI.
+- `f1f9dec33d7abd05fa598d7da665bb2f0b936478` — atualização do contrato técnico.
+
+### Limites e estado GitHub
+- PR #23 permanece OPEN, Draft, sem merge, base `feat/damm-v2-referral-transfer-attribution`.
+- Nenhuma alteração na `main`; nenhuma conexão Geyser/Helius, credencial, VPS, captura contínua ou operação on-chain/financeira.
+- Não implementados: identidade determinística automática de evento, checkpoint de continuidade/epoch, persistência normalizada, account writes, timeline persistente, backfill e recuperação de reinício.
+
+### Próxima etapa técnica
+Formalizar a derivação determinística de `event_id` por tipo de evento e versão do schema, com tratamento de colisão e compatibilidade. Depois, em etapa separada, implementar persistência de eventos normalizados. Não conectar provider.

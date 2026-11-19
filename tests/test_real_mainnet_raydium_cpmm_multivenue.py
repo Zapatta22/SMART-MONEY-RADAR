@@ -5,6 +5,7 @@ import hashlib
 from datetime import datetime, timezone
 from decimal import Decimal
 import json
+import sqlite3
 import unittest
 from pathlib import Path
 
@@ -137,6 +138,57 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
                 self.assertIn("output_vault_delta_raw:-165074030", bundle["evidence"].evidence)
             finally:
                 store.close()
+
+
+    def test_persistence_failure_rolls_back_swap_and_replay_uses_archived_payload(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        result = self.fixture["result"]
+        wallet = result["transaction"]["message"]["accountKeys"][0]
+        signature = result["transaction"]["signatures"][0]
+        operation_id = build_swap_operation_id("solana", signature, 2, (3,))
+
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "pipeline.sqlite3"
+            store = SQLiteEventStore(database)
+            with sqlite3.connect(database) as connection:
+                connection.execute(
+                    """CREATE TRIGGER reject_evidence BEFORE INSERT ON swap_evidence
+                       BEGIN SELECT RAISE(ABORT, 'forced evidence failure'); END"""
+                )
+
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "forced evidence failure"):
+                process_raydium_cpmm_observation(
+                    store, self.fixture, wallet_address=wallet, signature=signature,
+                )
+
+            self.assertIsNone(store.get_swap_bundle(operation_id))
+            self.assertIsNone(store.get_checkpoint(wallet))
+            self.assertFalse(store.has_processed_signature(wallet, signature))
+            self.assertEqual(store.get_pending_signatures(wallet), [signature])
+            self.assertEqual(store.get_observation_metadata(wallet, signature)["parse_status"], "parse_error")
+            self.assertEqual(store.get_raw_transaction(wallet, signature), result)
+            store.close()
+
+            with sqlite3.connect(database) as connection:
+                connection.execute("DROP TRIGGER reject_evidence")
+            reopened = SQLiteEventStore(database)
+            try:
+                archived = reopened.get_raw_transaction(wallet, signature)
+                for expected_inserts in (1, 0):
+                    outcome = process_raydium_cpmm_observation(
+                        reopened, archived, wallet_address=wallet, signature=signature,
+                    )
+                    self.assertEqual(outcome.status, "processed")
+                    self.assertEqual(outcome.saved_bundles, expected_inserts)
+                    self.assertEqual(reopened.get_checkpoint(wallet), signature)
+                self.assertEqual(reopened.get_pending_signatures(wallet), [])
+                self.assertEqual(
+                    reopened.get_swap_bundle(operation_id)["observation"].input_amount,
+                    Decimal("4484.029903"),
+                )
+            finally:
+                reopened.close()
 
 
 

@@ -14,7 +14,10 @@ from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
     DammV2SwapTransferContext,
     DammV2TransferEvidence,
 )
-from smart_money_radar.data_sources.damm_v2_fee_math import resolve_damm_fee_mode
+from smart_money_radar.data_sources.damm_v2_fee_math import (
+    calculate_transfer_fee,
+    resolve_damm_fee_mode,
+)
 from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
     SolanaTokenBalanceDeltaResult,
 )
@@ -25,6 +28,7 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
 )
 from smart_money_radar.data_sources.token2022_transfer_fee_state import (
     TransferFeeAmountDelta,
+    TransferFeeConfigState,
 )
 
 
@@ -53,6 +57,17 @@ class DammV2ExpectedWithheldFeeDelta:
 
 
 @dataclass(frozen=True)
+class DammV2ExpectedTransferFee:
+    instruction_index: int
+    inner_instruction_index: int
+    source_account: str
+    destination_account: str
+    mint: str
+    gross_amount_raw: int
+    expected_fee_raw: int
+
+
+@dataclass(frozen=True)
 class DammV2EconomicReconciliation:
     status: EconomicStatus
     operation_count: int
@@ -62,6 +77,22 @@ class DammV2EconomicReconciliation:
     withheld_fee_status: Literal[
         "NOT_REQUIRED", "EXPECTED_NOT_VERIFIED", "VERIFIED"
     ] = "NOT_REQUIRED"
+    expected_transfer_fees: tuple[DammV2ExpectedTransferFee, ...] = ()
+    mint_fee_config_status: Literal[
+        "NOT_REQUIRED", "EXPECTED_NOT_VERIFIED", "VERIFIED"
+    ] = "NOT_REQUIRED"
+
+
+@dataclass(frozen=True)
+class DammV2MintFeeConfigSnapshot:
+    mint: str
+    config_state: TransferFeeConfigState | None
+    transaction_epoch: int
+    transaction_slot: int
+    transaction_order: int
+    pre_snapshot_order: int
+    source: str
+    pre_state_ref: str
 
 
 @dataclass(frozen=True)
@@ -208,6 +239,7 @@ def reconcile_damm_v2_economic_batch(
     expected: dict[str, dict[str, int | str]] = {}
     expected_owners: dict[str, str] = {}
     expected_withheld: dict[str, dict[str, int | str]] = {}
+    expected_transfer_fees: list[DammV2ExpectedTransferFee] = []
     claimed_transfers: set[SolanaTokenTransfer] = set()
 
     def add_expected_owner(account: str, owner: str) -> None:
@@ -215,6 +247,30 @@ def reconcile_damm_v2_economic_batch(
         if prior is not None and prior != owner:
             raise ValueError("token account reutilizada com owners esperados divergentes")
         expected_owners[account] = owner
+
+    def add_expected_transfer_fee(transfer: SolanaTokenTransfer, net_amount: int) -> None:
+        if transfer.program_id != TOKEN_2022_PROGRAM_ID:
+            return
+        if (
+            isinstance(transfer.instruction_index, bool)
+            or not isinstance(transfer.instruction_index, int)
+            or transfer.instruction_index < 0
+            or isinstance(transfer.inner_instruction_index, bool)
+            or not isinstance(transfer.inner_instruction_index, int)
+            or transfer.inner_instruction_index < 0
+            or not isinstance(transfer.mint, str)
+            or not transfer.mint
+        ):
+            raise ValueError("identidade da transfer fee Token-2022 inválida")
+        expected_transfer_fees.append(DammV2ExpectedTransferFee(
+            instruction_index=transfer.instruction_index,
+            inner_instruction_index=transfer.inner_instruction_index,
+            source_account=transfer.source_account,
+            destination_account=transfer.destination_account,
+            mint=transfer.mint,
+            gross_amount_raw=transfer.amount_raw,
+            expected_fee_raw=transfer.amount_raw - net_amount,
+        ))
 
     def add_expected_withheld(transfer: SolanaTokenTransfer, net_amount: int) -> None:
         fee = transfer.amount_raw - net_amount
@@ -370,6 +426,7 @@ def reconcile_damm_v2_economic_batch(
                 expected, input_transfer.destination_account, input_transfer.mint,
                 input_transfer.decimals, input_net,
             )
+            add_expected_transfer_fee(input_transfer, input_net)
             add_expected_withheld(input_transfer, input_net)
             _add_expected(
                 expected, output_transfer.source_account, output_transfer.mint,
@@ -379,6 +436,7 @@ def reconcile_damm_v2_economic_batch(
                 expected, output_transfer.destination_account, output_transfer.mint,
                 output_transfer.decimals, output_net,
             )
+            add_expected_transfer_fee(output_transfer, output_net)
             add_expected_withheld(output_transfer, output_net)
 
             referral = item.referral_transfer
@@ -429,6 +487,7 @@ def reconcile_damm_v2_economic_batch(
                     expected, referral.destination_account, referral.mint,
                     referral.decimals, referral_net,
                 )
+                add_expected_transfer_fee(referral, referral_net)
                 add_expected_withheld(referral, referral_net)
 
         expected_accounts = set(expected)
@@ -499,6 +558,8 @@ def reconcile_damm_v2_economic_batch(
                 "; ".join(mismatches),
                 withheld_rows,
                 "EXPECTED_NOT_VERIFIED" if withheld_rows else "NOT_REQUIRED",
+                tuple(expected_transfer_fees),
+                "EXPECTED_NOT_VERIFIED" if expected_transfer_fees else "NOT_REQUIRED",
             )
         return DammV2EconomicReconciliation(
             "RECONCILED", len(contexts), tuple(expected_rows),
@@ -506,6 +567,8 @@ def reconcile_damm_v2_economic_batch(
             "conferem com EvtSwap2 para o lote completo; withheld fee permanece apenas esperado",
             withheld_rows,
             "EXPECTED_NOT_VERIFIED" if withheld_rows else "NOT_REQUIRED",
+            tuple(expected_transfer_fees),
+            "EXPECTED_NOT_VERIFIED" if expected_transfer_fees else "NOT_REQUIRED",
         )
     except RuntimeError as exc:
         return DammV2EconomicReconciliation(
@@ -652,4 +715,115 @@ def verify_damm_v2_withheld_fee_deltas(
         reconciliation,
         withheld_fee_status="VERIFIED",
         reason=reconciliation.reason + "; deltas TLV withheld conferidos com snapshots pre/post vinculados à transação",
+    )
+
+
+def verify_damm_v2_mint_fee_config(
+    reconciliation: DammV2EconomicReconciliation,
+    snapshots: Sequence[DammV2MintFeeConfigSnapshot],
+    *,
+    transaction_epoch: int,
+    transaction_slot: int,
+    transaction_order: int,
+) -> DammV2EconomicReconciliation:
+    """Verifies each inferred/explicit Token-2022 fee against the mint pre-state.
+
+    A missing TransferFeeConfig extension is represented by config_state=None,
+    but only when the adapter decoded the exact pre-transaction mint bytes with
+    decode_transfer_fee_config_optional.
+    """
+    if not isinstance(reconciliation, DammV2EconomicReconciliation):
+        raise TypeError("reconciliation inválida")
+    if reconciliation.status != "RECONCILED":
+        raise ValueError("reconciliação base precisa estar RECONCILED")
+    if not isinstance(snapshots, Sequence) or isinstance(snapshots, (str, bytes)):
+        raise TypeError("snapshots de mint devem ser uma sequência")
+    if any(not isinstance(item, DammV2MintFeeConfigSnapshot) for item in snapshots):
+        raise TypeError("snapshot de mint inválido")
+    for label, value in (
+        ("transaction_epoch", transaction_epoch),
+        ("transaction_slot", transaction_slot),
+        ("transaction_order", transaction_order),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{label} inválido")
+
+    if not reconciliation.expected_transfer_fees:
+        if snapshots:
+            return replace(
+                reconciliation,
+                status="INCOMPLETE",
+                reason="snapshots de mint fornecidos sem transfer fee Token-2022 esperada",
+            )
+        return replace(reconciliation, mint_fee_config_status="NOT_REQUIRED")
+
+    by_mint = {}
+    for snapshot in snapshots:
+        if snapshot.mint in by_mint:
+            return replace(
+                reconciliation,
+                status="AMBIGUOUS",
+                mint_fee_config_status="EXPECTED_NOT_VERIFIED",
+                reason=f"snapshot de mint duplicado para {snapshot.mint}",
+            )
+        by_mint[snapshot.mint] = snapshot
+
+    mismatches = []
+    for expected in reconciliation.expected_transfer_fees:
+        snapshot = by_mint.get(expected.mint)
+        if snapshot is None:
+            mismatches.append(f"snapshot histórico de mint ausente para {expected.mint}")
+            continue
+        if snapshot.transaction_epoch != transaction_epoch:
+            mismatches.append(f"epoch do snapshot diverge para {expected.mint}")
+            continue
+        if snapshot.transaction_slot != transaction_slot:
+            mismatches.append(f"slot do snapshot diverge para {expected.mint}")
+            continue
+        if snapshot.transaction_order != transaction_order:
+            mismatches.append(f"ordem da transação diverge para {expected.mint}")
+            continue
+        if (
+            isinstance(snapshot.pre_snapshot_order, bool)
+            or not isinstance(snapshot.pre_snapshot_order, int)
+            or snapshot.pre_snapshot_order >= transaction_order
+        ):
+            mismatches.append(f"prestate do mint não antecede a transação para {expected.mint}")
+            continue
+        if (
+            not isinstance(snapshot.source, str) or not snapshot.source.strip()
+            or not isinstance(snapshot.pre_state_ref, str) or not snapshot.pre_state_ref.strip()
+        ):
+            mismatches.append(f"proveniência do mint ausente para {expected.mint}")
+            continue
+        if snapshot.config_state is None:
+            calculated_fee = 0
+        elif isinstance(snapshot.config_state, TransferFeeConfigState):
+            rate = snapshot.config_state.fee_for_epoch(transaction_epoch)
+            calculated_fee = calculate_transfer_fee(
+                expected.gross_amount_raw,
+                rate.basis_points,
+                rate.maximum_fee,
+            )
+        else:
+            mismatches.append(f"TransferFeeConfig inválido para {expected.mint}")
+            continue
+        if calculated_fee != expected.expected_fee_raw:
+            mismatches.append(
+                f"transfer fee diverge para {expected.mint} "
+                f"instruction {expected.instruction_index}/{expected.inner_instruction_index}: "
+                f"esperado {expected.expected_fee_raw}, calculado {calculated_fee}"
+            )
+
+    if mismatches:
+        return replace(
+            reconciliation,
+            status="INCOMPLETE",
+            mint_fee_config_status="EXPECTED_NOT_VERIFIED",
+            reason="; ".join(mismatches),
+        )
+    return replace(
+        reconciliation,
+        mint_fee_config_status="VERIFIED",
+        reason=reconciliation.reason + "; transfer fees Token-2022 conferidas com config/epoch prestate",
     )

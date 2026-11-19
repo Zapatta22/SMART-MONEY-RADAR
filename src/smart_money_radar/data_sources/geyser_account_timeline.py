@@ -47,6 +47,10 @@ class AccountStateTransition:
     write_version: int
     pre_state: NormalizedAccountUpdate
     post_state: NormalizedAccountUpdate
+    evidence_classification: Literal[
+        "LEGACY_UNSCOPED_UNVERIFIED",
+        "BANK_PROVIDER_REPORTED_FINALIZED",
+    ]
 
 
 @dataclass(frozen=True)
@@ -351,6 +355,8 @@ class AccountUpdateTimeline:
                         write_version=update.write_version,
                         pre_state=previous.update,
                         post_state=update,
+                        evidence_classification="BANK_PROVIDER_REPORTED_FINALIZED",
+                        evidence_classification="LEGACY_UNSCOPED_UNVERIFIED",
                     )
                 )
         return tuple(transitions)

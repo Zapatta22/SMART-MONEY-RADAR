@@ -368,7 +368,7 @@ Definir uma política auditável para RAW sem sequência sem inventar ordem, e m
 
 ### Coverage policy applied by the timeline projection
 
-- `COMPLETE`: every observed stream for the source has an adapter-declared baseline, no transport checkpoint is interrupted, no open transport gaps/anomalies exist, no timeline continuity gap exists, and no input event was skipped.
+- `COMPLETE`: every observed stream for the source has an adapter-declared baseline, no transport checkpoint is interrupted, no open transport gaps, no historical transport anomalies, no timeline continuity gap, and no input event was skipped.
 - `PARTIAL`: declared baseline exists, but the projection observes a gap, interruption, any historical transport anomaly (including administratively resolved anomalies), or skipped input.
 - `UNKNOWN`: no stream checkpoint exists or any stream still uses the first-observed-unverified baseline.
 - This is transport/input continuity coverage only. It is not proof that a provider supplied the complete historical slot range; historical backfill coverage remains a separate backfill-job assertion.

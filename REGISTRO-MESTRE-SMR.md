@@ -3137,3 +3137,37 @@ Precedência e efeito:
 - A integração está tecnicamente validada no ambiente CI, mas ainda não foi integrada permanentemente à cadeia de PRs nem à main.
 - Próxima etapa: preparar a estratégia de incorporação permanente sem duplicar commits/documentação entre PRs #27, #28 e #29; manter a PR #29 como candidata Draft e preservar todas as branches até a decisão de merge.
 - Esta validação não autoriza merge. Não fazer merge sem aprovação explícita e específica do usuário.
+
+
+## 310. Terceira validação da integração Geyser no HEAD documental final — 19/11/2026
+
+### CI confirmada no commit f6664760b23d0b65be7fc8e301d8cce6627773cf
+- Workflow **SMR tests**, run ID `44582227274`, run #1828: SUCCESS.
+- Job `test`: instalação, suíte unitária e compilação concluídos com sucesso.
+- Log completo confirma `Ran 593 tests in 6.745s` e resultado `OK`; `python -m compileall -q src tests` também passou.
+- Workflow **Geyser audit benchmark**, run ID `44582227405`, run #45: SUCCESS.
+- Job `benchmark`: benchmark sintético e upload do artefato concluídos com sucesso.
+- Ambos os workflows foram executados para o mesmo HEAD documental `f6664760b23d0b65be7fc8e301d8cce6627773cf`; nenhuma execução manual foi iniciada.
+
+### Artefato e resultados inspecionados
+- Artefato `geyser-audit-benchmark-results`, ID `14560500979`, SHA-256 `023531df5bcccf63c24606ad9c9acd63c66d3ae4f7d231f44fbe0b12a2436d6d`; criado em 2026-11-19 17:55:51Z, expiração 2027-02-17 17:54:53Z.
+- ZIP baixado e JSON interno `benchmark-results.json` inspecionado.
+- Escala principal: 100.000 eventos lógicos / 200.000 deliveries; rebuild 6,592466 s; throughput 30.337,66 deliveries/s; pico RSS do worker 28,98 MiB; TEMP SQLite 24.399.872 bytes; tracemalloc 0,60 MiB.
+- Classificações: 100.000 `SEQUENCED` e 100.000 `UNSEQUENCED_RECONCILED`; contagens RAW preservadas e `integrity_check=["ok"]`.
+- Fanout alto: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,236675 s; pico RSS 28,90 MiB; TEMP SQLite 2.088.960 bytes; todas as 10.000 testemunhas preservadas; `integrity_check=["ok"]`.
+- Quatro escalas (2.000, 20.000, 100.000 e 200.000 deliveries) mantiveram as classificações esperadas, contagens RAW e integridade SQLite.
+- Comparação TEMP em 100.000 eventos: DEFAULT 6,646549 s / 28,97 MiB RSS; FILE 6,612447 s / 29,06 MiB; MEMORY 6,535911 s / 53,39 MiB. MEMORY teve pequena diferença de tempo nesta execução, mas elevou o pico RSS em aproximadamente 24,4 MiB; a evidência continua insuficiente para justificar MEMORY como padrão. Manter DEFAULT/file-backed.
+- Limites: fixture sintética em runner Linux/GitHub Actions. RSS/VmHWM mede a vida útil do worker, não somente o rebuild; TEMP pages × page size representa alocação lógica SQLite, não bytes físicos escritos. Não extrapolar diretamente para Termux, VPS ou produção.
+
+### Estado remoto conferido após a CI
+- Branch `integration/geyser-pr27-pr28` / PR temporária #29 aponta para HEAD `f6664760b23d0b65be7fc8e301d8cce6627773cf`.
+- PR #29: OPEN/DRAFT, `merged=false`, `mergeable=true`, base `feat/geyser-unsequenced-raw-audit` em `f0d63038411cc4207fae910a3ef168e3af443784`; continua identificada como validação temporária, com instrução explícita para não fazer merge.
+- PRs originais #26, #27 e #28 permanecem abertas/Draft e sem merge; não foram modificadas por esta rodada.
+- `main` foi consultada novamente e permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhum merge foi executado. Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+### Conclusão e próxima ação
+- A integração conjunta de PR #27 + PR #28 sobre a base PR #26 passou novamente na suíte completa de 593 testes, compilação, benchmark e inspeção do artefato no HEAD documental final.
+- Não há falha nova indicada por esta rodada. A evidência é de CI/benchmark sintético, não de execução operacional em ambiente real.
+- Próxima etapa: preparar a incorporação permanente de forma controlada, definindo a cadeia de branches/PRs e evitando duplicação de commits e seções do Registro Mestre. Manter PR #29 como candidata temporária até essa decisão.
+- Não fazer merge de #26, #27, #28 ou #29 sem autorização explícita e específica do usuário.

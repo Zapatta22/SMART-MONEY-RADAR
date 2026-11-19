@@ -2097,3 +2097,16 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - Helius LaserStream é candidato técnico, não foi contratado/conectado; a página oficial indica disponibilidade em planos Business ou superiores. Manter adapter provider-neutral e validar preço/limites antes de contratação.
 - Limite de código atual: `DammV2MintPrestate` e `DammV2WithheldFeeSnapshot` são contratos tipados; o construtor ainda depende de bytes prestate fornecidos por um adapter externo. Não existe coletor LaserStream/Geyser operacional.
 - Próxima ação: implementar normalizador provider-neutral de `GeyserAccountUpdate` e timeline/pairer por pubkey/write_version/txn_signature, com testes de startup baseline, lacunas/replay, updates múltiplos no mesmo slot e rollback antes de conectar um provider.
+
+
+## 276. Fonte candidata de snapshots e validação documental CI — 19/11/2026
+
+- Pesquisa confirmou que o schema Yellowstone Geyser `SubscribeUpdateAccountInfo` fornece `data`, `write_version` e `txn_signature` opcional, enquanto `SubscribeUpdateAccount` fornece `slot`. LaserStream declara compatibilidade com Yellowstone.
+- Helius documenta que account updates em `processed` chegam na ordem do validator e podem conter várias atualizações da mesma conta no slot; em `confirmed`, a assinatura de conta recebe somente o estado final. Portanto, snapshots pre/post exigem captura `processed` e confirmação posterior da transação.
+- Preprocessed Transactions entrega a mensagem assinada antes da execução, mas não inclui meta, CPI/inner instructions, balances nem resultado. Não é fonte de reconciliação.
+- Solana RPC `getAccountInfo` é leitura do estado no slot de contexto; `getTransaction` fornece pre/post token balances, não o TLV bruto withheld de token accounts. Helius `getTransactionsForAddress` é útil para backfill de transações, não para estado bruto histórico de contas.
+- Arquitetura recomendada: timeline persistente por pubkey, armazenando bytes, slot, write_version, txn_signature e stream sequence; parear update com assinatura-alvo ao último estado anterior da mesma conta; confirmar/finalizar e descartar forks revertidos. LaserStream replay recente auxilia recuperação, mas persistência própria é obrigatória.
+- Helius LaserStream permanece candidato, não contratado/conectado. A disponibilidade anunciada é Business ou superior; manter adapter provider-neutral.
+- Documentação atualizada no commit `803aec1307436db9f39dcad321122eceacb467ba`; CI #1559 (`44448848178`) no mesmo HEAD: completed/success, **451 testes OK**, compileall aprovado.
+- Este trabalho foi apenas pesquisa documental e atualização do Registro Mestre; nenhuma credencial, RPC, Helius, RAW, SQLite ou operação on-chain foi usada.
+- Próxima ação: implementar normalizador provider-neutral de mensagens Geyser e timeline/pairer por pubkey/write_version/txn_signature, incluindo startup baseline, lacunas/replay, múltiplos updates no mesmo slot e rollback.

@@ -2480,3 +2480,32 @@ Integrar o helper ao contrato de ingestão RAW sem acoplar identidade a transpor
 
 ### Próxima etapa
 Construir projeções normalizadas dedicadas e versionadas (começando por account writes), mantendo RAW como fonte imutável e permitindo reconstrução. Não conectar provider.
+
+
+## 292. Projeção persistente e reconstruível de Geyser account writes — 19/11/2026
+
+### Entrega
+- Implementado na branch `feat/damm-v2-economic-reconciliation`, PR #23.
+- Arquivos:
+  - `src/smart_money_radar/storage/geyser_account_write_projection.py`
+  - `tests/test_geyser_account_write_projection.py`
+- Classe `SQLiteGeyserAccountWriteProjection`; APIs `rebuild()`, `get_checkpoint()`, `list_writes()`.
+- A projeção compartilha o banco Geyser dedicado, sem tocar no EventStore de transações.
+- Lê apenas RAW `account` em `normalized_json`; não finge decodificar wire bytes.
+- Preserva a identidade do RAW e campos de conta/ledger; dados binários permanecem reversíveis via Base64 e são acompanhados de tamanho e SHA-256.
+- Checkpoint próprio/versionado e geração de rebuild, independente do checkpoint de transporte.
+- Rebuild integral em uma transação: substitui projeção e checkpoint juntos; erro de validação preserva a geração anterior.
+- Estratégia full rebuild deliberada para não perder RAW tardio/backfill devido a cursor lexical; `source_max_event_id` é apenas diagnóstico.
+
+### Validação remota
+- CI #1693 — run `44516277804`, commit `b62e8660b4bc32c9d921e5fcf09bdfdb428fbb67`: SUCCESS; **550/550 testes OK** em 4,216 s; compileall aprovado.
+- Seis testes específicos aprovados: bytes/metadata, idempotência e geração, chegada tardia, eventos ignorados, rollback em payload inválido e isolamento do checkpoint de transporte.
+
+### Estado e limites
+- PR #23 permanece OPEN, Draft, sem merge; base `feat/damm-v2-referral-transfer-attribution`.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma alteração na main.
+- Nenhum provider conectado, nenhum wire capture, backfill real, timeline persistente, seleção canônica de fork, transições econômicas ou execução financeira.
+- A reconstrução integral é a primeira versão e ainda precisa de avaliação de desempenho/escala.
+
+### Próxima etapa
+Persistir/reconstruir a timeline de conta e os vínculos de banco/fork a partir do RAW e da projeção, mantendo histórico órfão e sem inferir canonicalidade por ordem de chegada. Antes de implementar, definir geração, atomicidade, rollback e checkpoints próprios dessa timeline. Não conectar provider.

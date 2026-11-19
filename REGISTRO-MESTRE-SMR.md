@@ -2383,10 +2383,13 @@ Revisar e formalizar derivação de identidade por tipo de evento; depois implem
 - Reconnect deve usar novo `stream_id`; semântica de reset de sequence não é inferida.
 
 ### Testes e CI
-- Adicionados 8 testes de checkpoints, baseline, sequência fora de ordem, fechamento de gaps, replay, colisão, resolução de anomalia e rollback atômico.
+- Adicionados testes de checkpoints, baseline, sequência fora de ordem, fechamento de gaps, replay, colisão, resolução de anomalia, rollback atômico e upgrade de schema v1 para v2.
 - CI #1660 — run `44508678117`, push, commit `b470a5eb02025512569d83d667d82ddc55a33ec5`: completed/success; **530/530 testes OK** em 3,839 s; `python -m compileall -q src tests` aprovado.
 - CI #1661 — run `44508689458`, pull_request, mesmo commit: completed/success; **530/530 testes OK** em 4,090 s; compileall aprovado.
-- Runs #1654–#1659 tiveram falha apenas na asserção do texto esperado para registro tardio de baseline; mensagem/validação foi corrigida e os dois runs finais passaram.
+- Teste adicional comprova migração de banco existente v1 para v2.
+- CI #1664 — run `44508979168`, push, commit `5d66bd1b50559ed9f4ede06461c2b4cf0ac9cf9b`: completed/success; **531/531 testes OK** em 3,834 s; compileall aprovado.
+- CI #1665 — run `44508987457`, pull_request, mesmo commit: completed/success; **531/531 testes OK** em 3,954 s; compileall aprovado.
+- Runs #1654–#1659 tiveram falha apenas na asserção do texto esperado para registro tardio de baseline; mensagem/validação foi corrigida e os runs finais passaram.
 
 ### Commits desta etapa
 - `99a6773` — schema v2 e primeira implementação de checkpoint/gap.
@@ -2394,8 +2397,10 @@ Revisar e formalizar derivação de identidade por tipo de evento; depois implem
 - `32cf299` — testes de checkpoints, gaps, replay e rollback.
 - `a72d782` — conflitos RAW passam a interromper transporte.
 - `be8b20e` — cobertura de conflito de identidade RAW.
-- `b470a5eb02025512569d83d667d82ddc55a33ec5` — correção do registro tardio de baseline; HEAD funcional validado por CI.
-- `f1f9dec33d7abd05fa598d7da665bb2f0b936478` — atualização do contrato técnico.
+- `b470a5eb02025512569d83d667d82ddc55a33ec5` — correção do registro tardio de baseline; CI 530/530.
+- `5d66bd1b50559ed9f4ede06461c2b4cf0ac9cf9b` — teste de upgrade v1→v2; HEAD funcional validado por CI 531/531.
+- `f1f9dec33d7abd05fa598d7da665bb2f0b936478` — atualização inicial do contrato técnico.
+- `73f47b4c8c4edd5b48b18c36499c41be425c1255` — documentação final da migração e CI 531/531.
 
 ### Limites e estado GitHub
 - PR #23 permanece OPEN, Draft, sem merge, base `feat/damm-v2-referral-transfer-attribution`.

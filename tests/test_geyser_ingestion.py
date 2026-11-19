@@ -80,8 +80,9 @@ class GeyserNormalizedIngestionTests(unittest.TestCase):
             self.account(stream="stream-b", sequence=2, data=b"changed"),
             schema_version="geyser-v16",
         )
-        self.assertEqual(first.event_id, changed.event_id)
+        self.assertIsNone(changed.event_id)
         self.assertEqual(changed.status, "conflict")
+        self.assertIsNotNone(changed.conflict_id)
         raw = store.get_raw_event(first.event_id)
         self.assertIn(b"original", raw["payload_bytes"])
         self.assertNotIn(b"changed", raw["payload_bytes"])

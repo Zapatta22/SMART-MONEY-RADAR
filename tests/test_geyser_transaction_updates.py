@@ -56,6 +56,11 @@ class NormalizeTransactionUpdateTests(unittest.TestCase):
         self.assertIsNone(item.meta_payload)
         self.assertFalse(item.evidence_complete)
 
+    def test_empty_but_present_meta_serialization_is_preserved(self):
+        item = normalize_transaction_update(SubscribeUpdateTransaction(_valid_info(meta=ProtoMessage(b""))), source_id="provider-a", stream_id="conn-a", ordering_domain_id="domain-a", stream_sequence=3)
+        self.assertEqual(item.meta_payload, b"")
+        self.assertTrue(item.evidence_complete)
+
     def test_signature_mismatch_fails_closed(self):
         info = _valid_info(transaction=ProtoMessage(b"serialized-transaction", signatures=[bytes(reversed(range(64)))]))
         with self.assertRaisesRegex(ValueError, "diverge"):

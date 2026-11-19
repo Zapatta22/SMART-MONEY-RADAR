@@ -252,6 +252,9 @@ Implemented deterministic event identity and offline normalized ingestion:
 - Reconnect replay with the same logical event creates another delivery but does not duplicate the RAW event. Changed content under the same logical event ID becomes an immutable RAW conflict.
 - The coordinator is offline and does not create a gRPC client, connect to a provider, or claim to capture original protobuf wire bytes.
 
+Validation for the normalized-ingestion coordinator:
+- CI #1686, run `44515088642`, pull_request event, code HEAD `0beb6c26f2ac6833cb7ebff5861d208c2a1c307b`: SUCCESS; **544/544 tests OK** in 4.035 s; `python -m compileall -q src tests` passed.
+
 Validation for deterministic identity:
 - CI #1674, run `44510167848`, pull_request event, HEAD `bde85727630b4f37994852c67594a9c70887d1a3`: SUCCESS; **539/539 tests OK** in 3.843 s; `python -m compileall -q src tests` passed.
 

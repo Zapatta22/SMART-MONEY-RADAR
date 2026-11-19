@@ -1312,5 +1312,78 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             )
 
 
+
+    def test_mint_snapshot_rejects_different_ordering_domain(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshots = _mint_fee_snapshots()
+        snapshots[0] = replace(snapshots[0], ordering_domain_id="stream-b")
+        result = verify_damm_v2_mint_fee_config(
+            base, snapshots, transaction_signature="signature-1",
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+            transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+            transaction_ordering_domain_id="stream-a",
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("ordering_domain_id do snapshot diverge", result.reason)
+
+    def test_withheld_snapshot_rejects_different_ordering_domain(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshot = DammV2WithheldFeeSnapshot(
+            token_account="vault-a", mint="mint-a",
+            decoded_delta=_withheld_delta(10, 15),
+            transaction_signature="signature-1", transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
+            source="ordered-account-snapshot-fixture",
+            pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
+            source_id="rpc-a", transaction_payload_sha256="a" * 64,
+            pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(),
+            post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+            pre_state_data=_withheld_account_data(10),
+            post_state_data=_withheld_account_data(15),
+            ordering_domain_id="stream-b",
+        )
+        result = verify_damm_v2_withheld_fee_deltas(
+            base, [snapshot], transaction_signature="signature-1",
+            transaction_slot=123, transaction_order=50,
+            transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+            transaction_ordering_domain_id="stream-a",
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("ordering_domain_id do snapshot diverge", result.reason)
+
+    def test_mint_prestate_builder_rejects_different_ordering_domain(self):
+        with self.assertRaisesRegex(ValueError, "ordering_domain_id.*divergente"):
+            build_damm_v2_mint_fee_config_snapshots(
+                [self.evidence],
+                {
+                    "mint-a": DammV2MintPrestate(
+                        mint="mint-a", account_data=_mint_account_data(500),
+                        snapshot_slot=123, snapshot_order=49,
+                        source="fixture", state_ref="mint-a-pre",
+                        source_id="rpc-a", ordering_domain_id="stream-b",
+                    ),
+                },
+                _instruction_inventory(),
+                transaction_signature="signature-1",
+                transaction_epoch=10, transaction_slot=123, transaction_order=50,
+                source_id="rpc-a", transaction_payload_sha256="a" * 64,
+                ordering_domain_id="stream-a",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

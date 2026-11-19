@@ -182,7 +182,7 @@ def _mint_fee_snapshots(input_bps=500, input_max_fee=100, input_epoch=10):
             transfer_fee_config_init_positions=(),
             transfer_fee_init_inventory_complete=True,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(input_bps, input_max_fee, input_epoch),
-            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(),
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(input_bps, input_max_fee, input_epoch)).hexdigest(),
         ),
         DammV2MintFeeConfigSnapshot(
             mint="mint-b", transaction_signature="signature-1", transfer_instruction_index=0,
@@ -795,7 +795,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_order=50, pre_snapshot_order=50,
             transfer_fee_config_init_positions=(),
             transfer_fee_init_inventory_complete=True,
-            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(input_bps, input_max_fee, input_epoch),
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(500),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(),
         )
         result = verify_damm_v2_mint_fee_config(
@@ -849,7 +849,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_order=50, pre_snapshot_order=49,
             transfer_fee_config_init_positions=(),
             transfer_fee_init_inventory_complete=True,
-            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(input_bps, input_max_fee, input_epoch),
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(500),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(),
         )
         result = verify_damm_v2_mint_fee_config(
@@ -880,7 +880,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_order=50, pre_snapshot_order=49,
             transfer_fee_config_init_positions=((0, 1),),
             transfer_fee_init_inventory_complete=True,
-            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(input_bps, input_max_fee, input_epoch),
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(500),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(),
         )
         result = verify_damm_v2_mint_fee_config(
@@ -1002,7 +1002,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_order=50, pre_snapshot_order=49,
             transfer_fee_config_init_positions=(),
             transfer_fee_init_inventory_complete=False,
-            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(input_bps, input_max_fee, input_epoch),
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(500),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(),
         )
         result = verify_damm_v2_mint_fee_config(

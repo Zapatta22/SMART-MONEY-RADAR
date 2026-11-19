@@ -96,7 +96,8 @@ class DammV2MintFeeConfigSnapshot:
     transaction_slot: int
     transaction_order: int
     pre_snapshot_order: int
-    mint_state_unchanged_before_transfer: bool
+    transfer_fee_config_init_positions: tuple[tuple[int, int], ...]
+    transfer_fee_init_inventory_complete: bool
     source: str
     pre_state_ref: str
 
@@ -245,9 +246,29 @@ def _calculate_fee_from_mint_snapshot(
         isinstance(snapshot.pre_snapshot_order, bool)
         or not isinstance(snapshot.pre_snapshot_order, int)
         or snapshot.pre_snapshot_order >= transaction_order
-        or snapshot.mint_state_unchanged_before_transfer is not True
     ):
-        raise ValueError("mint prestate não comprovado antes da transferência")
+        raise ValueError("mint prestate não antecede a transação")
+    if snapshot.transfer_fee_init_inventory_complete is not True:
+        raise ValueError("inventário de InitializeTransferFeeConfig incompleto")
+    positions = snapshot.transfer_fee_config_init_positions
+    if not isinstance(positions, tuple):
+        raise ValueError("posições de InitializeTransferFeeConfig inválidas")
+    normalized_positions = []
+    for position in positions:
+        if (
+            not isinstance(position, tuple) or len(position) != 2
+            or isinstance(position[0], bool) or not isinstance(position[0], int) or position[0] < 0
+            or isinstance(position[1], bool) or not isinstance(position[1], int) or position[1] < -1
+        ):
+            raise ValueError("posição de InitializeTransferFeeConfig inválida")
+        normalized_positions.append(position)
+    if len(set(normalized_positions)) != len(normalized_positions):
+        raise ValueError("posição de InitializeTransferFeeConfig duplicada")
+    if any(
+        position <= (transfer.instruction_index, transfer.inner_instruction_index)
+        for position in normalized_positions
+    ):
+        raise ValueError("InitializeTransferFeeConfig ocorreu antes da transferência")
     if (
         not isinstance(snapshot.source, str) or not snapshot.source.strip()
         or not isinstance(snapshot.pre_state_ref, str) or not snapshot.pre_state_ref.strip()
@@ -956,9 +977,34 @@ def verify_damm_v2_mint_fee_config(
         ):
             mismatches.append(f"prestate do mint não antecede a transação para {expected.mint}")
             continue
-        if snapshot.mint_state_unchanged_before_transfer is not True:
+        if snapshot.transfer_fee_init_inventory_complete is not True:
+            mismatches.append(f"inventário de InitializeTransferFeeConfig incompleto para {expected.mint}")
+            continue
+        positions = snapshot.transfer_fee_config_init_positions
+        if not isinstance(positions, tuple):
+            mismatches.append(f"posições de InitializeTransferFeeConfig inválidas para {expected.mint}")
+            continue
+        valid_positions = True
+        normalized_positions = []
+        for position in positions:
+            if (
+                not isinstance(position, tuple) or len(position) != 2
+                or isinstance(position[0], bool) or not isinstance(position[0], int) or position[0] < 0
+                or isinstance(position[1], bool) or not isinstance(position[1], int) or position[1] < -1
+            ):
+                valid_positions = False
+                break
+            normalized_positions.append(position)
+        if not valid_positions or len(set(normalized_positions)) != len(normalized_positions):
+            mismatches.append(f"posições de InitializeTransferFeeConfig inválidas para {expected.mint}")
+            continue
+        if any(
+            position <= (expected.instruction_index, expected.inner_instruction_index)
+            for position in normalized_positions
+        ):
             mismatches.append(
-                f"estado do mint pode ter mudado antes da transferência {expected.instruction_index}/{expected.inner_instruction_index}"
+                f"InitializeTransferFeeConfig ocorreu antes da transferência "
+                f"{expected.instruction_index}/{expected.inner_instruction_index}"
             )
             continue
         if (

@@ -15,6 +15,7 @@ from smart_money_radar.data_sources.solana_token_balance_deltas import (
     TokenAccountBalanceDelta,
 )
 from smart_money_radar.data_sources.solana_token_transfer_decoder import (
+    TOKEN_2022_PROGRAM_ID,
     SolanaTokenTransfer,
 )
 
@@ -128,7 +129,12 @@ def reconcile_raydium_cpmm_swaps(
                 isinstance(transfer.fee_amount_raw, bool)
                 or not isinstance(transfer.fee_amount_raw, int)
                 or not 0 <= transfer.fee_amount_raw <= transfer.amount_raw
+                or transfer.program_id != TOKEN_2022_PROGRAM_ID
             )
+        )
+        or (
+            transfer.instruction_type != "TRANSFER_CHECKED_WITH_FEE"
+            and transfer.fee_amount_raw is not None
         )
         for transfer in transfers
     ):

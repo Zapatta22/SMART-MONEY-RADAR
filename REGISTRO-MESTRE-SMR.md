@@ -2509,3 +2509,33 @@ Construir projeções normalizadas dedicadas e versionadas (começando por accou
 
 ### Próxima etapa
 Persistir/reconstruir a timeline de conta e os vínculos de banco/fork a partir do RAW e da projeção, mantendo histórico órfão e sem inferir canonicalidade por ordem de chegada. Antes de implementar, definir geração, atomicidade, rollback e checkpoints próprios dessa timeline. Não conectar provider.
+
+
+## 293. Timeline persistente e reconstruível de contas/bancos — 19/11/2026
+
+### Entrega
+- Implementado na branch `feat/damm-v2-economic-reconciliation`, PR #23.
+- Arquivos:
+  - `src/smart_money_radar/data_sources/geyser_account_timeline.py` — snapshot público `timeline_records()`.
+  - `src/smart_money_radar/storage/geyser_account_timeline_projection.py`.
+  - `tests/test_geyser_account_timeline_projection.py`.
+- Classe `SQLiteGeyserAccountTimelineProjection`; APIs `rebuild()`, `get_checkpoint()`, `list_account_writes()`, `list_banks()`, `list_gaps()`, `list_conflicts()`.
+- Usa `smr_geyser.sqlite`; RAW continua fonte imutável e `smr_events.sqlite` permanece isolado.
+- Rebuild reproduz primeira entrega sequenciada por evento lógico, ordenada por delivery_id. Timelines isoladas por source_id, evitando falso reconnect entre provedores.
+- Persiste continuidade de account writes (epoch, baseline, continuity_baseline), status do banco, nós de banco, vínculos exatos por blockhash, statuses, invalidações, substituições, gaps e conflitos.
+- Preserva banco invalidado e account writes relacionados; não apaga histórico nem declara fork canônico por ordem de chegada.
+- Checkpoint/generation versionados e separados dos checkpoints de transporte. Rebuild integral atômico; falha preserva geração anterior.
+- RAW sem entrega sequenciada é preservado no RAW, mas ignorado na timeline e contabilizado no checkpoint.
+
+### Validação
+- CI #1706 — run `44517573857`, commit `6bf265be4f9f7cd48ba1044ad19272c8b1a4095b`: SUCCESS; **559/559 testes OK**; compileall aprovado.
+- Nove testes novos específicos aprovados: persistência de timeline e bancos, vínculo pai exato, parent_block_id opaco, invalidação, checkpoint, chegada tardia, rollback por payload malformado, gap e isolamento de fontes.
+
+### Limites
+- Offline; nenhuma conexão Geyser/Helius, captura wire ou backfill real.
+- Não há seleção canônica automática, rollback canônico automático, tabela persistente de transições econômicas pre/post, BUY/SELL nem execução financeira.
+- Rebuild integral ainda requer avaliação de escala.
+- Eventos sem sequência de transporte conhecida não entram na timeline nesta versão.
+
+### Próxima etapa
+Projetar recuperação/backfill com checkpoints granulares, cobertura auditável e reconciliação de eventos RAW sem sequência. Continuar offline; não conectar provider.

@@ -236,7 +236,7 @@ def _parsed_transfer(
                 fee_amount = int(raw_fee)
             except (TypeError, ValueError):
                 return None
-            if not 0 <= fee_amount <= U64_MAX or fee_amount > int(raw_amount):
+            if not 0 <= fee_amount <= U64_MAX:
                 return None
     else:
         raw_amount = info.get("amount")
@@ -250,6 +250,8 @@ def _parsed_transfer(
     except (TypeError, ValueError):
         return None
     if not 0 <= amount <= U64_MAX:
+        return None
+    if fee_amount is not None and fee_amount > amount:
         return None
     if decimals is not None and (
         isinstance(decimals, bool) or not isinstance(decimals, int) or not 0 <= decimals <= 255

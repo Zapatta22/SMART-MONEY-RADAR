@@ -80,6 +80,23 @@ class BankLineageTrackerTests(unittest.TestCase):
         child = BankKey("yellowstone", 101, 11)
         self.assertTrue(tracker.is_ancestor(parent, child))
 
+    def test_conflicting_blockhash_invalidates_bank_and_ancestor_proof(self):
+        tracker = BankLineageTracker()
+        tracker.add_block_meta(_block(100, 10, "parent-hash", 99, "grandparent-hash"))
+        tracker.add_block_meta(_block(101, 11, "child-hash", 100, "parent-hash", sequence=2))
+        parent = BankKey("yellowstone", 100, 10)
+        child = BankKey("yellowstone", 101, 11)
+        self.assertTrue(tracker.is_ancestor(parent, child))
+
+        conflict = tracker.add_block_meta(
+            _block(101, 11, "contradictory-child-hash", 100, "parent-hash", sequence=3)
+        )
+        self.assertEqual(conflict.status, "conflict")
+        self.assertFalse(tracker.is_bank_usable(child))
+        self.assertIsNone(tracker.is_ancestor(parent, child))
+        node = next(item for item in tracker.banks if item.key == child)
+        self.assertTrue(node.invalidated)
+
     def test_same_slot_distinct_bank_ids_remain_distinct_forks(self):
         tracker = BankLineageTracker()
         tracker.add_slot_update(_slot(100, "SLOT_CREATED_BANK", bank_id=10, parent=99))

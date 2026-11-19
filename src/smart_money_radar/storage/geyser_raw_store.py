@@ -304,12 +304,14 @@ class SQLiteGeyserRawStore:
         contiguous = initial_sequence - 1
         missing_ranges = []
         cursor = initial_sequence
+        blocked_by_gap = False
         for value in seen:
             if value < cursor:
                 continue
             if value > cursor:
                 missing_ranges.append((cursor, value - 1))
-            else:
+                blocked_by_gap = True
+            elif not blocked_by_gap:
                 contiguous = value
             cursor = value + 1
 

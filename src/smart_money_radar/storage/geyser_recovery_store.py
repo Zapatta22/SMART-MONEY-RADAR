@@ -273,29 +273,32 @@ class SQLiteGeyserRecoveryStore:
         coverage_status = _coverage(coverage_status)
         evidence_json = _json_object(coverage_evidence,"coverage_evidence")
         evidence = json.loads(evidence_json)
-        if status == "COMPLETED":
-            required = (
-                evidence.get("provider_contract") == "confirmed",
-                evidence.get("range_covered") is True,
-                evidence.get("pagination_exhausted") is True,
-                isinstance(evidence.get("query_semantics"), str) and bool(evidence["query_semantics"].strip()),
-            )
-            if coverage_status != "COMPLETE" or not all(required):
-                raise ValueError("COMPLETED exige coverage COMPLETE e evidência explícita do contrato, intervalo e paginação")
-        if status == "PARTIAL" and coverage_status == "COMPLETE":
-            raise ValueError("job PARTIAL não pode declarar coverage COMPLETE")
+        if status == "COMPLETED" and coverage_status != "COMPLETE":
+            raise ValueError("COMPLETED exige coverage COMPLETE")
+        if status != "COMPLETED" and coverage_status == "COMPLETE":
+            raise ValueError("somente job COMPLETED pode declarar coverage COMPLETE")
         if error is not None:
             error = _text(error,"error")
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as connection, connection:
             row = connection.execute(
-                "SELECT status,retry_count FROM geyser_backfill_jobs WHERE job_id=?",
+                "SELECT status,retry_count,query_semantics FROM geyser_backfill_jobs WHERE job_id=?",
                 (job_id,),
             ).fetchone()
             if row is None:
                 raise KeyError(job_id)
             if row[0] != "RUNNING":
                 raise ValueError("somente job RUNNING pode ser finalizado")
+            if status == "COMPLETED":
+                required = (
+                    evidence.get("provider_contract") == "confirmed",
+                    evidence.get("range_covered") is True,
+                    evidence.get("pagination_exhausted") is True,
+                    evidence.get("retention_limit_checked") is True,
+                    evidence.get("query_semantics") == row[2],
+                )
+                if not all(required):
+                    raise ValueError("COMPLETED exige evidência explícita e compatível com o contrato, intervalo, retenção e paginação")
             connection.execute("""
                 UPDATE geyser_backfill_jobs SET status=?,coverage_status=?,
                     coverage_evidence_json=?,last_error=?,updated_at=?,finished_at=?

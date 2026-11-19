@@ -372,6 +372,28 @@ class SQLiteGeyserAccountTimelineProjection:
                "continuity_epoch","baseline","continuity_baseline","bank_observation_status")
         return [dict(zip(names,row)) for row in rows]
 
+    def list_gaps(self):
+        with self._connect() as connection:
+            rows=connection.execute("""
+                SELECT generation,ordinal,stream_id,expected_sequence,received_sequence,
+                       reason,continuity_epoch FROM geyser_timeline_gaps
+                ORDER BY generation,ordinal
+            """).fetchall()
+        names=("generation","ordinal","stream_id","expected_sequence","received_sequence",
+               "reason","continuity_epoch")
+        return [dict(zip(names,row)) for row in rows]
+
+    def list_conflicts(self):
+        with self._connect() as connection:
+            rows=connection.execute("""
+                SELECT generation,ordinal,conflict_kind,source_id,pubkey,slot,
+                       write_version,reason,detail FROM geyser_timeline_conflicts
+                ORDER BY generation,ordinal
+            """).fetchall()
+        names=("generation","ordinal","conflict_kind","source_id","pubkey","slot",
+               "write_version","reason","detail")
+        return [dict(zip(names,row)) for row in rows]
+
     def list_banks(self):
         with self._connect() as connection:
             rows=connection.execute("""

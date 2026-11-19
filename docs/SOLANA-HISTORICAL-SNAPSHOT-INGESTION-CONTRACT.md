@@ -134,3 +134,16 @@ A implementação inicial em `geyser_transaction_updates.py` normaliza o wrapper
 - a observação normalizada não atribui `transaction_order`, não decodifica instruções/CPI, não constrói snapshots e não classifica BUY/SELL.
 
 A camada permanece offline e provider-neutral. A próxima integração deve provar que o mesmo sequenciador, domínio e persistência RAW abrangem transaction e account updates, incluindo reconnect/gap/replay, antes de snapshots históricos se tornarem elegíveis.
+
+### Evidência de transação pelo replay Yellowstone
+
+`YellowstoneFrameReceiver.replay_transaction_evidence` deriva inventário,
+transferências e deltas com a factory Solana já usada no caminho RPC. A projeção
+traduz índices compilados, CPI, endereços carregados e valores inteiros dos
+saldos. O hash do envelope wire permanece na observação e o hash da projeção
+JSON permanece no bundle. Uma execução com erro, ausência de metadados ou CPI
+indisponível deixa a evidência estruturalmente incompleta. Endereços carregados
+com cardinalidade incompatível interrompem a projeção. O consumidor deve
+concluir o replay antes de publicar resultados, pois um frame posterior pode
+revelar falha de integridade. Esta etapa não associa snapshots históricos nem
+atribui finalidade ao bundle.

@@ -94,10 +94,55 @@ def _protobuf_update_class():
     transaction_payload.field.add(
         name="signatures", number=1, type=T.TYPE_BYTES, label=T.LABEL_REPEATED
     )
-    msg("Message")
+    def repeated(m, name, number, kind, type_name=None):
+        fld(m, name, number, kind, type_name)
+        m.field[-1].label = T.LABEL_REPEATED
+
+    header = msg("MessageHeader")
+    fld(header, "num_required_signatures", 1, T.TYPE_UINT32)
+    instruction = msg("CompiledInstruction")
+    inner = msg("InnerInstruction")
+    for item in (instruction, inner):
+        fld(item, "program_id_index", 1, T.TYPE_UINT32)
+        fld(item, "accounts", 2, T.TYPE_BYTES)
+        fld(item, "data", 3, T.TYPE_BYTES)
+    fld(inner, "stack_height", 4, T.TYPE_UINT32)
+    inner_group = msg("InnerInstructions")
+    fld(inner_group, "index", 1, T.TYPE_UINT32)
+    repeated(inner_group, "instructions", 2, T.TYPE_MESSAGE, ".geyser.InnerInstruction")
+    lookup = msg("MessageAddressTableLookup")
+    fld(lookup, "writable_indexes", 2, T.TYPE_BYTES)
+    fld(lookup, "readonly_indexes", 3, T.TYPE_BYTES)
+    message = msg("Message")
+    fld(message, "header", 1, T.TYPE_MESSAGE, ".geyser.MessageHeader")
+    repeated(message, "account_keys", 2, T.TYPE_BYTES)
+    repeated(message, "instructions", 4, T.TYPE_MESSAGE, ".geyser.CompiledInstruction")
+    repeated(message, "address_table_lookups", 6, T.TYPE_MESSAGE, ".geyser.MessageAddressTableLookup")
     fld(transaction_payload, "message", 2, T.TYPE_MESSAGE, ".geyser.Message")
+    error = msg("TransactionError")
+    fld(error, "err", 1, T.TYPE_BYTES)
+    token_amount = msg("UiTokenAmount")
+    fld(token_amount, "decimals", 2, T.TYPE_UINT32)
+    fld(token_amount, "amount", 3, T.TYPE_STRING)
+    balance = msg("TokenBalance")
+    fld(balance, "account_index", 1, T.TYPE_UINT32)
+    fld(balance, "mint", 2, T.TYPE_STRING)
+    fld(balance, "ui_token_amount", 3, T.TYPE_MESSAGE, ".geyser.UiTokenAmount")
+    fld(balance, "owner", 4, T.TYPE_STRING)
+    fld(balance, "program_id", 5, T.TYPE_STRING)
     transaction_meta = msg("TransactionStatusMeta")
+    fld(transaction_meta, "err", 1, T.TYPE_MESSAGE, ".geyser.TransactionError")
     fld(transaction_meta, "fee", 2, T.TYPE_UINT64)
+    repeated(transaction_meta, "pre_balances", 3, T.TYPE_UINT64)
+    repeated(transaction_meta, "post_balances", 4, T.TYPE_UINT64)
+    repeated(transaction_meta, "inner_instructions", 5, T.TYPE_MESSAGE, ".geyser.InnerInstructions")
+    repeated(transaction_meta, "log_messages", 6, T.TYPE_STRING)
+    repeated(transaction_meta, "pre_token_balances", 7, T.TYPE_MESSAGE, ".geyser.TokenBalance")
+    repeated(transaction_meta, "post_token_balances", 8, T.TYPE_MESSAGE, ".geyser.TokenBalance")
+    fld(transaction_meta, "inner_instructions_none", 10, T.TYPE_BOOL)
+    fld(transaction_meta, "log_messages_none", 11, T.TYPE_BOOL)
+    repeated(transaction_meta, "loaded_writable_addresses", 12, T.TYPE_BYTES)
+    repeated(transaction_meta, "loaded_readonly_addresses", 13, T.TYPE_BYTES)
     transaction_info = msg("SubscribeUpdateTransactionInfo")
     fld(transaction_info, "signature", 1, T.TYPE_BYTES)
     fld(transaction_info, "is_vote", 2, T.TYPE_BOOL)
@@ -277,6 +322,72 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         info.signature = bytes(range(64))
         info.transaction.signatures.append(info.signature)
         return message.SerializeToString()
+
+    def test_wire_replay_builds_shared_instruction_and_balance_evidence(self):
+        from smart_money_radar.data_sources.solana_token_transfer_decoder import (
+            SPL_TOKEN_PROGRAM_ID, _decode_base58,
+        )
+
+        frame = _UPDATE.FromString(self.transaction_frame())
+        info = frame.transaction.transaction
+        message = info.transaction.message
+        message.header.num_required_signatures = 1
+        signer, token_a, token_b, outer_program = (bytes([i]) * 32 for i in range(1, 5))
+        message.account_keys.extend((signer, token_a, token_b, outer_program))
+        message.address_table_lookups.add(readonly_indexes=b"\x00")
+        message.instructions.add(program_id_index=3, accounts=b"\x01\x02", data=b"\x07")
+        info.meta.loaded_readonly_addresses.append(_decode_base58(SPL_TOKEN_PROGRAM_ID))
+        info.meta.pre_balances.extend([100] * 5)
+        info.meta.post_balances.extend([100] * 5)
+        info.meta.inner_instructions.add(index=0).instructions.add(
+            program_id_index=4, accounts=b"\x01\x02\x00",
+            data=b"\x03" + (9).to_bytes(8, "little"), stack_height=2,
+        )
+        for snapshots, amounts in (
+            (info.meta.pre_token_balances, (20, 1)),
+            (info.meta.post_token_balances, (11, 10)),
+        ):
+            for index, amount in enumerate(amounts, start=1):
+                entry = snapshots.add(
+                    account_index=index, mint=_b58(bytes([6]) * 32),
+                    owner=_b58(signer), program_id=SPL_TOKEN_PROGRAM_ID,
+                )
+                entry.ui_token_amount.amount = str(amount)
+                entry.ui_token_amount.decimals = 6
+
+        store = SQLiteGeyserRawStore(":memory:")
+        self.addCleanup(store.close)
+        receiver = self.receiver(store)
+        raw = frame.SerializeToString()
+        receipt = receiver.receive(raw, stream_sequence=40)
+        item, = receiver.replay_transaction_evidence()
+        self.assertEqual(item.observation.payload_sha256, receipt.payload_sha256)
+        self.assertNotEqual(item.bundle.identity.payload_sha256, receipt.payload_sha256)
+        self.assertTrue(item.bundle.structurally_complete)
+        transfer, = item.bundle.transfers
+        self.assertEqual(transfer.amount_raw, 9)
+        self.assertEqual([part.delta_raw for part in item.bundle.balance_deltas.deltas], [-9, 9])
+
+        info.meta.inner_instructions_none = True
+        info.meta.ClearField("inner_instructions")
+        receiver.receive(frame.SerializeToString(), stream_sequence=41)
+        self.assertFalse(list(receiver.replay_transaction_evidence())[-1].bundle.structurally_complete)
+
+        info.ClearField("meta")
+        receiver.receive(frame.SerializeToString(), stream_sequence=42)
+        self.assertFalse(list(receiver.replay_transaction_evidence())[-1].bundle.structurally_complete)
+
+        info.meta.err.err = b"failed"
+        info.meta.loaded_readonly_addresses.append(_decode_base58(SPL_TOKEN_PROGRAM_ID))
+        receiver.receive(frame.SerializeToString(), stream_sequence=43)
+        failed = list(receiver.replay_transaction_evidence())[-1].bundle
+        self.assertFalse(failed.structurally_complete)
+        self.assertEqual(failed.transfers, ())
+
+        info.meta.ClearField("loaded_readonly_addresses")
+        receiver.receive(frame.SerializeToString(), stream_sequence=44)
+        with self.assertRaisesRegex(ValueError, "divergem das tabelas"):
+            list(receiver.replay_transaction_evidence())
 
     def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
         descriptors = descriptor_pb2.FileDescriptorSet()

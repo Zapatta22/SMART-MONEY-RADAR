@@ -37,11 +37,26 @@ class DammV2ExpectedAccountDelta:
 
 
 @dataclass(frozen=True)
+class DammV2ExpectedWithheldFeeDelta:
+    """Aumento esperado de withheld fees no extension state da conta destino.
+
+    É derivado do bruto menos o crédito spendable; não é uma leitura observada
+    do estado TLV pre/post e, portanto, permanece não verificado nesta camada.
+    """
+
+    token_account: str
+    mint: str
+    expected_withheld_delta_raw: int
+
+
+@dataclass(frozen=True)
 class DammV2EconomicReconciliation:
     status: EconomicStatus
     operation_count: int
     expected_account_deltas: tuple[DammV2ExpectedAccountDelta, ...]
     reason: str
+    expected_withheld_fee_deltas: tuple[DammV2ExpectedWithheldFeeDelta, ...] = ()
+    withheld_fee_status: Literal["NOT_REQUIRED", "EXPECTED_NOT_VERIFIED"] = "NOT_REQUIRED"
 
 
 def _add_expected(
@@ -75,7 +90,7 @@ def _net_received(
     if (
         isinstance(transfer.amount_raw, bool)
         or not isinstance(transfer.amount_raw, int)
-        or not 0 <= transfer.amount_raw <= (1 << 64) - 1
+        or not 0 < transfer.amount_raw <= (1 << 64) - 1
     ):
         raise ValueError(f"amount bruto inválido em {label}")
     if (
@@ -87,7 +102,7 @@ def _net_received(
     if transfer.amount_raw != expected_gross:
         raise ValueError(f"amount bruto de {label} diverge do EvtSwap2")
     if transfer.instruction_type not in {
-        "TRANSFER", "TRANSFER_CHECKED", "TRANSFER_CHECKED_WITH_FEE"
+        "TRANSFER_CHECKED", "TRANSFER_CHECKED_WITH_FEE"
     }:
         raise ValueError(f"tipo de transferência {label} não suportado")
     if transfer.program_id not in {SPL_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID}:
@@ -134,6 +149,8 @@ def reconcile_damm_v2_economic_batch(
     evidence: Sequence[DammV2TransferEvidence],
     balance_deltas: SolanaTokenBalanceDeltaResult,
     all_transfers: Sequence[SolanaTokenTransfer],
+    *,
+    monitored_wallet: str,
 ) -> DammV2EconomicReconciliation:
     """Reconcilia todas as operações DAMM v2 do mesmo payload de transação.
 
@@ -142,6 +159,8 @@ def reconcile_damm_v2_economic_batch(
     CPI não confiável, conta compartilhada com conflito ou divergência bruta/
     líquida fazem o lote falhar fechado.
     """
+    if not isinstance(monitored_wallet, str) or not monitored_wallet.strip():
+        raise ValueError("monitored_wallet é obrigatório")
     if not isinstance(contexts, Sequence) or isinstance(contexts, (str, bytes)):
         raise TypeError("contexts deve ser uma sequência")
     if not isinstance(evidence, Sequence) or isinstance(evidence, (str, bytes)):
@@ -167,7 +186,32 @@ def reconcile_damm_v2_economic_batch(
         )
 
     expected: dict[str, dict[str, int | str]] = {}
+    expected_owners: dict[str, str] = {}
+    expected_withheld: dict[str, dict[str, int | str]] = {}
     claimed_transfers: set[SolanaTokenTransfer] = set()
+
+    def add_expected_owner(account: str, owner: str) -> None:
+        prior = expected_owners.get(account)
+        if prior is not None and prior != owner:
+            raise ValueError("token account reutilizada com owners esperados divergentes")
+        expected_owners[account] = owner
+
+    def add_expected_withheld(transfer: SolanaTokenTransfer, net_amount: int) -> None:
+        fee = transfer.amount_raw - net_amount
+        if fee == 0:
+            return
+        if transfer.program_id != TOKEN_2022_PROGRAM_ID:
+            raise ValueError("transfer fee em programa diferente de Token-2022")
+        current = expected_withheld.get(transfer.destination_account)
+        if current is None:
+            expected_withheld[transfer.destination_account] = {
+                "mint": transfer.mint or "",
+                "amount": fee,
+            }
+            return
+        if current["mint"] != transfer.mint:
+            raise ValueError("token account withheld reutilizada com mint divergente")
+        current["amount"] = int(current["amount"]) + fee
     try:
         for context, item in zip(contexts, evidence):
             if not isinstance(context, DammV2SwapTransferContext):
@@ -248,6 +292,27 @@ def reconcile_damm_v2_economic_batch(
                 )
 
             accounts = context.accounts
+            main_accounts = (
+                accounts.input_token_account,
+                accounts.input_vault,
+                accounts.output_vault,
+                accounts.output_token_account,
+            )
+            if any(not isinstance(account, str) or not account for account in main_accounts):
+                raise ValueError("conta obrigatória do swap ausente")
+            if len(set(main_accounts)) != 4:
+                raise ValueError("colisão entre contas de usuário e vaults do swap")
+            add_expected_owner(accounts.input_token_account, monitored_wallet)
+            add_expected_owner(accounts.output_token_account, monitored_wallet)
+            add_expected_owner(accounts.token_a_vault, accounts.pool_authority)
+            add_expected_owner(accounts.token_b_vault, accounts.pool_authority)
+            if (
+                event.has_referral
+                and event.swap_result.referral_fee > 0
+                and accounts.referral_token_account in set(main_accounts)
+            ):
+                raise ValueError("referral token account colide com outra conta do swap")
+
             input_transfer = item.input_transfer
             output_transfer = item.output_transfer
             input_net = _net_received(
@@ -285,6 +350,7 @@ def reconcile_damm_v2_economic_batch(
                 expected, input_transfer.destination_account, input_transfer.mint,
                 input_transfer.decimals, input_net,
             )
+            add_expected_withheld(input_transfer, input_net)
             _add_expected(
                 expected, output_transfer.source_account, output_transfer.mint,
                 output_transfer.decimals, -output_transfer.amount_raw,
@@ -293,6 +359,7 @@ def reconcile_damm_v2_economic_batch(
                 expected, output_transfer.destination_account, output_transfer.mint,
                 output_transfer.decimals, output_net,
             )
+            add_expected_withheld(output_transfer, output_net)
 
             referral = item.referral_transfer
             referral_fee = event.swap_result.referral_fee
@@ -342,6 +409,7 @@ def reconcile_damm_v2_economic_batch(
                     expected, referral.destination_account, referral.mint,
                     referral.decimals, referral_net,
                 )
+                add_expected_withheld(referral, referral_net)
 
         expected_accounts = set(expected)
         claimed_ids = {id(transfer) for transfer in claimed_transfers}
@@ -389,15 +457,35 @@ def reconcile_damm_v2_economic_batch(
                 mismatches.append(
                     f"delta diverge para {account}: esperado {amount}, observado {delta.delta_raw}"
                 )
+        for account, owner in sorted(expected_owners.items()):
+            delta = actual.get(account)
+            if delta is None:
+                mismatches.append(f"delta/owner ausente para {account}")
+            elif delta.owner != owner:
+                mismatches.append(
+                    f"owner diverge para {account}: esperado {owner}, observado {delta.owner}"
+                )
+        withheld_rows = tuple(
+            DammV2ExpectedWithheldFeeDelta(
+                token_account=account,
+                mint=str(values["mint"]),
+                expected_withheld_delta_raw=int(values["amount"]),
+            )
+            for account, values in sorted(expected_withheld.items())
+        )
         if mismatches:
             return DammV2EconomicReconciliation(
                 "INCOMPLETE", len(contexts), tuple(expected_rows),
                 "; ".join(mismatches),
+                withheld_rows,
+                "EXPECTED_NOT_VERIFIED" if withheld_rows else "NOT_REQUIRED",
             )
         return DammV2EconomicReconciliation(
             "RECONCILED", len(contexts), tuple(expected_rows),
-            "transferências input/output/referral e deltas agregados por token account "
-            "conferem com EvtSwap2 para o lote completo de operações",
+            "transferências input/output/referral, owners e deltas agregados por token account "
+            "conferem com EvtSwap2 para o lote completo; withheld fee permanece apenas esperado",
+            withheld_rows,
+            "EXPECTED_NOT_VERIFIED" if withheld_rows else "NOT_REQUIRED",
         )
     except RuntimeError as exc:
         return DammV2EconomicReconciliation(

@@ -460,3 +460,23 @@ SQL reverte a publicação inteira. Outras conexões têm gerações independent
 Esta projeção registra derivações do transporte, incluindo o status de banco
 observado, e ainda precisa ser vinculada ao pipeline de evidência econômica
 e aos critérios de finalidade operacional.
+
+### Captura gRPC por TLS
+
+Instale o extra `smart-money-radar[yellowstone]` e prepare um
+`subscription.json` com os filtros `SubscribeRequest` do schema do provedor.
+Passe um endpoint autorizado como `host:porta`. Quando o provedor exigir
+autenticação, forneça o token pela variável `YELLOWSTONE_TOKEN`.
+
+```bash
+smr geyser-capture journal.sqlite --target PROVIDER_HOST:443 \
+  --source validator-a --descriptor yellowstone.desc \
+  --subscription subscription.json --max-frames 1000 --timeout 60
+```
+
+O comando limita a duração a 600 segundos e o total a 100 mil frames.
+Ele preserva os bytes recebidos e atribui uma sequência única antes da
+validação. Cada execução cria novos IDs de conexão e domínio. Ao receber
+um ping, responde dentro da mesma assinatura. O JSON final lista todas as sessões e seus IDs
+necessários para inspecionar a captura com `smr geyser-evidence`. A sequência
+contínua de uma captura indica apenas a ordem recebida durante a sessão.

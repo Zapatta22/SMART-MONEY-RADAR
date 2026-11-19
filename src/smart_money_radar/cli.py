@@ -4,9 +4,11 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import signal
 import sqlite3
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 
 from smart_money_radar.data_sources.helius import HeliusDataSource
@@ -41,6 +43,17 @@ def _parser() -> argparse.ArgumentParser:
     evidence.add_argument("--stream", required=True)
     evidence.add_argument("--domain", required=True)
     evidence.add_argument("--sequence", type=int, required=True)
+    capture = subparsers.add_parser(
+        "geyser-capture", help="captura um fluxo Yellowstone TLS com limites de duração e frames"
+    )
+    capture.add_argument("database", type=Path)
+    capture.add_argument("--target", required=True)
+    capture.add_argument("--source", required=True)
+    capture.add_argument("--descriptor", type=Path, required=True)
+    capture.add_argument("--subscription", type=Path, required=True)
+    capture.add_argument("--max-frames", type=int, default=1000)
+    capture.add_argument("--timeout", type=int, default=60)
+    capture.add_argument("--max-attempts", type=int, default=1)
     return parser
 
 
@@ -57,6 +70,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     try:
         if args.command == "geyser-evidence":
             _inspect_geyser_evidence(args)
+            return
+        if args.command == "geyser-capture":
+            _capture_geyser(args)
             return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)
@@ -123,6 +139,39 @@ def _inspect_geyser_evidence(args: argparse.Namespace) -> None:
         }, ensure_ascii=False))
     except DecodeError as exc:
         raise ValueError("frame incompatível com o descriptor Yellowstone") from exc
+    finally:
+        store.close()
+
+
+def _capture_geyser(args: argparse.Namespace) -> None:
+    from google.protobuf.json_format import ParseError
+    from google.protobuf.message import DecodeError
+
+    from smart_money_radar.data_sources.yellowstone_grpc import capture_yellowstone_sessions
+    from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+
+    subscription = json.loads(args.subscription.read_text(encoding="utf-8"))
+    if not isinstance(subscription, dict):
+        raise ValueError("a assinatura Yellowstone precisa ser um objeto JSON")
+    store = SQLiteGeyserRawStore(args.database)
+    try:
+        attempts = capture_yellowstone_sessions(
+            store, target=args.target, source_id=args.source, descriptor=args.descriptor.read_bytes(),
+            subscription=subscription, token=os.environ.get("YELLOWSTONE_TOKEN"),
+            max_frames=args.max_frames, timeout=args.timeout, max_attempts=args.max_attempts,
+        )
+        print(json.dumps({"sessions": [asdict(capture) for capture in attempts]}))
+        if not attempts:
+            raise ValueError("orçamento de tempo Yellowstone esgotado antes da conexão")
+        outcome = attempts[-1].outcome
+        if outcome not in {"eof", "frame_limit", "deadline_exceeded"}:
+            raise ValueError(f"captura Yellowstone interrompida: {outcome}")
+    except ModuleNotFoundError as exc:
+        if exc.name != "grpc":
+            raise
+        raise ValueError("instale o extra smart-money-radar[yellowstone]") from exc
+    except (DecodeError, ParseError, TypeError) as exc:
+        raise ValueError("descriptor ou assinatura Yellowstone inválidos") from exc
     finally:
         store.close()
 

@@ -584,7 +584,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             pre_state_data=_withheld_account_data(10),
             post_state_data=_withheld_account_data(15),
             source_id="rpc-a", transaction_payload_sha256="a" * 64,
-            pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+            pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
@@ -611,8 +611,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             source="ordered-account-snapshot-fixture",
             pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
             pre_state_data=_withheld_account_data(10),
-            post_state_data=_withheld_account_data(15),
-            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+            post_state_data=_withheld_account_data(14),
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(14)).hexdigest(),
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
@@ -657,7 +657,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
             pre_state_data=_withheld_account_data(10),
             post_state_data=_withheld_account_data(15),
-            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
@@ -685,7 +685,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
             pre_state_data=_withheld_account_data(10),
             post_state_data=_withheld_account_data(15),
-            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
@@ -713,7 +713,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
             pre_state_data=_withheld_account_data(10),
             post_state_data=_withheld_account_data(15),
-            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot, snapshot], transaction_signature="signature-1",

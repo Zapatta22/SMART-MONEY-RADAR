@@ -132,7 +132,7 @@ def _mint_fee_snapshots(input_bps=500, input_max_fee=100, input_epoch=10):
     )
     return [
         DammV2MintFeeConfigSnapshot(
-            mint="mint-a", transfer_instruction_index=0,
+            mint="mint-a", transaction_signature="signature-1", transfer_instruction_index=0,
             transfer_inner_instruction_index=2, config_state=state,
             transaction_epoch=input_epoch, transaction_slot=123,
             transaction_order=50, pre_snapshot_order=49,
@@ -141,7 +141,7 @@ def _mint_fee_snapshots(input_bps=500, input_max_fee=100, input_epoch=10):
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
         ),
         DammV2MintFeeConfigSnapshot(
-            mint="mint-b", transfer_instruction_index=0,
+            mint="mint-b", transaction_signature="signature-1", transfer_instruction_index=0,
             transfer_inner_instruction_index=2, config_state=None,
             transaction_epoch=input_epoch, transaction_slot=123,
             transaction_order=50, pre_snapshot_order=49,
@@ -668,6 +668,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         result = verify_damm_v2_mint_fee_config(
             base, _mint_fee_snapshots(),
+            transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
         self.assertEqual(result.status, "RECONCILED")
@@ -684,6 +685,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         result = verify_damm_v2_mint_fee_config(
             base, _mint_fee_snapshots(input_bps=400),
+            transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
         self.assertEqual(result.status, "INCOMPLETE")
@@ -700,6 +702,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         result = verify_damm_v2_mint_fee_config(
             base, _mint_fee_snapshots()[:1],
+            transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
         self.assertEqual(result.status, "INCOMPLETE")
@@ -716,7 +719,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshots = _mint_fee_snapshots()
         snapshots[0] = DammV2MintFeeConfigSnapshot(
-            mint="mint-a", transfer_instruction_index=0,
+            mint="mint-a", transaction_signature="signature-1", transfer_instruction_index=0,
             transfer_inner_instruction_index=2, config_state=snapshots[0].config_state,
             transaction_epoch=10, transaction_slot=123,
             transaction_order=50, pre_snapshot_order=50,
@@ -726,6 +729,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         result = verify_damm_v2_mint_fee_config(
             base, snapshots,
+            transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
         self.assertEqual(result.status, "INCOMPLETE")
@@ -743,6 +747,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         snapshots = _mint_fee_snapshots()
         result = verify_damm_v2_mint_fee_config(
             base, snapshots + [snapshots[0]],
+            transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
         self.assertEqual(result.status, "AMBIGUOUS")
@@ -765,7 +770,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshots = _mint_fee_snapshots()
         snapshots[0] = DammV2MintFeeConfigSnapshot(
-            mint="mint-a", transfer_instruction_index=0,
+            mint="mint-a", transaction_signature="signature-1", transfer_instruction_index=0,
             transfer_inner_instruction_index=2, config_state=old_state,
             transaction_epoch=10, transaction_slot=123,
             transaction_order=50, pre_snapshot_order=49,
@@ -775,6 +780,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         result = verify_damm_v2_mint_fee_config(
             base, snapshots,
+            transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
         self.assertEqual(result.status, "RECONCILED")
@@ -792,7 +798,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshots = _mint_fee_snapshots()
         snapshots[0] = DammV2MintFeeConfigSnapshot(
-            mint="mint-a", transfer_instruction_index=0,
+            mint="mint-a", transaction_signature="signature-1", transfer_instruction_index=0,
             transfer_inner_instruction_index=2,
             config_state=snapshots[0].config_state,
             transaction_epoch=10, transaction_slot=123,
@@ -803,6 +809,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         result = verify_damm_v2_mint_fee_config(
             base, snapshots,
+            transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
         self.assertEqual(result.status, "INCOMPLETE")
@@ -838,7 +845,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshots = [
             DammV2MintFeeConfigSnapshot(
-                mint="mint-a", transfer_instruction_index=0,
+                mint="mint-a", transaction_signature="signature-1", transfer_instruction_index=0,
                 transfer_inner_instruction_index=2, config_state=mint_a,
                 transaction_epoch=10, transaction_slot=123,
                 transaction_order=50, pre_snapshot_order=49,
@@ -847,7 +854,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                 source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
             ),
             DammV2MintFeeConfigSnapshot(
-                mint="mint-b", transfer_instruction_index=0,
+                mint="mint-b", transaction_signature="signature-1", transfer_instruction_index=0,
                 transfer_inner_instruction_index=2, config_state=mint_b,
                 transaction_epoch=10, transaction_slot=123,
                 transaction_order=50, pre_snapshot_order=49,
@@ -856,7 +863,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                 source="ordered-mint-prestate-fixture", pre_state_ref="mint-b-output-pre",
             ),
             DammV2MintFeeConfigSnapshot(
-                mint="mint-b", transfer_instruction_index=0,
+                mint="mint-b", transaction_signature="signature-1", transfer_instruction_index=0,
                 transfer_inner_instruction_index=3, config_state=mint_b,
                 transaction_epoch=10, transaction_slot=123,
                 transaction_order=50, pre_snapshot_order=49,
@@ -876,6 +883,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             ]),
             [input_transfer, output_transfer, referral_transfer],
             mint_fee_snapshots=snapshots,
+            transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
         self.assertEqual(result.status, "RECONCILED")
@@ -889,6 +897,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         verified = verify_damm_v2_mint_fee_config(
             result, snapshots,
+            transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
         self.assertEqual(verified.status, "RECONCILED")
@@ -927,7 +936,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshots = _mint_fee_snapshots()
         snapshots[0] = DammV2MintFeeConfigSnapshot(
-            mint="mint-a", transfer_instruction_index=0,
+            mint="mint-a", transaction_signature="signature-1", transfer_instruction_index=0,
             transfer_inner_instruction_index=2,
             config_state=snapshots[0].config_state,
             transaction_epoch=10, transaction_slot=123,
@@ -938,6 +947,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         result = verify_damm_v2_mint_fee_config(
             base, snapshots,
+            transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
         )
         self.assertEqual(result.status, "INCOMPLETE")

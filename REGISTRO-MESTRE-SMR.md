@@ -3656,3 +3656,18 @@ CI conhecido da PR #10:
 - Esse CI não valida a combinação com os quatro commits novos da base #9. A validação do merge resultante deve ocorrer quando a integração bottom-up for autorizada/realizada.
 
 Não atualizar branch, rebasear ou mergear PR #10 nesta auditoria. A cadeia permanece empilhada; a atualização da base é uma diferença explicada, não uma razão para reordenar PRs.
+
+
+## 243. CI de confirmação da auditoria PR #10 / Registro Mestre — 19/11/2026
+
+O commit \`26da0c6e431ead8512af02397e5a2758b74817bd\`, contendo a seção 242, foi validado no workflow #1374, run ID \`44434924202\`, evento pull_request:
+
+- Conclusão SUCCESS.
+- **539 testes aprovados** (\`Ran 539 tests in 3.987s\`, \`OK\`).
+- \`python -m compileall -q src tests\` aprovado.
+- PR #25 segue OPEN/DRAFT e mergeable=true; não houve merge.
+- PR #9 segue OPEN, HEAD \`b9dfe8f2869cec7e14ee20caa091431f2c2a4c1a\`, com CI #1371 SUCCESS (170 testes + compileall).
+- PR #10 segue OPEN, HEAD \`e7c02adb3564fefb3a8c734098f5c92603eb4a7b\`, CI #115 SUCCESS (181 testes + compileall no head próprio). A combinação com a base atual #9 ainda exige CI no resultado de integração.
+- \`main\` permanece em \`5060bc65ddf181a4736fdb662c44c3fec0dd7259\`.
+
+A seção 242 registra a divergência de ancestralidade atual da PR #10: quatro commits da base #9 ainda não estão no head #10; merge-base preservado e GitHub reporta mergeable=true. Não foi feito rebase, atualização de branch ou merge.

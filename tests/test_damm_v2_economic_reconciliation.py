@@ -795,8 +795,10 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_order=50, pre_snapshot_order=50,
             transfer_fee_config_init_positions=(),
             transfer_fee_init_inventory_complete=True,
-            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(500),
-            source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(),
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
+            pre_state_data=_mint_account_data(500, newer_epoch=20, newer_basis_points=250),
+            source_id="rpc-a", transaction_payload_sha256="a" * 64,
+            pre_state_sha256=hashlib.sha256(_mint_account_data(500, newer_epoch=20, newer_basis_points=250)).hexdigest(),
         )
         result = verify_damm_v2_mint_fee_config(
             base, snapshots,

@@ -1,6 +1,6 @@
 # Geyser Historical Persistence and Backfill Contract
 
-**Status:** Architecture specification approved for documentation; implementation not started.  
+**Status:** Architecture specification plus offline RAW persistence, transport checkpoint/gap handling, and deterministic normalized-event identity slices implemented; normalized persistence and live transport remain pending.  
 **Date:** 2026-11-19  
 **Scope:** PR #23, branch `feat/damm-v2-economic-reconciliation`.
 

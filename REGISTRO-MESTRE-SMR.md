@@ -3547,3 +3547,18 @@ Confirmações:
 Conclusão: a inconsistência não é apenas ausência de teste. O manifesto não descreve corretamente o arquivo de projeção versionado e a trilha declarada para o manifesto de origem não está presente. O bruto original pode permanecer fora do repositório por política de privacidade, mas a proveniência precisa ser representada corretamente: nome da projeção exato e manifesto de origem incluído ou referência nula/externa documentada, conforme política do projeto. Não inventar SHA ou manifesto de origem.
 
 Nenhum arquivo funcional ou fixture foi modificado nesta inspeção. A correção da fixture e um teste de consumo continuam pendentes na PR #9; o HEAD atual segue sem CI aprovado após a adição da fixture. Progresso mantido: módulo **92%**, revisão técnica **93%**.
+
+
+## 237. CI de confirmação após auditoria da PR #9 — 19/11/2026
+
+Após as seções 235 e 236, o commit documental 28c30c3c6c07cb30eed354b7198838f868db18b1 foi validado pelo workflow da PR #25:
+
+- Run #1364, ID 44433622092, evento pull_request, actor Zapatta22.
+- Conclusão: SUCCESS.
+- Job test: instalação concluída; **539 testes executados, todos aprovados** (Ran 539 tests in 3.951s, OK).
+- python -m compileall -q src tests: aprovado.
+- PR #25 continua OPEN/DRAFT, não mergeada, mergeable=true na consulta posterior.
+
+A confirmação CI #1364 valida o conteúdo da branch de integração/Registro Mestre até este commit; não altera o estado da PR #9. A PR #9 continua com head dfac8ce8734808f0a4cbe817b49c47ee7058bd80 e run #145 action_required, sem jobs. A execução anterior #44223562333 aprovou 169 testes no head antigo 449129f9114420e4f136c0ad081c7820d2d0e399. A fixture CPMM/Jupiter recém-adicionada continua sem teste consumidor e com manifesto de projeção/proveniência inconsistente, conforme seções 235–236.
+
+Progresso mantido: módulo **92%**, revisão técnica **93%**. Nenhuma PR foi mergeada; main permanece intacta. Próxima ação: decidir e executar, em branch/PR apropriada, a correção de proveniência e teste dedicado da fixture da PR #9, ou obter uma validação CI aprovada para seu HEAD atual. Não considerar a PR #9 totalmente validada até ambas as lacunas serem resolvidas.

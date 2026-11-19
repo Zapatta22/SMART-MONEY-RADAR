@@ -1964,3 +1964,14 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - CI #1460 valida o HEAD anterior à atualização de ownership/withheld. Novo CI é obrigatório para o HEAD final desta seção.
 - Nenhuma alteração em `main`, RAW, SQLite, checkpoints, RPC/Helius ou estado on-chain.
 - Próxima ação: executar CI no HEAD final e revisar eventuais falhas; depois planejar a camada histórica de mint/epoch e TLV withheld.
+
+
+## 267. CI final da PR #23 após ownership/withheld e descrição atualizada — 19/11/2026
+
+- CI #1466 (`44445338461`) no commit de código/testes `2a809c06451c485db87ea54d24afddea1182fed5`: completed/success, **412 testes OK**, compileall aprovado.
+- CI #1468 (`44445369964`) no commit documental `503fd0a825f9c16f3219d1e009c299a307b366fa`: completed/success, **412 testes OK**, compileall aprovado.
+- A seção 266 e o commit `67feff6c6949ebfa3481b944ef9ed304f25c58e3` alteraram somente o Registro Mestre; nenhum código/teste mudou depois do commit funcional validado. A descrição da PR #23 foi atualizada para refletir a sincronização, os 412 testes e os limites de withheld.
+- PR #23 continua OPEN/DRAFT, mergeable/clean; compare contra o HEAD atual da PR #22: 30 commits à frente, 0 atrás, quatro arquivos próprios. PR #22 continua Draft. `main` permanece `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- O estado `RECONCILED` deve ser lido como reconciliação dos deltas base pre/post e transferências atribuídas. Os valores withheld esperados são expostos, mas o estado TLV histórico ainda não foi observado; epoch/config histórica do mint e withheld pre/post continuam pendentes.
+- Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain foi realizada.
+- Próxima etapa: desenhar e implementar a camada de prova histórica de TransferFeeConfig/epoch e TransferFeeAmount pre/post, sem usar estado atual como substituto histórico.

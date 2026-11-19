@@ -53,7 +53,7 @@ def _read_u16(data: bytes, offset: int) -> int:
 
 def _validate_coption_tag(data: bytes, offset: int, field: str) -> None:
     tag = data[offset:offset + 4]
-    if tag not in (b"\\x00\\x00\\x00\\x00", b"\\x01\\x00\\x00\\x00"):
+    if tag not in (bytes(4), (1).to_bytes(4, "little")):
         raise ValueError(f"tag COption inválida em {field}")
 
 

@@ -1116,6 +1116,14 @@ def verify_damm_v2_mint_fee_config(
         raise TypeError("snapshot de mint inválido")
     if not isinstance(transaction_signature, str) or not transaction_signature.strip():
         raise ValueError("transaction_signature é obrigatório")
+    if not isinstance(transaction_source_id, str) or not transaction_source_id.strip():
+        raise ValueError("transaction_source_id é obrigatório")
+    if (
+        not isinstance(transaction_payload_sha256, str)
+        or len(transaction_payload_sha256) != 64
+        or any(ch not in "0123456789abcdef" for ch in transaction_payload_sha256)
+    ):
+        raise ValueError("transaction_payload_sha256 inválido")
     for label, value in (
         ("transaction_epoch", transaction_epoch),
         ("transaction_slot", transaction_slot),

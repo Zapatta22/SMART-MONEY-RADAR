@@ -144,6 +144,71 @@ def benchmark_size(logical_events: int) -> dict:
         }
 
 
+def benchmark_witness_fanout(witness_count: int) -> dict:
+    with tempfile.TemporaryDirectory(prefix="smr-geyser-audit-fanout-") as tmp:
+        database = Path(tmp) / "fanout.sqlite"
+        raw = SQLiteGeyserRawStore(database)
+        raw.close()
+        now = "2026-01-01T00:00:00+00:00"
+        event_id = "fanout-event"
+        payload = b"one-logical-event-many-sequenced-deliveries"
+        digest = hashlib.sha256(payload).hexdigest()
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                """INSERT INTO geyser_raw_events
+                (event_id,source_id,event_kind,schema_version,payload_encoding,
+                 payload_bytes,payload_sha256,first_received_at)
+                VALUES (?,?,?,?,?,?,?,?)""",
+                (event_id,"fanout-source","account","benchmark-v1",
+                 "normalized_json",payload,digest,now),
+            )
+            connection.executemany(
+                """INSERT INTO geyser_raw_deliveries
+                (event_id,source_id,stream_id,stream_sequence,delivery_kind,received_at)
+                VALUES (?,?,?,?,?,?)""",
+                [(event_id,"fanout-source","unsequenced",None,"unknown",now)]
+                + [
+                    (event_id,"fanout-source","fanout-replay",sequence,"replay",now)
+                    for sequence in range(1,witness_count + 1)
+                ],
+            )
+
+        worker = subprocess.run(
+            [sys.executable,str(Path(__file__).resolve()),
+             "--worker-db",str(database)],
+            check=True,capture_output=True,text=True,
+        )
+        measured = json.loads(worker.stdout)
+        with sqlite3.connect(database) as connection:
+            row = connection.execute(
+                """SELECT witness_delivery_ids_json
+                   FROM geyser_unsequenced_delivery_audit
+                   WHERE classification='UNSEQUENCED_RECONCILED'"""
+            ).fetchone()
+            raw_count = connection.execute(
+                "SELECT COUNT(*) FROM geyser_raw_deliveries"
+            ).fetchone()[0]
+        witness_ids = json.loads(row[0]) if row else []
+        if len(witness_ids) != witness_count or witness_ids != sorted(witness_ids):
+            raise AssertionError("lista de testemunhas incompleta ou fora de ordem")
+        integrity = SQLiteGeyserRawStore(database).integrity_check()
+        if integrity != ["ok"] or raw_count != witness_count + 1:
+            raise AssertionError("integridade RAW/SQLite falhou no cenário fanout")
+        return {
+            "logical_events": 1,
+            "deliveries": witness_count + 1,
+            "witness_count": len(witness_ids),
+            "rebuild_seconds": measured["rebuild_seconds"],
+            "tracemalloc_peak_mib": measured["tracemalloc_peak_mib"],
+            "process_rss_peak_mib": measured["process_rss_peak_mib"],
+            "temp_db_pages": measured["temp_db_pages"],
+            "temp_db_page_size_bytes": measured["temp_db_page_size_bytes"],
+            "temp_db_allocated_bytes": measured["temp_db_allocated_bytes"],
+            "raw_deliveries_after_rebuild": raw_count,
+            "integrity_check": integrity,
+        }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(

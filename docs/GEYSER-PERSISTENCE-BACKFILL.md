@@ -406,3 +406,26 @@ transações são a próxima entrega.
 - Testar a migração a partir do schema atual e a sequência conta, transação,
   controle e conta, seguida de colisão, gap e reconexão. Validar o mesmo SHA-256
   após reiniciar o receptor e reconstruir a projeção.
+
+### Receptor offline e replay da captura
+
+O schema 3 introduz `geyser_frame_streams` e `geyser_wire_frames` no banco
+RAW. O receptor recebe um decodificador do schema Yellowstone e armazena o
+envelope `SubscribeUpdate` completo, o SHA-256 e a posição de transporte por
+entrega. O chamador identifica o provedor e atribui a sequência contínua antes
+de despachar qualquer tipo de frame. A mesma sequência cobre updates de conta,
+transações e mensagens de controle.
+
+Uma lacuna bloqueia o replay até a entrega ausente preencher a faixa. Uma
+colisão, um frame inválido ou uma posição anterior ao baseline torna o domínio
+inelegível para replay, com os bytes preservados para auditoria. A retomada
+da mesma sessão reabre o domínio existente. Uma reconexão usa novos IDs de
+stream e domínio dentro da mesma fonte.
+
+O replay confere os hashes dentro de um snapshot SQLite e produz a sequência
+com eventos decodificados ou a posição do frame de controle. Consumidores
+devem concluir a leitura antes de publicar projeções ou checkpoints, pois
+uma falha de integridade pode surgir no decorrer do cursor. A próxima camada
+deve vincular esse replay à ingestão lógica e aplicar a continuidade por
+domínio ao reconstruir a timeline. Receptores e fornecedores de rede ainda
+precisam de validação operacional.

@@ -2,6 +2,8 @@
 import base64
 import hashlib
 import json
+import sqlite3
+from tempfile import TemporaryDirectory
 from pathlib import Path
 import unittest
 
@@ -11,6 +13,10 @@ from smart_money_radar.data_sources.geyser_proto_adapter import (
     adapt_account_update,
     adapt_subscribe_update,
 )
+
+from smart_money_radar.data_sources.yellowstone_receiver import YellowstoneFrameReceiver
+from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+
 
 FIXTURE_DIR = (
     Path(__file__).parent / "fixtures" / "yellowstone" / "v16.1.5+solana.4.3.2"
@@ -95,6 +101,7 @@ def _protobuf_update_class():
     transaction_update = msg("SubscribeUpdateTransaction")
     fld(transaction_update, "transaction", 1, T.TYPE_MESSAGE, ".geyser.SubscribeUpdateTransactionInfo")
     fld(transaction_update, "slot", 2, T.TYPE_UINT64)
+    msg("SubscribeUpdatePing")
     update = msg("SubscribeUpdate")
     update.oneof_decl.add(name="update_oneof")
     update.field.add(name="filters", number=1, type=T.TYPE_STRING, label=T.LABEL_REPEATED)
@@ -103,6 +110,7 @@ def _protobuf_update_class():
         ("block_meta", 7, "SubscribeUpdateBlockMeta"),
         ("transaction", 4, "SubscribeUpdateTransaction"),
         ("entry_update_parent", 13, "SubscribeUpdateEntryUpdateParent"),
+        ("ping", 6, "SubscribeUpdatePing"),
     ):
         fld(update, n, i, T.TYPE_MESSAGE, ".geyser." + typ, 0)
     pool = descriptor_pool.DescriptorPool()
@@ -242,6 +250,114 @@ class YellowstoneProtoAdapterTests(unittest.TestCase):
                 message, source_id="yellowstone-validator-a",
                 stream_id="connection-a", stream_sequence=1,
             )
+
+
+class YellowstoneFrameReceiverTests(unittest.TestCase):
+    @staticmethod
+    def receiver(store, *, stream="connection-a", domain="domain-a", source="validator-a"):
+        return YellowstoneFrameReceiver(
+            store, _UPDATE.FromString, source_id=source, stream_id=stream,
+            ordering_domain_id=domain, initial_sequence=40,
+        )
+
+    @staticmethod
+    def transaction_frame():
+        message = _UPDATE()
+        message.transaction.slot = 123457
+        info = message.transaction.transaction
+        info.signature = bytes(range(64))
+        info.transaction.signatures.append(info.signature)
+        return message.SerializeToString()
+
+    def test_shared_sequence_replays_account_transaction_and_control_after_restart(self):
+        account = _parse("account_update").SerializeToString()
+        transaction = self.transaction_frame()
+        ping = _UPDATE()
+        ping.ping.SetInParent()
+        control = ping.SerializeToString()
+
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "wire.sqlite3"
+            store = SQLiteGeyserRawStore(database)
+            receiver = self.receiver(store)
+            first = receiver.receive(account, stream_sequence=40)
+            self.assertFalse(first.interrupted)
+            later = receiver.receive(control, stream_sequence=42)
+            self.assertTrue(later.interrupted)
+            self.assertEqual(later.contiguous_sequence, 40)
+            with self.assertRaisesRegex(ValueError, "interrompido"):
+                list(receiver.replay())
+            store.close()
+
+            store = SQLiteGeyserRawStore(database)
+            receiver = self.receiver(store)
+            recovered = receiver.receive(transaction, stream_sequence=41)
+            self.assertEqual(recovered.contiguous_sequence, 42)
+            self.assertFalse(recovered.interrupted)
+            self.assertEqual(store.get_wire_frame(later.frame_id), control)
+            self.assertEqual(recovered.payload_sha256, hashlib.sha256(transaction).hexdigest())
+            self.assertEqual(receiver.receive(transaction, stream_sequence=41).status, "duplicate")
+            events = list(receiver.replay())
+            self.assertEqual([sequence for sequence, _ in events], [40, 41, 42])
+            self.assertEqual(events[0][1].stream_sequence, 40)
+            self.assertEqual(events[1][1].ordering_key, ("validator-a", "domain-a", 41))
+            self.assertEqual(events[1][1].raw_payload, transaction)
+            self.assertIsNone(events[2][1])
+
+            with sqlite3.connect(database) as connection:
+                connection.execute(
+                    "UPDATE geyser_wire_frames SET payload_bytes = ? WHERE frame_id = ?",
+                    (b"tampered", recovered.frame_id),
+                )
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                store.get_wire_frame(recovered.frame_id)
+            with self.assertRaisesRegex(ValueError, "integridade"):
+                list(receiver.replay())
+
+    def test_collision_is_retained_and_reconnect_requires_fresh_domain(self):
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "wire.sqlite3"
+            store = SQLiteGeyserRawStore(database)
+            receiver = self.receiver(store)
+            raw = self.transaction_frame()
+            first = receiver.receive(raw, stream_sequence=40)
+            changed = _UPDATE.FromString(raw)
+            changed.filters.append("another filter")
+            other = changed.SerializeToString()
+            collision = receiver.receive(other, stream_sequence=40)
+            self.assertEqual(collision.status, "collision")
+            self.assertTrue(collision.interrupted)
+            self.assertEqual(store.get_wire_frame(first.frame_id), raw)
+            self.assertEqual(store.get_wire_frame(collision.frame_id), other)
+            store.close()
+
+            store = SQLiteGeyserRawStore(database)
+            receiver = self.receiver(store)
+            self.assertTrue(receiver.receive(raw, stream_sequence=40).tainted)
+            with self.assertRaisesRegex(ValueError, "anomalia histórica"):
+                list(receiver.replay())
+            with self.assertRaisesRegex(ValueError, "outro baseline"):
+                self.receiver(store, stream="connection-b")
+            with self.assertRaisesRegex(ValueError, "outro baseline"):
+                self.receiver(store, domain="domain-b")
+            reconnected = self.receiver(store, stream="connection-b", domain="domain-b")
+            self.assertFalse(reconnected.receive(raw, stream_sequence=40).interrupted)
+            self.assertEqual(list(reconnected.replay())[0][1].ordering_key,
+                             ("validator-a", "domain-b", 40))
+            separate_source = self.receiver(store, source="validator-b")
+            self.assertFalse(separate_source.receive(raw, stream_sequence=40).interrupted)
+
+    def test_malformed_frame_remains_auditable_and_taints_domain(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        self.addCleanup(store.close)
+        receiver = self.receiver(store)
+        item = receiver.receive(b"\xff", stream_sequence=40)
+        self.assertEqual(item.status, "invalid")
+        self.assertEqual(item.contiguous_sequence, 39)
+        self.assertEqual(store.get_wire_frame(item.frame_id), b"\xff")
+        self.assertTrue(receiver.receive(self.transaction_frame(), stream_sequence=40).tainted)
+        with self.assertRaisesRegex(ValueError, "anomalia histórica"):
+            list(receiver.replay())
 
 
 if __name__ == "__main__":

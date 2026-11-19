@@ -199,19 +199,22 @@ class SQLiteGeyserRecoveryStore:
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as connection, connection:
             row = connection.execute(
-                "SELECT status,retry_count,cursor_current FROM geyser_backfill_jobs WHERE job_id=?",
+                "SELECT status,cursor_current FROM geyser_backfill_jobs WHERE job_id=?",
                 (job_id,),
             ).fetchone()
             if row is None:
                 raise KeyError(job_id)
             if row[0] not in {"PENDING","PARTIAL","FAILED"}:
                 raise ValueError(f"não é possível iniciar job no estado {row[0]}")
-            attempt = row[1] + 1
+            attempt = connection.execute(
+                "SELECT COALESCE(MAX(attempt_number),0)+1 FROM geyser_backfill_attempts WHERE job_id=?",
+                (job_id,),
+            ).fetchone()[0]
             connection.execute("""
                 INSERT INTO geyser_backfill_attempts
                 (job_id,attempt_number,status,cursor_start,started_at)
                 VALUES (?,?, 'RUNNING', ?, ?)
-            """, (job_id,attempt,row[2],now))
+            """, (job_id,attempt,row[1],now))
             connection.execute("""
                 UPDATE geyser_backfill_jobs SET status='RUNNING',retry_count=?,
                     started_at=COALESCE(started_at,?),updated_at=?,finished_at=NULL,last_error=NULL
@@ -311,10 +314,14 @@ class SQLiteGeyserRecoveryStore:
         recovered = []
         with self._connect() as connection, connection:
             rows = connection.execute("""
-                SELECT job_id,retry_count,received_count,coverage_status
+                SELECT job_id,received_count
                 FROM geyser_backfill_jobs WHERE status='RUNNING' ORDER BY created_at,job_id
             """).fetchall()
-            for job_id,attempt,received,prior_coverage in rows:
+            for job_id,received in rows:
+                attempt = connection.execute(
+                    "SELECT COALESCE(MAX(attempt_number),0) FROM geyser_backfill_attempts WHERE job_id=?",
+                    (job_id,),
+                ).fetchone()[0]
                 status = "PARTIAL" if received else "FAILED"
                 coverage = "PARTIAL" if received else "UNKNOWN"
                 note = "execução interrompida; cursor preservado para retomada"

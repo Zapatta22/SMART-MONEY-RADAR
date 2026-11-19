@@ -3739,3 +3739,15 @@ O workflow #1377 (run `44435540809`) concluiu SUCCESS no commit `2f11f3ab453d4ab
 Estado conferido: PR #9 OPEN, HEAD `b9dfe8f...`, mergeable; PR #10 OPEN, HEAD `e7c02ad...`, mergeable, integração com base #9 ainda sem validação conjunta; PR #25 OPEN/DRAFT, HEAD `2f11f3a...`, mergeable. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Nenhum merge, rebase, atualização de branch da cadeia ou operação financeira executado.
 
 Progresso mantido: módulo **92%**, revisão técnica **93%**. A busca em `$HOME` sem resultado não fecha a pendência de proveniência.
+
+## 247. Busca no armazenamento compartilhado Android — 19/11/2026
+
+O usuário executou novamente a busca pelos nomes exatos do RAW e do manifesto original em `$HOME` e, em seguida, em `$HOME/storage/shared`. Ambos os comandos terminaram sem imprimir caminhos.
+
+Conclusão: os dois arquivos não foram localizados nem na árvore privada do Termux (`$HOME`) nem no armazenamento compartilhado Android acessível pelo Termux. Isso não exclui cópias em armazenamento externo removível não montado, backups, nuvem ou outro dispositivo. Não pedir para o usuário publicar conteúdo RAW e não fabricar manifesto.
+
+A pendência de proveniência permanece **não resolvida por indisponibilidade dos artefatos de origem**. A projeção anonimizada segue validada pelo hash do próprio manifesto e pelos testes estruturais da PR #9. Manter essas duas conclusões separadas.
+
+Próxima sequência: não insistir em buscas amplas sem indicação de outro local concreto; manter a ressalva documentada e continuar a revisão técnica da cadeia #9 → #10 sem rebase, merge ou alteração de branches. A validação combinada da PR #10 ainda depende de uma integração controlada autorizada, que não foi executada.
+
+Estado preservado: PR #9 e #10 abertas; PR #25 OPEN/DRAFT; `main` intacta. Progresso mantido em módulo **92%** e revisão técnica **93%**.

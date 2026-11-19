@@ -115,12 +115,16 @@ def _evidence(context, input_transfer, output_transfer, referral=None):
     )
 
 
+def _withheld_account_data(amount):
+    base = bytearray(165)
+    base[108] = 1
+    return bytes(base) + bytes([2]) + (2).to_bytes(2, "little") + (8).to_bytes(2, "little") + amount.to_bytes(8, "little")
+
+
 def _withheld_delta(pre, post):
-    def account_data(amount):
-        base = bytearray(165)
-        base[108] = 1
-        return bytes(base) + bytes([2]) + (2).to_bytes(2, "little") + (8).to_bytes(2, "little") + amount.to_bytes(8, "little")
-    return decode_transfer_fee_amount_delta(account_data(pre), account_data(post))
+    return decode_transfer_fee_amount_delta(
+        _withheld_account_data(pre), _withheld_account_data(post)
+    )
 
 
 

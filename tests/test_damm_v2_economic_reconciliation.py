@@ -1,5 +1,6 @@
 import hashlib
 import unittest
+from dataclasses import replace
 
 from smart_money_radar.data_sources.damm_v2_accounts import DammV2SwapAccounts
 from smart_money_radar.data_sources.damm_v2_analyzer import DammV2SwapEventAssociation
@@ -1093,6 +1094,108 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                 transaction_epoch=10, transaction_slot=123, transaction_order=50,
                 source_id="rpc-a", transaction_payload_sha256="a" * 64
         )
+
+
+    def test_mint_snapshot_rejects_different_source_id(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshots = _mint_fee_snapshots()
+        snapshots[0] = replace(snapshots[0], source_id="rpc-b")
+        result = verify_damm_v2_mint_fee_config(
+            base, snapshots, transaction_signature="signature-1",
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+            transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("source_id do snapshot diverge", result.reason)
+
+    def test_mint_snapshot_rejects_raw_bytes_not_matching_digest(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshots = _mint_fee_snapshots()
+        snapshots[0] = replace(
+            snapshots[0], pre_state_data=_mint_account_data(400)
+        )
+        result = verify_damm_v2_mint_fee_config(
+            base, snapshots, transaction_signature="signature-1",
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+            transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("proveniência do mint ausente", result.reason)
+
+    def test_withheld_snapshot_rejects_different_source_id(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshot = DammV2WithheldFeeSnapshot(
+            token_account="vault-a", mint="mint-a",
+            decoded_delta=_withheld_delta(10, 15),
+            transaction_signature="signature-1", transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
+            source="ordered-account-snapshot-fixture",
+            pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
+            source_id="rpc-b", transaction_payload_sha256="a" * 64,
+            pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(),
+            post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+            pre_state_data=_withheld_account_data(10),
+            post_state_data=_withheld_account_data(15),
+        )
+        result = verify_damm_v2_withheld_fee_deltas(
+            base, [snapshot], transaction_signature="signature-1",
+            transaction_slot=123, transaction_order=50,
+            transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("source_id do snapshot diverge", result.reason)
+
+    def test_withheld_snapshot_rejects_raw_bytes_not_matching_digest(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshot = DammV2WithheldFeeSnapshot(
+            token_account="vault-a", mint="mint-a",
+            decoded_delta=_withheld_delta(10, 15),
+            transaction_signature="signature-1", transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49, post_snapshot_order=51,
+            source="ordered-account-snapshot-fixture",
+            pre_state_ref="pre-state-hash", post_state_ref="post-state-hash",
+            source_id="rpc-a", transaction_payload_sha256="a" * 64,
+            pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(),
+            post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+            pre_state_data=_withheld_account_data(11),
+            post_state_data=_withheld_account_data(15),
+        )
+        result = verify_damm_v2_withheld_fee_deltas(
+            base, [snapshot], transaction_signature="signature-1",
+            transaction_slot=123, transaction_order=50,
+            transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("proveniência/hash de snapshot ausente", result.reason)
+
 
 if __name__ == "__main__":
     unittest.main()

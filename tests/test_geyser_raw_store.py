@@ -1,4 +1,5 @@
 import hashlib
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -212,6 +213,31 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "após ingestão"):
             store.register_stream("yellowstone-mainnet", "stream-a", 1)
         store.close()
+
+    def test_existing_schema_v1_database_upgrades_to_v2(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "smr_geyser.sqlite"
+            store = SQLiteGeyserRawStore(path)
+            store.close()
+            connection = sqlite3.connect(path)
+            try:
+                connection.execute("DROP TABLE geyser_transport_anomalies")
+                connection.execute("DROP TABLE geyser_transport_gaps")
+                connection.execute("DROP TABLE geyser_transport_checkpoints")
+                connection.execute("DELETE FROM geyser_schema_migrations WHERE version = 2")
+                connection.commit()
+            finally:
+                connection.close()
+            upgraded = SQLiteGeyserRawStore(path)
+            checkpoint = upgraded.register_stream("yellowstone-mainnet", "stream-v1", 7)
+            self.assertEqual(checkpoint["initial_sequence"], 7)
+            with upgraded._connection() as connection:
+                version = connection.execute(
+                    "SELECT MAX(version) FROM geyser_schema_migrations"
+                ).fetchone()[0]
+            self.assertEqual(version, 2)
+            self.assertEqual(upgraded.integrity_check(), ["ok"])
+            upgraded.close()
 
     def test_invalid_event_or_delivery_is_rejected_before_write(self):
         store = SQLiteGeyserRawStore(":memory:")

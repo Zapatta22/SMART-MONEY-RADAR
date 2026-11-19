@@ -42,11 +42,14 @@ class TransferFeeStateDecoderTests(unittest.TestCase):
         self.assertEqual(value.fee_for_epoch(100), value.newer_transfer_fee)
 
     def test_account_withheld_amount(self):
-        self.assertEqual(decode_transfer_fee_amount(account_data([tlv(2, u64(987))])).withheld_amount, 987)
+        value = decode_transfer_fee_amount(account_data([tlv(2, u64(987))]))
+        self.assertEqual(value.withheld_amount, 987)
+        self.assertEqual(value.extension_types, (2,))
 
     def test_skips_known_other_extension(self):
         value = decode_transfer_fee_config(mint_data([tlv(3, b"other"), tlv(1, config())]))
         self.assertEqual(value.newer_transfer_fee.basis_points, 50)
+        self.assertEqual(value.extension_types, (1, 3))
 
     def test_rejects_unknown_extension_type(self):
         with self.assertRaisesRegex(ValueError, "desconhecido"):

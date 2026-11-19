@@ -43,12 +43,73 @@ def _event_data():
     body = (
         bytes(32) + bytes((0, 0, 0))
         + _u64(100) + _u64(90) + bytes((0,))
-        + _u64(100) + _u64(0) + _u64(0) + _u64(90) + bytes(16)
+        + _u64(95) + _u64(0) + _u64(0) + _u64(90) + (1 << 64).to_bytes(16, "little")
         + _u64(0) + _u64(0) + _u64(0) + _u64(0)
-        + _u64(0) + _u64(0) + _u64(0)
-        + _u64(1) + _u64(2) + _u64(3)
+        + _u64(100) + _u64(90) + _u64(90)
+        + _u64(1_700_000_000) + _u64(1_000) + _u64(2_000)
     )
     return EVENT_CPI_TAG + EVT_SWAP2_DISCRIMINATOR + body
+
+
+def _transfer_checked_with_fee(amount, decimals, fee):
+    data = bytes((26, 1)) + _u64(amount) + bytes((decimals,)) + _u64(fee)
+    return _b58encode(data)
+
+
+def _token_balance_entry(index, mint, owner, amount):
+    return {
+        "accountIndex": index,
+        "mint": mint,
+        "owner": owner,
+        "uiTokenAmount": {"amount": str(amount), "decimals": 6},
+    }
+
+
+def _damm_complete_transaction():
+    raw = _damm_transaction()
+    payload = raw["result"]
+    keys = payload["transaction"]["message"]["accountKeys"]
+    payload["transaction"]["message"]["instructions"] = [{
+        "programId": METEORA_DAMM_V2_PROGRAM_ID,
+        "accounts": list(range(14)),
+        "data": _b58encode(_swap_data()),
+    }]
+    payload["meta"]["innerInstructions"] = [{
+        "index": 0,
+        "instructions": [
+            {
+                "programId": TOKEN_2022_PROGRAM_ID,
+                "accounts": [2, 6, 4, 0],
+                "data": _transfer_checked_with_fee(100, 6, 5),
+                "stackHeight": 2,
+            },
+            {
+                "programId": TOKEN_2022_PROGRAM_ID,
+                "accounts": [5, 7, 3, 0],
+                "data": _transfer_checked_with_fee(90, 6, 0),
+                "stackHeight": 2,
+            },
+            {
+                "programId": METEORA_DAMM_V2_PROGRAM_ID,
+                "accounts": [0],
+                "data": _b58encode(_event_data()),
+                "stackHeight": 2,
+            },
+        ],
+    }]
+    payload["meta"]["preTokenBalances"] = [
+        _token_balance_entry(2, keys[6], "wallet", 1_000),
+        _token_balance_entry(4, keys[6], keys[0], 1_000),
+        _token_balance_entry(5, keys[7], keys[0], 1_000),
+        _token_balance_entry(3, keys[7], "wallet", 1_000),
+    ]
+    payload["meta"]["postTokenBalances"] = [
+        _token_balance_entry(2, keys[6], "wallet", 900),
+        _token_balance_entry(4, keys[6], keys[0], 1_095),
+        _token_balance_entry(5, keys[7], keys[0], 910),
+        _token_balance_entry(3, keys[7], "wallet", 1_090),
+    ]
+    return raw
 
 
 def _damm_transaction(invalid_account_index=False):
@@ -202,6 +263,38 @@ class SolanaTransactionEvidenceBundleTests(unittest.TestCase):
         self.assertTrue(bundle.damm_v2_issues)
         self.assertFalse(bundle.damm_v2_complete)
 
+
+    def test_full_bundle_reconciles_damm_v2_economics(self):
+        bundle = build_solana_transaction_evidence_bundle(
+            _damm_complete_transaction(), source_id="rpc-a"
+        )
+
+        self.assertTrue(bundle.structurally_complete)
+        self.assertEqual(len(bundle.damm_v2_associations), 1)
+        self.assertEqual(bundle.damm_v2_associations[0].status, "MATCHED")
+        self.assertEqual(bundle.damm_v2_transfer_evidence[0].status, "ATTRIBUTED")
+
+        result = reconcile_solana_transaction_damm_v2_bundle(
+            bundle, monitored_wallet="wallet"
+        )
+
+        self.assertEqual(result.status, "RECONCILED", result.reason)
+        self.assertEqual(result.operation_count, 1)
+        self.assertEqual(len(result.expected_account_deltas), 4)
+        self.assertEqual(result.withheld_fee_status, "EXPECTED_NOT_VERIFIED")
+        self.assertEqual(result.mint_fee_config_status, "EXPECTED_NOT_VERIFIED")
+
+    def test_full_bundle_blocks_economic_delta_mismatch(self):
+        raw = _damm_complete_transaction()
+        raw["result"]["meta"]["postTokenBalances"][0]["uiTokenAmount"]["amount"] = "901"
+        bundle = build_solana_transaction_evidence_bundle(raw, source_id="rpc-a")
+
+        result = reconcile_solana_transaction_damm_v2_bundle(
+            bundle, monitored_wallet="wallet"
+        )
+
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("delta diverge", result.reason)
 
     def test_economic_reconciler_uses_bundle_and_blocks_missing_transfers(self):
         bundle = build_solana_transaction_evidence_bundle(

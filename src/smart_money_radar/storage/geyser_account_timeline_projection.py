@@ -221,7 +221,7 @@ class SQLiteGeyserAccountTimelineProjection:
             source_count = connection.execute(
                 "SELECT COUNT(*) FROM geyser_raw_events"
             ).fetchone()[0]
-            timeline = AccountUpdateTimeline()
+            timelines = {}
             replayed = 0
             skipped = source_count - len(rows)
             for row in rows:
@@ -230,6 +230,7 @@ class SQLiteGeyserAccountTimelineProjection:
                     skipped += 1
                     continue
                 replayed += 1
+                timeline = timelines.setdefault(row[1], AccountUpdateTimeline())
                 if isinstance(event, NormalizedAccountUpdate):
                     timeline.add(event)
                 elif isinstance(event, NormalizedSlotUpdate):
@@ -245,16 +246,17 @@ class SQLiteGeyserAccountTimelineProjection:
             ).fetchone()
             generation = (prior[0] if prior else 0) + 1
             account_rows = []
-            for record in timeline.timeline_records():
-                update = record.update
-                event_id = self._event_id_for(update, rows)
-                account_rows.append((
-                    event_id, update.source, update.pubkey, update.slot,
-                    update.write_version, update.bank_id, update.txn_signature,
-                    record.continuity_epoch, int(record.baseline),
-                    int(record.continuity_baseline),
-                    timeline.bank_lineage_tracker.account_bank_status(update),
-                ))
+            for timeline in timelines.values():
+                for record in timeline.timeline_records():
+                    update = record.update
+                    event_id = self._event_id_for(update, rows)
+                    account_rows.append((
+                        event_id, update.source, update.pubkey, update.slot,
+                        update.write_version, update.bank_id, update.txn_signature,
+                        record.continuity_epoch, int(record.baseline),
+                        int(record.continuity_baseline),
+                        timeline.bank_lineage_tracker.account_bank_status(update),
+                    ))
             # Account event IDs are resolved from the stable logical identity; no transport fields enter it.
             connection.execute("DELETE FROM geyser_account_timeline_writes")
             connection.executemany("""
@@ -264,21 +266,21 @@ class SQLiteGeyserAccountTimelineProjection:
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """, account_rows)
 
-            tracker = timeline.bank_lineage_tracker
             bank_rows = []
-            for node in tracker.banks:
-                parent = node.parent_key
-                replaces = node.replaces_bank
-                bank_rows.append((
-                    node.key.source_id,node.key.slot,node.key.bank_id,node.parent_slot,
-                    node.blockhash,node.parent_blockhash,
-                    parent.source_id if parent else None,parent.slot if parent else None,
-                    parent.bank_id if parent else None,
-                    json.dumps(sorted(node.statuses),separators=(",",":")),
-                    int(node.dead),int(node.invalidated),int(node.cleared_by_parent_update),
-                    node.parent_block_id.hex() if node.parent_block_id is not None else None,
-                    replaces.slot if replaces else None,replaces.bank_id if replaces else None,
-                ))
+            for timeline in timelines.values():
+                for node in timeline.bank_lineage_tracker.banks:
+                    parent = node.parent_key
+                    replaces = node.replaces_bank
+                    bank_rows.append((
+                        node.key.source_id,node.key.slot,node.key.bank_id,node.parent_slot,
+                        node.blockhash,node.parent_blockhash,
+                        parent.source_id if parent else None,parent.slot if parent else None,
+                        parent.bank_id if parent else None,
+                        json.dumps(sorted(node.statuses),separators=(",",":")),
+                        int(node.dead),int(node.invalidated),int(node.cleared_by_parent_update),
+                        node.parent_block_id.hex() if node.parent_block_id is not None else None,
+                        replaces.slot if replaces else None,replaces.bank_id if replaces else None,
+                    ))
             connection.execute("DELETE FROM geyser_bank_lineage_nodes")
             connection.executemany("""
                 INSERT INTO geyser_bank_lineage_nodes
@@ -296,15 +298,16 @@ class SQLiteGeyserAccountTimelineProjection:
                 VALUES (?,?,?,?,?,?,?)
             """, [
                 (generation,i,g.stream_id,g.expected_sequence,g.received_sequence,g.reason,g.continuity_epoch)
-                for i,g in enumerate(timeline.gaps)
+                for i,g in enumerate(gap for timeline in timelines.values() for g in timeline.gaps)
             ])
             conflicts = []
-            for c in timeline.conflicts:
-                conflicts.append(("account",None,c.pubkey,c.slot,c.write_version,c.reason,None))
-            for c in tracker.conflicts:
-                key = c.key
-                conflicts.append(("bank",key.source_id if key else None,None,
-                                  key.slot if key else None,None,c.reason,c.detail))
+            for timeline in timelines.values():
+                for c in timeline.conflicts:
+                    conflicts.append(("account",None,c.pubkey,c.slot,c.write_version,c.reason,None))
+                for c in timeline.bank_lineage_tracker.conflicts:
+                    key = c.key
+                    conflicts.append(("bank",key.source_id if key else None,None,
+                                      key.slot if key else None,None,c.reason,c.detail))
             connection.execute("DELETE FROM geyser_timeline_conflicts")
             connection.executemany("""
                 INSERT INTO geyser_timeline_conflicts

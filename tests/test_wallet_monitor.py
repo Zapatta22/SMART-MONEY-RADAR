@@ -676,5 +676,70 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(store.get_checkpoint("public-wallet"))
 
 
+    async def test_damm_ready_runs_cpmm_and_cpmm_owns_checkpoint_completion(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import tempfile
+        from pathlib import Path
+
+        stop_event = asyncio.Event()
+
+        class Source:
+            async def get_transaction_async(self, signature: str):
+                stop_event.set()
+                return simulated_transaction(signature)
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "history.sqlite3")
+            monitor = WalletMonitor(
+                HeliusSettings(api_key="simulated-key"), Source(), store,  # type: ignore[arg-type]
+            )
+            order: list[str] = []
+
+            def damm_ready(*_args, **_kwargs):
+                order.append("damm_v2")
+                return SimpleNamespace(
+                    ready_for_next_venue=True,
+                    reconciled_swaps=0,
+                    decoded_swaps=0,
+                    unresolved_swaps=0,
+                )
+
+            def cpmm_complete(*_args, **kwargs):
+                order.append("raydium_cpmm")
+                store.mark_processed(
+                    "public-wallet", "ready-signature",
+                    advance_checkpoint=kwargs["advance_checkpoint"],
+                )
+                return SimpleNamespace(
+                    status="no_cpmm_swaps",
+                    unresolved_swaps=0,
+                    decoded_swaps=0,
+                    saved_bundles=0,
+                )
+
+            with patch(
+                "smart_money_radar.services.wallet_monitor.process_damm_v2_observation",
+                side_effect=damm_ready,
+            ), patch(
+                "smart_money_radar.services.wallet_monitor.process_raydium_cpmm_observation",
+                side_effect=cpmm_complete,
+            ) as cpmm:
+                result = await monitor._collect_transaction(
+                    "public-wallet", "ready-signature", stop_event
+                )
+
+            self.assertTrue(result)
+            self.assertEqual(order, ["damm_v2", "raydium_cpmm"])
+            self.assertEqual(cpmm.call_args.kwargs["advance_checkpoint"], True)
+            self.assertTrue(
+                store.has_processed_signature("public-wallet", "ready-signature")
+            )
+            self.assertEqual(
+                store.get_checkpoint("public-wallet"), "ready-signature"
+            )
+            store.close()
+
+
 if __name__ == "__main__":
     unittest.main()

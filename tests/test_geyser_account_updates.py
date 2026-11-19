@@ -32,7 +32,7 @@ class NormalizeAccountUpdateTests(unittest.TestCase):
         self.assertEqual(result.write_version, 77)
         self.assertEqual(result.txn_signature, "signature-1")
         self.assertEqual(result.data, b"raw-account-bytes")
-        self.assertEqual(result.ordering_key, (123_456, 77, 9))
+        self.assertEqual(result.ordering_key, (123_456, 77))
         self.assertEqual(result.stream_id, "connection-1")
         self.assertEqual(result.stream_sequence, 9)
 

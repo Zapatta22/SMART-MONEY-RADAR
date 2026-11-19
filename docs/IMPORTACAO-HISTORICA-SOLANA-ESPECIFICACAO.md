@@ -483,3 +483,11 @@ A auditoria dos cinco RAW não comprovou reconciliação econômica: fixture 1 a
 A seção 12 de docs/DAMM-V2-RECONCILIACAO-ECONOMICA.md registra a auditoria do código MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f99868ba8e. Foram confirmadas as relações entre transferência bruta de entrada, crédito líquido do vault, taxas AMM, transferência bruta de saída, crédito líquido do usuário, PartialFill e ExactOut. Também foi confirmado que referral gera transferência separada e que o programa usa TransferChecked com a TransferFeeConfig do mint, não exigindo opcode TransferCheckedWithFee específico.
 
 O estado withheld Token-2022 e a configuração histórica do mint continuam exigindo evidência adicional. A especificação não autoriza MATCHED quando esses dados não estão disponíveis. Nenhum reconciliador foi implementado.
+
+## 10. Guardas adicionais confirmadas no inspetor e no planejador
+
+- A ausência de `meta.err` produz `EXECUTION_STATUS_UNKNOWN`; nunca é tratada como sucesso on-chain nem como `READY_FOR_REVIEW`.
+- Somente `meta.err = null` comprova sucesso de execução no payload. Qualquer erro não nulo resulta em `ON_CHAIN_FAILED`.
+- Declarações de carteira em `wallet_address` e `monitored_wallet_address` precisam ser strings não vazias; campos inválidos resultam em `WALLET_MAPPING_INVALID`, e declarações divergentes em `WALLET_MAPPING_CONFLICT`.
+- O inspetor offline e os auditores de fixtures rejeitam manifestos/payloads por symlink e exigem que os caminhos resolvidos permaneçam dentro do diretório autorizado. O inspetor não segue links para fora da raiz.
+- `READY_FOR_REVIEW` continua sendo apenas uma fila de revisão humana; não autoriza importação, gravação, avanço de checkpoint ou execução.

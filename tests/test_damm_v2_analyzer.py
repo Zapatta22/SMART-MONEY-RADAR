@@ -170,6 +170,13 @@ class DammV2AnalyzerTests(unittest.TestCase):
         raw["result"]["meta"]["err"] = {"InstructionError": [0, "Custom"]}
         self.assertEqual(analyze_damm_v2_swap_events(raw), [])
 
+    def test_missing_execution_status_never_creates_associations(self):
+        raw = transaction(
+            [instruction(swap_data())], {0: [instruction(event_data(), 2)]}
+        )
+        del raw["result"]["meta"]["err"]
+        self.assertEqual(analyze_damm_v2_swap_events(raw), [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -120,6 +120,34 @@ class HistoricalImportPlannerTests(unittest.TestCase):
         self.assertFalse(report["network_access"])
         self.assertFalse(report["checkpoint_changes"])
 
+    def test_missing_execution_status_is_not_ready_for_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = make_pair(root)
+            payload = json.loads((root / "candidate.raw.json").read_text())
+            del payload["result"]["meta"]["err"]
+            raw = json.dumps(payload).encode()
+            (root / "candidate.raw.json").write_bytes(raw)
+            manifest = json.loads(manifest_path.read_text())
+            manifest["sha256"] = hashlib.sha256(raw).hexdigest()
+            manifest_path.write_text(json.dumps(manifest))
+            mapping = root / "wallet-map.json"
+            mapping.write_text(json.dumps({SIG: WALLET}))
+            report = build_plan(root, mapping)
+        self.assertEqual(
+            report["status_counts"], {"EXECUTION_STATUS_UNKNOWN": 1}
+        )
+
+    def test_invalid_manifest_wallet_declaration_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = make_pair(root)
+            manifest = json.loads(manifest_path.read_text())
+            manifest["wallet_address"] = 12345
+            manifest_path.write_text(json.dumps(manifest))
+            report = build_plan(root)
+        self.assertEqual(report["status_counts"], {"WALLET_MAPPING_INVALID": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

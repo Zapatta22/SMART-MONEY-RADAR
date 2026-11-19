@@ -139,3 +139,11 @@ O script `tools/run_smr_dashboard_android.sh` prepara e inicia a API local no An
 ### CI do inicializador Termux
 
 Run `44240462766` passou integralmente após adicionar `tools/run_smr_dashboard_android.sh` e os testes de pré-validação: **245 testes unitários aprovados** e `python -m compileall -q src tests` aprovado. Os testes verificam sintaxe Bash e que banco inexistente/incompleto é rejeitado sem criação nem migração.
+
+## Painel local e acesso SQLite estritamente somente leitura
+
+O comando `smr-api` abre o banco com `SQLiteEventStore(..., read_only=True)`. Nesse modo, o EventStore exige arquivo existente, valida o conjunto de tabelas esperado e conecta via URI SQLite `mode=ro`. Não executa `_initialize()`, não cria diretórios/tabelas/índices, não aplica migrações e não habilita `journal_mode=WAL`. Tentativas de escrita falham no próprio SQLite.
+
+O inicializador Android também verifica a existência e o esquema antes de iniciar o processo; a proteção real permanece no EventStore, portanto chamar `smr-api` diretamente não contorna o modo somente leitura. O servidor HTTP aceita somente IP loopback, exige token Bearer e rejeita métodos de mutação. O painel não inicia Helius/RPC, não coleta transações e não assina/envia ordens.
+
+Testes específicos cobrem arquivo ausente (não criado), consulta permitida, escrita rejeitada e esquema incompleto (sem migração automática).

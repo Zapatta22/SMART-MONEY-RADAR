@@ -79,12 +79,26 @@ def plan_manifest(manifest_path: Path, root: Path, wallet_map: dict[str, str], i
     meta = result.get("meta")
     if not isinstance(meta, dict):
         return {"index": index, "status": "MANIFEST_INVALID"}
+    if "err" not in meta:
+        return {"index": index, "status": "EXECUTION_STATUS_UNKNOWN"}
     if meta.get("err") is not None:
         return {"index": index, "status": "ON_CHAIN_FAILED"}
 
     signature = audit.signature
     mapped_wallet = wallet_map.get(signature)
-    manifest_wallet = manifest.get("wallet_address", manifest.get("monitored_wallet_address"))
+    declared_wallets = [
+        manifest.get(field)
+        for field in ("wallet_address", "monitored_wallet_address")
+        if field in manifest and manifest.get(field) is not None
+    ]
+    if any(
+        not isinstance(wallet, str) or not wallet.strip()
+        for wallet in declared_wallets
+    ):
+        return {"index": index, "status": "WALLET_MAPPING_INVALID"}
+    if len(set(declared_wallets)) > 1:
+        return {"index": index, "status": "WALLET_MAPPING_CONFLICT"}
+    manifest_wallet = declared_wallets[0] if declared_wallets else None
     if mapped_wallet and manifest_wallet and mapped_wallet != manifest_wallet:
         return {"index": index, "status": "WALLET_MAPPING_CONFLICT"}
     if not mapped_wallet and not manifest_wallet:

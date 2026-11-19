@@ -3206,3 +3206,11 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 
 ### Próxima ação
 - Aguardar e verificar os dois checks no merge commit `e45d9483f852b832bea81530e3a404578953a0de`; se ambos SUCCESS, atualizar o Registro Mestre e seguir com revisão integrada da PR #22. Não fazer merge da PR #22 sem autorização expressa.
+
+### Complemento da validação pós-merge — 19/11/2026
+- Os dois checks no merge commit `e45d9483f852b832bea81530e3a404578953a0de` foram concluídos SUCCESS:
+  - Run `44616389430`, job `135886106076`: SUCCESS; Run unit tests e Compile source and tests SUCCESS.
+  - Run `44616402476`, job `135886150325`: SUCCESS; Run unit tests e Compile source and tests SUCCESS.
+- PR #22 consultada após a integração: OPEN/DRAFT, sem merge. GitHub reportou `mergeable=false` no snapshot consultado; isso precisa ser investigado na revisão da PR #22, não deve ser tratado como aprovado ou como conflito específico sem diagnóstico adicional.
+- `main` novamente verificada: permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Registro Mestre atualizado para refletir a conclusão dos dois checks. Este commit é exclusivamente documental.

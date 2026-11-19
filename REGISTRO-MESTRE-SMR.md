@@ -3426,3 +3426,61 @@ Limite de evidência que permanece:
 - O teste fecha a cobertura de integração/coordenador com ambos os pipelines positivos num mesmo payload composto.
 - Ainda não há uma assinatura/fixture Mainnet original demonstrando coocorrência real de swap DAMM v2 e swap Raydium CPMM na mesma transação. Não confundir fixture composta com evidência on-chain simultânea.
 - Progresso estimado: conclusão do módulo permanece **92%**; revisão técnica estimada **93%**. A pendência final é a revisão da cadeia de merge e decidir se a evidência Mainnet simultânea será requisito de fechamento ou validação posterior controlada. PR #25 segue OPEN/DRAFT, sem merge e sem alteração na main.
+
+
+## 234. Auditoria de ancestralidade das PRs empilhadas — 19/11/2026
+
+Foi investigada a diferença entre os \`base_sha\` registrados nas PRs #8, #10, #15 e #18 e os HEADs atuais das respectivas branches-base.
+
+### Resultado das comparações de branches atuais
+
+1. **#7 → #8**
+   - Base atual \`feat/raydium-cpmm-economic-reconciliation\`: \`e72f893b0c717f4d353d18f765d26f22de516b0e\`.
+   - \`base_sha\` registrado na #8: \`d2ac22625556303d22031435abd55b7b6cc06776\`.
+   - O SHA antigo é ancestral do atual; a branch-base avançou um commit.
+   - Comparação da base atual com a head atual da #8: base à frente em 1 commit e head à frente em 5 commits, com merge-base no SHA antigo.
+
+2. **#9 → #10**
+   - Base atual \`feat/raydium-cpmm-transfer-reconciliation\`: \`dfac8ce8734808f0a4cbe817b49c47ee7058bd80\`.
+   - \`base_sha\` registrado na #10: \`5b57955fa843e4880bb6b8099cb455c160da83e4\`.
+   - O SHA antigo é ancestral do atual; a branch-base avançou um commit.
+   - Comparação da base atual com a head atual da #10: base à frente em 1 commit e head à frente em 7 commits, com merge-base no SHA antigo.
+
+3. **#14 → #15**
+   - Base atual \`integration/pr13-sqlite-persistence\`: \`633dc7b6830672ec1aff61f2dd071c73a5dc31fe\`.
+   - \`base_sha\` registrado na #15: \`894b1b0db413f10a456a63f22d2d715e2c6c4cc1\`.
+   - O SHA antigo é ancestral do atual; a branch-base avançou um commit.
+   - Comparação da base atual com a head atual da #15: base à frente em 1 commit e head à frente em 54 commits, com merge-base no SHA antigo.
+
+4. **#17 → #18**
+   - Base atual \`feat/damm-v2-economic-fee-math\`: \`fd0f73284039bacc4ec4e6b6a88def21f813ce0d\`.
+   - \`base_sha\` registrado na #18: \`58606137e3d096e19b34eb84bae604101c07fef3\`.
+   - A base avançou sete commits depois do SHA registrado na PR.
+   - A comparação das branches atuais confirma que a head da #18 contém a base atual como ancestral; head está 24 commits à frente e não está atrás. Esta transição está alinhada.
+
+### Interpretação e estado de mergeabilidade
+
+- As quatro diferenças são explicadas por atualizações posteriores das branches-base; não foi encontrada evidência de perda de ancestralidade.
+- Nas três primeiras transições (#7→#8, #9→#10 e #14→#15), a branch filha está um commit atrás da branch-base atual. Isso deve ser levado em conta na atualização/integração da PR filha, com CI posterior; não presumir que o snapshot antigo da base representa o estado atual.
+- PRs #8, #10, #15 e #18 foram consultadas novamente: todas OPEN e \`mergeable=true\`. Isso é apenas a avaliação atual do GitHub, não substitui validação de CI após integração.
+- PR #20 continua CLOSED sem merge. Sua própria descrição registra encerramento deliberado porque o decoder isolado duplicava o decoder DAMM v2 existente. O arquivo exclusivo da #20 não está na \`main\` nem na branch-base da #21; isso é coerente com a decisão de descartar a implementação redundante.
+- A cadeia #21→#25 continua alinhada por SHA entre PRs consecutivas. PR #21 parte da head da #18; PR #25 permanece OPEN/DRAFT e não mergeada.
+- \`main\` permanece no SHA conhecido \`5060bc65ddf181a4736fdb662c44c3fec0dd7259\`; nenhuma alteração foi feita nela.
+
+### CI dos commits relevantes examinados
+
+- #7 head \`e72f893b...\`: workflow #105 SUCCESS.
+- #8 head \`a6a75128...\`: workflow #99 SUCCESS.
+- #9 head \`dfac8ce8...\`: workflow #145 terminou com conclusão \`action_required\`, sem jobs executados. **Não é falha de teste, mas também não é CI aprovado**; requer esclarecimento/aprovação ou nova execução válida antes de considerar esta etapa validada.
+- #10 head \`e7c02adb...\`: workflow #115 SUCCESS.
+- #14 head \`633dc7b6...\`: workflow #300 SUCCESS.
+- #15 head \`ebac8180...\`: workflow #349 SUCCESS.
+- #17 head \`fd0f7328...\`: workflow #514 SUCCESS.
+- #18 head \`079a7dd6...\`: workflow #528 SUCCESS.
+- A PR #25 mantém a validação já registrada na seção 233 e no CI #1361: 539 testes e compileall aprovados.
+
+### Conclusão e próxima ação
+
+A auditoria de ancestralidade esclareceu as diferenças dos quatro pontos. A cadeia não deve ser reordenada por causa dessas diferenças. A sequência de dependências continua de baixo para cima, começando pelas PRs ancestrais; porém, antes de autorizar qualquer merge, deve-se resolver o estado \`action_required\` da CI da head da #9 e confirmar os checks das PRs no momento da integração. Não fazer merge, atualizar branches, alterar bases ou executar reruns sem a etapa de autorização correspondente.
+
+Progresso estimado mantido: módulo **92%**; revisão técnica **93%**. A fixture Mainnet original com swaps positivos DAMM v2 e CPMM simultâneos continua como lacuna distinta da fixture composta de integração. Nenhuma PR foi mergeada e nenhuma alteração funcional foi feita nesta auditoria.

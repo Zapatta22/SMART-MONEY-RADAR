@@ -18,9 +18,12 @@ from smart_money_radar.storage.geyser_recovery_store import SQLiteGeyserRecovery
 
 
 class GeyserNormalizedIngestionTests(unittest.TestCase):
-    def account(self, *, stream="stream-a", sequence=1, data=b"account-state"):
+    def account(
+        self, *, stream="stream-a", sequence=1, data=b"account-state",
+        pubkey="account-pubkey",
+    ):
         return NormalizedAccountUpdate(
-            pubkey="account-pubkey",
+            pubkey=pubkey,
             slot=100,
             write_version=900,
             txn_signature="signature",
@@ -63,7 +66,7 @@ class GeyserNormalizedIngestionTests(unittest.TestCase):
                 schema_version="geyser-v16",
             )
             ingest_normalized_event(
-                store, self.account(sequence=1, data=b"second"),
+                store, self.account(sequence=1, data=b"second", pubkey="other-account"),
                 schema_version="geyser-v16",
             )
             anomalies = store.list_transport_anomalies(

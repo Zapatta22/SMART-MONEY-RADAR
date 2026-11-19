@@ -1902,3 +1902,15 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - CI previamente aprovado: run #1455 (`44443611154`), commit funcional/teste `97c38c9434bc2e5ff2a5a91390cb4b9709a12e76`, **365 testes OK** e compileall aprovado. Esse CI antecede a sincronização com a base atual; novo CI combinado é obrigatório.
 - A sincronização não deve alterar `main`, não deve integrar a PR #22 e não habilita RPC/Helius, RAW, SQLite, importação, checkpoint ou execução on-chain.
 - Próximo passo: verificar o merge commit, confirmar `mergeable=true` e aguardar CI completo no novo HEAD antes de qualquer revisão final.
+
+
+## 262. CI combinado após sincronização da PR #22 — 19/11/2026
+
+- Merge commit de sincronização: `5bdcbfe6d1fb1c166c1eb5d609e239c61559cd5a`; primeiro parent é a base atual `46dcf389d4cb06973a5d82967ba99fa3965121be`, segundo parent é o HEAD anterior da PR #22 `9528618d7fb83b475a0a7f447c21ded620442844`.
+- O Registro Mestre da base (seções 254–260) foi preservado integralmente e recebeu esta sequência de continuidade; os arquivos funcionais/testes e documento técnico da PR #22 foram reaplicados sobre a base atual.
+- Compare da árvore: `ahead_by=15`, `behind_by=0`; GitHub reporta `mergeable=true`, `mergeable_state=clean`.
+- CI combinado #1456 (`44444094172`) no HEAD `5bdcbfe6d1fb1c166c1eb5d609e239c61559cd5a`: **completed/success**. Suíte completa: **393 testes OK**; `python -m compileall -q src tests` aprovado.
+- A PR #22 continua aberta e Draft; nenhum merge da PR foi realizado. `main` continua em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- O resultado comprova compatibilidade de código/testes com a base intermediária atual, mas não valida transações RAW mainnet nem reconciliação econômica DAMM v2. `ATTRIBUTED` permanece evidência estrutural, nunca `MATCHED`.
+- Nenhuma operação RPC/Helius, leitura/escrita de RAW, SQLite, importação, checkpoint ou operação on-chain foi realizada.
+- Próxima ação: revisão final dos invariantes e dos limites semânticos de referral antes de decidir se a PR pode sair de Draft.

@@ -1,0 +1,284 @@
+"""Dedicated SQLite persistence for immutable Geyser RAW events and deliveries.
+
+This first persistence slice is intentionally offline: it accepts bytes and
+stable event identities supplied by a future transport adapter. It does not
+connect to Yellowstone, decode protobufs, normalize events, or advance stream
+checkpoints.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
+from pathlib import Path
+import sqlite3
+
+
+_EVENT_KINDS = {"account", "slot", "block_meta", "entry_update_parent"}
+_ENCODINGS = {"protobuf_wire", "protobuf_decoded", "normalized_json"}
+_DELIVERY_KINDS = {"live", "replay", "backfill", "unknown"}
+
+
+def _text(value: str, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} deve ser texto não vazio")
+    return value
+
+
+def _sequence(value: int | None, field: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{field} deve ser inteiro não negativo ou None")
+    return value
+
+
+@dataclass(frozen=True)
+class RawEventInput:
+    """Exact bytes captured at the declared boundary and stable source identity."""
+
+    event_id: str
+    source_id: str
+    event_kind: str
+    schema_version: str
+    payload_encoding: str
+    payload_bytes: bytes
+
+
+@dataclass(frozen=True)
+class RawDeliveryInput:
+    """One observed delivery; transport identity is deliberately not event identity."""
+
+    stream_id: str
+    stream_sequence: int | None
+    delivery_kind: str = "unknown"
+    received_at: str | None = None
+
+
+@dataclass(frozen=True)
+class RawIngestResult:
+    status: str
+    event_id: str | None
+    delivery_id: int
+    payload_sha256: str
+    conflict_id: int | None = None
+
+
+class SQLiteGeyserRawStore:
+    """Persist immutable event content separately from every transport delivery.
+
+    A content identity reused with different bytes is retained as a conflict;
+    the original RAW row is never overwritten. Every attempted delivery is
+    recorded, including conflicting deliveries.
+    """
+
+    SCHEMA_VERSION = 1
+
+    def __init__(self, database_path: Path | str) -> None:
+        self.database_path = str(database_path)
+        self._memory_connection: sqlite3.Connection | None = None
+        if self.database_path == ":memory:":
+            self._memory_connection = sqlite3.connect(":memory:")
+            self._initialize(self._memory_connection)
+        else:
+            path = Path(database_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with self._connection() as connection:
+                self._initialize(connection)
+
+    def _connect(self) -> sqlite3.Connection:
+        if self._memory_connection is not None:
+            return self._memory_connection
+        connection = sqlite3.connect(self.database_path, timeout=15.0)
+        connection.execute("PRAGMA busy_timeout = 15000")
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA synchronous = FULL")
+        return connection
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _connection(self):
+        connection = self._connect()
+        try:
+            yield connection
+        finally:
+            if connection is not self._memory_connection:
+                connection.close()
+
+    def _initialize(self, connection: sqlite3.Connection) -> None:
+        connection.execute("PRAGMA foreign_keys = ON")
+        with connection:
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS geyser_schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                )
+            """)
+            current = connection.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM geyser_schema_migrations"
+            ).fetchone()[0]
+            if current > self.SCHEMA_VERSION:
+                raise sqlite3.DatabaseError("Schema Geyser mais novo que esta versão do SMR")
+            if current < 1:
+                connection.executescript("""
+                    CREATE TABLE geyser_raw_events (
+                        event_id TEXT PRIMARY KEY,
+                        source_id TEXT NOT NULL,
+                        event_kind TEXT NOT NULL CHECK(event_kind IN
+                            ('account','slot','block_meta','entry_update_parent')),
+                        schema_version TEXT NOT NULL,
+                        payload_encoding TEXT NOT NULL CHECK(payload_encoding IN
+                            ('protobuf_wire','protobuf_decoded','normalized_json')),
+                        payload_bytes BLOB NOT NULL,
+                        payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256) = 64),
+                        first_received_at TEXT NOT NULL
+                    );
+                    CREATE INDEX idx_geyser_raw_source_kind
+                        ON geyser_raw_events(source_id, event_kind, first_received_at);
+                    CREATE TABLE geyser_raw_deliveries (
+                        delivery_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_id TEXT REFERENCES geyser_raw_events(event_id),
+                        source_id TEXT NOT NULL,
+                        stream_id TEXT NOT NULL,
+                        stream_sequence INTEGER CHECK(stream_sequence IS NULL OR stream_sequence >= 0),
+                        delivery_kind TEXT NOT NULL CHECK(delivery_kind IN
+                            ('live','replay','backfill','unknown')),
+                        received_at TEXT NOT NULL,
+                        conflict_id INTEGER
+                    );
+                    CREATE INDEX idx_geyser_deliveries_stream_sequence
+                        ON geyser_raw_deliveries(source_id, stream_id, stream_sequence);
+                    CREATE INDEX idx_geyser_deliveries_event
+                        ON geyser_raw_deliveries(event_id, delivery_id);
+                    CREATE TABLE geyser_raw_conflicts (
+                        conflict_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_id TEXT NOT NULL,
+                        source_id TEXT NOT NULL,
+                        existing_sha256 TEXT NOT NULL,
+                        incoming_sha256 TEXT NOT NULL,
+                        incoming_payload BLOB NOT NULL,
+                        detected_at TEXT NOT NULL,
+                        reason TEXT NOT NULL
+                    );
+                    CREATE INDEX idx_geyser_raw_conflicts_event
+                        ON geyser_raw_conflicts(event_id, conflict_id);
+                """)
+                connection.execute(
+                    "INSERT INTO geyser_schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (1, datetime.now(timezone.utc).isoformat()),
+                )
+
+    @staticmethod
+    def _validate_event(event: RawEventInput) -> None:
+        _text(event.event_id, "event_id")
+        _text(event.source_id, "source_id")
+        _text(event.schema_version, "schema_version")
+        if event.event_kind not in _EVENT_KINDS:
+            raise ValueError("event_kind não suportado")
+        if event.payload_encoding not in _ENCODINGS:
+            raise ValueError("payload_encoding não suportado")
+        if not isinstance(event.payload_bytes, bytes):
+            raise TypeError("payload_bytes deve ser bytes")
+
+    def ingest(self, event: RawEventInput, delivery: RawDeliveryInput) -> RawIngestResult:
+        self._validate_event(event)
+        stream_id = _text(delivery.stream_id, "stream_id")
+        sequence = _sequence(delivery.stream_sequence, "stream_sequence")
+        if delivery.delivery_kind not in _DELIVERY_KINDS:
+            raise ValueError("delivery_kind não suportado")
+        received_at = delivery.received_at or datetime.now(timezone.utc).isoformat()
+        _text(received_at, "received_at")
+        digest = hashlib.sha256(event.payload_bytes).hexdigest()
+
+        with self._connection() as connection:
+            with connection:
+                existing = connection.execute(
+                    "SELECT source_id, event_kind, schema_version, payload_encoding, "
+                    "payload_bytes, payload_sha256 FROM geyser_raw_events WHERE event_id = ?",
+                    (event.event_id,),
+                ).fetchone()
+                if existing is None:
+                    connection.execute(
+                        "INSERT INTO geyser_raw_events(event_id, source_id, event_kind, "
+                        "schema_version, payload_encoding, payload_bytes, payload_sha256, "
+                        "first_received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (event.event_id, event.source_id, event.event_kind,
+                         event.schema_version, event.payload_encoding, event.payload_bytes,
+                         digest, received_at),
+                    )
+                    cursor = connection.execute(
+                        "INSERT INTO geyser_raw_deliveries(event_id, source_id, stream_id, "
+                        "stream_sequence, delivery_kind, received_at) VALUES (?, ?, ?, ?, ?, ?)",
+                        (event.event_id, event.source_id, stream_id, sequence,
+                         delivery.delivery_kind, received_at),
+                    )
+                    return RawIngestResult("inserted", event.event_id, cursor.lastrowid, digest)
+
+                same_content = (
+                    existing[0] == event.source_id
+                    and existing[1] == event.event_kind
+                    and existing[2] == event.schema_version
+                    and existing[3] == event.payload_encoding
+                    and existing[4] == event.payload_bytes
+                    and existing[5] == digest
+                )
+                if same_content:
+                    cursor = connection.execute(
+                        "INSERT INTO geyser_raw_deliveries(event_id, source_id, stream_id, "
+                        "stream_sequence, delivery_kind, received_at) VALUES (?, ?, ?, ?, ?, ?)",
+                        (event.event_id, event.source_id, stream_id, sequence,
+                         delivery.delivery_kind, received_at),
+                    )
+                    return RawIngestResult("duplicate", event.event_id, cursor.lastrowid, digest)
+
+                conflict = connection.execute(
+                    "INSERT INTO geyser_raw_conflicts(event_id, source_id, existing_sha256, "
+                    "incoming_sha256, incoming_payload, detected_at, reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (event.event_id, event.source_id, existing[5], digest,
+                     event.payload_bytes, received_at,
+                     "event_id reutilizado com identidade, encoding, schema ou bytes incompatíveis"),
+                )
+                conflict_id = conflict.lastrowid
+                cursor = connection.execute(
+                    "INSERT INTO geyser_raw_deliveries(event_id, source_id, stream_id, "
+                    "stream_sequence, delivery_kind, received_at, conflict_id) "
+                    "VALUES (NULL, ?, ?, ?, ?, ?, ?)",
+                    (event.source_id, stream_id, sequence, delivery.delivery_kind,
+                     received_at, conflict_id),
+                )
+                return RawIngestResult(
+                    "conflict", None, cursor.lastrowid, digest, conflict_id
+                )
+
+    def get_raw_event(self, event_id: str) -> dict | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT event_id, source_id, event_kind, schema_version, payload_encoding, "
+                "payload_bytes, payload_sha256, first_received_at "
+                "FROM geyser_raw_events WHERE event_id = ?", (event_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(zip(
+            ("event_id", "source_id", "event_kind", "schema_version", "payload_encoding",
+             "payload_bytes", "payload_sha256", "first_received_at"), row
+        ))
+
+    def counts(self) -> dict[str, int]:
+        with self._connection() as connection:
+            return {
+                table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in ("geyser_raw_events", "geyser_raw_deliveries", "geyser_raw_conflicts")
+            }
+
+    def integrity_check(self) -> list[str]:
+        with self._connection() as connection:
+            return [str(row[0]) for row in connection.execute("PRAGMA integrity_check").fetchall()]
+
+    def close(self) -> None:
+        if self._memory_connection is not None:
+            self._memory_connection.close()
+            self._memory_connection = None

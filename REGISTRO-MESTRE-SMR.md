@@ -2038,3 +2038,18 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - Limite restante: `mint_state_unchanged_before_transfer` é atualmente declaração do adapter; falta decodificar completamente instruções de alteração de TransferFeeConfig para produzir essa prova automaticamente. Fonte/adapter de snapshots históricos também não está conectado.
 - PR #23 continua OPEN/DRAFT, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
 - Próxima ação: substituir a declaração booleana de estabilidade do mint por inventário verificável de instruções de alteração de TransferFeeConfig, com posições antes/depois da transferência.
+
+
+## 272. Inventário explícito de inicialização de TransferFeeConfig — 19/11/2026
+
+- Adicionado `TransferFeeConfigMutationInstruction` e `decode_transfer_fee_config_mutation_instruction` no decoder Token-2022.
+- O decoder reconhece prefixo externo `TransferFeeExtension=26`, subtag `0=InitializeTransferFeeConfig` e `5=SetTransferFee`; valida COption, tamanho, basis points e maximum fee.
+- `DammV2MintFeeConfigSnapshot` substitui `mint_state_unchanged_before_transfer` por `transfer_fee_config_init_positions` e `transfer_fee_init_inventory_complete`.
+- O cálculo/verifier exige inventário completo das posições de inicialização para aquele mint e rejeita qualquer `InitializeTransferFeeConfig` anterior ou na mesma posição da transferência.
+- `SetTransferFee` não invalida o fee do epoch corrente: no código Token-2022 fixado, agenda a nova taxa para `current_epoch + 2` e preserva a taxa ativa anterior em `older_transfer_fee`. A taxa efetiva segue `fee_for_epoch(transaction_epoch)`.
+- O inventário ainda é fornecido pelo adapter; o scanner de instruções externas/CPI que resolve o mint e popula as posições ainda não foi implementado.
+- Commits: decoder mutation `c001ca24c723b5038738666ce024b9d193267bfb`; testes decoder `b164b0f14e87b8e822c7827add495ad4db74dbf1`; substituição da flag `1028cceb7ad35a58b66e6bfbd9a868c6e12eb834`; testes `531a2dc9a98ee7c82bb269796d58c3a048c0ec84` e `b51411a8fba50a8cdbf94cad67d15c6ecefbdf30`; documentação `4d444bff357adb579716b3241bb6fedf2f0394a3`.
+- CI #1525 (`44447328127`) e #1526 no HEAD de testes `b51411a8fba50a8cdbf94cad67d15c6ecefbdf30`: completed/success, **440 testes OK**, compileall aprovado.
+- CI #1527 (`44447361606`) no HEAD `4d444bff357adb579716b3241bb6fedf2f0394a3`: completed/success, **440 testes OK**, compileall aprovado.
+- PR #23 permanece OPEN/DRAFT, mergeable/clean, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: implementar scanner de instruções Token-2022 externas e CPI, mapear account index do mint e gerar automaticamente o inventário completo de inicialização por mint.

@@ -2021,3 +2021,20 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - CI #1505 (`44446566545`) no HEAD `2337d74a559ea33c3a0004d6493cc662dd20c014`: completed/success, **431 testes OK**, compileall aprovado.
 - PR #23 permanece OPEN/DRAFT, sem merge; PR #22 permanece Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
 - Próxima ação: usar a configuração histórica validada para calcular o crédito líquido da referral Token-2022 padrão e só então fechar os deltas agregados por conta.
+
+
+## 271. Referral Token-2022 TransferChecked padrão com mint prestate — 19/11/2026
+
+- A reconciliação base agora recebe opcionalmente `mint_fee_snapshots`, `transaction_epoch`, `transaction_slot` e `transaction_order`.
+- Para referral Token-2022 em `TRANSFER_CHECKED` padrão (fee implícita no payload), exige exatamente um snapshot de mint para a identidade outer/inner e mint da transferência.
+- Calcula fee com `TransferFeeConfig` prestate e epoch, deriva `referral_net = gross - fee`, agrega o crédito líquido da referral account e inclui a transferência em `expected_transfer_fees` e `expected_withheld_fee_deltas`.
+- Cada `DammV2ExpectedTransferFee` agora declara a origem do fee: `EVT_SWAP2_NET`, `TRANSFER_CHECKED_WITH_FEE` ou `MINT_PRESTATE`.
+- `verify_damm_v2_mint_fee_config` continua revalidando todos os snapshots por transferência, inclusive input/output/referral; o adapter deve garantir que o mint não mudou antes da instrução. Sem snapshot ou com identidade/proveniência inválida, fail-closed.
+- Teste integrado: input Token-2022 fee 5, output gross 90/net 81 fee 9 e referral gross 5/net 4 fee 1; deltas agregados dos vaults e token accounts conferem, e as três taxas passam pela validação do mint prestate/epoch.
+- Teste adicional confirma que referral Token-2022 padrão sem snapshot histórico não é reconciliada.
+- Commits: cálculo referral `4e9ec1a82faf32cba2e1c3bb999e84bdd29cb000`; validação estrita `e512bbc850a00ecbca263197c9b74ec2d8ac667c`; testes `3cb04506dcaf36dc9d58911cfbd67c97874faf35`; ajuste de asserção `1c0c038360b662d64f3884507bc3461d097c8772`; documentação `9062a882e5714551daf9ec1473f5fff378eaeb2a`.
+- CI #1514 (`44446949702`) e #1515 (`44446955433`) no HEAD `1c0c038360b662d64f3884507bc3461d097c8772`: completed/success, **433 testes OK**, compileall aprovado.
+- CI #1507–#1512 falharam apenas porque um teste ainda esperava a mensagem antiga de fail-closed; a asserção foi atualizada. A implementação de referral foi aprovada no CI #1514/#1515.
+- Limite restante: `mint_state_unchanged_before_transfer` é atualmente declaração do adapter; falta decodificar completamente instruções de alteração de TransferFeeConfig para produzir essa prova automaticamente. Fonte/adapter de snapshots históricos também não está conectado.
+- PR #23 continua OPEN/DRAFT, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: substituir a declaração booleana de estabilidade do mint por inventário verificável de instruções de alteração de TransferFeeConfig, com posições antes/depois da transferência.

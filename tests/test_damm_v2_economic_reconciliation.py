@@ -956,7 +956,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             _instruction_inventory(),
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
-            source_id="rpc-a", transaction_payload_sha256="a" * 64
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, ordering_domain_id="stream-a"
         )
         result = _reconcile(
             [context], [evidence],
@@ -1068,7 +1068,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             _instruction_inventory(),
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
-            source_id="rpc-a", transaction_payload_sha256="a" * 64
+            source_id="rpc-a", transaction_payload_sha256="a" * 64, ordering_domain_id="stream-a"
         )
         self.assertEqual(len(snapshots), 2)
         self.assertEqual(
@@ -1105,7 +1105,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                 _instruction_inventory("other-signature"),
                 transaction_signature="signature-1",
                 transaction_epoch=10, transaction_slot=123, transaction_order=50,
-                source_id="rpc-a", transaction_payload_sha256="a" * 64
+                source_id="rpc-a", transaction_payload_sha256="a" * 64, ordering_domain_id="stream-a"
         )
 
     def test_builder_rejects_stale_mint_prestate_from_another_slot(self):
@@ -1131,7 +1131,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                 _instruction_inventory(),
                 transaction_signature="signature-1",
                 transaction_epoch=10, transaction_slot=123, transaction_order=50,
-                source_id="rpc-a", transaction_payload_sha256="a" * 64
+                source_id="rpc-a", transaction_payload_sha256="a" * 64, ordering_domain_id="stream-a"
         )
 
 

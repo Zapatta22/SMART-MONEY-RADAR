@@ -43,3 +43,41 @@ O par é evidência de estados observados na sequência de account writes; não 
 ## Testes
 
 A suíte `tests/test_geyser_account_timeline.py` cobre ordenação ledger versus entrega, replay, colisões, lacuna de sequência, reconexão, assinatura ausente, rollback explícito e independência entre contas.
+
+
+## Bank identity and fork-lineage extension
+
+The Yellowstone bank lifecycle is normalized separately in
+`geyser_bank_lineage.py`:
+
+- Account updates preserve optional `bank_id` and `is_startup`. Startup
+  account updates must not claim a bank ID.
+- Bank identity is `(source_id, slot, bank_id)`; `source_id` is a stable
+  provider/node namespace across reconnects, while `stream_id` identifies a
+  transport connection only.
+- `SLOT_CREATED_BANK` requires a bank ID. `SLOT_DEAD` with a bank ID marks
+  that exact bank dead; without a bank ID it marks known and subsequently
+  observed banks for that source/slot dead. FIRST_SHRED_RECEIVED and COMPLETED
+  may be unassigned to a bank.
+- `EntryUpdateParent` invalidates exactly the `cleared_bank_id` and preserves
+  `parent_block_id` as opaque bytes. A subsequent CREATED_BANK event is linked
+  as its replacement only when the relationship is unambiguous.
+- Slot parent number alone does not identify a parent fork. A parent edge is
+  established only by an exact `(parent_slot, parent_blockhash)` match from
+  block metadata. Missing or ambiguous matches remain unresolved.
+- The opaque `parent_block_id` is never compared with a textual blockhash.
+- `is_ancestor` returns unknown (`None`) when parent lineage is incomplete;
+  it does not guess.
+- The existing linear AccountUpdateTimeline refuses to emit pre/post
+  transitions for bank-scoped updates and returns no single current state for
+  a fork-scoped account history. Bank-aware pre/post pairing is deferred until
+  lineage is integrated and validated.
+
+## Remaining limitations
+
+No Yellowstone protobuf adapter or live stream exists yet. The canonical event
+normalizers accept mappings already decoded by a future adapter. The tracker
+is in-memory, provider-scoped, and does not declare a bank canonical merely
+because it is processed or finalized; higher-level commitment policy and
+fork-resolution policy remain separate. No RAW/SQLite persistence, RPC, or
+Helius integration is part of this change.

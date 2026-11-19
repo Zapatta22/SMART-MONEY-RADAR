@@ -17,25 +17,61 @@ def _count(value: Any) -> int | None:
     return len(value) if isinstance(value, list) else None
 
 
-def inspect_manifest(manifest_path: Path, index: int) -> dict[str, Any]:
-    """Retorna apenas metadados estruturais; nunca imprime endereços/assinaturas."""
+def _invalid(index: int, reason: str) -> dict[str, Any]:
+    return {
+        "index": index,
+        "integrity_valid": False,
+        "audit_errors": [reason],
+        "structure_valid": False,
+    }
+
+
+def inspect_manifest(
+    manifest_path: Path, index: int, root: Path | None = None
+) -> dict[str, Any]:
+    """Retorna metadados estruturais; rejeita symlinks e caminhos fora da raiz."""
     try:
-        audit = audit_fixture(manifest_path)
+        authorized_root = (root or manifest_path.parent).resolve(strict=True)
+        if manifest_path.is_symlink():
+            return _invalid(index, "manifesto simbólico não permitido")
+        resolved_manifest = manifest_path.resolve(strict=True)
+        if resolved_manifest.parent != authorized_root:
+            return _invalid(index, "manifesto fora do diretório autorizado")
+
+        manifest_data = json.loads(resolved_manifest.read_bytes())
+        if not isinstance(manifest_data, dict):
+            return _invalid(index, "manifesto inválido")
+        raw_name = manifest_data.get("raw_file")
+        if (
+            not isinstance(raw_name, str)
+            or Path(raw_name).name != raw_name
+            or raw_name in ("", ".", "..")
+        ):
+            return _invalid(index, "nome do payload bruto inválido")
+        raw_path = authorized_root / raw_name
+        if raw_path.is_symlink():
+            return _invalid(index, "payload bruto simbólico não permitido")
+        if not raw_path.is_file():
+            audit = audit_fixture(resolved_manifest)
+            return {
+                "index": index,
+                "integrity_valid": audit.valid,
+                "audit_errors": list(audit.errors),
+                "structure_valid": False,
+                "structure_error": "payload bruto ausente",
+            }
+        if raw_path.resolve(strict=True).parent != authorized_root:
+            return _invalid(index, "payload bruto fora do diretório autorizado")
+        audit = audit_fixture(resolved_manifest)
     except OSError:
-        return {
-            "index": index,
-            "integrity_valid": False,
-            "audit_errors": ["manifesto inacessível"],
-            "structure_valid": False,
-        }
+        return _invalid(index, "manifesto ou payload inacessível")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return _invalid(index, "manifesto ou payload JSON inválido")
     except ValueError as exc:
-        # ValueError messages from audit_fixture are static validation messages.
-        return {
-            "index": index,
-            "integrity_valid": False,
-            "audit_errors": [str(exc)],
-            "structure_valid": False,
-        }
+        # audit_fixture emits static validation messages and never includes file contents.
+        return _invalid(index, str(exc))
+    except RuntimeError:
+        return _invalid(index, "caminho local inválido")
 
     report: dict[str, Any] = {
         "index": index,
@@ -43,10 +79,6 @@ def inspect_manifest(manifest_path: Path, index: int) -> dict[str, Any]:
         "audit_errors": list(audit.errors),
         "structure_valid": False,
     }
-    if not audit.raw_path.is_file():
-        report["structure_error"] = "payload bruto ausente"
-        return report
-
     try:
         payload = json.loads(audit.raw_path.read_bytes())
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -87,15 +119,8 @@ def inspect_manifest(manifest_path: Path, index: int) -> dict[str, Any]:
         "meta_fields": {"err", "innerInstructions", "preTokenBalances", "postTokenBalances",
                         "loadedAddresses", "fee", "computeUnitsConsumed", "logMessages"},
     }
-    try:
-        manifest_data = json.loads(audit.manifest_path.read_bytes())
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        manifest_data = {}
     wallet_fields = {"wallet_address", "monitored_wallet_address"}
-    manifest_declares_wallet_address = (
-        isinstance(manifest_data, dict)
-        and bool(wallet_fields.intersection(manifest_data))
-    )
+    manifest_declares_wallet_address = bool(wallet_fields.intersection(manifest_data))
 
     report.update({
         "structure_valid": True,
@@ -137,6 +162,30 @@ def inspect_manifest(manifest_path: Path, index: int) -> dict[str, Any]:
     return report
 
 
+def build_report(directory: Path) -> dict[str, Any]:
+    if directory.is_symlink() or not directory.is_dir():
+        raise ValueError("diretório de fixtures inacessível")
+    root = directory.resolve(strict=True)
+    manifests = sorted(root.glob("*.manifest.json"), key=lambda path: path.name)
+    reports = [
+        inspect_manifest(path, index, root)
+        for index, path in enumerate(manifests, 1)
+    ]
+    valid_count = sum(
+        report["integrity_valid"] and report["structure_valid"]
+        for report in reports
+    )
+    return {
+        "manifest_count": len(manifests),
+        "valid_count": valid_count,
+        "invalid_count": len(manifests) - valid_count,
+        "network_access": False,
+        "database_access": False,
+        "writes_files": False,
+        "reports": reports,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -147,32 +196,23 @@ def main() -> int:
         help="Diretório com pares *.raw.json/*.manifest.json",
     )
     args = parser.parse_args()
-    manifests = sorted(args.directory.glob("*.manifest.json"))
-    if not manifests:
+    try:
+        output = build_report(args.directory)
+    except ValueError as exc:
         print(json.dumps({
             "manifest_count": 0,
             "valid_count": 0,
             "invalid_count": 0,
-            "error": "nenhum manifesto encontrado",
+            "error": str(exc),
+            "network_access": False,
+            "database_access": False,
+            "writes_files": False,
         }, ensure_ascii=False, indent=2))
         return 2
-
-    reports = [inspect_manifest(path, index) for index, path in enumerate(manifests, 1)]
-    valid_count = sum(
-        report["integrity_valid"] and report["structure_valid"]
-        for report in reports
-    )
-    output = {
-        "manifest_count": len(manifests),
-        "valid_count": valid_count,
-        "invalid_count": len(manifests) - valid_count,
-        "network_access": False,
-        "database_access": False,
-        "writes_files": False,
-        "reports": reports,
-    }
     print(json.dumps(output, ensure_ascii=False, indent=2))
-    return 0 if valid_count == len(manifests) else 1
+    if output["manifest_count"] == 0:
+        return 2
+    return 0 if output["valid_count"] == output["manifest_count"] else 1
 
 
 if __name__ == "__main__":

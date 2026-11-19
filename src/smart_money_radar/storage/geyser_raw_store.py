@@ -7,6 +7,7 @@ checkpoints.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -96,8 +97,6 @@ class SQLiteGeyserRawStore:
         connection.execute("PRAGMA synchronous = FULL")
         return connection
 
-    from contextlib import contextmanager
-
     @contextmanager
     def _connection(self):
         connection = self._connect()
@@ -123,6 +122,7 @@ class SQLiteGeyserRawStore:
                 raise sqlite3.DatabaseError("Schema Geyser mais novo que esta versão do SMR")
             if current < 1:
                 connection.executescript("""
+                    BEGIN IMMEDIATE;
                     CREATE TABLE geyser_raw_events (
                         event_id TEXT PRIMARY KEY,
                         source_id TEXT NOT NULL,
@@ -164,11 +164,10 @@ class SQLiteGeyserRawStore:
                     );
                     CREATE INDEX idx_geyser_raw_conflicts_event
                         ON geyser_raw_conflicts(event_id, conflict_id);
+                    INSERT INTO geyser_schema_migrations(version, applied_at)
+                        VALUES (1, CURRENT_TIMESTAMP);
+                    COMMIT;
                 """)
-                connection.execute(
-                    "INSERT INTO geyser_schema_migrations(version, applied_at) VALUES (?, ?)",
-                    (1, datetime.now(timezone.utc).isoformat()),
-                )
 
     @staticmethod
     def _validate_event(event: RawEventInput) -> None:

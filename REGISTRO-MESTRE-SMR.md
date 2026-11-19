@@ -1891,3 +1891,14 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - A base TransferCheckedWithFee está integrada em branch intermediária; `main` permanece intacta.
 - Próxima dependência: PR #22, atribuição da transferência de referral DAMM v2. Fonte oficial `ix_p_swap.rs` confirma que a transferência referral sai do vault determinado por `FeeMode`, usa `swap_result.referral_fee` como valor bruto e ocorre antes da emissão de `EvtSwap2`.
 - Revisão atual adiciona validação de tipo, amount u64 positivo, programa Token-2022 obrigatório para TransferCheckedWithFee, fee não superior ao bruto e rejeição de fee em transferências comuns. O resultado continua somente `ATTRIBUTED`, sem reconciliação econômica.
+
+
+## 261. PR #22 sincronizada com a base atual após resolução controlada do conflito — 19/11/2026
+
+- A PR #22 tinha sido criada sobre o commit-base `62b3f54b717cf0e6675610b8b88bdfd8c542581d`. A branch-base avançou até `46dcf389d4cb06973a5d82967ba99fa3965121be`, causando `mergeable_state=dirty`.
+- Auditoria dos blobs confirmou que `damm_v2_transfer_analyzer.py` e `tests/test_damm_v2_transfer_analyzer.py` na base atual permaneciam byte a byte iguais ao ponto de divergência `62b3f54`; a divergência material compartilhada estava no Registro Mestre.
+- Resolução planejada: manter integralmente o Registro Mestre mais recente da base (seções 254–260), preservar as alterações funcionais/testes da PR #22 e seu documento técnico, e criar merge commit com a base atual como primeiro parent e o HEAD anterior da PR como segundo parent.
+- Código funcional da PR #22 permanece limitado à atribuição estrutural de input/output/referral; status `ATTRIBUTED` não é reconciliação econômica nem BUY/SELL.
+- CI previamente aprovado: run #1455 (`44443611154`), commit funcional/teste `97c38c9434bc2e5ff2a5a91390cb4b9709a12e76`, **365 testes OK** e compileall aprovado. Esse CI antecede a sincronização com a base atual; novo CI combinado é obrigatório.
+- A sincronização não deve alterar `main`, não deve integrar a PR #22 e não habilita RPC/Helius, RAW, SQLite, importação, checkpoint ou execução on-chain.
+- Próximo passo: verificar o merge commit, confirmar `mergeable=true` e aguardar CI completo no novo HEAD antes de qualquer revisão final.

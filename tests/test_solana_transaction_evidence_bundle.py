@@ -12,6 +12,7 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import TOKEN_2
 
 from smart_money_radar.data_sources.solana_transaction_evidence_bundle import (
     build_solana_transaction_evidence_bundle,
+    reconcile_solana_transaction_damm_v2_bundle,
 )
 
 
@@ -199,6 +200,31 @@ class SolanaTransactionEvidenceBundleTests(unittest.TestCase):
         self.assertEqual(bundle.damm_v2_contexts, ())
         self.assertTrue(bundle.damm_v2_issues)
         self.assertFalse(bundle.damm_v2_complete)
+
+
+    def test_economic_reconciler_uses_bundle_and_blocks_missing_transfers(self):
+        bundle = build_solana_transaction_evidence_bundle(
+            _damm_transaction(), source_id="rpc-a"
+        )
+
+        result = reconcile_solana_transaction_damm_v2_bundle(
+            bundle, monitored_wallet="wallet"
+        )
+
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("TRANSFER_MISSING", result.reason)
+
+    def test_economic_reconciler_rejects_bundle_without_damm_associations(self):
+        bundle = build_solana_transaction_evidence_bundle(
+            _transaction(), source_id="rpc-a"
+        )
+
+        result = reconcile_solana_transaction_damm_v2_bundle(
+            bundle, monitored_wallet="wallet"
+        )
+
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("nenhuma associação DAMM v2", result.reason)
 
     def test_rejects_non_json_payload_instead_of_hashing_repr(self):
         raw = _transaction()

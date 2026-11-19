@@ -260,38 +260,45 @@ class AccountUpdateTimeline:
                     continue
                 if update.is_startup:
                     continue
-                candidates: list[_TimelineEntry] = []
-                for previous in entries[:index]:
-                    prior = previous.update
+                if update.bank_id is None:
+                    # Preserve the legacy linear rule: only the immediate
+                    # predecessor may be used for an unscoped update.
+                    previous = entries[index - 1]
                     if (
-                        previous.continuity_epoch != entry.continuity_epoch
-                        or prior.is_startup
-                        or prior.ordering_key >= update.ordering_key
+                        previous.update.bank_id is not None
+                        or previous.update.is_startup
+                        or previous.continuity_epoch != entry.continuity_epoch
                     ):
                         continue
-                    if update.bank_id is None or prior.bank_id is None:
-                        # Never bridge a bank-scoped write to an unscoped one.
-                        if update.bank_id is None and prior.bank_id is None:
-                            candidates.append(previous)
-                        continue
+                else:
+                    candidates: list[_TimelineEntry] = []
                     target_key = BankKey(update.source, update.slot, update.bank_id)
-                    prior_key = BankKey(prior.source, prior.slot, prior.bank_id)
                     if tracker.is_bank_usable(target_key) is not True:
                         continue
-                    if tracker.is_bank_usable(prior_key) is not True:
+                    for candidate in entries[:index]:
+                        prior = candidate.update
+                        if (
+                            candidate.continuity_epoch != entry.continuity_epoch
+                            or prior.is_startup
+                            or prior.bank_id is None
+                            or prior.ordering_key >= update.ordering_key
+                        ):
+                            continue
+                        prior_key = BankKey(prior.source, prior.slot, prior.bank_id)
+                        if tracker.is_bank_usable(prior_key) is not True:
+                            continue
+                        if tracker.is_ancestor(prior_key, target_key) is True:
+                            candidates.append(candidate)
+                    if not candidates:
                         continue
-                    if tracker.is_ancestor(prior_key, target_key) is True:
-                        candidates.append(previous)
-
-                if not candidates:
-                    continue
-                latest_key = max(item.update.ordering_key for item in candidates)
-                latest = [item for item in candidates if item.update.ordering_key == latest_key]
-                # If more than one candidate has the same ledger key, refusing
-                # to choose is safer than depending on insertion order.
-                if len(latest) != 1:
-                    continue
-                previous = latest[0]
+                    latest_key = max(item.update.ordering_key for item in candidates)
+                    latest = [
+                        item for item in candidates
+                        if item.update.ordering_key == latest_key
+                    ]
+                    if len(latest) != 1:
+                        continue
+                    previous = latest[0]
                 transitions.append(
                     AccountStateTransition(
                         pubkey=account,

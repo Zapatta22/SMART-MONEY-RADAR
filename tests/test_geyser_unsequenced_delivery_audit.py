@@ -253,6 +253,48 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         self.assertTrue(all(len(row["witness_delivery_ids"]) == 1 for row in rows))
         self.assertEqual(self.raw.integrity_check(), ["ok"])
 
+    def test_high_cardinality_witnesses_are_complete_and_sorted(self):
+        unsequenced = self.ingest()
+        witness_count = 4096
+        received_at = "2026-11-19T16:00:00+00:00"
+        with sqlite3.connect(self.db) as connection:
+            connection.executemany(
+                """INSERT INTO geyser_raw_deliveries
+                (event_id,source_id,stream_id,stream_sequence,delivery_kind,received_at)
+                VALUES (?,?,?,?,?,?)""",
+                [
+                    (
+                        unsequenced.event_id,
+                        "source-a",
+                        "mass-replay",
+                        sequence,
+                        "replay",
+                        received_at,
+                    )
+                    for sequence in range(1, witness_count + 1)
+                ],
+            )
+            expected_witness_ids = [
+                row[0] for row in connection.execute(
+                    """SELECT delivery_id FROM geyser_raw_deliveries
+                       WHERE event_id=? AND stream_sequence IS NOT NULL
+                       ORDER BY delivery_id""",
+                    (unsequenced.event_id,),
+                )
+            ]
+
+        summary = self.audit.rebuild()
+        row = next(
+            item for item in self.audit.list_deliveries()
+            if item["delivery_id"] == unsequenced.delivery_id
+        )
+        self.assertEqual(summary["reconciled_count"], 1)
+        self.assertEqual(len(row["witness_delivery_ids"]), witness_count)
+        self.assertEqual(row["witness_delivery_ids"], expected_witness_ids)
+        self.assertEqual(row["witness_delivery_ids"], sorted(row["witness_delivery_ids"]))
+        self.assertIsNone(row["stream_sequence"])
+        self.assertEqual(self.raw.integrity_check(), ["ok"])
+
     def test_unsequenced_event_is_not_projected_into_timeline_or_checkpoint(self):
         self.ingest()
         timeline = SQLiteGeyserAccountTimelineProjection(self.db)

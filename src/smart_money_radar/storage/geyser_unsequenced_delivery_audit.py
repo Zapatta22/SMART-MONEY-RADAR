@@ -12,7 +12,7 @@ from pathlib import Path
 import sqlite3
 
 
-POLICY_ID = "geyser-unsequenced-delivery:v1"
+POLICY_ID = "geyser-unsequenced-delivery:v2"
 PROJECTION_NAME = "geyser_unsequenced_delivery_audit"
 PROJECTION_VERSION = 1
 

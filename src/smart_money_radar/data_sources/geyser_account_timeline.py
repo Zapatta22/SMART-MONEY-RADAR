@@ -50,6 +50,16 @@ class AccountStateTransition:
 
 
 @dataclass(frozen=True)
+class AccountTimelineRecord:
+    """Read-only export of one active timeline write for persistence/rebuild."""
+
+    update: NormalizedAccountUpdate
+    continuity_epoch: int
+    baseline: bool
+    continuity_baseline: bool
+
+
+@dataclass(frozen=True)
 class TimelineInsertResult:
     status: Literal["inserted", "duplicate", "conflict"]
     gap: AccountTimelineGap | None = None
@@ -89,6 +99,27 @@ class AccountUpdateTimeline:
         self._needs_baseline: set[str] = set()
         self._gaps: list[AccountTimelineGap] = []
         self._conflicts: list[AccountTimelineConflict] = []
+
+    def timeline_records(self) -> tuple[AccountTimelineRecord, ...]:
+        """Return active writes with continuity metadata in deterministic order."""
+        records = [
+            AccountTimelineRecord(
+                update=entry.update,
+                continuity_epoch=entry.continuity_epoch,
+                baseline=entry.baseline,
+                continuity_baseline=entry.continuity_baseline,
+            )
+            for entries in self._events.values()
+            for entry in entries
+        ]
+        return tuple(sorted(
+            records,
+            key=lambda item: (
+                item.update.source, item.update.pubkey,
+                item.update.slot, item.update.write_version,
+                item.update.event_fingerprint,
+            ),
+        ))
 
     @property
     def gaps(self) -> tuple[AccountTimelineGap, ...]:

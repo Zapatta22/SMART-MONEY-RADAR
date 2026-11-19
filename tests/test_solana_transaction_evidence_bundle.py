@@ -321,6 +321,29 @@ class SolanaTransactionEvidenceBundleTests(unittest.TestCase):
         self.assertIn("nenhuma associação DAMM v2", result.reason)
 
 
+    def test_economic_reconciler_rejects_identity_or_evidence_replacement(self):
+        bundle = build_solana_transaction_evidence_bundle(
+            _damm_complete_transaction(), source_id="rpc-a"
+        )
+        variants = (
+            replace(
+                bundle,
+                identity=replace(bundle.identity, transaction_signature="2" * 64),
+            ),
+            replace(bundle, identity=replace(bundle.identity, slot=124)),
+            replace(bundle, identity=replace(bundle.identity, payload_sha256="0" * 64)),
+            replace(bundle, transfers=()),
+            replace(bundle, damm_v2_contexts=()),
+            replace(bundle, balance_deltas=replace(bundle.balance_deltas, deltas=())),
+        )
+
+        for altered in variants:
+            with self.subTest(altered=altered):
+                with self.assertRaisesRegex(ValueError, "alterado após a construção"):
+                    reconcile_solana_transaction_damm_v2_bundle(
+                        altered, monitored_wallet="wallet"
+                    )
+
     def test_economic_reconciler_rejects_bundle_not_created_by_factory(self):
         bundle = build_solana_transaction_evidence_bundle(
             _damm_transaction(), source_id="rpc-a"

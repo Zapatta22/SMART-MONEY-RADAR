@@ -12,6 +12,17 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from smart_money_radar.data_sources.damm_v2_accounts import decode_damm_v2_swap_accounts
+from smart_money_radar.data_sources.damm_v2_analyzer import (
+    DammV2SwapEventAssociation,
+    analyze_damm_v2_swap_events,
+)
+from smart_money_radar.data_sources.damm_v2_decoder import METEORA_DAMM_V2_PROGRAM_ID
+from smart_money_radar.data_sources.damm_v2_transfer_analyzer import (
+    DammV2SwapTransferContext,
+    DammV2TransferEvidence,
+    analyze_damm_v2_transfer_evidence,
+)
 from smart_money_radar.data_sources.solana_token_balance_delta_decoder import (
     SolanaTokenBalanceDeltaResult,
     decode_solana_token_account_balance_deltas,
@@ -40,6 +51,19 @@ class SolanaTransactionEvidenceBundle:
     instruction_inventory: SolanaInstructionInventory
     transfers: tuple[SolanaTokenTransfer, ...]
     balance_deltas: SolanaTokenBalanceDeltaResult
+    damm_v2_associations: tuple[DammV2SwapEventAssociation, ...] = ()
+    damm_v2_contexts: tuple[DammV2SwapTransferContext, ...] = ()
+    damm_v2_transfer_evidence: tuple[DammV2TransferEvidence, ...] = ()
+    damm_v2_issues: tuple[str, ...] = ()
+
+    @property
+    def damm_v2_complete(self) -> bool:
+        """Whether all detected DAMM v2 swaps have matched, attributable evidence."""
+        return (
+            not self.damm_v2_issues
+            and len(self.damm_v2_contexts) == len(self.damm_v2_associations)
+            and all(item.status == "ATTRIBUTED" for item in self.damm_v2_transfer_evidence)
+        )
 
     @property
     def structurally_complete(self) -> bool:
@@ -131,6 +155,46 @@ def build_solana_transaction_evidence_bundle(
     inventory = decode_solana_instruction_inventory(raw_transaction)
     transfers = decode_solana_token_transfers(raw_transaction)
     balance_deltas = decode_solana_token_account_balance_deltas(raw_transaction)
+    associations = tuple(analyze_damm_v2_swap_events(raw_transaction))
+
+    contexts = []
+    damm_issues = []
+    for index, association in enumerate(associations):
+        if association.status != "MATCHED":
+            damm_issues.append(
+                f"associação DAMM v2 {index} não resolvida: {association.status}"
+            )
+            continue
+        if (
+            association.event is None
+            or association.instruction is None
+            or association.resolved_accounts is None
+        ):
+            damm_issues.append(
+                f"associação DAMM v2 {index} sem evento/instrução/contas resolvidas"
+            )
+            continue
+        try:
+            accounts = decode_damm_v2_swap_accounts(
+                {
+                    "programId": METEORA_DAMM_V2_PROGRAM_ID,
+                    "accounts": list(association.resolved_accounts),
+                },
+                [],
+                association.event,
+            )
+        except (TypeError, ValueError) as exc:
+            damm_issues.append(
+                f"contas DAMM v2 {index} inválidas: {exc}"
+            )
+            continue
+        contexts.append(DammV2SwapTransferContext(association, accounts))
+
+    transfer_evidence = (
+        analyze_damm_v2_transfer_evidence(contexts, transfers)
+        if not damm_issues and contexts
+        else []
+    )
 
     if (
         inventory.transaction_signature != identity.transaction_signature
@@ -143,4 +207,8 @@ def build_solana_transaction_evidence_bundle(
         instruction_inventory=inventory,
         transfers=tuple(transfers),
         balance_deltas=balance_deltas,
+        damm_v2_associations=associations,
+        damm_v2_contexts=tuple(contexts),
+        damm_v2_transfer_evidence=tuple(transfer_evidence),
+        damm_v2_issues=tuple(damm_issues),
     )

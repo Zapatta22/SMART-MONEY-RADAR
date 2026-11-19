@@ -3308,3 +3308,10 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 
 ### Próxima ação
 - Abrir PR draft da branch `feat/geyser-transaction-observation` para `feat/token2022-transfer-checked-with-fee`, validar CI e revisar o diff integrado. Não fazer merge sem autorização expressa.
+
+
+### CI diagnóstico e correção do teste de dispatch — 19/11/2026
+- Primeira execução da PR #37: workflow run `44617930665`, job `135891505019`, falhou em 1 de 615 testes; os demais 614 testes passaram até o erro.
+- Erro: o teste de dispatch construiu o objeto externo como se fosse o wrapper interno `SubscribeUpdateTransaction`; o adaptador corretamente despacha o campo oneof para esse wrapper, que por sua vez contém TransactionInfo.
+- Correção: teste agora modela os dois níveis protobuf (`SubscribeUpdate` externo e `SubscribeUpdateTransaction` interno). Não alterar a semântica do contrato para acomodar fixture incorreta.
+- CI ainda pendente no novo HEAD; nenhum resultado SUCCESS declarado.

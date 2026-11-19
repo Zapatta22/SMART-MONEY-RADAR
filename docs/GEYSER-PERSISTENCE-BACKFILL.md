@@ -1,6 +1,6 @@
 # Geyser Historical Persistence and Backfill Contract
 
-**Status:** Architecture specification plus offline RAW persistence, transport checkpoint/gap handling, and deterministic normalized-event identity slices implemented; normalized persistence and live transport remain pending.  
+**Status:** Architecture specification plus offline RAW persistence, transport checkpoints/gaps, normalized ingestion, account-write/timeline projections, and recovery/backfill state persistence implemented. Provider transport and real historical backfill remain pending.  
 **Date:** 2026-11-19  
 **Scope:** PR #23, branch `feat/damm-v2-economic-reconciliation`.
 
@@ -320,3 +320,34 @@ No provider connection or financial execution is authorized by this document.
 
 ### Próxima etapa
 Definir e implementar recuperação/backfill e checkpoints de projeção mais granulares, com cobertura auditável e reconciliação de eventos sem sequência. Não conectar provider nem declarar fork canônico por heurística.
+
+
+## Offline recovery and backfill state store — 19/11/2026
+
+### Implemented
+
+- Added `src/smart_money_radar/storage/geyser_recovery_store.py` with `SQLiteGeyserRecoveryStore`, sharing the dedicated `smr_geyser.sqlite` database and keeping `smr_events.sqlite` untouched.
+- Recovery metadata has its own versioned migration table, independent from the RAW store schema migration.
+- `geyser_backfill_jobs` persists source, inclusive slot range, provider/adapter/schema versions, query semantics, opaque start/current/end cursors, lifecycle status, coverage status, counters, retry count, last error, evidence, and timestamps.
+- `geyser_backfill_attempts` records every attempt, its starting/ending cursor, status, timestamps, and error. Retries resume from the last durably recorded cursor and receive a new monotonically increasing attempt number.
+- Lifecycle API: `create_backfill_job()`, `start_backfill_job()`, `update_backfill_progress()`, `finish_backfill_job()`, `recover_interrupted_jobs()`, `get_backfill_job()`, `list_backfill_jobs()`, and `list_backfill_attempts()`.
+- On restart, `recover_interrupted_jobs()` changes abandoned RUNNING jobs with received data to PARTIAL/PARTIAL, and jobs with no received data to FAILED/UNKNOWN. It preserves the cursor and records the attempt as INTERRUPTED; it does not fabricate coverage or mark a job complete.
+- Progress counters cannot regress. Only RUNNING jobs accept progress or finalization. PARTIAL/FAILED jobs can be retried; COMPLETED jobs cannot be restarted.
+- COMPLETED requires coverage COMPLETE and structured evidence asserting a confirmed provider contract, full requested range, exhausted pagination, checked retention limits, and exact match with the job's recorded query semantics. The store records adapter-supplied evidence; it cannot independently prove provider claims.
+- `geyser_projection_checkpoints` stores projection name/version and source-scoped generation, last delivery/event, source/projected counts, skipped unsequenced count, input coverage, and continuity-interrupted flag. Generation and delivery high-water marks cannot regress. COMPLETE is rejected when continuity is interrupted or any unsequenced event was skipped.
+- Projection checkpoints are written after a successful projection generation. If a process stops between the projection commit and this separate checkpoint write, the checkpoint lags safely; it must never be advanced before the projection commit. The existing timeline rebuild remains a full rebuild and is not yet automatically wired to this metadata API.
+
+### Explicit limits
+
+- This is an offline persistence/control layer, not a provider adapter, scheduler, pagination client, or live backfill executor.
+- Slot ranges and provider query semantics are recorded; no provider-specific completeness guarantee is assumed.
+- Cursor values are opaque strings; the store does not interpret provider cursor ordering.
+- A caller-supplied evidence object is auditable provenance, not independent proof that a provider returned every historical update.
+- Transport continuity, projection input coverage, and provider backfill coverage remain separate concepts. No single cursor substitutes for the others.
+- RAW events and deliveries remain immutable and authoritative. This module does not rewrite RAW payloads, infer missing events, select canonical forks, generate BUY/SELL, or execute trades.
+- No Yellowstone/Helius endpoint, credential, client, service, VPS, or paid backfill was connected.
+
+### Tests
+
+- Added `tests/test_geyser_recovery_store.py` for job lifecycle, complete-coverage evidence, query-contract mismatch, monotonic counters, restart recovery, cursor-preserving retry, source-scoped projection checkpoints, coverage fail-closed rules, generation monotonicity, and invalid state/range rejection.
+- CI validation for this slice is pending at the time of this documentation update.

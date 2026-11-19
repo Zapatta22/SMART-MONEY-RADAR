@@ -3729,3 +3729,13 @@ O commit `dfec3eb944f6019c0ace5ad94939884fcd331ee1`, que registra a auditoria de
 - PR #25: OPEN/DRAFT; CI #1376 SUCCESS, 539 testes + compileall no commit `dfec3eb...`.
 - `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 - Progresso mantido: módulo **92%**, revisão técnica **93%**. Nenhum percentual foi elevado porque permanecem pendentes a decisão sobre a proveniência externa e a validação conjunta da PR #10.
+
+## 246. Busca local do RAW e CI #1377 — 19/11/2026
+
+O usuário executou `find "$HOME" -type f` pelos nomes exatos do RAW e do manifesto de origem; o comando terminou sem imprimir caminhos. Conclusão limitada: nenhum dos arquivos foi localizado dentro de `$HOME`. Isso não exclui armazenamento compartilhado Android, diretórios externos ou backups. Nenhum RAW foi exibido/publicado e nenhum artefato substituto será criado. Não alterar `raw_sha256`.
+
+O workflow #1377 (run `44435540809`) concluiu SUCCESS no commit `2f11f3ab453d4abd02b9503d1524cb67fc128cb3`, PR #25. CI #1376 no commit anterior confirmou 539 testes e compileall; #1377 também concluiu com sucesso.
+
+Estado conferido: PR #9 OPEN, HEAD `b9dfe8f...`, mergeable; PR #10 OPEN, HEAD `e7c02ad...`, mergeable, integração com base #9 ainda sem validação conjunta; PR #25 OPEN/DRAFT, HEAD `2f11f3a...`, mergeable. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Nenhum merge, rebase, atualização de branch da cadeia ou operação financeira executado.
+
+Progresso mantido: módulo **92%**, revisão técnica **93%**. A busca em `$HOME` sem resultado não fecha a pendência de proveniência.

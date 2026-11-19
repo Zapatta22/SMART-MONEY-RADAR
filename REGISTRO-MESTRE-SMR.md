@@ -2289,3 +2289,35 @@ Concluída na seção 286: invalidação de descendants, updates fora de ordem, 
 
 ### Próxima etapa
 Desenhar o contrato de persistência histórica e backfill (RAW imutável + timeline derivada), incluindo chaves de idempotência, checkpoints por source/stream, retenção de eventos órfãos e reconstrução após reinício. Antes de qualquer conexão real, revisar como o adapter de transporte fornecerá stream_sequence e eventos de reconnect/discard-bank. Nenhum provider pago deve ser contratado/conectado sem autorização.
+
+
+## 287. Contrato documental de persistência histórica Geyser e backfill — 19/11/2026
+
+### Estado da entrega
+- Criado `docs/GEYSER-PERSISTENCE-BACKFILL.md` na branch `feat/damm-v2-economic-reconciliation`.
+- Commit do documento técnico: `b03711063f59727f9402c1037545ec7fa3cf9a90`.
+- Esta entrega é exclusivamente especificação/documentação. Nenhum schema SQLite, migração, classe de persistência, cliente gRPC, captura contínua, checkpoint durável ou backfill foi implementado.
+
+### Contrato registrado
+- Três camadas: RAW imutável, eventos normalizados provider-neutral e timeline/projeções reconstruíveis.
+- Banco dedicado proposto: `smr_geyser.sqlite`, separado de `smr_events.sqlite`; EventStore e checkpoints de carteira existentes permanecem inalterados.
+- RAW e deliveries separados: conteúdo identificado independentemente de stream/sequence; cada replay/entrega mantém proveniência própria.
+- Proveniência de bytes explícita: o adapter atual recebe protobuf decodificado; bytes wire só podem ser declarados quando capturados antes da decodificação. Representações reconstruídas devem ser rotuladas corretamente.
+- Projeções persistentes propostas para eventos normalizados, account writes, bank events, gerações da timeline e eventos órfãos/invalidados.
+- Três checkpoints independentes: transporte por (source_id, stream_id), continuidade comprovada por epoch e progresso/cobertura do backfill.
+- Gap não pode ser pulado: evento posterior é preservado, lacuna registrada, checkpoint contíguo não avança e continuidade fica interrompida até recuperação comprovada.
+- Backfill separado da captura viva, com cobertura COMPLETE/PARTIAL/UNKNOWN; estado atual de conta não substitui histórico de account writes.
+- Atomicidade de RAW, delivery, normalização, conflitos/gaps e checkpoint de transporte; checkpoint só avança após commit durável.
+- Reconstrução determinística/versionada, preservação de forks/órfãos, backup/restore testado e sem retenção automática inicial.
+- Sequência de implementação e critérios de aceitação documentados, incluindo crash injection, replay, conflitos, reconnect, overlap live/backfill e falhas de reconstrução.
+
+### Confirmação do estado GitHub antes da documentação
+- Consulta direta da PR #23 confirmou: OPEN, Draft, merged=false, mergeable=true.
+- Base: `feat/damm-v2-referral-transfer-attribution`.
+- HEAD confirmado antes desta entrega: `135af1caefe406e3fedbab765ef65706b244a165`.
+- A comparação entre `a09a18c834c5cea0ff7920d55c56e0a57a51d862` e `135af1caefe406e3fedbab765ef65706b244a165` confirmou 1 commit à frente e 0 atrás; a única alteração desse commit foi o Registro Mestre.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; nenhuma alteração ou merge em main.
+- O commit funcional de código/testes continua `d5b21774e8210096dc5c41e842c3c2d0a9434054`; CI #1633/#1634: 515/515 testes e compileall aprovados nesse commit.
+
+### Próxima etapa
+Revisar o contrato documental e, em etapa separada, iniciar apenas os contratos de schema/migração e testes de persistência offline. Não conectar provider, não contratar infraestrutura, não implementar backfill real e não alterar a main sem autorização explícita.

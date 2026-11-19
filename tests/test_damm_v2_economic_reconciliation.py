@@ -132,15 +132,19 @@ def _mint_fee_snapshots(input_bps=500, input_max_fee=100, input_epoch=10):
     )
     return [
         DammV2MintFeeConfigSnapshot(
-            mint="mint-a", config_state=state,
+            mint="mint-a", transfer_instruction_index=0,
+            transfer_inner_instruction_index=2, config_state=state,
             transaction_epoch=input_epoch, transaction_slot=123,
             transaction_order=50, pre_snapshot_order=49,
+            mint_state_unchanged_before_transfer=True,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
         ),
         DammV2MintFeeConfigSnapshot(
-            mint="mint-b", config_state=None,
+            mint="mint-b", transfer_instruction_index=0,
+            transfer_inner_instruction_index=2, config_state=None,
             transaction_epoch=input_epoch, transaction_slot=123,
             transaction_order=50, pre_snapshot_order=49,
+            mint_state_unchanged_before_transfer=True,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-b-pre",
         ),
     ]
@@ -709,9 +713,11 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshots = _mint_fee_snapshots()
         snapshots[0] = DammV2MintFeeConfigSnapshot(
-            mint="mint-a", config_state=snapshots[0].config_state,
+            mint="mint-a", transfer_instruction_index=0,
+            transfer_inner_instruction_index=2, config_state=snapshots[0].config_state,
             transaction_epoch=10, transaction_slot=123,
             transaction_order=50, pre_snapshot_order=50,
+            mint_state_unchanged_before_transfer=True,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
         )
         result = verify_damm_v2_mint_fee_config(
@@ -755,9 +761,11 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         snapshots = _mint_fee_snapshots()
         snapshots[0] = DammV2MintFeeConfigSnapshot(
-            mint="mint-a", config_state=old_state,
+            mint="mint-a", transfer_instruction_index=0,
+            transfer_inner_instruction_index=2, config_state=old_state,
             transaction_epoch=10, transaction_slot=123,
             transaction_order=50, pre_snapshot_order=49,
+            mint_state_unchanged_before_transfer=True,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
         )
         result = verify_damm_v2_mint_fee_config(
@@ -766,6 +774,33 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "RECONCILED")
         self.assertEqual(result.mint_fee_config_status, "VERIFIED")
+
+
+    def test_mint_fee_config_fails_if_mint_changed_before_transfer(self):
+        base = _reconcile(
+            [self.context], [self.evidence], _deltas([
+                ("user-a", "mint-a", -100, 6),
+                ("vault-a", "mint-a", 95, 6),
+                ("vault-b", "mint-b", -90, 6),
+                ("user-b", "mint-b", 90, 6),
+            ])
+        )
+        snapshots = _mint_fee_snapshots()
+        snapshots[0] = DammV2MintFeeConfigSnapshot(
+            mint="mint-a", transfer_instruction_index=0,
+            transfer_inner_instruction_index=2,
+            config_state=snapshots[0].config_state,
+            transaction_epoch=10, transaction_slot=123,
+            transaction_order=50, pre_snapshot_order=49,
+            mint_state_unchanged_before_transfer=False,
+            source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre",
+        )
+        result = verify_damm_v2_mint_fee_config(
+            base, snapshots,
+            transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        )
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("pode ter mudado antes", result.reason)
 
 if __name__ == "__main__":
     unittest.main()

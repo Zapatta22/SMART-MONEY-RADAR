@@ -3,6 +3,7 @@ import unittest
 from smart_money_radar.data_sources.token2022_transfer_fee_state import (
     ACCOUNT_TYPE_ACCOUNT, ACCOUNT_TYPE_MINT, decode_transfer_fee_amount,
     decode_transfer_fee_amount_delta, decode_transfer_fee_config,
+    decode_transfer_fee_config_optional,
 )
 
 
@@ -196,6 +197,15 @@ class TransferFeeStateDecoderTests(unittest.TestCase):
         after = account_data([])
         with self.assertRaisesRegex(ValueError, "TransferFeeAmount ausente"):
             decode_transfer_fee_amount_delta(before, after)
+
+
+    def test_optional_config_decoder_returns_none_when_extension_absent(self):
+        self.assertIsNone(decode_transfer_fee_config_optional(mint_data([])))
+
+    def test_optional_config_decoder_returns_decoded_state_when_present(self):
+        value = decode_transfer_fee_config_optional(mint_data([tlv(1, config())]))
+        self.assertIsNotNone(value)
+        self.assertEqual(value.fee_for_epoch(100).basis_points, 50)
 
 if __name__ == "__main__":
     unittest.main()

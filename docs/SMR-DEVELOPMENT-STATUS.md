@@ -4,19 +4,19 @@ Auditoria de 19/11/2026. A referência de integração é a `main` em `5060bc6`.
 
 ## Critérios de conclusão
 
-Os percentuais medem três marcos binários de aceitação por módulo, de peso igual. **I** exige o escopo do módulo integrado à `main` pelo caminho normal de uso. **T** exige teste automatizado do módulo completo contra seus critérios abaixo. **O** exige validação operacional com evidência reproduzível. A medição global dá peso igual aos nove módulos enquanto não houver pesos aprovados. O resultado de **0/27 marcos (0%)** indica que nenhum módulo completo cruzou esses gates. Os componentes implementados e exercitados constam na tabela.
+Os percentuais medem três marcos binários de aceitação por módulo, de peso igual. **B** exige uma base funcional na `main` com teste automatizado aprovado. **I** exige o escopo completo integrado à `main` no caminho de uso, com testes de aceitação. **O** exige validação operacional reproduzível. O percentual global dá peso igual aos nove módulos enquanto não houver pesos aprovados. São **5/27 marcos (18,5%)**. As entregas em Draft aparecem como evidência adicional e entram no índice após integração. Nenhum módulo atingiu o marco operacional.
 
-| Módulo | I/T/O | Marcos | Evidência disponível | Critério para fechar o módulo |
+| Módulo | B/I/O | Marcos | Evidência disponível | Critério para fechar o módulo |
 |---|---|---:|---|---|
-| A. Infraestrutura e persistência | 0/0/0 | 0% | Na main há SQLite, checkpoints, backup/replay e CI. A PR #4 inclui persistência de swaps, com revisão de concorrência nesta etapa. | Integrar migração e persistência no caminho normal. Validar atualização a partir de banco anterior, recuperação e observabilidade estruturada. |
-| B. Monitoramento Solana | 0/0/0 | 0% | Na main há RPC e WebSocket para monitoramento e coleta. As branches Geyser contêm adaptadores, RAW, timeline e testes locais. | Validar receptor, sequência compartilhada, persistência, reconexão, lacunas, duplicatas e replay com eventos do provider. |
-| C. Interpretação econômica | 0/0/0 | 0% | Na main há contratos de swap e parser conservador. As branches CPMM/DAMM v2 têm decodificadores, reconciliação e fixtures. | Integrar CPI, CPMM, DAMM v2, Token-2022 e wSOL. Validar evidência de BUY/SELL e rejeição da ambiguidade. |
+| A. Infraestrutura e persistência | 1/0/0 | 33,3% | Na main há SQLite, checkpoints, backup/replay e CI. As PRs #40 e #42 revisam persistência de swaps, concorrência, migração e replay. | Integrar persistência de swaps no caminho normal. Validar migração e recuperação no ambiente operacional e observabilidade estruturada. |
+| B. Monitoramento Solana | 1/0/0 | 33,3% | Na main há RPC e WebSocket para monitoramento e coleta. A PR #43 integra offline auditoria Geyser, RAW e timeline. | Validar receptor, sequência compartilhada, persistência, reconexão, lacunas, duplicatas e replay com eventos do provider. |
+| C. Interpretação econômica | 1/0/0 | 33,3% | Na main há contratos de swap e parser conservador. As branches CPMM/DAMM v2 têm decodificadores, reconciliação e fixtures. | Integrar CPI, CPMM, DAMM v2, Token-2022 e wSOL. Validar evidência de BUY/SELL e rejeição da ambiguidade. |
 | D. Launch Radar | 0/0/0 | 0% | Catálogo de programas na main. | Integrar detecção de mints e pools, liquidez, permissões, concentração, volume, preço e sinais de fraude. |
-| E. Smart Money Radar | 0/0/0 | 0% | Monitor de carteiras na main. | Validar histórico, acumulação, atividade coordenada e classificação de sinais com evidência. |
+| E. Smart Money Radar | 1/0/0 | 33,3% | Monitor de carteiras com backfill e testes na main. | Validar histórico, acumulação, atividade coordenada e classificação de sinais com evidência. |
 | F. Motor de decisão | 0/0/0 | 0% | Contratos de observação e classificação na main. | Testar entrada imediata e confirmação por preço/volume com os mesmos bloqueios. Demonstrar pontuação, exposição, slippage, deduplicação, kill switch e saídas. |
 | G. Simulação | 0/0/0 | 0% | Há replay de ingestão na main. | Validar paper trading, custos, backtest sem dados futuros, comparação dos modos, drawdown e latência. |
 | H. Interface | 0/0/0 | 0% | Serviço de dashboard somente leitura e testes em branches avançadas. | Integrar e testar em desktop e celular monitoramento, configurações, modos, sinais, alertas e relatórios. |
-| I. Preparação operacional | 0/0/0 | 0% | CI, configuração local e documentação de coleta e execução Android. | Exercitar implantação, segredos, disponibilidade, recuperação, integração, carga e checklist de segurança. |
+| I. Preparação operacional | 1/0/0 | 33,3% | CI, configuração local testada e documentação de coleta e execução Android. | Exercitar implantação, segredos, disponibilidade, recuperação, integração, carga e checklist de segurança. |
 
 ## Dependências verificadas no Git
 
@@ -34,19 +34,28 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | `main@5060bc6` | 98 testes aprovados. |
 | `817069c` + correção SQLite `0a13a77` | 109 testes aprovados, incluindo concorrência, colisão entre carteiras e rollback. `compileall` e `git diff --check` aprovados. |
 | `51ea578` (PR #39) | 617 testes aprovados. |
-| Correção Yellowstone sobre `51ea578` | 617 testes aprovados. `compileall` e `git diff --check` aprovados. Os testes protobuf são offline. |
+| `bcd647a` (#41) | 617 testes aprovados. `compileall` e `git diff --check` aprovados. Os testes protobuf são offline. |
+| `08e1bf5` (#42) | 252 testes aprovados. Uma verificação separada abriu um banco de `main@5060bc6`, preservou payload e checkpoint, processou a projeção multivenue e repetiu sem duplicar. `integrity_check` e `foreign_key_check` passaram. |
+| `1e9c1ba` (#43) | 639 testes aprovados após combinar #26, #31, #32 e #33. `compileall` e `git diff --check` aprovados. |
 
-Validação operacional pendente para as duas revisões. Permanecem pendentes a migração e o replay pelo pipeline integrado, a captura de eventos Yellowstone, testes de recuperação ponta a ponta, carga e implantação.
+Validação operacional pendente. Permanecem pendentes a captura de eventos Yellowstone, recuperação ponta a ponta com provider, carga em volume representativo e implantação.
 
 ## Próxima tarefa prioritária
 
-Reconciliar a correção SQLite com o pipeline CPMM da PR #14 em branch isolada. Exercitar a abertura de um banco criado pela main, a gravação e o replay de uma fixture auditada e o rollback forçado sem avanço de checkpoint.
+Implementar a persistência do envelope protobuf por delivery e um receptor offline de frames Yellowstone sobre a PR #43. Demonstrar sequência compartilhada, hash do envelope após reinício e rejeição de colisões, lacunas e continuidade entre reconexões.
 
-Em seguida, compor #26, #31, #32 e #33 em cima da revisão de #39 em uma branch de integração. Cobrir identidade de fonte e domínio, frames divergentes, evento de conta e transação no mesmo domínio, gaps, replay e reconexão, antes de habilitar o receptor. A primeira rodada pode usar fixtures e uma simulação de transporte.
+A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguida da aplicação das correções nas branches descendentes da integração #14.
 
 ## Retomada
 
-A branch `codex/smr-sqlite-readiness` parte de `817069c` (#4). A correção SQLite está em `0a13a77`. A branch `codex/smr-yellowstone-wire-integrity` parte de `51ea578` (#39). Use o SHA exibido no resumo do GitHub Actions para vincular a validação ao commit. Inicie a retomada pelo critério da seção anterior, com ambas as branches e suas bases identificadas.
+| PR | Branch | Commit de código | Base |
+|---|---|---|---|
+| [#40](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/40) | `codex/smr-sqlite-readiness` | `0a13a77` | `817069c` (#4) |
+| [#41](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/41) | `codex/smr-yellowstone-wire-integrity` | `bcd647a` | `51ea578` (#39) |
+| [#42](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/42) | `codex/smr-cpmm-sqlite-regression` | `08e1bf5` | `4951eaf` (pilha CPMM de #14) |
+| [#43](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/43) | `codex/smr-geyser-stack-integration` | `1e9c1ba` | `bcd647a` (#41) |
+
+Use o SHA exibido no resumo do GitHub Actions para vincular a validação ao commit. Inicie a retomada pela tarefa prioritária acima.
 
 Para reproduzir localmente:
 

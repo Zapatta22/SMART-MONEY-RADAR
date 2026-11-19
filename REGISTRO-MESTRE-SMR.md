@@ -3530,3 +3530,20 @@ A PR #9 não está bloqueada por falha de teste demonstrada. Está sem validaç�
 Há uma lacuna concreta adicional: o manifesto da nova fixture aponta para dois arquivos de projeção/proveniência ausentes e a fixture não é referenciada pelo teste dedicado verificado. Antes de considerar a PR #9 plenamente validada para integração, corrigir a proveniência/manifesto de forma compatível com o formato adotado no projeto, criar teste que consuma a fixture e obter CI aprovado no HEAD final. Não alterar o manifesto por suposição: primeiro confirmar o contrato de fixture e o procedimento de anonimização.
 
 Nenhum rerun, aprovação de workflow, alteração funcional, merge ou mudança na \`main\` foi executado nesta investigação. PR #9 permanece aberta; PR #25 permanece aberta/Draft, sem merge. Progresso mantido: módulo **92%**, revisão técnica **93%**.
+
+
+## 236. Confirmação do contrato do anonimizador para a fixture da PR #9 — 19/11/2026
+
+A revisão foi aprofundada usando \`fixture_anonymizer.py\`, \`fixture_audit.py\`, os testes correspondentes e a documentação da Etapa 13.
+
+Confirmações:
+- O anonimizador gera um manifesto de projeção \`smr.anonymized-fixture.v1\` com \`projection_file\` igual ao nome real do arquivo de saída e \`provenance_manifest\` igual ao nome do manifesto bruto de origem quando este é fornecido; quando não há manifesto de origem, o campo fica \`null\`.
+- O manifesto bruto coletado pelo \`RpcFixtureCollector\` é um formato diferente, contendo \`raw_file\`, \`sha256\`, \`encoding\`, \`commitment\` e \`anonymized=false\`.
+- \`fixture_audit.audit_fixture\` valida pares de manifesto bruto + payload bruto; ele não é um validador do manifesto de projeção anonimizada.
+- Na fixture da PR #9, \`projection_file\` aponta para um nome de arquivo que não existe na árvore e não corresponde ao arquivo de projeção efetivamente versionado (\`raydium-cpmm-jupiter-multiswap.json\`).
+- \`provenance_manifest\` aponta para \`<signature>.manifest.json\`, também ausente da árvore da PR.
+- O manifesto de projeção presente não contém os campos obrigatórios do auditor de manifesto bruto; portanto, não deve ser passado diretamente a \`audit_fixture\`.
+
+Conclusão: a inconsistência não é apenas ausência de teste. O manifesto não descreve corretamente o arquivo de projeção versionado e a trilha declarada para o manifesto de origem não está presente. O bruto original pode permanecer fora do repositório por política de privacidade, mas a proveniência precisa ser representada corretamente: nome da projeção exato e manifesto de origem incluído ou referência nula/externa documentada, conforme política do projeto. Não inventar SHA ou manifesto de origem.
+
+Nenhum arquivo funcional ou fixture foi modificado nesta inspeção. A correção da fixture e um teste de consumo continuam pendentes na PR #9; o HEAD atual segue sem CI aprovado após a adição da fixture. Progresso mantido: módulo **92%**, revisão técnica **93%**.

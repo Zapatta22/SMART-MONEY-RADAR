@@ -1853,3 +1853,13 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O status `ATTRIBUTED` continua sendo apenas atribuição estrutural; não equivale a `MATCHED` nem à reconciliação econômica. Deltas por conta/vault, taxas implícitas de TransferChecked e estado withheld histórico continuam fora desta PR.
 - Nesta retomada não houve merge, alteração da `main`, execução local no Termux, leitura/escrita de RAW, RPC/Helius, SQLite, importação, checkpoint ou operação on-chain.
 - Próxima ação: obter CI verde **no HEAD atual** da PR #22 e auditar o diff final antes de qualquer decisão sobre retirar Draft ou integrar.
+
+
+## 95. Teste adicional de ordem temporal da referral e CI #1455 (18/11/2026)
+
+- Adicionado em `tests/test_damm_v2_transfer_analyzer.py` o teste `test_rejects_referral_transfer_occurring_after_evt_swap2`: uma transferência de referral descendente, mas posicionada depois do EvtSwap2, deve resultar em `TRANSFER_MISSING` e não pode ser atribuída.
+- Commit de teste: `97c38c9434bc2e5ff2a5a91390cb4b9709a12e76`.
+- O push do arquivo de teste acionou o workflow `SMR tests`, run #1455 (`44443611154`), no HEAD exato `97c38c9434bc2e5ff2a5a91390cb4b9709a12e76`.
+- Último estado consultado: job `test` em andamento; checkout e setup Python concluídos, instalação do projeto em andamento; suíte unitária e compileall ainda não iniciados. Não declarar aprovação até conclusão.
+- O commit documental desta seção não altera código ou testes; a validação funcional pendente é a do HEAD de teste acima.
+- PR #22 continua Draft e sem merge. Não alterar `main`; manter `ATTRIBUTED` distinto de reconciliação econômica.

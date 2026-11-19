@@ -92,7 +92,7 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         self.assertEqual(rows[0]["classification"], "IDENTITY_CONFLICT")
         self.assertEqual(rows[-1]["classification"], "IDENTITY_CONFLICT")
 
-    def test_open_transport_anomaly_is_not_an_eligible_witness(self):
+    def test_resolved_transport_anomaly_remains_ineligible_as_witness(self):
         self.raw.register_stream("source-a", "stream-a", 1)
         self.ingest(sequence=1)
         # Reusing the sequence for a different logical event opens an anomaly.
@@ -104,6 +104,13 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         )
         ingest_normalized_event(self.raw, other, schema_version="geyser-v16")
         self.ingest()
+        anomalies = self.raw.list_transport_anomalies(
+            "source-a", "stream-a", status="OPEN"
+        )
+        self.assertEqual(len(anomalies), 1)
+        self.raw.resolve_transport_anomaly(
+            anomalies[0]["anomaly_id"], "Reviewed offline fixture"
+        )
         self.audit.rebuild()
         rows = self.audit.list_deliveries()
         first = next(x for x in rows if x["event_id"] is not None and x["stream_sequence"] == 1)

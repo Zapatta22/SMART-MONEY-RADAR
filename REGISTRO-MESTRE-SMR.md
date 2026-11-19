@@ -2662,3 +2662,13 @@ Validar os testes e compileall em CI no HEAD desta branch. Em seguida, revisar o
 - Commit corretivo: `4199bdc0dcc75956a5709ac635fd188d16e41a4b`.
 - CI do novo HEAD ainda precisa ser consultado; a correção não é considerada validada até o workflow correspondente terminar com sucesso.
 - PR #34 permanece Draft e sem merge; `main` não foi alterada.
+
+
+### CI após correção — PR #34 (19/11/2026)
+- HEAD validado: `63fe7019d365fe6fc51b50eeb2d2c3a53a24bb9e`.
+- Workflow `SMR tests`, run `44599723147`, job `135827505295`: SUCCESS.
+- `PYTHONPATH=src python -m unittest discover -s tests -v`: 580 testes executados em 4,506 s, sem falhas.
+- `python -m compileall -q src tests`: etapa concluída com sucesso.
+- A execução anterior com 9 erros foi corrigida pela inclusão efetiva de `_is_valid_signature()`; o HEAD validado inclui o código corretivo e este registro.
+- Esta validação confirma testes unitários e compilação no runner GitHub Actions/Python 3.12; não comprova integração econômica DAMM v2, proveniência de snapshots históricos, dados RPC reais ou execução em produção.
+- PR #34 continua Draft, aberta e sem merge. `main` permanece intocada.

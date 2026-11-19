@@ -327,6 +327,62 @@ class TokenTransferDecoderTests(unittest.TestCase):
                 meta={"err": None, "innerInstructions": [group, group]},
             ))
 
+    def test_rejects_compiled_transfer_fee_greater_than_gross_amount(self):
+        with self.assertRaisesRegex(ValueError, "excede"):
+            decode_solana_token_transfers(_tx([{
+                "programId": TOKEN_2022_PROGRAM_ID,
+                "accounts": [0, 3, 1, 2],
+                "data": _transfer_checked_with_fee(100, 6, 101),
+            }]))
+
+    def test_rejects_parsed_transfer_fee_greater_than_gross_amount(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": TOKEN_2022_PROGRAM_ID,
+            "parsed": {
+                "type": "transferCheckedWithFee",
+                "info": {
+                    "source": "source",
+                    "destination": "destination",
+                    "authority": "authority",
+                    "mint": "mint",
+                    "tokenAmount": {"amount": "100", "decimals": 6},
+                    "feeAmount": "101",
+                },
+            },
+        }]))
+        self.assertEqual(result, [])
+
+    def test_rejects_parsed_transfer_amount_outside_u64(self):
+        result = decode_solana_token_transfers(_tx([{
+            "programId": SPL_TOKEN_PROGRAM_ID,
+            "parsed": {
+                "type": "transfer",
+                "info": {
+                    "source": "source",
+                    "destination": "destination",
+                    "amount": str(1 << 64),
+                },
+            },
+        }]))
+        self.assertEqual(result, [])
+
+    def test_rejects_mixed_compiled_and_parsed_account_key_shapes(self):
+        with self.assertRaisesRegex(ValueError, "mistura formatos"):
+            decode_solana_token_transfers(_tx(
+                [{
+                    "programId": TOKEN_2022_PROGRAM_ID,
+                    "accounts": [0, 3, 1, 2],
+                    "data": _transfer_checked_with_fee(),
+                }],
+                keys=[
+                    {"pubkey": "source"},
+                    "destination",
+                    "authority",
+                    "mint",
+                    TOKEN_2022_PROGRAM_ID,
+                ],
+            ))
+
 
 if __name__ == "__main__":
     unittest.main()

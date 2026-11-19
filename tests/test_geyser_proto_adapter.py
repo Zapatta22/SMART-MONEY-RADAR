@@ -574,6 +574,9 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         self.assertNotEqual(first.stream_id, second.stream_id)
         for capture in (first, second):
             self.assertEqual((capture.frame_count, capture.outcome), (2, "frame_limit"))
+            session = store.get_capture_session("validator", capture.stream_id)
+            self.assertEqual((session["frame_count"], session["outcome"]), (2, "frame_limit"))
+            self.assertIsNotNone(session["finished_at"])
             self.assertEqual(
                 list(store.iter_wire_frames("validator", capture.stream_id, capture.ordering_domain_id)),
                 [(0, ping_bytes), (1, transaction)],

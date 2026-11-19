@@ -93,7 +93,7 @@ class SQLiteGeyserRawStore:
     recorded, including conflicting deliveries.
     """
 
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def __init__(self, database_path: Path | str, *, read_only: bool = False) -> None:
         self.database_path = str(database_path)
@@ -104,7 +104,7 @@ class SQLiteGeyserRawStore:
                 raise ValueError("a leitura do journal exige um arquivo SQLite")
             with self._connection() as connection:
                 row = connection.execute("SELECT MAX(version) FROM geyser_schema_migrations").fetchone()
-                if row[0] != self.SCHEMA_VERSION:
+                if row[0] not in (3, self.SCHEMA_VERSION):
                     raise ValueError("schema SQLite incompatível com a leitura do journal Yellowstone")
         elif self.database_path == ":memory:":
             self._memory_connection = sqlite3.connect(":memory:")
@@ -286,6 +286,69 @@ class SQLiteGeyserRawStore:
                 ON geyser_wire_frames(source_id, stream_id, frame_id)
             """)
 
+            if current < 4:
+                connection.executescript("""
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE IF NOT EXISTS geyser_capture_sessions (
+                        source_id TEXT NOT NULL,
+                        stream_id TEXT NOT NULL,
+                        started_at TEXT NOT NULL,
+                        finished_at TEXT,
+                        outcome TEXT,
+                        frame_count INTEGER CHECK(frame_count IS NULL OR frame_count >= 0),
+                        PRIMARY KEY(source_id, stream_id),
+                        FOREIGN KEY(source_id, stream_id)
+                            REFERENCES geyser_frame_streams(source_id, stream_id)
+                    );
+                    INSERT OR IGNORE INTO geyser_schema_migrations(version, applied_at)
+                        VALUES (4, CURRENT_TIMESTAMP);
+                    COMMIT;
+                """)
+
+    def start_capture_session(self, source_id: str, stream_id: str) -> None:
+        """Record an attempt before opening its network connection."""
+        with self._connection() as connection, connection:
+            connection.execute(
+                """INSERT INTO geyser_capture_sessions(source_id, stream_id, started_at)
+                   VALUES (?, ?, ?)""",
+                (source_id, stream_id, datetime.now(timezone.utc).isoformat()),
+            )
+
+    def finish_capture_session(self, source_id: str, stream_id: str, outcome: str) -> int:
+        """Record terminal status and the exact number of archived frame deliveries."""
+        outcome = _text(outcome, "capture outcome")
+        with self._connection() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            scope = (source_id, stream_id)
+            frame_count = connection.execute(
+                "SELECT COUNT(*) FROM geyser_wire_frames WHERE source_id = ? AND stream_id = ?",
+                scope,
+            ).fetchone()[0]
+            result = connection.execute(
+                """UPDATE geyser_capture_sessions
+                   SET finished_at = ?, outcome = ?, frame_count = ?
+                   WHERE source_id = ? AND stream_id = ? AND finished_at IS NULL""",
+                (datetime.now(timezone.utc).isoformat(), outcome, frame_count, *scope),
+            )
+            if result.rowcount != 1:
+                raise ValueError("sessão de captura inexistente ou já finalizada")
+            return frame_count
+
+    def get_capture_session(self, source_id: str, stream_id: str) -> dict | None:
+        """Return audit metadata if the archive records how its stream ended."""
+        with self._connection() as connection:
+            if not connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = 'geyser_capture_sessions' AND type = 'table'"
+            ).fetchone():
+                return None
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                """SELECT started_at, finished_at, outcome, frame_count
+                   FROM geyser_capture_sessions WHERE source_id = ? AND stream_id = ?""",
+                (source_id, stream_id),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
     def register_frame_stream(
         self, source_id: str, stream_id: str, ordering_domain_id: str, initial_sequence: int
     ) -> None:
@@ -346,6 +409,12 @@ class SQLiteGeyserRawStore:
             ).fetchone()
             if stream is None:
                 raise ValueError("stream e domínio precisam ser registrados antes da captura")
+            if connection.execute(
+                """SELECT 1 FROM geyser_capture_sessions
+                   WHERE source_id = ? AND stream_id = ? AND finished_at IS NOT NULL""",
+                (source_id, stream_id),
+            ).fetchone():
+                raise ValueError("sessão de captura já finalizada")
             initial, contiguous, last_seen, tainted = stream
             prior = connection.execute(
                 """SELECT payload_bytes, payload_sha256, frame_kind FROM geyser_wire_frames

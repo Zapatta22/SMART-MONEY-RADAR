@@ -480,3 +480,11 @@ validação. Cada execução cria novos IDs de conexão e domínio. Ao receber
 um ping, responde dentro da mesma assinatura. O JSON final lista todas as sessões e seus IDs
 necessários para inspecionar a captura com `smr geyser-evidence`. A sequência
 contínua de uma captura indica apenas a ordem recebida durante a sessão.
+
+O journal schema 4 registra o início de cada tentativa gRPC, o resultado de
+encerramento e a contagem de entregas. A inspeção inclui esses dados quando
+disponíveis. Uma captura que terminou por limite ou falha continua auditável,
+e o registro distingue esses eventos. Uma interrupção do processo antes do
+encerramento deixa o resultado em aberto. Journals schema 3 continuam
+legíveis e a migração preserva as entregas antigas sem atribuir a elas um
+resultado de captura.

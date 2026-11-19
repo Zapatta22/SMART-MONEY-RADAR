@@ -73,3 +73,14 @@ Movimentos externos que atinjam as mesmas token accounts também podem provocar 
 - Resultado `withheld_fee_status=VERIFIED` só é emitido quando todas as contas com fee esperada têm snapshots correspondentes e os deltas TLV coincidem exatamente.
 - Falta de snapshot, identidade diferente, ordem não demonstrada, extensão ausente ou valor divergente mantém o lote fora de verificação e retorna `INCOMPLETE` (duplicidade retorna `AMBIGUOUS`).
 - Os campos de proveniência são um contrato do coletor, não uma prova criptográfica por si só. A implementação do adapter precisa garantir que os refs/hash correspondam aos bytes realmente coletados na fronteira da transação.
+
+
+## Verificação da configuração histórica do mint e epoch
+
+- `decode_transfer_fee_config_optional(mint_data)` valida o estado base/TLV do mint e retorna `None` quando a extensão `TransferFeeConfig` não existe; a função estrita `decode_transfer_fee_config` continua lançando erro quando a extensão é ausente.
+- Cada `DammV2ExpectedTransferFee` identifica uma transferência Token-2022 específica (outer/inner instruction, mint, bruto e fee inferida/explicita).
+- `verify_damm_v2_mint_fee_config` exige um snapshot por transferência, vinculado ao mesmo mint, assinatura/slot/ordem e anterior à transação. O adapter também deve provar que a configuração do mint não mudou antes daquela transferência dentro da transação.
+- Com configuração presente, escolhe `older_transfer_fee` ou `newer_transfer_fee` pelo epoch fornecido e recalcula a taxa com `calculate_transfer_fee` (ceil e cap); sem extensão, a taxa esperada é zero.
+- `mint_fee_config_status=VERIFIED` só ocorre se todas as transferências Token-2022 conferirem com a configuração prestate e epoch.
+- A função não deriva epoch do slot: o adapter precisa fornecer epoch historicamente correto. O estado atual do mint não substitui prestate.
+- Limite restante: referral Token-2022 via `TransferChecked` padrão ainda falha fechado na reconciliação base porque o EvtSwap2 não fornece o crédito líquido da conta referral. O próximo passo é conectar a configuração histórica validada ao cálculo líquido da referral antes da comparação de deltas.

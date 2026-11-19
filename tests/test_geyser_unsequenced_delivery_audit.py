@@ -201,7 +201,11 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
                 [witness.delivery_id, second_witness.delivery_id],
             )
             self.assertIsNone(by_id[delivery.delivery_id]["stream_sequence"])
-        self.assertEqual(len(rows), 3)
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(
+            {row["delivery_id"] for row in rows},
+            {first.delivery_id, second.delivery_id, witness.delivery_id, second_witness.delivery_id},
+        )
         self.assertEqual(summary["unsequenced_count"], 2)
         self.assertEqual(summary["reconciled_count"], 2)
 

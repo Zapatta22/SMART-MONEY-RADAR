@@ -2069,3 +2069,18 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - A saída do scanner ainda não foi conectada automaticamente ao adapter que monta `DammV2MintFeeConfigSnapshot`; o coletor também ainda não fornece snapshots históricos de mint/account em produção.
 - PR #23 permanece OPEN/DRAFT, mergeable, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
 - Próxima ação: criar um construtor/adapter que receba o inventário, a saída por mint, o epoch/slot e os snapshots prestate e gere `DammV2MintFeeConfigSnapshot` com proveniência verificável, sem aceitar dados atuais como históricos.
+
+
+## 274. Construtor de snapshots históricos de mint por transferência — 19/11/2026
+
+- Adicionado `DammV2MintPrestate` e `build_damm_v2_mint_fee_config_snapshots(evidence, mint_prestate_by_mint, instruction_inventory, ...)`.
+- O construtor percorre as evidências input/output/referral e cria um `DammV2MintFeeConfigSnapshot` por transferência Token-2022 (outer/inner/mint), incluindo assinatura da transação, slot, epoch, ordem, config state, posições de inicialização, fonte e state ref.
+- Exige que `SolanaInstructionInventory.transaction_signature/slot` correspondam exatamente à transação alvo e que o inventário esteja completo.
+- Exige bytes prestate de mint do mesmo slot, ordem anterior à transação e fonte/state ref não vazios; decodifica `TransferFeeConfig` opcionalmente e gera posições de init via `collect_transfer_fee_config_init_positions`.
+- A assinatura da transação foi adicionada também ao `DammV2MintFeeConfigSnapshot`, ao builder, à reconciliação de referral Token-2022 padrão e ao verifier, evitando misturar snapshot de outra transação.
+- O construtor conecta scanner + decoder + evidências, mas ainda não busca snapshots históricos por conta própria. O adapter de origem histórica (bytes prestate de mint e TLV de token account) continua pendente; `getAccountInfo` atual não é aceito como histórico.
+- Commits: builder inicial `faa121a8742a7de191b8ab7ebf603d667bf5ad47`; assinatura/inventory binding `ec0831c27d7f7021f9b721c90387ba382d4401b1`; fixtures `b80a7a71d540cee4ebbe9122dcfe4164e658fb88`; builder tests `a6c43e885f741b02b009ec58027796877704bbd0`; correção de asserção `25c7f8253a42bb1b6b74c06cceebe7b788b45807`; documentação `762f91ce60b5542da91776562c8b5865c18df5ab`.
+- CI #1555 (`44448400017`) e #1556 no HEAD `25c7f8253a42bb1b6b74c06cceebe7b788b45807`: completed/success, **451 testes OK**, compileall aprovado.
+- CI #1557 (`44448535055`) no HEAD documental atual `762f91ce60b5542da91776562c8b5865c18df5ab`: completed/success, **451 testes OK**, compileall aprovado.
+- PR #23 continua OPEN/DRAFT, mergeable, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
+- Próxima ação: conectar uma fonte histórica que forneça bytes de mint e token account no estado exato pre/post da transação, e construir os objetos `DammV2MintPrestate` e `DammV2WithheldFeeSnapshot` com proveniência verificável.

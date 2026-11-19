@@ -2189,3 +2189,18 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 
 ### Próxima etapa
 Implementar adapter de fronteira para mensagens protobuf Yellowstone (ou mapping testável equivalente) que converta os campos binários pubkey/owner/signature e os eventos de slot/block/entry-parent para os contratos normalizados. Fixar a versão/schema de protocolo em fixtures; testar mensagens reais serializadas/deserializadas e replay/reconnect. Ainda não conectar endpoint nem habilitar captura contínua. Depois, integrar BankLineageTracker à timeline para reconstruir pre/post somente dentro da cadeia de bancos verificada; só então desenhar backfill e persistência.
+
+
+## 282. Fechamento e endurecimento da camada de forks — 19/11/2026
+
+- Ajustes finais após revisão dos testes:
+  - `rollback_from_slot` agora rejeita histórico que contenha `bank_id`; rollback amplo por slot poderia apagar bancos concorrentes.
+  - `current_state` não retorna um estado único para histórico fork-scoped nem para snapshot startup ainda não sucedido por estado observável.
+  - `is_ancestor` retorna `None` para cadeia incompleta ou banco não observado; só retorna `False` quando a cadeia alcança a raiz conhecida no slot 0.
+  - Conflitos em substituição ambígua, parent_slot ou blockhash não deixam criação parcial de nós.
+  - Testes cobrem a rejeição de rollback por slot em histórico com bank_id e startup não promovido.
+- CI final da camada: #1615, run `44455986697`, HEAD de código/documentação `0c662e00c8161a708eda7e5fbf40ac2a96b6783e`: **496/496 testes OK**, `compileall` aprovado, job completed/success.
+- CI #1614 (run `44455975278`) também passou em 496/496 no commit imediatamente anterior, antes da atualização documental final.
+- PR #23 permanece OPEN/DRAFT, sem merge, mergeable; head na atualização deste registro: `0c662e00c8161a708eda7e5fbf40ac2a96b6783e`; base `feat/damm-v2-referral-transfer-attribution`.
+- `main` permanece intacta em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Próxima ação aprovada pelo plano: implementar adapter de fronteira para protobuf Yellowstone com fixtures versionadas e mensagens binárias reais; não conectar endpoint, não persistir RAW/SQLite e não usar a timeline para decisões financeiras. Depois, integrar o tracker de bancos à reconstrução de pre/post com testes de forks concorrentes.

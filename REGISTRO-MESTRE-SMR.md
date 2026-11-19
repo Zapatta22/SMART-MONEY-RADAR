@@ -1918,3 +1918,12 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - O decoder não associa TransferFeeAmount a uma transferência, não reconcilia bruto/líquido/withheld por operação e não persiste dados.
 - Próxima ação: incorporar a base atual do PR #17 à branch #18 por merge commit controlado; rodar CI combinado antes de retirar Draft ou integrar.
 - Nenhum acesso RPC, SQLite, importação histórica, checkpoint, assinatura ou operação financeira. `main` continua em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+## 257. CI combinado PR #18 + PR #17 aprovado — 19/11/2026
+
+- Branch `feat/token2022-transfer-fee-state-decoder` sincronizada com a base `feat/damm-v2-economic-fee-math` pelo merge commit `f79278c8c80dd9d13ec075021f29c6c174c094ea`; a base `caffd20bdec5472097b6beca4dc647c2e2e4280a` é ancestral do resultado.
+- Compare: `ahead_by=33`, `behind_by=0`; GitHub informa `mergeable=true`.
+- CI combinado: runs `44440708372` (push) e `44440714225` (PR), ambos SUCCESS; logs confirmam **361 testes OK** e `python -m compileall -q src tests`.
+- O CI inclui o decoder de estado Token-2022 estrito e a base de aritmética DAMM v2/Token-2022, além do painel e diagnósticos read-only.
+- PR #18 pode sair de Draft e ser integrada à base intermediária `feat/damm-v2-economic-fee-math`; depois validar o CI do merge commit.
+- Limite mantido: decoder não valida owner on-chain, não escolhe epoch automaticamente, não associa withheld amount a transferência nem reconcilia economicamente.

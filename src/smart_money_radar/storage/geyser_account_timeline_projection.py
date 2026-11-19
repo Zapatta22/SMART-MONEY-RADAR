@@ -135,7 +135,7 @@ class SQLiteGeyserAccountTimelineProjection:
 
     @staticmethod
     def _decode_event(row):
-        event_id, source_id, event_kind, schema_version, payload_encoding, payload_bytes, stream_id, sequence = row
+        event_id, source_id, event_kind, schema_version, payload_encoding, payload_bytes, stream_id, sequence, _delivery_id = row
         if payload_encoding != "normalized_json" or sequence is None or stream_id is None:
             return None
         envelope = json.loads(payload_bytes.decode("utf-8"))

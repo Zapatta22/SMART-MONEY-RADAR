@@ -123,3 +123,18 @@ Movimentos externos que atinjam as mesmas token accounts também podem provocar 
 - A configuração é decodificada por `decode_transfer_fee_config_optional`; ausência da extensão vira `config_state=None`, enquanto TLV inválido gera erro.
 - A saída pode ser passada diretamente a `reconcile_damm_v2_economic_batch` (necessária para referral Token-2022 padrão) e depois a `verify_damm_v2_mint_fee_config`.
 - O construtor não busca dados históricos: o adapter ainda precisa fornecer bytes de mint realmente capturados antes da transação, com fonte/ref rastreáveis. Estado atual obtido por `getAccountInfo` não serve como substituto.
+
+
+## Fonte histórica candidata: Yellowstone Geyser / Helius LaserStream
+
+Pesquisa documental de 19/11/2026:
+
+- O protocolo Yellowstone Geyser expõe account updates com `slot`, bytes completos da conta, `write_version` e `txn_signature` opcional. Isso permite associar um post-state ao signature da transação e ordenar updates da mesma conta.
+- A documentação Helius descreve LaserStream como compatível com Yellowstone. No nível `processed`, account updates chegam em ordem de produção do validator e podem existir múltiplas atualizações da mesma conta no slot; em `confirmed`, assinantes recebem apenas o estado final. Portanto, para capturar pre/post, a coleta candidata precisa observar `processed` e depois reconciliar/confirmar a transação em commitment superior.
+- LaserStream oferece reconexão/replay histórico de até 48 horas. Isso ajuda a recuperar lacunas recentes, mas não substitui arquivo histórico ilimitado nem persistência própria.
+- Preprocessed Transactions entrega assinatura, slot, contas e instruções antes da execução, mas não inclui meta, inner instructions/CPI, balances ou resultado de execução. É sinal antecipado, não fonte autoritativa para reconciliação econômica.
+- RPC padrão `getAccountInfo` retorna o estado consultado no slot de contexto, não bytes históricos arbitrários. `getTransaction` fornece `preTokenBalances/postTokenBalances`, mas não o TLV bruto `TransferFeeAmount` de cada token account.
+- Arquitetura candidata: manter timeline por pubkey de account updates `processed`, armazenando `write_version`, `txn_signature`, slot, owner e bytes; quando chegar um update com assinatura-alvo, parear com o último estado anterior da mesma conta. Confirmar/finalizar a assinatura e descartar atualizações de forks revertidos.
+- Usar o stream de transações pós-execução para obter meta/inner instructions e ligar os updates ao parser; Preprocessed pode antecipar o alerta, mas nunca liberar BUY/SELL.
+- `getTransactionsForAddress` pode ajudar no backfill de transações, mas não fornece por si só os bytes pre/post de estado das contas.
+- Helius LaserStream é candidato, não dependência aprovada nem conectada. A página oficial indica disponibilidade em planos Business ou superiores; confirmar custo/limites no momento da contratação. Manter interface provider-neutral para permitir Yellowstone próprio ou outro serviço compatível.

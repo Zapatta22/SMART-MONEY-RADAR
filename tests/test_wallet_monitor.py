@@ -694,6 +694,12 @@ class WalletMonitorTests(unittest.IsolatedAsyncioTestCase):
             monitor = WalletMonitor(
                 HeliusSettings(api_key="simulated-key"), Source(), store,  # type: ignore[arg-type]
             )
+            store.save_observation(
+                "public-wallet", "ready-signature",
+                simulated_transaction("ready-signature"), [],
+                parse_status="no_events", parser_version="1",
+                advance_checkpoint=False,
+            )
             order: list[str] = []
 
             def damm_ready(*_args, **_kwargs):

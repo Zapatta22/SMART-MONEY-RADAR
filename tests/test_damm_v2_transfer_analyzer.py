@@ -318,6 +318,66 @@ class DammV2TransferAnalyzerTests(unittest.TestCase):
         )[0]
         self.assertEqual(result.status, "ASSOCIATION_UNRESOLVED")
 
+    def test_rejects_fee_variant_under_non_token2022_program(self):
+        invalid_input = SolanaTokenTransfer(
+            **{
+                **self.input.__dict__,
+                "instruction_type": "TRANSFER_CHECKED_WITH_FEE",
+                "fee_amount_raw": 1,
+            }
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [self.context], [invalid_input, self.output]
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("fee inválida", result.reason)
+
+    def test_rejects_fee_greater_than_gross_transfer_amount(self):
+        invalid_output = SolanaTokenTransfer(
+            **{
+                **self.output.__dict__,
+                "instruction_type": "TRANSFER_CHECKED_WITH_FEE",
+                "fee_amount_raw": 101,
+            }
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [self.context], [self.input, invalid_output]
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("fee inválida", result.reason)
+
+    def test_rejects_fee_metadata_on_regular_transfer(self):
+        invalid_output = SolanaTokenTransfer(
+            **{**self.output.__dict__, "fee_amount_raw": 1}
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [self.context], [self.input, invalid_output]
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("fee incompatível", result.reason)
+
+    def test_rejects_unknown_transfer_type_even_with_mint_and_decimals(self):
+        invalid_output = SolanaTokenTransfer(
+            **{**self.output.__dict__, "instruction_type": "OTHER"}
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [self.context], [self.input, invalid_output]
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("tipo de transferência", result.reason)
+
+    def test_rejects_zero_amount_referral_transfer(self):
+        event = _event(has_referral=True, referral_fee=0)
+        context = DammV2SwapTransferContext(_association(event=event), _accounts())
+        referral = _transfer(
+            "vault-b", "referral", TOKEN_2022_PROGRAM_ID, "mint-b", 9, amount=0
+        )
+        result = analyze_damm_v2_transfer_evidence(
+            [context], [self.input, self.output, referral]
+        )[0]
+        self.assertEqual(result.status, "INCOMPLETE")
+        self.assertIn("quantidade bruta", result.reason)
+
 
 if __name__ == "__main__":
     unittest.main()

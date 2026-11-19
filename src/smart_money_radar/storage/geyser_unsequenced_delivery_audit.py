@@ -12,7 +12,7 @@ from pathlib import Path
 import sqlite3
 
 
-POLICY_ID = "geyser-unsequenced-delivery:v1"
+POLICY_ID = "geyser-unsequenced-delivery:v2"
 PROJECTION_NAME = "geyser_unsequenced_delivery_audit"
 PROJECTION_VERSION = 1
 
@@ -130,8 +130,7 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                   )
                   AND NOT EXISTS (
                       SELECT 1 FROM geyser_transport_anomalies a
-                      WHERE a.status='OPEN'
-                        AND a.source_id=d.source_id
+                      WHERE a.source_id=d.source_id
                         AND a.stream_id=d.stream_id
                         AND a.stream_sequence=d.stream_sequence
                   )
@@ -181,11 +180,10 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                        ) AS has_raw_conflict,
                        EXISTS (
                            SELECT 1 FROM geyser_transport_anomalies a
-                           WHERE a.status='OPEN'
-                             AND a.source_id=d.source_id
+                           WHERE a.source_id=d.source_id
                              AND a.stream_id=d.stream_id
                              AND a.stream_sequence=d.stream_sequence
-                       ) AS has_open_anomaly
+                       ) AS has_transport_anomaly
                 FROM geyser_raw_deliveries d
                 LEFT JOIN geyser_raw_events e ON e.event_id=d.event_id
                 ORDER BY d.delivery_id
@@ -197,7 +195,7 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                 audit_rows = []
                 for row in source_rows:
                     (delivery_id,event_id,source_id,stream_id,sequence,conflict_id,
-                     event_source,payload_hash,has_raw_conflict,has_open_anomaly) = row
+                     event_source,payload_hash,has_raw_conflict,has_transport_anomaly) = row
                     counts["delivery_count"] += 1
                     if sequence is None:
                         counts["unsequenced_count"] += 1
@@ -208,8 +206,8 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                     elif has_raw_conflict:
                         classification,reason = "IDENTITY_CONFLICT","event_identity_has_raw_conflict"
                         counts["conflict_count"] += 1
-                    elif sequence is not None and has_open_anomaly:
-                        classification,reason = "SEQUENCE_ANOMALY","open_transport_anomaly"
+                    elif sequence is not None and has_transport_anomaly:
+                        classification,reason = "SEQUENCE_ANOMALY","historical_transport_anomaly"
                     elif sequence is not None:
                         classification,reason = "SEQUENCED","transport_sequence_present"
                     else:

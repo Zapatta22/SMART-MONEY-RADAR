@@ -1,7 +1,7 @@
 # Política de auditoria para entregas RAW sem sequência
 
 **Status:** implementado e validado por CI/benchmark sintético na PR #26  
-**Policy ID:** `geyser-unsequenced-delivery:v1`  
+**Policy ID:** `geyser-unsequenced-delivery:v2`  
 **Branch:** `feat/geyser-unsequenced-raw-audit`  
 **Base:** `4a517ca15499746ddd3f5522f112c80aaac1433b`
 
@@ -32,7 +32,7 @@ A tabela de auditoria é derivada. Ela não deve inserir linhas em `geyser_raw_e
 - `UNSEQUENCED_UNRESOLVED`: delivery sem sequência e sem evidência suficiente de correspondência sequenciada.
 - `UNSEQUENCED_RECONCILED`: delivery sem sequência cujo evento lógico tem outra delivery sequenciada com mesmo `event_id`, mesma `source_id` e mesmo SHA-256 do conteúdo RAW.
 - `IDENTITY_CONFLICT`: delivery associada a conflito RAW, evento ausente/ambíguo, ou identidade reutilizada com conteúdo divergente.
-- `SEQUENCE_ANOMALY`: delivery sequenciada afetada por reutilização de sequência ou anomalia de transporte ainda aberta.
+- `SEQUENCE_ANOMALY`: delivery sequenciada afetada por reutilização de sequência ou qualquer anomalia de transporte historicamente registrada, independentemente de estar `OPEN` ou `RESOLVED`.
 
 A classificação deve incluir um código de motivo estável, não apenas texto livre. Texto explicativo pode ser armazenado adicionalmente.
 
@@ -44,7 +44,7 @@ Uma delivery sem sequência só pode receber `UNSEQUENCED_RECONCILED` se existir
 - mesmo `source_id`;
 - mesmo SHA-256 obtido do evento RAW persistido;
 - evento RAW sem conflito de conteúdo pendente para aquela identidade;
-- delivery sequenciada não afetada por anomalia impeditiva aberta.
+- delivery sequenciada sem qualquer anomalia registrada para sua combinação `(source_id, stream_id, stream_sequence)`. O status administrativo `RESOLVED` não reabilita a sequência.
 
 A stream pode ser diferente: replays/backfills em streams diferentes são observações possíveis do mesmo evento lógico. A reconciliação identifica o evento, não transfere a sequência de uma stream para outra.
 
@@ -98,7 +98,7 @@ Testes mínimos:
 7. Várias deliveries sem sequência do mesmo evento são preservadas individualmente.
 8. Duplicação/rebuild repetido produz a mesma classificação lógica.
 9. Evento com conflito RAW não reconcilia.
-10. Sequência afetada por anomalia aberta não é testemunha elegível.
+10. Sequência afetada por qualquer anomalia histórica, inclusive `RESOLVED`, não é testemunha elegível; a resolução administrativa não remove o taint.
 11. Falha forçada durante gravação reverte toda a geração derivada.
 12. RAW, deliveries, hashes e checkpoints de transporte permanecem byte/logicamente inalterados.
 13. Evento não sequenciado isolado não entra na timeline nem avança checkpoint.

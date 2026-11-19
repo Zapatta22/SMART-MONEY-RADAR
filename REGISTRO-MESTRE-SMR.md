@@ -3393,3 +3393,36 @@ Progresso estimado: módulo **92%**, revisão técnica **90%**. Permanecem: revi
 - PR #25 foi consultada após a atualização: OPEN/DRAFT, mergeable=true, head `6b79175951c6e20e3d1546667e22e812c0f85099`, base `feat/damm-v2-swap-domain-adapter`. Não mergeada.
 - A branch main continua sem alteração por esta sequência de commits.
 - Estado estimado mantido: módulo **92%**; revisão técnica **90%**. Não elevar o percentual até fechar a revisão final dos arquivos remanescentes e decidir explicitamente a lacuna de fixture simultânea DAMM v2 + CPMM.
+
+
+## 233. Teste integrado com swaps positivos DAMM v2 + Raydium CPMM no mesmo payload — 19/11/2026
+
+Para cobrir a lacuna de coordenação entre venues, foi adicionado em `tests/test_damm_v2_persistence_pipeline.py` o teste:
+
+`test_wallet_monitor_persists_positive_damm_and_cpmm_swaps_in_one_payload`
+
+Construção da fixture:
+- Parte da fixture CPMM Mainnet anonimizada já versionada em `data/fixtures/mainnet/anonymized/raydium-cpmm-route-multivenue.json`.
+- Acrescenta ao payload duas operações DAMM v2 sintéticas e reconciliáveis, com remapeamento de accountKeys, programIdIndex, contas e token balance snapshots.
+- A fixture é composta para teste de integração; **não representa uma transação Mainnet original contendo simultaneamente as duas venues**.
+
+Comportamento comprovado pelo teste:
+- Um único `WalletMonitor` recebe o payload composto.
+- Pipeline DAMM v2 processa e persiste dois bundles positivos.
+- Pipeline Raydium CPMM processa e persiste um bundle positivo no mesmo payload.
+- As três tentativas de reconciliação têm status MATCHED e operation_id distintos.
+- Evidências persistidas contabilizam dois bundles `Meteora DAMM v2` e um `Raydium CPMM`.
+- A assinatura termina processada, checkpoint avança uma única vez para a assinatura e não restam pendências.
+
+Commit: `6803906f395f87467120409d4562554206f037da`.
+
+Validação:
+- CI push #1359, run `44431591042`, SUCCESS.
+- CI pull_request #1360, run `44431599422`, SUCCESS.
+- 539 testes executados, todos aprovados; o novo teste aparece explicitamente como `ok`.
+- `python -m compileall -q src tests` aprovado em ambos os workflows.
+
+Limite de evidência que permanece:
+- O teste fecha a cobertura de integração/coordenador com ambos os pipelines positivos num mesmo payload composto.
+- Ainda não há uma assinatura/fixture Mainnet original demonstrando coocorrência real de swap DAMM v2 e swap Raydium CPMM na mesma transação. Não confundir fixture composta com evidência on-chain simultânea.
+- Progresso estimado: conclusão do módulo permanece **92%**; revisão técnica estimada **93%**. A pendência final é a revisão da cadeia de merge e decidir se a evidência Mainnet simultânea será requisito de fechamento ou validação posterior controlada. PR #25 segue OPEN/DRAFT, sem merge e sem alteração na main.

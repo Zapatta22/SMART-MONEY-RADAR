@@ -1,3 +1,4 @@
+import hashlib
 import json
 import unittest
 from pathlib import Path
@@ -120,7 +121,21 @@ class RaydiumCpmmTransferReconciliationTests(unittest.TestCase):
             Path(__file__).resolve().parents[1]
             / "data/fixtures/mainnet/anonymized/raydium-cpmm-jupiter-multiswap.json"
         )
-        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        fixture_bytes = fixture_path.read_bytes()
+        fixture = json.loads(fixture_bytes)
+        manifest_path = fixture_path.with_suffix(fixture_path.suffix + ".manifest.json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(manifest["schema"], "smr.anonymized-fixture.v1")
+        self.assertEqual(manifest["projection_file"], fixture_path.name)
+        self.assertEqual(
+            manifest["projection_sha256"], hashlib.sha256(fixture_bytes).hexdigest()
+        )
+        self.assertEqual(
+            manifest["signature"], fixture["result"]["transaction"]["signatures"][0]
+        )
+        self.assertEqual(manifest["slot"], fixture["result"]["slot"])
+        self.assertIs(manifest["anonymized"], True)
 
         swaps = decode_raydium_cpmm_swaps(fixture)
         transfers = decode_solana_token_transfers(fixture)

@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 smr = "smart_money_radar.cli:main"
+smr-api = "smart_money_radar.services.dashboard_http:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

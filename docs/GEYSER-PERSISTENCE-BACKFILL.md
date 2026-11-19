@@ -231,7 +231,7 @@ The offline transport checkpoint/gap slice is also implemented in PR #23:
 - `contiguous_sequence` advances only through sequences with durable delivery rows. A later sequence creates explicit missing ranges, is retained, and does not move the contiguous checkpoint across the gap;
 - out-of-order arrivals can close a gap only after every sequence from the baseline through the observed high-water mark is present. Superseded and resolved gap records remain auditable;
 - replay of the same event at the same sequence is idempotent for continuity. A different event reusing a sequence, an unidentifiable RAW identity conflict, or a sequence before the declared baseline creates an open transport anomaly and interrupts the checkpoint;
-- anomalies require an explicit resolution note; resolving an anomaly does not clear the interrupted flag while any gap or other open anomaly remains;
+- anomalies require an explicit resolution note; `RESOLVED` closes only the administrative record and does not rehabilitate the affected `(source_id, stream_id, stream_sequence)`. Historical anomaly evidence permanently taints that sequence for derived projections; the transport checkpoint remains interrupted while any historical anomaly or open gap exists. A future repair must be a separate evidence-backed procedure and must not erase the original anomaly;
 - RAW event, delivery, gap/anomaly evidence, and transport checkpoint update share the same SQLite transaction. A forced gap-write failure test proves that RAW, delivery, and checkpoint changes all roll back together;
 - transport checkpoints are scoped by `(source_id, stream_id)`; reconnects must use a new stream_id. This store does not infer sequence-reset semantics.
 
@@ -369,7 +369,7 @@ Definir uma política auditável para RAW sem sequência sem inventar ordem, e m
 ### Coverage policy applied by the timeline projection
 
 - `COMPLETE`: every observed stream for the source has an adapter-declared baseline, no transport checkpoint is interrupted, no open transport gaps/anomalies exist, no timeline continuity gap exists, and no input event was skipped.
-- `PARTIAL`: declared baseline exists, but the projection observes a gap, interruption, anomaly, or skipped input.
+- `PARTIAL`: declared baseline exists, but the projection observes a gap, interruption, any historical transport anomaly (including administratively resolved anomalies), or skipped input.
 - `UNKNOWN`: no stream checkpoint exists or any stream still uses the first-observed-unverified baseline.
 - This is transport/input continuity coverage only. It is not proof that a provider supplied the complete historical slot range; historical backfill coverage remains a separate backfill-job assertion.
 - Events without a sequenced delivery remain in immutable RAW and are counted as skipped; they are not assigned a fabricated order or inserted into the timeline.

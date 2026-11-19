@@ -2687,3 +2687,27 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 
 ### Próxima ação
 Obter execução verificável dos 14 testes novos, da suíte completa e de `python -m compileall -q src tests`; corrigir qualquer falha antes de considerar a PR pronta. Depois, revisar o versionamento e o desempenho com dados representativos. Não fazer merge sem autorização.
+
+## 298. Correção da expectativa do teste de múltiplas deliveries — 19/11/2026
+
+### Evidência de CI
+- Workflow run #1758, run ID `44529355795`, executado no HEAD anterior `ebe84bba4e5e7ed1075e6ba59b4dcfbdef16aa41`, terminou em FAILURE.
+- Setup, checkout, instalação do projeto passaram.
+- A suíte executou 587 testes; houve uma única falha: `test_multiple_unsequenced_deliveries_are_preserved_individually`.
+- Falha exata: `AssertionError: 4 != 3` na expectativa `len(rows) == 3`.
+- O cenário cria quatro deliveries: duas sem sequência e duas testemunhas sequenciadas. A auditoria classifica e preserva todas as deliveries individualmente; portanto, quatro linhas são o resultado correto. Não foi identificada falha na regra de reconciliação.
+
+### Correção aplicada
+- No teste, expectativa alterada de 3 para 4 linhas.
+- Acrescentada asserção explícita de que os quatro `delivery_id` (duas deliveries sem sequência e duas testemunhas) estão presentes na projeção.
+- Nenhuma alteração na implementação da auditoria ou na política de reconciliação.
+- Commit: `f5dc79b677a70b0a536b3644ba2fcbe5c02f9dc4`.
+- PR #26 HEAD atualizado para esse commit; continua Draft, aberta e sem merge.
+- `main` permanece intacta.
+
+### Validação e próxima ação
+- O run #1758 comprova a falha acima; compileall foi skipped porque a etapa de unit tests falhou.
+- A correção foi gravada na branch, mas ainda **não há execução CI confirmada para o novo HEAD**. Não declarar testes ou compileall aprovados.
+- Próxima ação: obter novo workflow run para o commit `f5dc79b677a70b0a536b3644ba2fcbe5c02f9dc4`; confirmar os 587 testes e compileall. Se houver nova falha, inspecionar logs antes de alterar código.
+- Após CI verde, prosseguir para benchmark de escala/memória da auditoria.
+- Não fazer merge sem autorização explícita.

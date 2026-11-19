@@ -1,4 +1,5 @@
 import hashlib
+from dataclasses import replace
 import json
 import unittest
 
@@ -225,6 +226,18 @@ class SolanaTransactionEvidenceBundleTests(unittest.TestCase):
 
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("nenhuma associação DAMM v2", result.reason)
+
+
+    def test_economic_reconciler_rejects_bundle_not_created_by_factory(self):
+        bundle = build_solana_transaction_evidence_bundle(
+            _damm_transaction(), source_id="rpc-a"
+        )
+        unsealed = replace(bundle, _factory_token=None)
+
+        with self.assertRaisesRegex(TypeError, "factory validada"):
+            reconcile_solana_transaction_damm_v2_bundle(
+                unsealed, monitored_wallet="wallet"
+            )
 
     def test_rejects_non_json_payload_instead_of_hashing_repr(self):
         raw = _transaction()

@@ -114,7 +114,8 @@ def run_rebuild_worker(database: Path, temp_store: str | None) -> dict:
     after_memory = process_memory_snapshot()
     # Use this process' own /proc high-water mark. getrusage.ru_maxrss can
     # retain the pre-fork parent's peak on Linux and contaminate this worker.
-    # VmHWM covers the worker lifetime (imports/construction included), not rebuild alone.\n    rss_peak_kib = after_memory["vmhwm_kib"]
+    # VmHWM covers the worker lifetime (imports/construction included), not rebuild alone.
+    rss_peak_kib = after_memory["vmhwm_kib"]
     rss_peak_mib = round(rss_peak_kib / 1024, 2) if rss_peak_kib is not None else None
     return {
         "summary": summary,

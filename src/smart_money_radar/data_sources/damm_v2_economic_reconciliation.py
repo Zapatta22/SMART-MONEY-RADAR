@@ -774,13 +774,25 @@ def verify_damm_v2_mint_fee_config(
         if snapshot is None:
             mismatches.append(f"snapshot histórico de mint ausente para {expected.mint}")
             continue
-        if snapshot.transaction_epoch != transaction_epoch:
+        if (
+            isinstance(snapshot.transaction_epoch, bool)
+            or not isinstance(snapshot.transaction_epoch, int)
+            or snapshot.transaction_epoch != transaction_epoch
+        ):
             mismatches.append(f"epoch do snapshot diverge para {expected.mint}")
             continue
-        if snapshot.transaction_slot != transaction_slot:
+        if (
+            isinstance(snapshot.transaction_slot, bool)
+            or not isinstance(snapshot.transaction_slot, int)
+            or snapshot.transaction_slot != transaction_slot
+        ):
             mismatches.append(f"slot do snapshot diverge para {expected.mint}")
             continue
-        if snapshot.transaction_order != transaction_order:
+        if (
+            isinstance(snapshot.transaction_order, bool)
+            or not isinstance(snapshot.transaction_order, int)
+            or snapshot.transaction_order != transaction_order
+        ):
             mismatches.append(f"ordem da transação diverge para {expected.mint}")
             continue
         if (

@@ -350,4 +350,5 @@ Definir e implementar recuperação/backfill e checkpoints de projeção mais gr
 ### Tests
 
 - Added `tests/test_geyser_recovery_store.py` for job lifecycle, complete-coverage evidence, query-contract mismatch, monotonic counters, restart recovery, cursor-preserving retry, source-scoped projection checkpoints, coverage fail-closed rules, generation monotonicity, and invalid state/range rejection.
-- CI validation for this slice is pending at the time of this documentation update.
+- CI #1733 — run `44519550364`, commit `f90fd43bbbd03c7c03bfbf7b23ca5907e5d60066`: SUCCESS; **569/569 tests OK** in 4.343 s; `python -m compileall -q src tests` passed.
+- Earlier runs #1727 and #1731 exposed two test expectation/attempt-audit defects; both were corrected before #1733. The successful run includes the corrected recovery behavior.

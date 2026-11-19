@@ -211,6 +211,7 @@ arquivo é fornecido pelo operador e precisa corresponder à rede capturada.
 O verifier usa apenas mints Token-2022 cujo estado está associado à
 transação imediatamente anterior do mesmo banco comprovado. O caminho
 confere a taxa ativa para o epoch e mantém `EXPECTED_NOT_VERIFIED` se
-faltarem todos os estados exigidos. A verificação é posterior à reconciliação
-base. Casos que exigem o prestate para calcular o fee de referral antes da
-reconciliação base seguem incompletos.
+faltarem todos os estados exigidos. Quando os estados cobrem todos os mints necessários, o reconciliador recebe
+os snapshots antes do cálculo. Isso permite calcular a taxa de referral
+Token-2022 que depende do prestate. A verificação final ainda confere as
+taxas contra os snapshots, e a falta de prestate bloqueia o referral.

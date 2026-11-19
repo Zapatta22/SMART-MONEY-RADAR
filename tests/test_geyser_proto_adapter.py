@@ -748,7 +748,21 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
             receiver.receive(mint_frame.SerializeToString(), stream_sequence=sequence)
             sequence += 1
         evidence = receiver.transaction_evidence_at(40, block_sequence=42)
-        verified = evidence.reconcile_damm_v2(monitored_wallet=wallet, transaction_epoch=0)
+        from smart_money_radar.data_sources.solana_transaction_evidence_bundle import (
+            reconcile_solana_transaction_damm_v2_bundle,
+        )
+
+        with patch(
+            "smart_money_radar.data_sources.yellowstone_transaction_evidence."
+            "reconcile_solana_transaction_damm_v2_bundle",
+            wraps=reconcile_solana_transaction_damm_v2_bundle,
+        ) as reconcile:
+            verified = evidence.reconcile_damm_v2(monitored_wallet=wallet, transaction_epoch=0)
+        arguments = reconcile.call_args.kwargs
+        self.assertEqual(arguments["transaction_epoch"], 0)
+        self.assertEqual(arguments["transaction_order"], 2)
+        self.assertEqual(len(arguments["mint_fee_snapshots"]), 2)
+        self.assertEqual(arguments["transaction_ordering_domain_id"], "domain-a")
         self.assertEqual(verified.status, "RECONCILED", verified.reason)
         self.assertEqual(verified.mint_fee_config_status, "VERIFIED")
         wrong_epoch = evidence.reconcile_damm_v2(monitored_wallet=wallet, transaction_epoch=10)

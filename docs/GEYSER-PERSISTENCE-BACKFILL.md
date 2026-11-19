@@ -435,3 +435,14 @@ artificiais entre updates de conta. Eventos de slot e banco alimentam o tracker
 de linhagem existente. A timeline só é devolvida após a validação de todos
 os envelopes do snapshot. A primeira observação de outra conexão passa a
 ser um baseline independente.
+
+Para carregar o schema oficial no receptor offline, gere um
+`FileDescriptorSet` com `protoc --include_imports --descriptor_set_out=yellowstone.desc`
+a partir de `geyser.proto` e `solana-storage.proto` do commit upstream
+`69a7cffdccef00e9ac095d18aa73b21c76155504`. Os Git blobs verificados foram
+`d0f96616d515c978a07b16e6409c7706f4429a5a` e
+`8731b3a2092698bd341ca5ac31673217db5b2186`, respectivamente. Forneça os bytes
+do descriptor confiável a `load_yellowstone_decoder` e passe o decoder
+resultante a `YellowstoneFrameReceiver`. Um teste de integração offline com
+esses descritores reabriu o banco e repetiu um frame da fixture de conta,
+uma transação sintética e um ping.

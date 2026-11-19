@@ -14,7 +14,9 @@ from smart_money_radar.data_sources.geyser_proto_adapter import (
     adapt_subscribe_update,
 )
 
-from smart_money_radar.data_sources.yellowstone_receiver import YellowstoneFrameReceiver
+from smart_money_radar.data_sources.yellowstone_receiver import (
+    YellowstoneFrameReceiver, load_yellowstone_decoder,
+)
 from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
 
 
@@ -268,6 +270,15 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         info.signature = bytes(range(64))
         info.transaction.signatures.append(info.signature)
         return message.SerializeToString()
+
+    def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
+        descriptors = descriptor_pb2.FileDescriptorSet()
+        _UPDATE.DESCRIPTOR.file.CopyToProto(descriptors.file.add())
+        decode = load_yellowstone_decoder(descriptors.SerializeToString())
+        raw = self.transaction_frame()
+        self.assertEqual(decode(raw).WhichOneof("update_oneof"), "transaction")
+        with self.assertRaisesRegex(ValueError, "SubscribeUpdate"):
+            load_yellowstone_decoder(b"")
 
     def test_shared_sequence_replays_account_transaction_and_control_after_restart(self):
         account = _parse("account_update").SerializeToString()

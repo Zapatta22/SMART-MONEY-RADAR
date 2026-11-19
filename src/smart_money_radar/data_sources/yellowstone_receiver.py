@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Iterator
 
+from google.protobuf import descriptor_pb2, message_factory
 from google.protobuf.message import DecodeError, Message
 
 from smart_money_radar.data_sources.geyser_account_timeline import AccountUpdateTimeline
@@ -15,6 +16,16 @@ from smart_money_radar.data_sources.geyser_ingestion import NormalizedGeyserEven
 from smart_money_radar.data_sources.geyser_proto_adapter import adapt_subscribe_update
 from smart_money_radar.data_sources.geyser_transaction_updates import NormalizedTransactionObservation
 from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore, WireFrameReceipt
+
+
+def load_yellowstone_decoder(descriptor_set: bytes) -> Callable[[bytes], Message]:
+    """Load the official SubscribeUpdate type from a descriptor set with imports."""
+    descriptors = descriptor_pb2.FileDescriptorSet.FromString(descriptor_set)
+    messages = message_factory.GetMessages(descriptors.file)
+    update = messages.get("geyser.SubscribeUpdate")
+    if update is None or "update_oneof" not in update.DESCRIPTOR.oneofs_by_name:
+        raise ValueError("descriptor não define geyser.SubscribeUpdate com update_oneof")
+    return update.FromString
 
 
 class YellowstoneFrameReceiver:

@@ -248,6 +248,7 @@ def reconcile_solana_transaction_damm_v2_bundle(
     mint_fee_snapshots: tuple[DammV2MintFeeConfigSnapshot, ...] = (),
     transaction_epoch: int | None = None,
     transaction_order: int | None = None,
+    transaction_ordering_domain_id: str | None = None,
 ) -> DammV2EconomicReconciliation:
     """Reconcile DAMM v2 only from evidence derived inside one validated bundle.
 
@@ -325,4 +326,5 @@ def reconcile_solana_transaction_damm_v2_bundle(
         transaction_signature=bundle.identity.transaction_signature,
         transaction_source_id=bundle.identity.source_id,
         transaction_payload_sha256=bundle.identity.payload_sha256,
+        transaction_ordering_domain_id=transaction_ordering_domain_id,
     )

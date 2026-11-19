@@ -2084,3 +2084,16 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - CI #1557 (`44448535055`) no HEAD documental atual `762f91ce60b5542da91776562c8b5865c18df5ab`: completed/success, **451 testes OK**, compileall aprovado.
 - PR #23 continua OPEN/DRAFT, mergeable, sem merge; PR #22 Draft; `main` intacta. Nenhuma RPC/Helius, RAW, SQLite, checkpoint, importação ou operação on-chain.
 - Próxima ação: conectar uma fonte histórica que forneça bytes de mint e token account no estado exato pre/post da transação, e construir os objetos `DammV2MintPrestate` e `DammV2WithheldFeeSnapshot` com proveniência verificável.
+
+
+## 275. Pesquisa da fonte de snapshots históricos e arquitetura de coleta — 19/11/2026
+
+- Fontes oficiais/documentação consultadas: Solana RPC JSON Structures/Indexing; Helius LaserStream/Preprocessed Transactions; Yellowstone Geyser `geyser.proto`.
+- Yellowstone `SubscribeUpdateAccountInfo` expõe `data`, `write_version` e `txn_signature` opcional; `SubscribeUpdateAccount` expõe slot. Esses campos permitem vincular um post-state à assinatura e ordenar atualizações da mesma conta.
+- Helius LaserStream é compatível com Yellowstone e oferece replay recente/reconexão. A documentação indica que em `processed` account updates chegam em ordem do validator e podem existir múltiplas atualizações da mesma conta no slot; em `confirmed`, assinantes recebem apenas estado final. Logo, capturar pre/post exige observar `processed` e depois confirmar a assinatura em commitment superior.
+- Preprocessed Transactions oferece transação assinada/slot/instruções antes da execução, mas não contém meta, inner instructions/CPI, balances ou resultado. Serve como alerta antecipado, nunca como prova econômica.
+- RPC `getAccountInfo` consulta estado atual no slot de contexto; `getTransaction` contém pre/post token balances, mas não o TLV bruto `TransferFeeAmount` de cada token account. `getTransactionsForAddress` é opção de backfill de transações, não substituto de account-state history.
+- Arquitetura candidata: timeline por pubkey com account updates `processed` contendo bytes, slot, write_version e txn_signature; parear o update associado à assinatura com o estado imediatamente anterior da mesma conta; armazenar refs/hash; confirmar/finalizar e descartar forks revertidos.
+- Helius LaserStream é candidato técnico, não foi contratado/conectado; a página oficial indica disponibilidade em planos Business ou superiores. Manter adapter provider-neutral e validar preço/limites antes de contratação.
+- Limite de código atual: `DammV2MintPrestate` e `DammV2WithheldFeeSnapshot` são contratos tipados; o construtor ainda depende de bytes prestate fornecidos por um adapter externo. Não existe coletor LaserStream/Geyser operacional.
+- Próxima ação: implementar normalizador provider-neutral de `GeyserAccountUpdate` e timeline/pairer por pubkey/write_version/txn_signature, com testes de startup baseline, lacunas/replay, updates múltiplos no mesmo slot e rollback antes de conectar um provider.

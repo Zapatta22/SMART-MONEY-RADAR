@@ -911,6 +911,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             _instruction_inventory(),
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        ,
+            source_id="rpc-a", transaction_payload_sha256="a" * 64
         )
         result = _reconcile(
             [context], [evidence],
@@ -925,6 +927,7 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             mint_fee_snapshots=snapshots,
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
+            transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
         )
         self.assertEqual(result.status, "RECONCILED")
         self.assertEqual(
@@ -1015,6 +1018,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             _instruction_inventory(),
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
+        ,
+            source_id="rpc-a", transaction_payload_sha256="a" * 64
         )
         self.assertEqual(len(snapshots), 2)
         self.assertEqual(
@@ -1037,21 +1042,21 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                         mint="mint-a", account_data=_mint_account_data(500),
                         snapshot_slot=123, snapshot_order=49,
                         source="fixture", state_ref="mint-a-pre",
-                    ,
-            source_id="rpc-a",
-        ),
+                        source_id="rpc-a",
+                    ),
                     "mint-b": DammV2MintPrestate(
                         mint="mint-b", account_data=_mint_account_data(None),
                         snapshot_slot=123, snapshot_order=49,
                         source="fixture", state_ref="mint-b-pre",
-                    ,
-            source_id="rpc-a",
-        ),
+                        source_id="rpc-a",
+                    ),
                 },
                 _instruction_inventory("other-signature"),
                 transaction_signature="signature-1",
                 transaction_epoch=10, transaction_slot=123, transaction_order=50,
-            )
+            ,
+            source_id="rpc-a", transaction_payload_sha256="a" * 64
+        )
 
     def test_builder_rejects_stale_mint_prestate_from_another_slot(self):
         with self.assertRaisesRegex(ValueError, "mesmo slot"):
@@ -1062,21 +1067,21 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                         mint="mint-a", account_data=_mint_account_data(500),
                         snapshot_slot=122, snapshot_order=49,
                         source="fixture", state_ref="mint-a-pre",
-                    ,
-            source_id="rpc-a",
-        ),
+                        source_id="rpc-a",
+                    ),
                     "mint-b": DammV2MintPrestate(
                         mint="mint-b", account_data=_mint_account_data(None),
                         snapshot_slot=123, snapshot_order=49,
                         source="fixture", state_ref="mint-b-pre",
-                    ,
-            source_id="rpc-a",
-        ),
+                        source_id="rpc-a",
+                    ),
                 },
                 _instruction_inventory(),
                 transaction_signature="signature-1",
                 transaction_epoch=10, transaction_slot=123, transaction_order=50,
-            )
+            ,
+            source_id="rpc-a", transaction_payload_sha256="a" * 64
+        )
 
 if __name__ == "__main__":
     unittest.main()

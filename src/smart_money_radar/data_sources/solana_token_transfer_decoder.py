@@ -11,6 +11,7 @@ SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
 TOKEN_PROGRAM_IDS = {SPL_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID}
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+U64_MAX = (1 << 64) - 1
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,8 @@ def _account_keys(message: Mapping[str, Any], meta: Mapping[str, Any] | None) ->
     if not isinstance(raw, list):
         raise ValueError("message.accountKeys ausente ou inválido")
     parsed_keys = any(isinstance(item, dict) for item in raw)
+    if parsed_keys and any(not isinstance(item, dict) for item in raw):
+        raise ValueError("accountKeys mistura formatos parsed e compiled")
     keys = []
     for item in raw:
         key = item.get("pubkey") if isinstance(item, dict) else item
@@ -179,6 +182,8 @@ def _raw_transfer(
         amount = int.from_bytes(data[2:10], "little")
         decimals = data[10]
         fee_amount = int.from_bytes(data[11:19], "little")
+        if fee_amount > amount:
+            raise ValueError("fee de TransferCheckedWithFee excede o valor bruto")
         return (
             resolved[0], resolved[2], resolved[3], resolved[1],
             amount, decimals, "TRANSFER_CHECKED_WITH_FEE", fee_amount,
@@ -231,7 +236,7 @@ def _parsed_transfer(
                 fee_amount = int(raw_fee)
             except (TypeError, ValueError):
                 return None
-            if fee_amount < 0:
+            if not 0 <= fee_amount <= U64_MAX or fee_amount > int(raw_amount):
                 return None
     else:
         raw_amount = info.get("amount")
@@ -244,7 +249,7 @@ def _parsed_transfer(
         amount = int(raw_amount)
     except (TypeError, ValueError):
         return None
-    if amount < 0:
+    if not 0 <= amount <= U64_MAX:
         return None
     if decimals is not None and (
         isinstance(decimals, bool) or not isinstance(decimals, int) or not 0 <= decimals <= 255

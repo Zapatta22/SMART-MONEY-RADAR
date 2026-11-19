@@ -2576,4 +2576,40 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 ### Estado
 - PR #23 permanece Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`.
 - `main` não foi alterada.
-- Próxima ação: integrar o checkpoint granular por fonte ao rebuild da timeline, gravando-o somente após a geração derivada estar confirmada; definir também a política para RAW sem sequência. Preservar full rebuild como fallback e permanecer offline.
+- Próxima ação: definir uma política auditável para RAW sem sequência, sem inventar ordem, e medir o custo do full rebuild com volume representativo. A integração do checkpoint por fonte ao rebuild foi concluída na seção 295.
+
+
+## 295. Integração do checkpoint granular ao rebuild da timeline — 19/11/2026
+
+### Implementação
+- Modificado `src/smart_money_radar/storage/geyser_account_timeline_projection.py`.
+- Modificado `tests/test_geyser_account_timeline_projection.py`.
+- `SQLiteGeyserAccountTimelineProjection.rebuild()` grava checkpoint de recovery para cada `source_id` somente depois do commit bem-sucedido da geração derivada.
+- Checkpoint registra nome/versão da projeção, geração, último delivery observado, último event reproduzido, contagem de deliveries, eventos projetados, entradas ignoradas, cobertura e continuidade interrompida.
+- Checkpoints são isolados por fonte. Contagem e maior delivery_id consideram todas as entregas da fonte, inclusive as que não apontam para evento RAW; last_event_id é o último evento sequenciado reproduzido.
+- A geração derivada continua sendo reconstruída integralmente e substituída atomicamente: account writes, bank lineage, gaps, conflitos e checkpoint global permanecem na mesma transação SQLite.
+- Depois do commit dessa geração, o recovery store grava os checkpoints por fonte em transação separada. Interrupção entre as fases deixa o checkpoint atrasado, nunca adiantado; novo full rebuild pode reconciliar.
+- Associação dos account writes aos event IDs RAW passou a usar chave determinística construída durante replay, evitando varredura repetida de todos os RAWs para cada escrita.
+
+### Política de cobertura
+- COMPLETE: todos os streams observados têm baseline declarado pelo adapter, sem checkpoint interrompido, gap/anomalia aberta, gap da timeline ou input ignorado.
+- PARTIAL: há baseline declarado, mas foi observada lacuna, interrupção, anomalia ou entrada ignorada.
+- UNKNOWN: não há checkpoint de transporte ou algum stream usa baseline first_observed_unverified.
+- COMPLETE significa continuidade de transporte desde baseline declarado; não prova completude do histórico do provider nem de intervalo de backfill.
+- RAW sem entrega sequenciada continua preservado e contabilizado, sem ordem artificial ou projeção na timeline.
+
+### Testes e CI
+- Quatro testes de integração: checkpoint por fonte após rebuild; UNKNOWN para baseline não verificado; PARTIAL para gap; isolamento entre fontes.
+- Teste de payload RAW malformado também confirma que falha no rebuild não avança checkpoint de recovery.
+- CI #1743 — run `44520328616`, commit de código `979e6841f348ae74de40d65b14411eb883b5cc64`: SUCCESS; **573/573 testes OK** em 5,904 s; `python -m compileall -q src tests` aprovado.
+
+### Limites
+- Full rebuild continua como mecanismo de recuperação/fallback; não há replay incremental.
+- RAW sem sequência ainda não entra na timeline; política específica para reconciliação permanece pendente.
+- COMPLETE não é prova de histórico integral do provider; backfill histórico permanece separado.
+- Offline: nenhum RPC, endpoint, cliente, credencial, serviço, VPS ou backfill ao vivo foi conectado.
+
+### Estado
+- PR #23 permanece Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`.
+- `main` permanece sem alteração.
+- Próxima ação: especificar e implementar política auditável para RAW sem sequência; depois medir o full rebuild com volume representativo, sem abandonar o fallback integral.

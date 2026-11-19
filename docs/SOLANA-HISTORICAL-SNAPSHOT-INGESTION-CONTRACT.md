@@ -117,3 +117,19 @@ A implementação deverá permanecer provider-neutral. Yellowstone/Helius é uma
 - Replay idêntico preserva idempotência; conflito não altera evidência original.
 - Fixture positiva usa um único domínio ordenado e percorre ingestão -> RAW -> timeline bank-aware -> snapshot -> verifier.
 - CI integral e auditoria de proveniência aprovados antes de qualquer execução financeira.
+
+
+## 10. Yellowstone transaction observation — contrato inicial
+
+A implementação inicial em `geyser_transaction_updates.py` normaliza o wrapper `SubscribeUpdateTransaction` sem decodificar sua semântica econômica:
+
+- valida assinatura de 64 bytes e exige igualdade com a primeira assinatura contida no objeto Transaction;
+- preserva slot do wrapper, índice de transação quando disponível, flag de vote, bytes serializados de Transaction e bytes serializados de TransactionStatusMeta;
+- preserva ausência de meta como evidência incompleta; não inventa metadados;
+- exige `source_id`, `stream_id`, `ordering_domain_id` e `stream_sequence` explícitos;
+- o receptor deve atribuir a sequência monotônica a cada mensagem SubscribeUpdate recebida, antes da dispatch por tipo. Não usar contadores separados para transaction/account/slot;
+- `ordering_domain_id` precisa ser o mesmo domínio declarado para os account updates que serão correlacionados. Esta implementação ainda não cria o sequenciador nem persiste a observação no RAW;
+- quando o transporte fornece `raw_message_bytes`, os bytes e seu SHA-256 são preservados como proveniência `WIRE`. Sem esses bytes, a implementação registra apenas uma serialização protobuf determinística, explicitamente identificada como `PROTOBUF_DETERMINISTIC_RESERIALIZATION`, que não pode ser apresentada como wire RAW original;
+- a observação normalizada não atribui `transaction_order`, não decodifica instruções/CPI, não constrói snapshots e não classifica BUY/SELL.
+
+A camada permanece offline e provider-neutral. A próxima integração deve provar que o mesmo sequenciador, domínio e persistência RAW abrangem transaction e account updates, incluindo reconnect/gap/replay, antes de snapshots históricos se tornarem elegíveis.

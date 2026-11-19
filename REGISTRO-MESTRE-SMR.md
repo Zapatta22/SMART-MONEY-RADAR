@@ -3256,3 +3256,41 @@ Precedência e efeito:
 - PRs #26, #27, #28 e #29 continuam abertas/Draft e sem merge. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 - Nenhum provider/RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
 - Próxima ação: revisão final somente leitura do diff e das relações entre PRs #26–#30, sem repetir testes e sem fazer merge. Não fazer merge sem autorização explícita e específica do usuário.
+
+
+## 314. Merge da PR #30 na PR #26 e validação pós-merge — 19/11/2026
+
+### Integração concluída
+- O usuário autorizou explicitamente o merge da PR #30 na PR #26.
+- PR #30 (integration/geyser-pr27-pr28-preserve-history) foi integrada à branch feat/geyser-unsequenced-raw-audit por merge commit:
+  - SHA: 061579b52f6c94e348fe2df63f2c6a6fafc9e0f9.
+  - A PR #30 foi fechada como merged em 19/11/2026 às 18:42:02Z.
+  - O merge preservou a ancestralidade original das PRs #27 e #28.
+- A PR #26 permaneceu aberta, Draft, não mergeada, com HEAD atualizado para 061579b52f6c94e348fe2df63f2c6a6fafc9e0f9.
+- A PR #26 continua baseada em feat/damm-v2-economic-reconciliation, SHA 4a517ca15499746ddd3f5522f112c80aaac1433b.
+- Snapshot GitHub após o merge: PR #26 com 60 commits, 9 arquivos alterados (+1.870/-1), estado OPEN, merged=false, mergeable=true, mergeable_state=clean.
+- A branch main foi consultada após o merge e permaneceu no SHA 5060bc65ddf181a4736fdb662c44c3fec0dd7259; não foi modificada.
+- PR #30 está encerrada por merge. PRs #26, #27, #28 e #29 não foram fechadas por esta ação.
+
+### CI pós-merge no HEAD da PR #26
+- Os workflows executaram sobre o HEAD 061579b52f6c94e348fe2df63f2c6a6fafc9e0f9; o benchmark fez checkout do merge ref temporário 8dae0f780475fdd550a16f3887c74ef601910967, que combina o HEAD da PR #26 com sua base 4a517ca15499746ddd3f5522f112c80aaac1433b.
+- Workflow SMR tests, run ID 44590591705: SUCCESS. Job test: Ran 593 tests in 6.678s, resultado OK; python -m compileall -q src tests também passou.
+- Uma segunda execução do workflow SMR tests, run ID 44590577810, também terminou SUCCESS no mesmo HEAD.
+- Workflow Geyser audit benchmark, run ID 44590591819: SUCCESS; benchmark sintético e upload do artefato concluídos.
+- Todos os três check runs associados ao HEAD 061579b... foram consultados como completed/success.
+
+### Resultados do benchmark pós-merge
+- Artefato geyser-audit-benchmark-results, ID 14563462630, SHA-256 do ZIP a8e85005acace0d59b260cf0571fefdb8f7af946f690c06acc99214b4c9def91; log do job e JSON do benchmark foram inspecionados.
+- Escalas sintéticas: 1.000, 10.000, 50.000 e 100.000 eventos lógicos, correspondendo a 2.000, 20.000, 100.000 e 200.000 deliveries. Todas as escalas mantiveram classificações esperadas, contagens RAW preservadas e integrity_check=[ok].
+- Escala máxima: 100.000 eventos lógicos / 200.000 deliveries; rebuild 3,983794 s; throughput 50.203,40 deliveries/s; pico RSS do worker 29,02 MiB; TEMP SQLite 24.399.872 bytes; tracemalloc 0,60 MiB; 100.000 SEQUENCED e 100.000 UNSEQUENCED_RECONCILED.
+- Fanout alto: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,145391 s; pico RSS 29,00 MiB; TEMP SQLite 2.088.960 bytes; todas as 10.000 testemunhas preservadas; integrity_check=[ok].
+- Comparação TEMP no cenário de 100.000 eventos: DEFAULT 3,998376 s / 29,10 MiB RSS; FILE 4,007098 s / 29,11 MiB; MEMORY 3,975822 s / 53,37 MiB. O ganho de tempo do MEMORY foi desprezível, com aumento de aproximadamente 24,3 MiB de RSS; manter DEFAULT/file-backed.
+- Limites: benchmark sintético em runner Linux/GitHub Actions. RSS/VmHWM mede a vida útil do worker; TEMP pages × page size mede alocação lógica SQLite, não bytes físicos escritos. Não extrapolar diretamente para Termux, VPS ou produção.
+
+### Estado de segurança e próxima ação
+- A integração #27 + #28 está incorporada à PR #26 e passou na suíte de testes, compilação e benchmark pós-merge.
+- A PR #26 ainda não foi integrada à sua base #23. A PR #26 permanece Draft; não há autorização implícita para merge subsequente.
+- PR #30 está merged; PR #29 permanece apenas como integração temporária de validação. PRs #27 e #28 continuam abertas e não foram fechadas nesta operação.
+- main permanece em 5060bc65ddf181a4736fdb662c44c3fec0dd7259.
+- Nenhum provider/RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+- Próxima etapa recomendada: revisão técnica da PR #26 contra a base #23, incluindo o conjunto completo de alterações herdadas e a cadeia de PRs, sem repetir os testes já aprovados. Só depois decidir a promoção da PR #26 para revisão final; não fazer merge na #23 ou na main sem autorização explícita.

@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import resource
 import sqlite3
 import subprocess
 import sys
@@ -93,14 +92,15 @@ def run_rebuild_worker(database: Path, temp_store: str | None) -> dict:
     _, peak_bytes = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     after_memory = process_memory_snapshot()
-    # Linux reports ru_maxrss in KiB; macOS reports bytes.
-    rss_peak_raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    rss_peak_mib = rss_peak_raw / (1024 if sys.platform != "darwin" else 1024 * 1024)
+    # Use this process' own /proc high-water mark. getrusage.ru_maxrss can
+    # retain the pre-fork parent's peak on Linux and contaminate this worker.
+    rss_peak_kib = after_memory["vmhwm_kib"]
+    rss_peak_mib = round(rss_peak_kib / 1024, 2) if rss_peak_kib is not None else None
     return {
         "summary": summary,
         "rebuild_seconds": round(elapsed, 6),
         "tracemalloc_peak_mib": round(peak_bytes / (1024 * 1024), 2),
-        "process_rss_peak_mib": round(rss_peak_mib, 2),
+        "process_rss_peak_mib": rss_peak_mib,
         "memory_before_rebuild": before_memory,
         "memory_after_rebuild": after_memory,
         "temp_store_requested": temp_store or "DEFAULT",
@@ -281,7 +281,7 @@ def main() -> None:
     print(json.dumps({
         "benchmark": "geyser_unsequenced_delivery_audit_rebuild",
         "fixture": "synthetic_sqlite_two_deliveries_per_event",
-        "rss_method": "isolated_worker_process_ru_maxrss",
+        "rss_method": "isolated_worker_process_proc_status_VmHWM",
         "temp_storage_method": "sqlite_temp_page_count_times_page_size",
         "process_memory_method": "/proc/self/status and smaps_rollup on Linux",
         "high_cardinality_witness_fanout": fanout,

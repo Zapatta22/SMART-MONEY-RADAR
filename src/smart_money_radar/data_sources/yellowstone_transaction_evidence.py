@@ -77,12 +77,19 @@ class YellowstoneTransactionEvidence:
         transaction_order = 2 * order.transaction_index
         payload_hash = self.bundle.identity.payload_sha256
         snapshots = []
+        balances = {item.token_account: item for item in self.bundle.balance_deltas.deltas}
         for expected, pre, post in eligible:
             try:
                 if any(_base58_encode(state.data[:32], field="token mint", expected_length=32)
                        != expected.mint for state in (pre, post)):
                     raise ValueError("mint Token-2022 diverge")
                 delta = decode_transfer_fee_amount_delta(pre.data, post.data)
+                balance = balances.get(expected.token_account)
+                if balance is None or (
+                    int.from_bytes(pre.data[64:72], "little"),
+                    int.from_bytes(post.data[64:72], "little"),
+                ) != (balance.pre_amount_raw, balance.post_amount_raw):
+                    raise ValueError("saldos Token-2022 dos estados históricos divergem da transação")
             except (TypeError, ValueError) as exc:
                 return replace(result, status="INCOMPLETE", reason=str(exc))
             snapshots.append(DammV2WithheldFeeSnapshot(

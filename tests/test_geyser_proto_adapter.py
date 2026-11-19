@@ -689,6 +689,7 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         receiver.receive(meta.SerializeToString(), stream_sequence=43)
 
         sequence = 44
+        balances = {item.token_account: item for item in evidence.bundle.balance_deltas.deltas}
         for expected in result.expected_withheld_fee_deltas:
             account_frame = _parse("account_update")
             account_frame.account.slot = tx.slot
@@ -702,7 +703,12 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
             ):
                 account.write_version = sequence + offset
                 account.txn_signature = signature
-                account.data = _decode_base58(expected.mint) + _withheld_account_data(amount)[32:]
+                balance = balances[expected.token_account]
+                raw = bytearray(_withheld_account_data(amount))
+                raw[:32] = _decode_base58(expected.mint)
+                spendable = balance.pre_amount_raw if offset == 0 else balance.post_amount_raw
+                raw[64:72] = spendable.to_bytes(8, "little")
+                account.data = bytes(raw)
                 receiver.receive(account_frame.SerializeToString(), stream_sequence=sequence + offset)
             sequence += 2
 
@@ -720,7 +726,9 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
             "EXPECTED_NOT_VERIFIED",
         )
         transition, *other_transitions = evidence.account_transitions
-        changed = replace(transition.post_state, data=transition.pre_state.data)
+        changed = replace(transition.post_state, data=(
+            transition.post_state.data[:-8] + transition.pre_state.data[-8:]
+        ))
         inconsistent = replace(evidence, account_transitions=(
             replace(transition, post_state=changed), *other_transitions,
         ))

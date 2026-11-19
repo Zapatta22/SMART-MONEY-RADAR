@@ -2443,7 +2443,7 @@ Formalizar a derivação determinística de `event_id` por tipo de evento e vers
 - PR #23 continua Draft e sem merge; `main` permanece intocada.
 
 ### Validação
-- Aguardar CI de push e pull_request no HEAD desta etapa; registrar hashes, runs e contagem final após sucesso.
+- CI #1674 — run `44510167848`, evento pull_request, HEAD `bde85727630b4f37994852c67594a9c70887d1a3`: completed/success; **539/539 testes OK** em 3,843 s; `python -m compileall -q src tests` aprovado.
 
 ### Próxima etapa
 Integrar o helper ao contrato de ingestão RAW sem acoplar identidade a transporte; depois implementar persistência normalizada com versionamento e diagnósticos. Não conectar provider.

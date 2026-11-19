@@ -99,7 +99,6 @@ class DammV2MintPrestate:
     source: str
     state_ref: str
     source_id: str = ""
-    state_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -330,11 +329,6 @@ def build_damm_v2_mint_fee_config_snapshots(
         ):
             raise ValueError(f"proveniência/source_id do mint prestate ausente ou divergente para {mint}")
         actual_state_sha256 = hashlib.sha256(prestate.account_data).hexdigest()
-        if (
-            not isinstance(prestate.state_sha256, str)
-            or prestate.state_sha256 != actual_state_sha256
-        ):
-            raise ValueError(f"SHA-256 do mint prestate ausente ou divergente para {mint}")
         if mint not in cache:
             inventory = collect_transfer_fee_config_init_positions(
                 instruction_inventory, mint

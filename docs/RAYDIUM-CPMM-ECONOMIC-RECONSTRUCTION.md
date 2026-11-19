@@ -138,3 +138,17 @@ Limites conservadores:
 - Testes sintéticos não substituem fixtures reais mainnet.
 
 A estrutura de contas CPMM usada para essa correlação segue o layout oficial de 13 contas, no qual as token accounts do usuário e os vaults são ordenados pela direção efetiva input → output, não pela ordem canônica do pool. Referências: documentação CPMM e implementação on-chain oficial.
+
+
+## Conversão de reconciliação MATCHED para contratos do domínio
+
+O módulo `domain/swap_bundle_builder.py` converte apenas diagnósticos `MATCHED` em um bundle com `SwapObservation`, `SwapClassification` e `SwapEvidence`.
+
+- Quantidades são convertidas de inteiro bruto para `Decimal` usando os decimals da token account; não usa float nem argumentos da instrução.
+- `operation_id` é determinístico por chain, assinatura, índice externo e cpi_path.
+- A classificação BUY/SELL exige uma lista explícita `reference_mints`: entrada de referência → BUY; saída de referência → SELL. Se nenhum ou ambos os lados forem referência, fica UNKNOWN com confiança zero e motivo explícito.
+- Reconciliações AMBIGUOUS/INCOMPLETE são ignoradas e não geram contratos.
+- A função exige que a carteira da reconciliação MATCHED seja a carteira monitorada e rejeita operation_id duplicado.
+- O builder não persiste dados. A persistência deve reutilizar a camada já proposta no PR #4, após revisão e integração da cadeia de dependências.
+
+Ainda não há configuração de mints de referência por ambiente nem fixtures reais aprovadas. Sem configuração explícita, BUY/SELL permanece UNKNOWN.

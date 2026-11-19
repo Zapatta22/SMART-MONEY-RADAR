@@ -3330,3 +3330,34 @@ Estado de revisão:
 - A cadeia de dependências permanece #21 → #22 → #23 → #24 → #25; PR #25 tem base #24. Nenhuma foi mergeada.
 - A revisão técnica geral fica estimada em **80%**; a conclusão estimada do módulo permanece **92%**. A lacuna de fixture única com swaps positivos simultâneos DAMM v2 + CPMM permanece aberta.
 - Próxima ação: continuar a revisão de compatibilidade da cadeia, verificando se existem outros contratos/tipos adicionados em PRs ancestrais que não foram propagados até os adaptadores e builders posteriores. Não fazer merge sem revisão final e autorização.
+
+
+## 230. Preservação da evidência de referral no contrato SwapEvidence — 19/11/2026
+
+Na revisão da PR #24, foi identificada uma lacuna de proveniência: a camada de atribuição e a reconciliação econômica DAMM v2 validavam a transferência de referral, mas o adaptador de domínio não a propagava para `SwapEvidence`. O bundle persistido registrava genericamente input/output, sem preservar a instrução, contas, mint, valor bruto e fee da perna referral.
+
+Correção aplicada na branch `feat/damm-v2-transaction-pipeline`:
+
+- O adaptador agora exige a transferência referral quando `EvtSwap2.has_referral=True` e `referral_fee>0`.
+- Revalida o papel econômico pelo `FeeMode`: vault de origem, conta referral de destino, mint, Token Program, valor bruto igual ao `referral_fee` e execução.
+- Inclui a transferência referral na validação da proveniência CPI e valida defensivamente a fee explícita de `TransferCheckedWithFee`.
+- Persiste em `SwapEvidence.evidence` os índices da instrução, contas origem/destino, mint, valor bruto e fee da transferência referral.
+- Adicionados dois testes: preservação/validação da evidência referral e rejeição de bundle com referral obrigatório ausente.
+
+Commits:
+- Código: `4d238ca7215a8e2016b5feddf409cf143486d173`.
+- Testes: `328223324b1505dfef2df02a055165ba09ef4dcb` (HEAD após a correção).
+
+Validação:
+- CI #1353, run `44429930506`, SUCCESS no commit `328223324b1505dfef2df02a055165ba09ef4dcb`.
+- Suíte: 538 testes executados, todos aprovados; os dois testes novos aparecem explicitamente como `ok`.
+- `python -m compileall -q src tests`: aprovado.
+- Nenhuma alteração na `main`, execução de ordens ou gravação em banco de produção.
+
+Revisão das dependências:
+- PR #22: leitura do analisador de transferências/referral e testes; nenhum defeito adicional confirmado.
+- PR #23: leitura da reconciliação econômica em lote e testes; nenhum defeito adicional confirmado.
+- PR #24: lacuna de proveniência referral identificada e corrigida conforme acima.
+- PRs #21–#25 continuam OPEN/DRAFT, mergeable, sem reviews/threads registrados e sem merge. A cadeia continua empilhada em ordem #21 → #22 → #23 → #24 → #25.
+
+Progresso estimado da revisão técnica: **85%**. Conclusão estimada do módulo: **92%**. A fixture única com swaps positivos simultâneos DAMM v2 + Raydium CPMM continua como lacuna explícita. Próxima ação: fechar a revisão técnica da PR #25 e da cadeia, incluindo compatibilidade dos contratos e revisão final dos checks; não fazer merge sem autorização.

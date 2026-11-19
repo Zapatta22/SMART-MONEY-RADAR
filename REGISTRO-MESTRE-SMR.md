@@ -3581,3 +3581,26 @@ Estado confirmado após a execução:
 - Módulo 92%; revisão técnica 93%; main sem alteração.
 
 Próxima ação técnica recomendada: corrigir a proveniência/manifesto da fixture da PR #9 e adicionar teste que efetivamente a consuma; depois obter CI aprovado no HEAD atualizado. Não mergear a cadeia até essa pendência ser resolvida e os checks finais serem confirmados.
+
+
+## 239. Correção do manifesto e teste consumidor da fixture CPMM/Jupiter da PR #9 — 19/11/2026
+
+### Alterações efetivamente realizadas na branch da PR #9
+
+- Corrigido \`projection_file\` no manifesto \`raydium-cpmm-jupiter-multiswap.json.manifest.json\`: agora aponta para o nome real versionado \`raydium-cpmm-jupiter-multiswap.json\`. Os hashes existentes não foram alterados.
+- Adicionado teste consumidor em \`tests/test_raydium_cpmm_transfer_reconciliation.py\`: carrega a fixture Mainnet anonimizada do disco e executa os decoders reais de swaps CPMM e transferências SPL/Token-2022.
+- O teste confirma dois swaps CPMM na instrução externa 0, posições internas 0 e 6, caminhos CPI distintos e stackHeight 2; confirma também as contas de entrada/saída esperadas e sete transferências executadas nas posições internas 1, 2, 4, 5, 7, 8 e 10, incluindo ambos os programas token.
+- Escopo do teste é estrutural/decodificação da fixture. Ele não declara reconciliação econômica MATCHED dos dois swaps nem classificação BUY/SELL; isso continua sujeito aos limites do reconciliador e à evidência de saldo.
+
+### CI no HEAD atualizado
+
+- PR #9 HEAD: \`d91f0c277c1daf1f5fff102f85fc55a1c3b07676\`.
+- Workflow #1368, run ID \`44434394914\`, evento push.
+- Resultado SUCCESS: **170 testes aprovados** e \`python -m compileall -q src tests\` aprovado.
+- PR #9 permanece OPEN, não Draft e mergeable=true; não foi mergeada.
+
+### Proveniência remanescente
+
+O campo \`provenance_manifest\` ainda nomeia \`39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.manifest.json\`, mas esse manifesto de origem não está versionado na árvore da PR. O bruto original também não está versionado. Não inventamos manifesto bruto, encoding, caminho ou SHA. A referência de proveniência externa precisa ser confirmada/arquivada conforme a política de fixtures antes de declarar a trilha documental integralmente fechada.
+
+Nenhum merge, rebase, aprovação manual de workflow, ordem financeira ou alteração na main foi executado. PR #25 segue OPEN/DRAFT; módulo permanece **92%** e revisão técnica **93%** até a revisão final da proveniência e da cadeia empilhada.

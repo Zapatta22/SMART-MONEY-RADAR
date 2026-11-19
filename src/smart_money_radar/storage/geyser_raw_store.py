@@ -287,7 +287,12 @@ class SQLiteGeyserRawStore:
                     (source_id, stream_id, sequence, delivery_id),
                 ).fetchall()
             }
-            if prior_ids and (event_id is None or any(value != event_id for value in prior_ids)):
+            if event_id is None:
+                self._record_transport_anomaly(
+                    connection, source_id, stream_id, sequence, delivery_id,
+                    "raw_identity_conflict", received_at,
+                )
+            elif prior_ids and (None in prior_ids or any(value != event_id for value in prior_ids)):
                 self._record_transport_anomaly(
                     connection, source_id, stream_id, sequence, delivery_id,
                     "sequence_reused_for_different_event", received_at,

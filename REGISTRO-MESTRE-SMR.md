@@ -3562,3 +3562,22 @@ Após as seções 235 e 236, o commit documental 28c30c3c6c07cb30eed354b7198838f
 A confirmação CI #1364 valida o conteúdo da branch de integração/Registro Mestre até este commit; não altera o estado da PR #9. A PR #9 continua com head dfac8ce8734808f0a4cbe817b49c47ee7058bd80 e run #145 action_required, sem jobs. A execução anterior #44223562333 aprovou 169 testes no head antigo 449129f9114420e4f136c0ad081c7820d2d0e399. A fixture CPMM/Jupiter recém-adicionada continua sem teste consumidor e com manifesto de projeção/proveniência inconsistente, conforme seções 235–236.
 
 Progresso mantido: módulo **92%**, revisão técnica **93%**. Nenhuma PR foi mergeada; main permanece intacta. Próxima ação: decidir e executar, em branch/PR apropriada, a correção de proveniência e teste dedicado da fixture da PR #9, ou obter uma validação CI aprovada para seu HEAD atual. Não considerar a PR #9 totalmente validada até ambas as lacunas serem resolvidas.
+
+
+## 238. CI de confirmação do Registro Mestre — 19/11/2026
+
+O commit documental 501a2ae61bc9ee1b1ec240ba92262bb446cdc3b6 (seção 237) foi validado pelo workflow #1365, run ID 44433759007:
+
+- Evento pull_request; actor Zapatta22.
+- Conclusão SUCCESS.
+- 539 testes executados em 4.684s, todos aprovados.
+- python -m compileall -q src tests aprovado.
+- Nenhuma alteração funcional foi incluída nesta atualização documental.
+
+Estado confirmado após a execução:
+- PR #25 OPEN/DRAFT, não mergeada, head 501a2ae61bc9ee1b1ec240ba92262bb446cdc3b6.
+- PR #9 OPEN, head dfac8ce8734808f0a4cbe817b49c47ee7058bd80, run #145 action_required sem jobs; CI anterior no head antigo aprovou 169 testes.
+- A fixture CPMM/Jupiter da PR #9 ainda tem manifesto com projection_file divergente do nome do arquivo e provenance_manifest ausente, e não possui teste consumidor dedicado.
+- Módulo 92%; revisão técnica 93%; main sem alteração.
+
+Próxima ação técnica recomendada: corrigir a proveniência/manifesto da fixture da PR #9 e adicionar teste que efetivamente a consuma; depois obter CI aprovado no HEAD atualizado. Não mergear a cadeia até essa pendência ser resolvida e os checks finais serem confirmados.

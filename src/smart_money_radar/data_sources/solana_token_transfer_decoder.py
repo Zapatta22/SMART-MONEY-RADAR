@@ -430,6 +430,8 @@ def decode_solana_instruction_inventory(
     meta = payload.get("meta")
     if not isinstance(meta, dict):
         return SolanaInstructionInventory((), False, ("meta ausente",))
+    if meta.get("err") is not None:
+        return SolanaInstructionInventory((), False, ("transação não foi executada com sucesso",))
     issues: list[str] = []
     try:
         keys = _account_keys(message, meta)

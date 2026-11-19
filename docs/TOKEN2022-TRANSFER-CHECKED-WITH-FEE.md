@@ -39,3 +39,10 @@ O decoder preserva bruto e taxa separadamente. Não infere epoch, não consulta 
 - O analisador DAMM v2 pode atribuir a instrução por CPI, mas a atribuição continua `ATTRIBUTED`, não MATCHED. A reconciliação econômica DAMM v2 ainda exige validação do evento, taxas, transferências de referral e deltas por operação.
 
 Nenhuma RPC/Helius, fixture RAW, banco, checkpoint ou operação on-chain é executada por este módulo.
+
+## Validação no decoder e no contrato de domínio
+
+- O decoder rejeita fee maior que o bruto, valores parsed fora de u64 e representação mista de accountKeys. A variante só é reconhecida sob o Token-2022 Program.
+- Para dados `jsonParsed`, `feeAmount` precisa ser inteiro ou string decimal escalar; estruturas desconhecidas são ignoradas, sem inferência.
+- O reconciliador mantém `input_amount_raw` como débito bruto da carteira e `output_amount_raw` como crédito spendable líquido. O builder de domínio revalida o tipo/programa, valida a taxa e exige que a saída líquida seja `gross - fee`.
+- A evidência registra bruto, fee e débito/crédito da carteira separadamente. O delta da origem continua sendo bruto; o delta de destino é líquido. A taxa withheld não é tratada como saldo spendable.

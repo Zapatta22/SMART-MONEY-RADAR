@@ -811,5 +811,120 @@ class DammV2PersistencePipelineTests(unittest.TestCase):
         self.assertEqual(self.store.get_checkpoint("wallet"), "signature")
 
 
+    def test_wallet_monitor_persists_positive_damm_and_cpmm_swaps_in_one_payload(self):
+        import asyncio
+        import copy
+        import json
+        from pathlib import Path
+
+        from smart_money_radar.services.wallet_monitor import WalletMonitor
+        from smart_money_radar.settings import HeliusSettings
+
+        fixture_path = (
+            Path(__file__).resolve().parents[1]
+            / "data" / "fixtures" / "mainnet" / "anonymized"
+            / "raydium-cpmm-route-multivenue.json"
+        )
+        combined = json.loads(fixture_path.read_text(encoding="utf-8"))
+        result = combined["result"]
+        message = result["transaction"]["message"]
+        meta = result["meta"]
+
+        loaded = meta.pop("loadedAddresses")
+        message["accountKeys"] = (
+            list(message["accountKeys"])
+            + list(loaded["writable"])
+            + list(loaded["readonly"])
+        )
+        wallet = message["accountKeys"][0]
+        signature = result["transaction"]["signatures"][0]
+
+        damm = _damm_two_swap2_reconciled_raw()
+        damm_message = damm["transaction"]["message"]
+        damm_meta = damm["meta"]
+        combined_keys = message["accountKeys"]
+        key_indexes = {key: index for index, key in enumerate(combined_keys)}
+
+        def map_damm_key(key):
+            if key == "wallet":
+                key = wallet
+            if key not in key_indexes:
+                key_indexes[key] = len(combined_keys)
+                combined_keys.append(key)
+            return key_indexes[key]
+
+        damm_key_map = {
+            index: map_damm_key(key)
+            for index, key in enumerate(damm_message["accountKeys"])
+        }
+
+        def program_index(program_id):
+            return map_damm_key(program_id)
+
+        damm_inner = []
+        for original in damm_meta["innerInstructions"][0]["instructions"]:
+            instruction = copy.deepcopy(original)
+            instruction["accounts"] = [
+                damm_key_map[index] for index in instruction["accounts"]
+            ]
+            instruction["programIdIndex"] = program_index(
+                instruction.pop("programId")
+            )
+            damm_inner.append(instruction)
+
+        damm_outer = copy.deepcopy(damm_message["instructions"][0])
+        damm_outer["programIdIndex"] = program_index(
+            damm_outer.pop("programId")
+        )
+        new_outer_index = len(message["instructions"])
+        message["instructions"].append(damm_outer)
+        meta["innerInstructions"].append({
+            "index": new_outer_index,
+            "instructions": damm_inner,
+        })
+
+        for field in ("preTokenBalances", "postTokenBalances"):
+            for original in damm_meta[field]:
+                balance = copy.deepcopy(original)
+                balance["accountIndex"] = damm_key_map[
+                    original["accountIndex"]
+                ]
+                if balance.get("owner") == "wallet":
+                    balance["owner"] = wallet
+                meta[field].append(balance)
+
+        class ReplaySource:
+            async def get_transaction_async(self, requested_signature):
+                if requested_signature != signature:
+                    raise ValueError("WalletMonitor solicitou assinatura divergente.")
+                return combined
+
+        monitor = WalletMonitor(
+            HeliusSettings(api_key="composite-fixture-validation"),
+            ReplaySource(),
+            self.store,
+        )
+        completed = asyncio.run(
+            monitor._collect_transaction(wallet, signature)
+        )
+
+        self.assertTrue(completed)
+        self.assertTrue(self.store.has_processed_signature(wallet, signature))
+        self.assertEqual(self.store.get_checkpoint(wallet), signature)
+
+        attempts = self.store.get_swap_reconciliation_attempts(wallet, signature)
+        self.assertEqual(len(attempts), 3)
+        self.assertTrue(all(item["status"] == "MATCHED" for item in attempts))
+        operation_ids = [item["operation_id"] for item in attempts]
+        self.assertEqual(len(set(operation_ids)), 3)
+
+        bundles = [self.store.get_swap_bundle(item) for item in operation_ids]
+        self.assertTrue(all(bundle is not None for bundle in bundles))
+        venues = [bundle["evidence"].venue for bundle in bundles]
+        self.assertEqual(venues.count("Meteora DAMM v2"), 2)
+        self.assertEqual(venues.count("Raydium CPMM"), 1)
+        self.assertEqual(self.store.get_pending_signatures(wallet), [])
+
+
 if __name__ == "__main__":
     unittest.main()

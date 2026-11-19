@@ -6,6 +6,7 @@ on:
     paths:
       - "src/**"
       - "tests/**"
+      - "tools/benchmark_geyser_unsequenced_audit.py"
       - "pyproject.toml"
       - ".github/workflows/smr-tests.yml"
   pull_request:

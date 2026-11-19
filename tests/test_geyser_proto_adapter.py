@@ -5,6 +5,8 @@ from contextlib import redirect_stdout
 from io import StringIO
 import json
 import sqlite3
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from pathlib import Path
@@ -18,6 +20,7 @@ from smart_money_radar.data_sources.geyser_proto_adapter import (
     adapt_subscribe_update,
 )
 
+from smart_money_radar.data_sources.yellowstone_grpc import capture_yellowstone
 from smart_money_radar.data_sources.yellowstone_receiver import (
     YellowstoneFrameReceiver, load_yellowstone_decoder,
 )
@@ -157,6 +160,16 @@ def _protobuf_update_class():
     fld(transaction_update, "slot", 2, T.TYPE_UINT64)
     fld(transaction_update, "bank_id", 3, T.TYPE_UINT64)
     msg("SubscribeUpdatePing")
+    request = msg("SubscribeRequest")
+    ping_request = msg("SubscribeRequestPing")
+    fld(ping_request, "id", 1, T.TYPE_INT32)
+    fld(request, "ping", 9, T.TYPE_MESSAGE, ".geyser.SubscribeRequestPing")
+    request_map = request.nested_type.add(name="SlotsEntry")
+    request_map.options.map_entry = True
+    slot_filter = msg("SubscribeRequestFilterSlots")
+    fld(request_map, "key", 1, T.TYPE_STRING)
+    fld(request_map, "value", 2, T.TYPE_MESSAGE, ".geyser.SubscribeRequestFilterSlots")
+    repeated(request, "slots", 2, T.TYPE_MESSAGE, ".geyser.SubscribeRequest.SlotsEntry")
     update = msg("SubscribeUpdate")
     update.oneof_decl.add(name="update_oneof")
     update.field.add(name="filters", number=1, type=T.TYPE_STRING, label=T.LABEL_REPEATED)
@@ -490,6 +503,71 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 main([args[0], str(absent), *args[2:]])
             self.assertFalse(absent.exists())
+
+    def test_bounded_grpc_capture_sequences_ping_and_reconnects_under_fresh_domains(self):
+        descriptors = descriptor_pb2.FileDescriptorSet()
+        _UPDATE.DESCRIPTOR.file.CopyToProto(descriptors.file.add())
+        descriptor_bytes = descriptors.SerializeToString()
+        request_type = message_factory.GetMessageClassesForFiles(
+            [_UPDATE.DESCRIPTOR.file.name], _UPDATE.DESCRIPTOR.file.pool
+        )["geyser.SubscribeRequest"]
+        ping = _UPDATE()
+        ping.ping.SetInParent()
+        ping_bytes = ping.SerializeToString()
+        transaction = self.transaction_frame()
+        channel = MagicMock()
+        cancelled = MagicMock()
+
+        def stream(requests, *, timeout, metadata):
+            self.assertEqual(timeout, 17)
+            self.assertEqual(metadata, (("x-token", "fixture-token"),))
+
+            def frames():
+                self.assertIn("audit", request_type.FromString(next(requests)).slots)
+                yield ping_bytes
+                self.assertEqual(request_type.FromString(next(requests)).ping.id, 1)
+                yield transaction
+                self.fail("frame limit should cancel before reading another delivery")
+
+            return Call(frames())
+
+        class Call:
+            def __init__(self, generator):
+                self.generator = generator
+
+            def __iter__(self):
+                return self.generator
+
+            def cancel(self):
+                cancelled()
+
+        channel.stream_stream.return_value.side_effect = stream
+        channel.__enter__.return_value = channel
+        tls = object()
+        grpc = SimpleNamespace(
+            secure_channel=MagicMock(return_value=channel),
+            ssl_channel_credentials=MagicMock(return_value=tls),
+            RpcError=RuntimeError,
+        )
+        store = SQLiteGeyserRawStore(":memory:")
+        self.addCleanup(store.close)
+        with patch.dict("sys.modules", {"grpc": grpc}):
+            first, second = [capture_yellowstone(
+                store, target="provider.example:443", source_id="validator",
+                descriptor=descriptor_bytes, subscription={"slots": {"audit": {}}},
+                token="fixture-token", max_frames=2, timeout=17,
+            ) for _ in range(2)]
+        grpc.secure_channel.assert_called_with("provider.example:443", tls)
+        channel.stream_stream.assert_called_with("/geyser.Geyser/Subscribe")
+        self.assertEqual(cancelled.call_count, 2)
+        self.assertNotEqual(first.ordering_domain_id, second.ordering_domain_id)
+        self.assertNotEqual(first.stream_id, second.stream_id)
+        for capture in (first, second):
+            self.assertEqual((capture.frame_count, capture.outcome), (2, "frame_limit"))
+            self.assertEqual(
+                list(store.iter_wire_frames("validator", capture.stream_id, capture.ordering_domain_id)),
+                [(0, ping_bytes), (1, transaction)],
+            )
 
     def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
         descriptors = descriptor_pb2.FileDescriptorSet()

@@ -85,3 +85,6 @@ Helius integration is part of this change.
 - O campo `source` de `NormalizedAccountUpdate` deve receber o mesmo namespace estável usado como `source_id` nos eventos de slot/block/parent. O identificador não deve mudar em cada reconexão; `stream_id` pode mudar.
 - A chave `ordering_key` agora contém somente `(slot, write_version)`; `stream_sequence` não desempata nem altera a ordem do ledger. Quando bancos diferentes compartilham o mesmo slot, a ordem linear é deliberadamente insuficiente.
 - `is_ancestor` só retorna `False` quando a cadeia observada chega à raiz conhecida (slot 0); cadeia incompleta retorna `None`.
+
+- O método legado `rollback_from_slot` rejeita histórico que contenha `bank_id`: remover tudo a partir de um slot poderia apagar simultaneamente bancos concorrentes. Para dados fork-scoped, a invalidação deve passar pelo `BankLineageTracker` com identidade exata do banco.
+- A timeline não expõe `current_state` quando há histórico fork-scoped ou quando o último evento ainda é startup; um snapshot de startup não é promovido a estado corrente de banco.

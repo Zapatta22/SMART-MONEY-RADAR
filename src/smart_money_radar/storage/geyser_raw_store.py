@@ -349,6 +349,33 @@ class SQLiteGeyserRawStore:
             ).fetchone()
             return dict(row) if row is not None else None
 
+    def verify_wire_session(self, source_id: str, stream_id: str, ordering_domain_id: str) -> dict:
+        """Hash ordered, independently verified deliveries from one journal snapshot."""
+        digest = hashlib.sha256(b"smr-yellowstone-session-v1\x00")
+        for value in (source_id, stream_id, ordering_domain_id):
+            data = _text(value, "scope").encode("utf-8")
+            digest.update(len(data).to_bytes(8, "big"))
+            digest.update(data)
+        first = last = None
+        count = 0
+        for sequence, payload in self.iter_wire_frames(source_id, stream_id, ordering_domain_id):
+            if first is None:
+                first = sequence
+            last = sequence
+            count += 1
+            digest.update(sequence.to_bytes(8, "big"))
+            digest.update(len(payload).to_bytes(8, "big"))
+            digest.update(payload)
+        return {
+            "source_id": source_id,
+            "stream_id": stream_id,
+            "ordering_domain_id": ordering_domain_id,
+            "first_sequence": first,
+            "last_sequence": last,
+            "verified_frames": count,
+            "sha256": digest.hexdigest(),
+        }
+
     def list_wire_sessions(self, *, source_id: str | None = None, limit: int = 100) -> list[dict]:
         """Summarize archived transport coverage in one SQLite snapshot."""
         if source_id is not None:

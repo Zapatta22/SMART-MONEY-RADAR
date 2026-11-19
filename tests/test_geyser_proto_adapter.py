@@ -900,6 +900,35 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
             self.assertIsNone(empty["capture"])
             self.assertEqual(hashlib.sha256(database.read_bytes()).hexdigest(), before)
 
+    def test_cli_verifies_archive_digest_and_rejects_changed_frame(self):
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "journal.sqlite"
+            store = SQLiteGeyserRawStore(database)
+            receiver = self.receiver(store)
+            receipt = receiver.receive(self.transaction_frame(), stream_sequence=40)
+            first = store.verify_wire_session(*receiver.scope)
+            other = self.receiver(store, stream="other", domain="other")
+            other.receive(self.transaction_frame(), stream_sequence=40)
+            self.assertNotEqual(first["sha256"], store.verify_wire_session(*other.scope)["sha256"])
+            store.close()
+
+            args = ["geyser-verify", str(database), "--source", "validator-a",
+                    "--stream", "connection-a", "--domain", "domain-a"]
+            output = StringIO()
+            with redirect_stdout(output):
+                main([*args, "--expected-sha256", first["sha256"]])
+            self.assertEqual(json.loads(output.getvalue()), first)
+            self.assertEqual(first["verified_frames"], 1)
+            self.assertEqual(first["first_sequence"], 40)
+            with self.assertRaisesRegex(SystemExit, "diverge do esperado"):
+                main([*args, "--expected-sha256", "0" * 64])
+
+            with sqlite3.connect(database) as connection:
+                connection.execute("UPDATE geyser_wire_frames SET payload_bytes = ? WHERE frame_id = ?",
+                                   (b"altered", receipt.frame_id))
+            with self.assertRaisesRegex(SystemExit, "integridade dos frames"):
+                main(args)
+
     def test_descriptor_loader_uses_the_supplied_subscribe_update_schema(self):
         descriptors = descriptor_pb2.FileDescriptorSet()
         _UPDATE.DESCRIPTOR.file.CopyToProto(descriptors.file.add())

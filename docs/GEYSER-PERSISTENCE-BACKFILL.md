@@ -498,3 +498,13 @@ de sessões no resultado. Quando o schema inclui o resultado gRPC, o relatório
 mostra também como a tentativa terminou. A leitura usa um único snapshot
 SQLite, sem conexão com a rede. O inventário descreve o que consta no journal.
 Use o replay de evidência para conferir os hashes dos frames.
+
+`smr geyser-verify journal.sqlite --source validator-a --stream STREAM --domain DOMAIN`
+confere a continuidade e o SHA-256 de cada frame aceito e produz um SHA-256
+de toda a sequência aceita. Compare a cópia recebida com
+`--expected-sha256 HASH`. O digest v1 inclui a identificação da fonte,
+conexão e domínio e depois cada sequência e envelope. Identificadores UTF-8
+e envelopes são prefixados pelo comprimento em u64 big-endian. A sequência
+também é u64 big-endian. Uma sessão vazia tem contagem zero. O resultado
+comprova o conteúdo arquivado, com cobertura externa ainda dependente do
+provedor e dos filtros empregados.

@@ -38,6 +38,13 @@ class TransferFeeConfigState:
 
 
 @dataclass(frozen=True)
+class TransferFeeConfigMutationInstruction:
+    kind: str
+    transfer_fee_basis_points: int
+    maximum_fee: int
+
+
+@dataclass(frozen=True)
 class TransferFeeAmountState:
     withheld_amount: int
     extension_types: tuple[int, ...]
@@ -188,4 +195,56 @@ def decode_transfer_fee_amount_delta(
         post_withheld_amount=after.withheld_amount,
         delta=after.withheld_amount - before.withheld_amount,
         extension_types=before.extension_types,
+    )
+
+
+def decode_transfer_fee_config_mutation_instruction(
+    instruction_data: bytes,
+) -> TransferFeeConfigMutationInstruction | None:
+    """Decodes Token-2022 TransferFeeExtension init/set mutation instructions.
+
+    The outer TokenInstruction discriminator is 26; the extension sub-tags are
+    0 (InitializeTransferFeeConfig) and 5 (SetTransferFee). Other sub-tags do
+    not mutate the mint's transfer-fee rate configuration.
+    """
+    if not isinstance(instruction_data, bytes):
+        raise TypeError("instruction_data deve ser bytes")
+    if not instruction_data or instruction_data[0] != 26:
+        return None
+    if len(instruction_data) < 2:
+        raise ValueError("TransferFeeExtension instruction truncada")
+    subtag = instruction_data[1]
+    if subtag not in (0, 5):
+        return None
+
+    if subtag == 5:
+        if len(instruction_data) != 12:
+            raise ValueError("SetTransferFee instruction com tamanho inválido")
+        basis_points = int.from_bytes(instruction_data[2:4], "little")
+        maximum_fee = int.from_bytes(instruction_data[4:12], "little")
+    else:
+        offset = 2
+        for field in ("transfer_fee_config_authority", "withdraw_withheld_authority"):
+            if offset + 4 > len(instruction_data):
+                raise ValueError(f"COption truncada em {field}")
+            tag = int.from_bytes(instruction_data[offset:offset + 4], "little")
+            if tag == 0:
+                offset += 4
+            elif tag == 1:
+                if offset + 36 > len(instruction_data):
+                    raise ValueError(f"pubkey COption truncada em {field}")
+                offset += 36
+            else:
+                raise ValueError(f"tag COption inválida em {field}")
+        if offset + 10 != len(instruction_data):
+            raise ValueError("InitializeTransferFeeConfig com tamanho inválido")
+        basis_points = int.from_bytes(instruction_data[offset:offset + 2], "little")
+        maximum_fee = int.from_bytes(instruction_data[offset + 2:offset + 10], "little")
+
+    if basis_points > 10_000:
+        raise ValueError("transfer_fee_basis_points excede 10000")
+    return TransferFeeConfigMutationInstruction(
+        kind="INITIALIZE_TRANSFER_FEE_CONFIG" if subtag == 0 else "SET_TRANSFER_FEE",
+        transfer_fee_basis_points=basis_points,
+        maximum_fee=maximum_fee,
     )

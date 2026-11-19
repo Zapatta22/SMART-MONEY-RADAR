@@ -62,6 +62,22 @@ def _rpc_payload(raw_transaction: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _is_valid_signature(value: Any) -> bool:
+    """Validate a Solana transaction signature as a 64-byte Base58 value."""
+    if not isinstance(value, str) or not value:
+        return False
+    alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    number = 0
+    try:
+        for character in value:
+            number = number * 58 + alphabet.index(character)
+    except ValueError:
+        return False
+    decoded_length = (number.bit_length() + 7) // 8
+    leading_zero_bytes = len(value) - len(value.lstrip("1"))
+    return decoded_length + leading_zero_bytes == 64
+
+
 def _transaction_identity(
     raw_transaction: dict[str, Any], source_id: str
 ) -> SolanaTransactionIdentity:

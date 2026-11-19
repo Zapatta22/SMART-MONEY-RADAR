@@ -2720,7 +2720,7 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - Log confirma `Ran 587 tests in 5.029s` e `OK`.
 - Etapa `Compile source and tests` executada e concluída com SUCCESS (`python -m compileall -q src tests`).
 - A correção de teste foi suficiente; nenhum código de produção foi alterado nesta correção.
-- O commit de documentação anterior `1740eaff3684bd1492c56695ef1b0039f8c27e19` também iniciou o run #1761; consultar seu resultado separadamente antes de afirmar que o HEAD documental mais recente está validado.
+- O commit de documentação `1740eaff3684bd1492c56695ef1b0039f8c27e19` foi validado no run #1761, ID `44548513163`: SUCCESS; 587 testes passaram em 4.237s e compileall também concluiu com SUCCESS.
 
 ### Estado atualizado
 - O commit de código `f5dc79b...` tem suíte completa (587 testes) e compileall aprovados.

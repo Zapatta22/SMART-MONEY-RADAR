@@ -33,6 +33,7 @@ class DammV2SwapEventAssociation:
     event_cpi_path: tuple[int, ...] | None
     event_stack_height: int | None
     event: DammV2EvtSwap2 | None
+    resolved_accounts: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class _InstructionRef:
     stack_height: int | None
     instruction: DammV2SwapInstruction | None = None
     event: DammV2EvtSwap2 | None = None
+    resolved_accounts: tuple[str, ...] | None = None
 
 
 def _decode_base58(value: str) -> bytes:
@@ -156,7 +158,31 @@ def _decode_ref(
         cpi_path=cpi_path,
         stack_height=stack_height,
     )
-    swap_ref = _InstructionRef(**common, instruction=swap) if swap is not None else None
+    resolved_accounts = None
+    raw_accounts = item.get("accounts")
+    if swap is not None and isinstance(raw_accounts, list):
+        resolved = []
+        for account in raw_accounts:
+            if isinstance(account, str) and account:
+                resolved.append(account)
+            elif (
+                isinstance(account, int)
+                and not isinstance(account, bool)
+                and 0 <= account < len(keys)
+            ):
+                resolved.append(keys[account])
+            else:
+                resolved = []
+                break
+        if resolved:
+            resolved_accounts = tuple(resolved)
+    swap_ref = (
+        _InstructionRef(
+            **common, instruction=swap, resolved_accounts=resolved_accounts
+        )
+        if swap is not None
+        else None
+    )
     event_ref = _InstructionRef(**common, event=event) if event is not None else None
     return swap_ref, event_ref
 
@@ -289,6 +315,7 @@ def analyze_damm_v2_swap_events(
                 swap_ref.inner_instruction_index, swap_ref.cpi_path,
                 swap_ref.stack_height, swap_ref.instruction,
                 None, None, None, None,
+                swap_ref.resolved_accounts,
             ))
         else:
             output.append(DammV2SwapEventAssociation(
@@ -296,6 +323,7 @@ def analyze_damm_v2_swap_events(
                 swap_ref.inner_instruction_index, swap_ref.cpi_path,
                 swap_ref.stack_height, swap_ref.instruction,
                 None, None, None, None,
+                swap_ref.resolved_accounts,
             ))
 
     for event_index, event_ref in enumerate(events):

@@ -4,7 +4,7 @@
   "slot": 469955314,
   "commitment": "finalized",
   "raw_sha256": "b0088af96188b178ade106476b831f7ccd85fea3b8b26abb7fb39ab6d4cee96b",
-  "projection_file": "39BtokfG1qiCfmZJJLJzU9nyzHtqQqpXXZCJFFuoutyiHUmSbzi5dmFwCLb8zsH885i1vQgc9N9UfF3wYrgybtz6.json",
+  "projection_file": "raydium-cpmm-jupiter-multiswap.json",
   "projection_sha256": "dd00ef311cf9d18d2bf249eb6e287e22dade132c6c586abb69bd5cda16a2408d",
   "anonymized": true,
   "replaced_addresses": 10,

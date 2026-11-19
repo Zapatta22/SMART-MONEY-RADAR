@@ -61,7 +61,27 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                     conflict_count INTEGER NOT NULL,
                     completed_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS geyser_unsequenced_delivery_audit_schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                );
             """)
+            current_schema = connection.execute(
+                "SELECT COALESCE(MAX(version), 0) "
+                "FROM geyser_unsequenced_delivery_audit_schema_migrations"
+            ).fetchone()[0]
+            if current_schema > PROJECTION_VERSION:
+                raise sqlite3.DatabaseError(
+                    "Schema da auditoria Geyser é mais novo que esta versão do SMR"
+                )
+            if current_schema < 1:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute(
+                    "INSERT INTO geyser_unsequenced_delivery_audit_schema_migrations "
+                    "(version, applied_at) VALUES (?, ?)",
+                    (1, datetime.now(timezone.utc).isoformat()),
+                )
+                connection.commit()
 
     @contextmanager
     def _connect(self):

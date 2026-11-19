@@ -238,6 +238,9 @@ The offline transport checkpoint/gap slice is also implemented in PR #23:
 Validation of the transport slice:
 - CI #1660, run `44508678117`, push: SUCCESS; 530/530 tests and `python -m compileall -q src tests` passed on `b470a5eb02025512569d83d667d82ddc55a33ec5`.
 - CI #1661, run `44508689458`, pull_request: SUCCESS; 530/530 tests and compileall passed on the same commit.
+- Added a schema-upgrade test that starts from an existing v1 database and verifies the v2 migration preserves integrity.
+- CI #1664, run `44508979168`, push: SUCCESS; 531/531 tests and compileall passed on `5d66bd1b50559ed9f4ede06461c2b4cf0ac9cf9b`.
+- CI #1665, run `44508987457`, pull_request: SUCCESS; 531/531 tests and compileall passed on the same commit.
 - Earlier runs #1654–#1659 exposed a test assertion mismatch in the expected error message for late baseline registration; corrected before the successful HEAD above.
 
 Still not implemented:

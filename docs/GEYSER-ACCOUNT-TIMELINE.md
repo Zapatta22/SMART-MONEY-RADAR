@@ -68,6 +68,11 @@ The Yellowstone bank lifecycle is normalized separately in
 - The opaque `parent_block_id` is never compared with a textual blockhash.
 - `is_ancestor` returns unknown (`None`) when parent lineage is incomplete;
   it does not guess.
+- Contradictory observations for the same bank identity (for example, a
+  different blockhash or parent identity) create a persistent in-memory
+  lineage conflict and invalidate that bank for observation. A conflict does
+  not preserve the previously accepted ancestry as usable; explicit repair
+  semantics are not implemented.
 - The existing linear AccountUpdateTimeline refuses to emit pre/post
   transitions for bank-scoped updates and returns no single current state for
   a fork-scoped account history. Bank-aware pre/post pairing is deferred until

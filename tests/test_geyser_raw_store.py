@@ -91,6 +91,21 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
             self.assertEqual(reopened.integrity_check(), ["ok"])
             reopened.close()
 
+    def test_delivery_failure_rolls_back_new_raw_event(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        with store._connection() as connection:
+            connection.execute("""
+                CREATE TRIGGER reject_delivery BEFORE INSERT ON geyser_raw_deliveries
+                BEGIN SELECT RAISE(ABORT, 'forced delivery failure'); END
+            """)
+        with self.assertRaisesRegex(Exception, "forced delivery failure"):
+            store.ingest(self.event(), self.delivery())
+        self.assertIsNone(store.get_raw_event("event-1"))
+        self.assertEqual(store.counts(), {
+            "geyser_raw_events": 0, "geyser_raw_deliveries": 0, "geyser_raw_conflicts": 0
+        })
+        store.close()
+
     def test_invalid_event_or_delivery_is_rejected_before_write(self):
         store = SQLiteGeyserRawStore(":memory:")
         with self.assertRaises(TypeError):

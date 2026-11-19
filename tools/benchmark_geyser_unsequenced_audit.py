@@ -216,6 +216,7 @@ def main() -> None:
         default=[1000, 10000, 50000, 100000],
         help="número de eventos lógicos; cada um gera duas deliveries",
     )
+    parser.add_argument("--fanout-witnesses", type=int, default=10000)
     parser.add_argument(
         "--worker-db", type=Path,
         help=argparse.SUPPRESS,
@@ -227,13 +228,17 @@ def main() -> None:
         return
     if not args.sizes or any(size <= 0 for size in args.sizes):
         parser.error("todos os tamanhos devem ser inteiros positivos")
+    if args.fanout_witnesses <= 0:
+        parser.error("--fanout-witnesses deve ser positivo")
 
     results = [benchmark_size(size) for size in args.sizes]
+    fanout = benchmark_witness_fanout(args.fanout_witnesses)
     print(json.dumps({
         "benchmark": "geyser_unsequenced_delivery_audit_rebuild",
         "fixture": "synthetic_sqlite_two_deliveries_per_event",
         "rss_method": "isolated_worker_process_ru_maxrss",
         "temp_storage_method": "sqlite_temp_page_count_times_page_size",
+        "high_cardinality_witness_fanout": fanout,
         "results": results,
     }, indent=2, sort_keys=True))
 

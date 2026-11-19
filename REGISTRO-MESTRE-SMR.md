@@ -3064,3 +3064,46 @@ Precedência e efeito:
 2. Antes de qualquer merge, executar integração controlada das PRs filhas na branch-base da PR #26, resolvendo o conflito potencial do Registro Mestre e revisando o diff combinado.
 3. Depois, validar a PR #26 resultante contra sua base PR #23; só então decidir a integração posterior com PR #23.
 4. Não fazer merge de nenhuma PR sem ordem explícita do usuário.
+
+## 308. Atualização 2026-11-19 — integração controlada PR #27 + PR #28 validada
+
+### Branch temporária e escopo
+- Branch: `integration/geyser-pr27-pr28`.
+- PR temporária #29: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/29.
+- Base exata: PR #26 / branch `feat/geyser-unsequenced-raw-audit`, SHA `f0d63038411cc4207fae910a3ef168e3af443784`.
+- HEAD validado: `1512c47113f34fcd184cd6813d3da5158d094820`.
+- PR #29 permanece OPEN/DRAFT, `merged=false), `mergeable=true). A descrição identifica a PR como validação temporária e instrui não fazer merge.
+- Diff combinado: 8 arquivos, 1.027 adições e 74 remoções.
+- Arquivos combinados: workflow de benchmark, workflow SMR tests, auditoria de deliveries Geyser sem sequência, testes da auditoria, ferramenta de benchmark, projeção Timeline de conta, testes da Timeline e Registro Mestre com seções 300–307.
+- PRs #26, #27 e #28 originais não foram modificadas por esta integração controlada.
+
+### Validação CI no mesmo HEAD
+- Workflow SMR tests: run `44580544704`, SUCCESS. Log confirma `Ran 593 tests`, resultado OK, e `python -m compileall -q src tests` aprovado.
+- Workflow Geyser audit benchmark: run `44580544811`, SUCCESS. Job `benchmark`, execução do benchmark sintético e upload do artefato concluídos com sucesso.
+- Ambos os workflows foram disparados para o mesmo HEAD `1512c47113f34fcd184cd6813d3da5158d094820`; nenhuma nova execução manual foi necessária.
+- Artefato: `geyser-audit-benchmark-results`, ID `14559085293`, SHA-256 `c3ced6ec55bf5c394cfc5ac3bd2b7e35319b1001cf51bce64682b2c0faa0e391`, expiração indicada 2027-02-17. ZIP baixado e conteúdo JSON inspecionado.
+
+### Resultado técnico do benchmark integrado
+- Fixture sintética principal: 100.000 eventos lógicos / 200.000 deliveries; classificação: 100.000 `SEQUENCED` e 100.000 `UNSEQUENCED_RECONCILED`; SQLite `integrity_check=ok).
+- Modo DEFAULT na comparação: 5,978 s, 33.456,54 deliveries/s, pico RSS 28,97 MiB.
+- Modo FILE: 5,827 s, 34.323,01 deliveries/s, pico RSS 28,88 MiB.
+- Modo MEMORY: 5,801 s, 34.478,41 deliveries/s, pico RSS 53,37 MiB.
+- O modo MEMORY elevou o pico RSS em aproximadamente 24,4 MiB frente ao DEFAULT, para ganho de throughput inferior a 4%; não há justificativa demonstrada para adotá-lo como padrão.
+- Fanout alto: 1 evento lógico, 10.000 testemunhas e 10.001 deliveries; rebuild 0,220 s, pico RSS 28,8 MiB, `integrity_check=ok`.
+- Em outro cenário de escala, 200.000 deliveries foram reconstruídas em 5,850 s (~34.189,51 deliveries/s), pico RSS 28,91 MiB e `integrity_check=ok`.
+- Interpretação: evidência sintética em runner Linux/GitHub Actions; não é benchmark de Termux, VPS ou produção, não comprova bytes físicos escritos nem filesystem efetivo em produção. VmHWM/RSS representa o worker, não exclusivamente o rebuild.
+- Recomendação mantida: DEFAULT/file-backed; não alterar sem medição representativa no ambiente-alvo.
+
+### Estado remoto após validação
+- PR #26: OPEN/DRAFT, não mergeada, base PR #23 em `4a517ca15499746ddd3f5522f112c80aaac1433b`, HEAD `f0d63038411cc4207fae910a3ef168e3af443784`, mergeable.
+- PR #27: OPEN/DRAFT, não mergeada, base PR #26, HEAD `d281daea02dc8d93c7159c5095d8a47579becf7c`, mergeable.
+- PR #28: OPEN/DRAFT, não mergeada, base PR #26, HEAD `61ecdde08e66a6707e13ceb09fd54372e672c859`, mergeable.
+- PR #29: OPEN/DRAFT, não mergeada, base PR #26, HEAD `1512c47113f34fcd184cd6813d3da5158d094820`, mergeable; exclusivamente temporária.
+- `main` confirmada intacta em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhum merge foi executado. Nenhum RPC/provider, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+### Conclusão e próxima ação
+- A integração conjunta de código/testes das PRs #27 e #28 sobre a base #26 passou em CI e benchmark; não foi encontrada falha de integração nesta validação.
+- Isso valida o conjunto combinado no HEAD da PR #29, mas não autoriza merge automático das PRs originais nem transforma a PR temporária #29 em PR final.
+- Próxima etapa: revisão final do diff combinado e escolha explícita da estratégia de integração permanente. Preservar a base ancestral PR #23/#26 e resolver a documentação sem duplicar seções. Depois da decisão, validar o HEAD final da branch de integração permanente e só então solicitar autorização específica para merge.
+- Não fechar nem mergear a PR #29 nesta etapa; mantê-la como evidência reproduzível até a decisão sobre integração permanente.

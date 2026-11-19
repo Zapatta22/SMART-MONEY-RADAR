@@ -196,6 +196,25 @@ class TokenTransferDecoderTests(unittest.TestCase):
         self.assertEqual(result[0].cpi_path, (0,))
         self.assertIsNone(result[0].stack_height)
 
+    def test_marks_hierarchy_after_missing_stack_height_untrusted(self):
+        result = decode_solana_token_transfers(_tx(
+            [{"programId": "router", "accounts": [], "data": "1"}],
+            meta={"err": None, "innerInstructions": [{
+                "index": 0,
+                "instructions": [
+                    {"programId": "router", "accounts": [], "data": "1"},
+                    {
+                        "programId": SPL_TOKEN_PROGRAM_ID,
+                        "accounts": [0, 1, 2],
+                        "data": _transfer(3, 8),
+                        "stackHeight": 3,
+                    },
+                ],
+            }]},
+        ))
+        self.assertEqual(len(result), 1)
+        self.assertFalse(result[0].cpi_path_valid)
+
     def test_marks_failed_transaction_transfers_as_failed(self):
         result = decode_solana_token_transfers(_tx(
             [{

@@ -1,0 +1,493 @@
+# Especificação preliminar — importação histórica offline Solana
+
+Data: 2026-11-18 (UTC)
+Estado: especificação, não implementação
+Branch: `feat/offline-fixture-inspector`
+PR relacionado: #16
+
+## 1. Objetivo e limites
+
+Definir os requisitos mínimos para uma futura importação de transações RAW já coletadas, sem rede e sem executar operações on-chain. Esta especificação não autoriza criar SQLite, migrar schema, importar dados, avançar checkpoints ou iniciar monitoramento.
+
+A primeira entrega funcional deverá ser apenas um **dry-run**, com relatório redigido e sem efeitos colaterais.
+
+## 2. Entrada e identidade
+
+Cada item de entrada deve conter:
+- caminho para um manifesto RAW e seu arquivo bruto correspondente;
+- manifesto válido segundo `audit_fixture()`;
+- hash SHA-256 do payload bruto correspondente ao manifesto;
+- assinatura e slot consistentes entre manifesto e payload;
+- associação explícita da transação a uma carteira monitorada, fornecida por configuração/mapeamento externo e revisável pelo operador.
+
+A associação não pode ser inferida do fee payer, primeiro signatário, posição em `accountKeys`, proprietário de token account ou qualquer heurística. Campo de carteira presente no manifesto é uma declaração, não prova independente de legitimidade. Divergência entre manifesto e mapeamento externo deve bloquear o item para revisão.
+
+Não usar fixtures pseudonimizadas/anonimizadas como histórico real. Elas são material de teste.
+
+## 3. Fases obrigatórias
+
+1. **Descoberta:** enumerar pares de forma determinística; não seguir symlinks fora do diretório autorizado.
+2. **Validação:** verificar manifesto, hash, assinatura, slot, status on-chain e estrutura RPC.
+3. **Atribuição:** exigir mapeamento explícito por transação; sem ele, classificar como `WALLET_UNASSIGNED`.
+4. **Classificação de cobertura:** detectar se há instruções de protocolos suportados; protocolo desconhecido/não suportado não pode ser declarado processado economicamente.
+5. **Dry-run:** calcular o que seria arquivado/processado e colisões potenciais, sem abrir EventStore nem criar diretórios/arquivos.
+6. **Importação futura (fora do escopo atual):** só após autorização explícita, com backup, política de colisão, transação atômica e relatório verificável.
+
+## 4. Estados de resultado do dry-run
+
+No mínimo:
+- `READY_FOR_REVIEW`: integridade válida e carteira explicitamente associada; ainda não significa autorização para gravar.
+- `WALLET_UNASSIGNED`: nenhuma associação explícita.
+- `MANIFEST_INVALID` / `HASH_MISMATCH` / `SIGNATURE_MISMATCH` / `SLOT_MISMATCH`: falha de proveniência/integridade.
+- `ON_CHAIN_FAILED`: execução on-chain falhou; preservar como observação, sem classificar swap positivo.
+- `UNSUPPORTED_PROTOCOL`: protocolo fora da cobertura do processador disponível.
+- `DUPLICATE_IDENTICAL`: identidade já existe com conteúdo/proveniência idênticos.
+- `IDENTITY_COLLISION`: mesma chave lógica com conteúdo ou proveniência divergentes; bloquear, nunca sobrescrever silenciosamente.
+
+Relatório deve conter contagens e razões, sem imprimir endereços, assinaturas, mints, URLs ou payload bruto.
+
+## 5. Regras de persistência futura
+
+- Não chamar RPC/Helius; usar somente arquivos locais validados.
+- Não avançar `wallet_checkpoints` nem inserir `processed_signatures` durante importação histórica.
+- Não chamar diretamente `process_raydium_cpmm_observation()` no modo atual: ele pode marcar transações falhadas ou sem swaps CPMM como processadas e avançar checkpoint.
+- Não usar `SQLiteEventStore` no dry-run: seu construtor inicializa schema e pode criar banco.
+- Não usar `save_observation()` sem política explícita de colisão: sua chave natural pode atualizar observação existente.
+- Persistência futura deve separar arquivo bruto/observação, resultados de reconciliação e bundles; suportar replay idempotente e preservar tentativas negativas.
+- Transações de venues não suportadas devem permanecer explicitamente não processadas/pendentes, nunca receber sucesso por passarem por um pipeline CPMM.
+- Qualquer alteração de schema exige migração versionada, backup e autorização específica.
+
+## 6. Critérios de aceite antes de qualquer gravação
+
+- Testes de fixtures válidas, manifesto/hash/assinatura/slot divergentes, arquivo ausente, JSON inválido, carteira ausente/divergente, protocolo não suportado, duplicata idêntica e colisão.
+- Teste de dry-run comprova ausência de criação/modificação de arquivos e ausência de abertura/criação de SQLite.
+- Teste comprova que nenhum caminho, endereço, assinatura, mint, blockhash, URL ou segredo aparece no relatório.
+- Mapeamento carteira↔transação é revisado explicitamente pelo operador.
+- Plano de backup, rollback, idempotência e checkpoint aprovado.
+- Autorização explícita do usuário para a etapa de persistência.
+
+## 7. Evidência atual e bloqueios
+
+- Inspeção local em 18/11/2026: cinco manifestos, cinco pares íntegros, zero inválidos; todos os payloads reportaram estado on-chain success.
+- Os cinco manifestos não declaram `wallet_address` nem `monitored_wallet_address`.
+- A presença de owners nos snapshots pre/post não identifica por si só a carteira monitorada.
+- Não há banco SQLite localizado no Termux; nenhum banco foi criado.
+- Não há importador offline implementado.
+- Nenhum RAW local foi enviado ao GitHub.
+- CI do commit documental anterior `01a410833650c022909f97c475b468631130b47e`: run `44249289181`, concluído com sucesso.
+
+## 8. Próxima etapa técnica permitida
+
+Implementar e testar somente um planejador/dry-run offline, sem SQLite e sem persistência. Antes disso, a política de associação deve aceitar mapeamento explícito por transação; quando o operador não fornecer a associação, o resultado deve ser `WALLET_UNASSIGNED`. Não presumir que as cinco transações pertencem a uma única carteira.
+
+
+## 9. Implementação inicial do planejador (18/11/2026)
+
+Foi adicionado `tools/plan_solana_historical_import.py` e sua suíte `tests/test_historical_import_planner.py`.
+
+Comportamento implementado:
+- Descoberta determinística de manifestos `*.manifest.json` no diretório fornecido.
+- Reutiliza `audit_fixture()` para validar hash, assinatura, slot, commitment, encoding e marcador de não anonimizado.
+- Rejeita manifesto/payload via symlink e caminhos resolvidos fora do diretório autorizado.
+- Aceita mapeamento explícito local JSON no formato `{signature: monitored_wallet}`; não imprime os valores.
+- Sem associação explícita: `WALLET_UNASSIGNED`.
+- Divergência entre mapeamento e campo explícito do manifesto: `WALLET_MAPPING_CONFLICT`.
+- Transação com `meta.err` não nulo: `ON_CHAIN_FAILED`.
+- Associação explícita válida: `READY_FOR_REVIEW`, nunca autorização para gravar.
+- Falhas de auditoria recebem estados de manifesto/hash/assinatura/slot.
+- Saída limitada a índice e estado, sem caminhos, carteiras ou assinaturas.
+- Declara `network_access=false`, `database_access=false`, `writes_files=false`, `checkpoint_changes=false` e `execution_authorized=false`.
+
+Uso:
+`PYTHONPATH=src python tools/plan_solana_historical_import.py /caminho/para/raw`
+Opcionalmente:
+`--wallet-map /caminho/privado/wallet-map.json`
+
+O mapeamento deve permanecer local e não deve ser enviado ao GitHub. O planejador não detecta nem valida a cobertura de protocolos DEX; `READY_FOR_REVIEW` exige uma revisão posterior de protocolo e carteira. Nenhuma persistência foi implementada.
+
+### Limites da implementação
+- Ainda não há importação SQLite nem escrita de observações.
+- Não há comparação com duplicatas já persistidas, pois não existe acesso ao banco neste dry-run.
+- Não existe classificação automática de venue/protocolo neste planejador; essa revisão permanece pendente.
+- O script não é autorização para importar os dados.
+
+
+## 10. Validação CI do planejador (18/11/2026)
+
+- Head funcional/documental validado: `0c493b51fc98f5453f5b3763b0aeee48631464a6`.
+- Workflow `SMR tests`, run `44249986290`, concluído com sucesso.
+- 255 testes unitários aprovados; compileall de `src` e `tests` aprovado.
+- CI valida os testes do planejador, mas não substitui a execução local sobre os cinco RAW do usuário.
+- Próxima validação: dry-run local sem mapa de carteiras; resultado esperado pela evidência atual é `WALLET_UNASSIGNED` para os cinco registros.
+
+
+## 11. Auditoria offline de cobertura de programas (18/11/2026)
+
+Foi adicionado `tools/audit_solana_protocol_coverage.py`, com testes em `tests/test_protocol_coverage_audit.py`.
+
+- Revalida cada par RAW/manifesto antes de inspecionar instruções.
+- Resolve `programId` direto ou `programIdIndex` contra `accountKeys` e endereços ALT carregados em payloads `json`.
+- Conta instruções top-level e CPI por nome de programa presente no registro; IDs, endereços, assinaturas, caminhos e nomes de arquivos não são exibidos.
+- Separa programas conhecidos no registro da cobertura estreita dos decoders existentes nesta branch.
+- Cobertura estrutural explicitamente reconhecida: Raydium CPMM (`swap_base_input/output`), SPL Token e Token-2022 (`Transfer/TransferChecked`). Isso não significa suporte integral a todos os tipos de instrução desses programas.
+- Programas registrados sem decoder de swap permanecem identificados como conhecidos, mas fora da cobertura de decoder; IDs não registrados são apenas contados.
+- Rejeita symlinks antes de ler payload externo.
+- Somente leitura: sem rede, SQLite, escrita de arquivos ou alteração de checkpoint.
+
+Uso:
+`PYTHONPATH=src python tools/audit_solana_protocol_coverage.py /caminho/para/raw`
+
+A execução local nos cinco RAW ainda está pendente. Não confundir os cinco candidatos documentados com resultado de cobertura observado: o relatório local é necessário para saber quais programas aparecem efetivamente em cada transação.
+
+
+### 12. CI da auditoria de cobertura
+
+- Workflow `SMR tests`, run `44250502846` (#381), concluído com sucesso.
+- 259 testes unitários aprovados; compileall aprovado.
+- CI valida a lógica em fixtures sintéticas. A análise dos cinco arquivos RAW reais depende da execução local pelo usuário.
+
+
+## 13. Resultado da auditoria de cobertura nos cinco RAW (18/11/2026)
+
+A execução local de `tools/audit_solana_protocol_coverage.py` reportou cinco manifestos auditados, 60 instruções no total e nenhum program ID não resolvido. Foram reconhecidas 46 instruções de programas registrados e 14 de programas fora do registro atual.
+
+| Programa registrado | Contagem de instruções |
+|---|---:|
+| SPL Token | 22 |
+| System Program | 9 |
+| Associated Token Account | 4 |
+| Meteora DAMM v2 | 4 |
+| Jupiter Aggregator v6 | 2 |
+| Meteora DLMM | 2 |
+| Token-2022 | 1 |
+| Raydium AMM v4 | 1 |
+| Raydium CPMM | 1 |
+
+Ocorrência por payload:
+- Índice 1: Meteora DAMM v2, Token-2022, SPL Token, System Program e Associated Token Account.
+- Índice 2: Raydium AMM v4 e SPL Token.
+- Índice 3: Jupiter v6, Meteora DAMM v2, SPL Token, System Program e Associated Token Account.
+- Índice 4: Meteora DLMM e SPL Token.
+- Índice 5: Raydium CPMM, SPL Token e System Program.
+
+O decoder contabilizado nesta branch cobre somente 22 instruções SPL Token, uma Token-2022 e uma Raydium CPMM. Registro de programa não implica decoder. Contagens de instruções não são contagens de swaps: agregadores, CPI e transferências auxiliares exigem reconstrução econômica por operação.
+
+A auditoria não acessou rede ou banco, não escreveu arquivos e não alterou checkpoints. Os RAW continuam apenas no dispositivo local. A sequência de desenvolvimento proposta é DAMM v2, AMM v4, DLMM e, separadamente, Jupiter como roteador; a ordem é uma priorização de engenharia, não inferência de volume ou relevância financeira.
+
+
+## 14. Fingerprints redigidos para especificação de decoders
+
+A auditoria de cobertura também produz venue_instruction_profiles para programas registrados como venue e para Jupiter v6 como agregador. O perfil agrupa:
+- nome do programa (sem Program ID);
+- origem top_level ou inner;
+- primeiros oito bytes dos dados da instrução, em hexadecimal;
+- comprimento total dos dados;
+- quantidade de contas da instrução;
+- stack height quando presente;
+- número de ocorrências com o mesmo perfil.
+
+Os bytes após o prefixo, os índices e endereços das contas, valores, assinaturas e caminhos não são exibidos. O prefixo é uma impressão digital estrutural, não prova semântica de BUY/SELL nem substitui a validação contra IDL/documentação oficial. A quantidade de contas não identifica por si só o papel de cada conta.
+
+Após CI, executar novamente localmente nos RAW originais. Compartilhar somente o relatório redigido; não copiar payload bruto ou mapa de aliases para o chat/GitHub.
+
+
+### 15. CI dos fingerprints
+
+O CI run 44251053718 (#393), para o commit funcional ab6a09522d4347f53e474082188cd926e90872a3, concluiu com sucesso: 259 testes unitários e compileall aprovados.
+
+
+## 15. Resultado dos fingerprints e validação documental inicial de DAMM v2 (18/11/2026)
+
+A execução local no clone PR16 atualizado até `65c03c8c423302a89c09ea6a4de29b78396c3c1d` auditou novamente os cinco manifestos: cinco auditados, zero inválidos e zero programas não resolvidos. O auditor confirmou ausência de rede, banco, gravação e alteração de checkpoints.
+
+### Perfis observados
+
+| Programa/localização | Prefixo | Comprimento | Contas | Stack height | Ocorrências |
+|---|---|---:|---:|---:|---:|
+| DAMM v2 / top-level | `f8c69e91e17587c8` | 24 | 14 | 1 e 2 | 2 |
+| DAMM v2 / inner | `e445a52e51cb9a1d` | 196 | 1 | 2 e 3 | 2 |
+
+O prefixo top-level é igual aos primeiros oito bytes de SHA-256 de `global:swap`, discriminador Anchor da instrução `swap`. A documentação Meteora lista `swap` como caminho legacy exact-in e `swap2` como caminho atual que aceita ExactIn, PartialFill e ExactOut. O discriminador Anchor de `global:swap2` é `414b3f4ceb5b5b88`, não observado nos perfis top-level recebidos.
+
+A documentação e o código-fonte oficiais esclarecem a estrutura: p_emit_cpi() prefixa Event::data(&EvtSwap2 { ... }) com EVENT_IX_TAG_LE. Assim, e445a52e51cb9a1d é o wrapper Event CPI; o discriminador Anchor do evento EvtSwap2 (bd4233a826507599) deve estar nos bytes 8–15. O tamanho observado de 196 bytes corresponde a 8 bytes de wrapper + 8 bytes de discriminador + 180 bytes de payload. A confirmação nos RAW depende da leitura redigida dos bytes 8–15.
+
+O prefixo `e445...` também aparece sob programas Jupiter v6 e Meteora DLMM e com outros comprimentos. A coincidência não demonstra semântica comum, porque o programa, o contexto CPI e a estrutura completa são parte da identidade da instrução.
+
+### Requisitos para o decoder DAMM v2
+
+1. Fixar a versão/commit do IDL oficial correspondente ao programa mainnet no período das transações; registrar proveniência e hash do IDL.
+2. Confirmar layout de `swap` e `swap2`, discriminadores, argumentos, enum de modo e ordem/semântica das contas antes de implementar parser.
+3. Identificar o payload inner `e445...` a partir do IDL e da origem do CPI; até lá classificá-lo como `UNRESOLVED`.
+4. Separar instrução de execução, event CPI e transferências Token/SPL/Token-2022; nunca contar os três como swaps separados.
+5. Reconstruir input/output por operação e reconciliar deltas das token accounts/vaults, considerando transfer fees e taxas do protocolo.
+6. Criar fixtures sintéticas redigidas e testes positivos/negativos para instrução top-level, CPI, evento, swap2, modos, Token-2022, dados truncados, identidade CPI e múltiplos swaps.
+7. Só produzir `SwapObservation` após reconciliação econômica; manter dados insuficientes como `INCOMPLETE` e direção sem mint de referência como `UNKNOWN`.
+
+A evidência atual confirma chamada top-level compatível com `swap` legacy, mas não prova por si só a operação econômica completa nem direção BUY/SELL. Não há decoder DAMM v2 implementado nesta etapa. Nenhum RAW foi enviado ao GitHub; não houve acesso a SQLite, importação, RPC, Helius, checkpoint ou execução on-chain.
+
+## 16. Event CPI e EvtSwap2 DAMM v2: especificação e auditor redigido (18/11/2026)
+
+Fonte oficial fixada para esta análise: MeteoraAg/damm-v2 commit 18936b18c26708f6e9b52cacc01ea2f99868ba8e.
+
+O código oficial em programs/cp-amm/src/instructions/swap/ix_p_swap.rs executa a lógica do swap e emite EvtSwap2 por p_emit_cpi(Event::data(&EvtSwap2 { ... }), event_authority). A função p_emit_cpi prefixa o conteúdo com EVENT_IX_TAG_LE, depois faz CPI ao próprio programa. O wrapper é e445a52e51cb9a1d; os oito bytes seguintes são o discriminador Anchor do evento. Para EvtSwap2, o discriminador é bd4233a826507599.
+
+O layout do evento tem 188 bytes (8 do discriminador + 180 do payload). O CPI completo tem 196 bytes (8 wrapper + 188 evento). Isso coincide com o perfil inner DAMM v2 observado localmente: 196 bytes, uma conta de autoridade, stack height 2 ou 3. A coincidência é estruturalmente forte, mas a confirmação transacional exige verificar o discriminador no offset 8 do payload RAW.
+
+O evento contém direção e parâmetros, SwapResult2, fees, timestamp e reservas. SwapParameters2 usa amount_0, amount_1 e swap_mode (0 ExactIn, 1 PartialFill, 2 ExactOut). Para ExactOut, amount_0 é output desejado e amount_1 é input máximo; não interpretar os campos como sempre input/minimum output.
+
+### Extensão implementada no auditor
+
+O auditor passa a emitir event_cpi_profiles para instruções internas de venues/agregadores registradas cujo payload começa pelo wrapper Event CPI. Exibe apenas nome do programa, discriminador de evento, tamanho, quantidade de contas, stack height, nome allowlisted quando conhecido e contagem. Reconhece EvtSwap2 somente para Meteora DAMM v2 + discriminador exato; outros eventos são UNKNOWN. Nenhum payload, endereço, mint, valor, carteira, assinatura, ID de programa ou caminho é exibido.
+
+Teste sintético valida wrapper, discriminador, 196 bytes, uma conta, stack height e redação. O código continua sem rede, SQLite, gravação ou checkpoint. O novo head ainda não tem CI/status check confirmado.
+
+### Critérios de validação local
+
+- Atualizar clone PR16 por fast-forward e executar tools/audit_solana_protocol_coverage.py nos cinco RAW originais.
+- Confirmar se DAMM v2 inner aparece com discriminador bd4233a826507599, event_name=EvtSwap2, comprimento 196 e uma conta.
+- Se confirmado, associar o Event CPI à instrução swap correspondente por stack height/ordem/contexto CPI; nunca contabilizar evento e instrução como dois swaps.
+- Decodificar campos do evento somente após fixar a versão de IDL/estrutura; reconciliar transferências SPL/Token-2022 e deltas de token accounts/vaults. Não criar SwapObservation apenas a partir do evento.
+
+Nenhum RAW foi enviado ao GitHub; nenhuma importação, banco, RPC/Helius, checkpoint ou operação on-chain foi realizada.
+
+
+## 17. CI do reconhecimento DAMM v2 EvtSwap2 (18/11/2026)
+
+- Head validado: `dea3f6428c7c7e85254fa8fb23645e6ed9df3b4e`.
+- Workflow `SMR tests`, run `44251933124` (#402), concluído com sucesso.
+- O teste sintético confirma a leitura do wrapper Event CPI Anchor e do discriminador EvtSwap2 em bytes 8–15, com tamanho total 196 bytes, uma conta e stack height 2. Também valida redação de Program ID e flags de ausência de rede, banco, escrita e checkpoint.
+- O resultado CI não prova o discriminador nos RAW locais. A validação local permanece pendente; executar o teste específico e o auditor nos cinco arquivos originais no clone PR16.
+- A documentação oficial Meteora confirma que EvtSwap2 é emitido pelos caminhos `swap` e `swap2`. Os modos são 0 ExactIn, 1 PartialFill e 2 ExactOut; em ExactOut, amount_0 é output desejado e amount_1 é input máximo. O decoder deve respeitar essa semântica.
+- Fonte oficial de eventos: https://github.com/MeteoraAg/docs/blob/main/developer-guides/damm-v2/program/events.mdx. Fonte de instruções: https://github.com/MeteoraAg/docs/blob/main/developer-guides/damm-v2/program/instructions.mdx.
+- Não gerar SwapObservation somente a partir do evento: associar o Event CPI à instrução swap e reconciliar transferências SPL/Token-2022 e deltas de token accounts/vaults, inclusive transfer fees.
+- Nenhum RAW foi enviado ao GitHub; não houve importação, SQLite, RPC/Helius, checkpoint ou operação on-chain.
+
+## 18. Confirmação local de EvtSwap2 nos RAW originais (18/11/2026)
+
+A execução local do usuário no clone PR16 atualizou a branch por fast-forward até `59fd946`, executou os quatro testes de `test_protocol_coverage_audit.py` (todos aprovados) e auditou os cinco manifestos RAW: cinco auditados, zero inválidos e zero programas não resolvidos.
+
+| Fixture (índice redigido) | Programa | Discriminador | Evento | Tamanho | Contas | Stack height | Ocorrências |
+|---:|---|---|---|---:|---:|---:|---:|
+| 1 | Meteora DAMM v2 | `bd4233a826507599` | EvtSwap2 | 196 | 1 | 2 | 1 |
+| 3 | Meteora DAMM v2 | `bd4233a826507599` | EvtSwap2 | 196 | 1 | 3 | 1 |
+
+Portanto, **dois Event CPI DAMM v2 EvtSwap2 foram confirmados nos dados RAW reais**. Na fixture 3, a instrução DAMM v2 de 24 bytes aparece no stack height 2 e o evento EvtSwap2 no stack height 3. A auditoria não determina sozinha o vínculo econômico nem autoriza contar o evento como outro swap.
+
+Os perfis Event CPI Jupiter v6 e Meteora DLMM continuam `UNKNOWN`. Os cinco RAW foram auditados sem rede, SQLite, escrita ou checkpoint; nenhum dado sensível foi compartilhado.
+
+### Próximo contrato de decoder DAMM v2
+
+1. Decodificar separadamente a instrução de swap e o evento CPI, validando programa, discriminador, tamanho e hierarquia.
+2. Associar evento e instrução pelo grupo de instruções internas, stack height e ordem CPI, preservando identidade única da operação.
+3. Interpretar `swap_mode` (0 ExactIn, 1 PartialFill, 2 ExactOut); em ExactOut, `amount_0` é output desejado e `amount_1` input máximo. Parâmetros e resultado do evento não substituem transferências realmente executadas.
+4. Reconciliar transferências SPL/Token-2022 e deltas de token accounts/vaults, incluindo taxas de transferência e taxas do protocolo.
+5. Produzir `SwapObservation` somente após reconciliação econômica; dados insuficientes permanecem `INCOMPLETE`, direção sem mint de referência explícito permanece `UNKNOWN`.
+6. Criar testes sintéticos para ExactIn, PartialFill, ExactOut, eventos desconhecidos, payload truncado, múltiplos swaps, hierarquia CPI inválida e Token-2022 fees.
+
+Não integrar este decoder ao pipeline CPMM existente sem um adaptador DAMM v2 separado e testes próprios. Nenhum banco, importação, RPC/Helius, checkpoint ou operação on-chain foi executado.
+
+## 19. Primeiro parser estrutural DAMM v2 (18/11/2026)
+
+Foi adicionado ao PR #16 o módulo `src/smart_money_radar/data_sources/damm_v2_decoder.py`, com testes em `tests/test_damm_v2_decoder.py`, referenciado ao commit oficial MeteoraAg/damm-v2 `18936b18c26708f6e9b52cacc01ea2f99868ba8e`.
+
+O parser reconhece discriminadores exatos de `swap` legacy e `swap2`, além do wrapper Anchor Event CPI + discriminador EvtSwap2. Faz parsing estrito de tamanhos, modos, direção, booleano Borsh, parâmetros, resultado, fees, timestamp e reservas. Em ExactOut preserva amount_0 como output desejado e amount_1 como input máximo.
+
+O parser é deliberadamente estrutural: não liga evento a instrução, não decodifica papéis de contas, não interpreta BUY/SELL, não cria SwapObservation e não substitui a reconciliação de transferências SPL/Token-2022 e deltas de token accounts/vaults. Não foi integrado ao pipeline CPMM.
+
+Commits funcionais: `9bd940d86209bfe89a03dd66e5bfa23593ae3ba9` e `8562da8c2d8d87228b706aff2012fa36b2d16ef0`. Os testes novos ainda aguardam execução local e CI; o estado não deve ser considerado validado até essa evidência.
+
+Próximo passo: fast-forward no clone PR16, executar os testes específicos do decoder e a suíte completa; corrigir qualquer falha antes de ampliar a auditoria ou construir reconciliação econômica.
+
+## 20. Validação do parser DAMM v2 contra fonte oficial e CI (18/11/2026)
+
+A implementação inicial em `src/smart_money_radar/data_sources/damm_v2_decoder.py` foi conferida com o código MeteoraAg/damm-v2 fixado no commit `18936b18c26708f6e9b52cacc01ea2f99868ba8e`.
+
+- `swap`: discriminator `f8c69e91e17587c8`, 24 bytes, parâmetros legacy amount_in/minimum_amount_out, semântica ExactIn.
+- `swap2`: discriminator `414b3f4ceb5b5b88`, 25 bytes, campos amount_0/amount_1/swap_mode.
+- `EvtSwap2`: wrapper Anchor Event CPI `e445a52e51cb9a1d` + discriminator `bd4233a826507599`, 196 bytes totais.
+- Ordem dos campos e enum values foram conferidos com `event.rs`, `SwapParameters2`, `SwapResult2`, `TradeDirection` e `CollectFeeMode` da fonte fixada.
+- ExactOut preserva amount_0 como output desejado e amount_1 como input máximo. Não inverter ou usar esses parâmetros como quantidades efetivamente transferidas.
+
+CI do commit `45ca36761dbefacbe30fb3f6cd694b6f32e4ed23`: run `44252571670` (#408), workflow SMR tests concluído com sucesso. Isso valida a execução automatizada do CI, mas não substitui a execução local do Termux, ainda pendente.
+
+O parser é somente estrutural. A próxima camada deverá associar evento e instrução por grupo externo/CPI e stack height, sem duplicar operações; em seguida reconciliar SPL/Token-2022 transfers, deltas de token accounts/vaults e transfer fees. Não produzir SwapObservation antes da reconciliação. Sem rede, banco, gravações, checkpoint, importação ou execução on-chain nesta etapa.
+
+## 21. Associação conservadora de instrução DAMM v2 e evento EvtSwap2 (18/11/2026)
+
+Foi implementado `analyze_damm_v2_swap_events()` em `src/smart_money_radar/data_sources/damm_v2_analyzer.py`.
+
+Uma associação `MATCHED` exige cumulativamente:
+1. Instrução swap e evento no mesmo grupo `meta.innerInstructions[index]`, portanto sob a mesma instrução externa.
+2. O evento ocorre depois da instrução swap na sequência linear do grupo.
+3. `stackHeight` do evento é exatamente `stackHeight + 1` da instrução swap.
+4. O caminho CPI calculado para o evento tem como prefixo/pai exato o caminho CPI da instrução swap.
+5. A hierarquia deve ser demonstrável; ausência ou invalidade de `stackHeight` invalida a hierarquia restante do grupo e impede associação.
+
+O analisador resolve `programId` ou `programIdIndex`, incluindo `meta.loadedAddresses` para transações versionadas. Não usa fee payer, signatário, endereço de conta ou valor para inferir carteira/direção.
+
+Saída:
+- Um registro por instrução `swap`/`swap2`, com status `MATCHED`, `EVENT_MISSING` ou `AMBIGUOUS`.
+- Event CPI sem associação única aparece separadamente como `UNMATCHED_EVENT` ou `AMBIGUOUS`.
+- O Event CPI nunca gera uma segunda operação econômica. Swaps sequenciais mantêm índices e identidades separados.
+
+Limites:
+- A associação é estrutural; não valida papéis de contas, igualdade de parâmetros, mint, quantidades efetivamente transferidas ou reservas.
+- `EvtSwap2` e os argumentos de instrução não substituem transferências SPL/Token-2022 nem deltas de token accounts/vaults.
+- Não cria `SwapObservation`, não classifica BUY/SELL, não grava SQLite, não avança checkpoint e não acessa RPC.
+- O analisador não está integrado ao pipeline CPMM; uma futura integração deve ser um adaptador DAMM v2 separado.
+
+Testes sintéticos cobrem swap top-level com evento filho, swap aninhado sob agregador, múltiplos swaps/eventos sequenciais, stackHeight ausente, evento antes do swap, transação falha, loaded addresses e round-trip Base58 com bytes zero iniciais.
+
+CI run `44253659374` (#421), commit `708cc57d492fe8f784e9fbcbf641904b5829d913`: **274 testes OK e compileall aprovado**. A execução local desses novos testes ainda deve ser feita no Termux.
+
+## 22. Validação local do analisador DAMM v2 e próxima fronteira de reconciliação (18/11/2026)
+
+No clone Termux da branch PR16, atualizado por fast-forward até `5e34958e1726f209020f3fe41a61b2ff76f3176a`:
+
+- `test_damm_v2_analyzer.py`: 8/8 testes aprovados.
+- `test_damm_v2_decoder.py`: 6/6 testes aprovados.
+- Suíte completa: 274 testes OK.
+- `compileall -q src tests`: sem erro.
+- CI do mesmo head: run `44253820850` (#422), success.
+
+Os avisos ResourceWarning observados em testes HTTP não causaram falha. Esta validação confirma os testes sintéticos do parser e da associação estrutural, mas não comprova reconciliação econômica nos RAW locais.
+
+Próximo passo: analisar localmente os cinco RAW com o analisador DAMM v2 em modo redigido e sem efeitos colaterais. Em seguida, especificar a associação por operação entre instrução/evento, transferências SPL/Token-2022 e deltas por token account/vault. Exigir papéis de contas demonstráveis, preservar operações sequenciais, não dividir deltas líquidos compartilhados sem evidência e tratar explicitamente Token-2022 transfer fees. Resultados insuficientes devem permanecer incompletos/ambíguos; não criar SwapObservation nem persistir no SQLite nesta fase.
+
+Nenhum RAW foi enviado ao GitHub. Nenhuma importação, criação/migração SQLite, RPC/Helius, checkpoint ou operação on-chain foi executada.
+
+
+## 23. Mapeamento estrito de contas DAMM v2 — primeiro incremento (18/11/2026)
+
+Foi criado `src/smart_money_radar/data_sources/damm_v2_accounts.py` com testes em `tests/test_damm_v2_accounts.py`.
+
+O mapeador usa a ordem das 14 contas base do IDL oficial DAMM v2: pool authority, pool, input token account, output token account, token A vault, token B vault, token A mint, token B mint, payer, token A program, token B program, referral token account, event authority e program. Contas adicionais são preservadas como remaining accounts.
+
+A direção do EvtSwap2 determina quais vaults, mints e token programs são input/output. O mapeador exige correspondência entre pool no evento e pool da instrução e restringe os programas token a SPL Token/Token-2022. Não interpreta payer como carteira monitorada.
+
+Este incremento ainda não correlaciona transferências nem deltas; não produz quantidades, SwapObservation ou classificação. A presença de Token-2022 não significa que transfer-fee está suportada. A reconciliação deve permanecer incompleta quando a taxa ou o valor líquido não puderem ser provados.
+
+Estado de validação: implementação e testes adicionados ao PR #16; CI do commit anterior à última correção do teste ainda estava em andamento, e execução local pendente. Não considerar validado até teste local e CI do head atual.
+
+
+## 24. Correção e validação do mapeador de contas DAMM v2 (18/11/2026)
+
+A primeira validação local identificou defeito no codificador Base58 do pool do evento: a contagem de bytes zero iniciais usava uma sequência literal incorreta. O commit `08094285737314dda596c9874077056287d0f9ec` corrigiu a contagem para bytes nulos reais.
+
+Validação no Termux após fast-forward para o commit corrigido:
+- `test_damm_v2_accounts.py`: **5/5 testes aprovados**.
+- `compileall -q src tests`: concluído sem erro.
+- CI `SMR tests`, run `44255325088` (#441): success.
+
+O mapeador cobre a ordem das 14 contas base, remaining accounts, direção A→B/B→A, pool consistente com EvtSwap2, programas SPL/Token-2022 e resolução de índices compilados. Essa validação é de mapeamento estrutural; não demonstra transferências executadas nem valores econômicos por swap.
+
+Próxima etapa: atribuir transferências SPL/Token-2022 e deltas de token accounts/vaults a cada operação, preservando CPI ancestry e evitando dividir deltas compartilhados sem evidência. Token-2022 transfer-fee deve permanecer fail-closed até reconciliar bruto, líquido e taxa. Não criar `SwapObservation`, persistir SQLite ou integrar ao pipeline CPMM nesta fase.
+
+
+## 25. Atribuição estrutural de transferências DAMM v2 (18/11/2026)
+
+A primeira camada de atribuição foi implementada em `damm_v2_transfer_analyzer.py`. Ela recebe uma associação swap↔EvtSwap2 já marcada `MATCHED`, as contas resolvidas pelo mapeador e a lista de instruções SPL/Token-2022 decodificadas.
+
+Critérios obrigatórios:
+- mesma instrução externa/grupo CPI;
+- caminho CPI descendente e hierarquia marcada confiável;
+- stackHeight conhecido e maior que o do swap;
+- transferência ocorre antes do Event CPI EvtSwap2;
+- pares exatos de contas: input token account→input vault e output vault→output token account;
+- execução bem-sucedida, um único candidato por papel, sem reutilização da mesma transferência;
+- programa token, mint e decimals coerentes, quantidade bruta positiva.
+
+Estados emitidos: `ATTRIBUTED`, `TRANSFER_MISSING`, `AMBIGUOUS`, `INCOMPLETE`, `ASSOCIATION_UNRESOLVED`.
+
+**Limite semântico:** `ATTRIBUTED` significa somente que as instruções de transferência foram estruturalmente atribuídas à operação. Não é reconciliação econômica nem autorização para criar `SwapObservation`. A camada ainda não compara valores com `EvtSwap2`, nem verifica os deltas pre/post das quatro token accounts. Transfer simples sem mint/decimals fica incompleto. Token-2022 requer revisão de taxa; TransferCheckedWithFee/withheld fees ainda não são suportados.
+
+O decoder genérico de transferências passou a marcar `cpi_path_valid=false` quando a hierarquia do grupo não pode ser comprovada após stackHeight ausente/inconsistente. O atribuidor rejeita caminhos não confiáveis.
+
+CI dos commits funcionais:
+- run `44255914744` (#445): success.
+- run `44256010582`: success.
+- run `44256150190`: success; testes unitários e compileall aprovados.
+
+A validação local no Termux e a auditoria dos cinco RAW ainda são necessárias. Próxima etapa: decodificar deltas pre/post de token accounts com associação explícita por accountIndex e exigir consistência entre transferências brutas, deltas do usuário e vaults. Manter Token-2022 com taxa em estado incompleto até reconciliar bruto, líquido e withheld fee. Nenhuma persistência SQLite, checkpoint, RPC ou execução on-chain faz parte desta etapa.
+
+
+## 26. Decoder de deltas de token accounts (18/11/2026)
+
+Foi adicionado `decode_solana_token_account_balance_deltas()`, com resultado redigido em deltas e issues.
+
+Regras:
+- Resolver `accountIndex` usando accountKeys estáticas e loaded addresses quando aplicável.
+- Parear snapshots pre/post pelo mesmo índice; calcular `post - pre` em unidades raw inteiras.
+- Exigir mint e decimals iguais nos dois lados e decimals no intervalo u8.
+- Rejeitar índices duplicados, índices sem conta correspondente, owner divergente e amount inválido.
+- Nunca converter snapshot ausente em saldo zero.
+- Não produzir deltas se a transação falhou ou se `meta.err` está ausente (status de execução desconhecido).
+- `complete=false` se qualquer issue for encontrada; issues contêm somente índice e código, sem identificadores privados.
+
+O decoder não atribui deltas a swaps. Deltas pre/post são agregados à transação: quando um vault ou token account participa de mais de uma operação, não se pode dividir o delta por heurística. Uma futura camada de reconciliação deverá provar exclusividade/atribuição das quatro contas por swap e contabilizar quaisquer transferências adicionais. Token-2022 transfer-fee e withheld fees continuam sem suporte econômico.
+
+CI `SMR tests`, run `44256509698`: success; testes unitários e compileall aprovados. A validação local no Termux e a inspeção dos cinco RAW reais ainda estão pendentes. Nenhum banco, importação, RPC, checkpoint ou operação on-chain foi executado.
+
+
+## 27. Auditoria redigida da cobertura dos quatro deltas DAMM v2 (18/11/2026)
+
+Foi adicionada a ferramenta offline `tools/audit_damm_v2_delta_coverage.py`, com testes em `tests/test_damm_v2_delta_coverage_audit.py`.
+
+A ferramenta combina associação estrutural swap↔EvtSwap2, mapeamento das contas, atribuição estrutural de transferências e deltas pre/post. O relatório não expõe identificadores, valores ou caminhos.
+
+Para cada operação, verifica se os quatro papéis possuem deltas distintos: token account de entrada, vault de entrada, vault de saída e token account de saída. Também verifica integridade global dos snapshots, mint esperado e sinais compatíveis com entrada/saída. Qualquer ausência, colisão, issue de snapshot ou divergência permanece em estado negativo/incompleto.
+
+`FOUR_ACCOUNT_DELTAS_PRESENT` não significa reconciliação econômica: ainda é necessário comparar os valores brutos transferidos com deltas líquidos, EvtSwap2 e taxas. Deltas pre/post são agregados à transação e não podem ser repartidos por heurística entre swaps. Transfer fee Token-2022 permanece sem suporte completo.
+
+A ferramenta não acessa rede, SQLite, não grava arquivos, não altera checkpoints e não cria SwapObservation. CI do commit do auditor está em andamento (run `44256966076`); CI do head com os testes ainda não confirmado. Validação local e execução sobre os cinco RAW pendentes.
+
+
+### Correção do primeiro CI
+O primeiro CI com o novo teste falhou por importação de módulo de apoio ausente no pacote. A função foi extraída para src/smart_money_radar/data_sources/damm_v2_delta_coverage_audit.py, e a CLI passou a importar a função compartilhada. A correção está no head a3034ad69da208d2f33fa306a733ad72ee603e25; CI run 44257098656 (#469) ainda estava em andamento na última consulta.
+
+
+## 28. Resultado da auditoria local de cobertura DAMM v2 (18/11/2026)
+
+A validação local no Termux, no clone PR16 em `1e85540), concluiu:
+- teste focal `test_damm_v2_delta_coverage_audit.py`: 6/6 OK;
+- suíte completa: 309 testes OK;
+- cinco pares manifesto/RAW processados pelo auditor, todos com status operacional `AUDITED`.
+
+Resultados redigidos por índice:
+- Fixture 1: um swap e uma transferência atribuída estruturalmente; cobertura dos quatro deltas bloqueada por sinal incompatível; revisão de taxa Token-2022 requerida.
+- Fixture 2: nenhum swap DAMM v2 reconhecido; uma issue de delta no conjunto global.
+- Fixture 3: um swap e uma transferência atribuída estruturalmente; snapshots globais incompletos e uma issue de delta.
+- Fixtures 4 e 5: nenhum swap DAMM v2 reconhecido no escopo atual.
+
+Nenhum caso comprovou reconciliação econômica. A classificação operacional `AUDITED` não significa `MATCHED`; a atribuição `ATTRIBUTED` de transferências não prova valores líquidos executados. O relatório confirmou ausência de rede, banco, gravação, alteração de checkpoint e autorização de execução.
+
+### Requisitos antes de um reconciliador DAMM v2
+
+1. Formalizar a semântica dos modos `ExactIn`, `PartialFill` e `ExactOut`, distinguindo parâmetros solicitados de valores efetivamente executados.
+2. Identificar quais campos de `EvtSwap2` representam quantidades executadas e como se relacionam com transferências e reservas; não presumir equivalência por nome de campo.
+3. Reconciliar separadamente input bruto do usuário, crédito líquido no vault, débito bruto do vault, crédito líquido do usuário e taxas/withheld fees, conforme o token program e extensões aplicáveis.
+4. Decodificar explicitamente instruções/efeitos de Token-2022 com taxa, incluindo a taxa efetivamente retida; até então, manter esses casos fail-closed.
+5. Provar que cada transferência e cada delta são exclusivos da operação. Deltas pre/post são agregados à transação; operações sequenciais, contas compartilhadas, transferências externas, criação/fechamento de contas ou snapshots ausentes impedem repartir valores por heurística.
+6. Validar com fixtures sintéticas positivas e negativas para cada modo, direção A→B/B→A, taxas, snapshots incompletos, operações múltiplas e efeitos não atribuíveis.
+7. Só depois emitir resultado econômico `MATCHED`; somente então considerar um adaptador DAMM v2 separado para contratos de domínio. Não reutilizar automaticamente o pipeline CPMM.
+
+O relatório local não compartilha RAW, endereços, mints, assinaturas, quantidades ou mapa de carteira. Nenhuma importação, SQLite, RPC/Helius, checkpoint ou operação on-chain foi executada.
+
+
+## 29. Especificação de reconciliação econômica DAMM v2 (18/11/2026)
+A especificação detalhada está em docs/DAMM-V2-RECONCILIACAO-ECONOMICA.md. Ela define os parâmetros por modo (ExactIn, PartialFill e ExactOut), o livro de quantidades brutas/líquidas, o tratamento de Token-2022 transfer fees/withheld, exclusividade por operação e os critérios fail-closed para MATCHED econômico.
+
+A auditoria dos cinco RAW não comprovou reconciliação econômica: fixture 1 apresentou DELTA_SIGN_MISMATCH e requer revisão de transfer fee; fixture 3 apresentou SNAPSHOT_SET_INCOMPLETE. ATTRIBUTED e FOUR_ACCOUNT_DELTAS_PRESENT continuam sendo estados estruturais, não confirmação econômica. As equações finais dependem da auditoria do código Meteora fixado; não implementar SwapObservation antes dessa prova.
+
+## 30. Auditoria de implementação oficial DAMM v2 (18/11/2026)
+A seção 12 de docs/DAMM-V2-RECONCILIACAO-ECONOMICA.md registra a auditoria do código MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f99868ba8e. Foram confirmadas as relações entre transferência bruta de entrada, crédito líquido do vault, taxas AMM, transferência bruta de saída, crédito líquido do usuário, PartialFill e ExactOut. Também foi confirmado que referral gera transferência separada e que o programa usa TransferChecked com a TransferFeeConfig do mint, não exigindo opcode TransferCheckedWithFee específico.
+
+O estado withheld Token-2022 e a configuração histórica do mint continuam exigindo evidência adicional. A especificação não autoriza MATCHED quando esses dados não estão disponíveis. Nenhum reconciliador foi implementado.
+
+## 10. Guardas adicionais confirmadas no inspetor e no planejador
+
+- A ausência de `meta.err` produz `EXECUTION_STATUS_UNKNOWN`; nunca é tratada como sucesso on-chain nem como `READY_FOR_REVIEW`.
+- Somente `meta.err = null` comprova sucesso de execução no payload. Qualquer erro não nulo resulta em `ON_CHAIN_FAILED`.
+- Declarações de carteira em `wallet_address` e `monitored_wallet_address` precisam ser strings não vazias; campos inválidos resultam em `WALLET_MAPPING_INVALID`, e declarações divergentes em `WALLET_MAPPING_CONFLICT`.
+- O inspetor offline e os auditores de fixtures rejeitam manifestos/payloads por symlink e exigem que os caminhos resolvidos permaneçam dentro do diretório autorizado. O inspetor não segue links para fora da raiz.
+- `READY_FOR_REVIEW` continua sendo apenas uma fila de revisão humana; não autoriza importação, gravação, avanço de checkpoint ou execução.

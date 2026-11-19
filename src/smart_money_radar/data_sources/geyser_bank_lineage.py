@@ -181,6 +181,7 @@ class BankNode:
     cleared_by_parent_update: bool = False
     parent_block_id: bytes | None = None
     replaces_bank: BankKey | None = None
+    conflicted: bool = False
 
     @property
     def finalized(self) -> bool:
@@ -222,6 +223,7 @@ class BankLineageTracker:
         self._dead_slots: set[tuple[str, int]] = set()
         self._pending_replacements: dict[tuple[str, int], list[BankKey]] = {}
         self._conflicts: list[BankLineageConflict] = []
+        self._conflicted_keys: set[BankKey] = set()
 
     @property
     def conflicts(self) -> tuple[BankLineageConflict, ...]:
@@ -234,13 +236,21 @@ class BankLineageTracker:
     def _node(self, key: BankKey) -> BankNode:
         node = self._banks.get(key)
         if node is None:
-            node = BankNode(key=key, dead=(key.source_id, key.slot) in self._dead_slots)
+            node = BankNode(key=key, dead=(key.source_id, key.slot) in self._dead_slots, conflicted=key in self._conflicted_keys)
+            if node.conflicted:
+                node.invalidated = True
             self._banks[key] = node
         return node
 
     def _conflict(self, key, reason, detail):
         conflict = BankLineageConflict(key, reason, detail)
         self._conflicts.append(conflict)
+        if key is not None:
+            self._conflicted_keys.add(key)
+            node = self._banks.get(key)
+            if node is not None:
+                node.conflicted = True
+                node.invalidated = True
         return BankUpdateResult("conflict", key, conflict)
 
     def add_slot_update(self, event: NormalizedSlotUpdate) -> BankUpdateResult:
@@ -358,6 +368,8 @@ class BankLineageTracker:
         node = self._banks.get(key)
         if node is None:
             return "bank_not_observed"
+        if node.conflicted:
+            return "bank_conflicted"
         if node.dead:
             return "bank_dead"
         if node.invalidated:
@@ -384,6 +396,45 @@ class BankLineageTracker:
                 return True
             current = self._banks.get(current.parent_key)
         return None
+
+
+    def commitment_state(self, key: BankKey) -> str:
+        """Provider-reported commitment; this does not authenticate the provider."""
+        node = self._banks.get(key)
+        if node is None:
+            return "UNKNOWN"
+        if node.conflicted:
+            return "CONFLICTED"
+        if node.dead:
+            return "DEAD"
+        if node.invalidated:
+            return "INVALIDATED"
+        if node.finalized:
+            return "PROVIDER_REPORTED_FINALIZED"
+        if "SLOT_CONFIRMED" in node.statuses:
+            return "PROVIDER_REPORTED_CONFIRMED"
+        if "SLOT_PROCESSED" in node.statuses:
+            return "PROVIDER_REPORTED_PROCESSED"
+        return "UNKNOWN"
+
+    def is_bank_finalized(self, key: BankKey) -> bool | None:
+        """Require provider-reported finality for the bank and every linked ancestor."""
+        node = self._banks.get(key)
+        if node is None:
+            return None
+        if not node.usable_for_observation or not node.finalized:
+            return False
+        visited: set[BankKey] = set()
+        current = node
+        while current.parent_key is not None:
+            if current.key in visited:
+                return False
+            visited.add(current.key)
+            parent = self._banks.get(current.parent_key)
+            if parent is None or not parent.usable_for_observation or not parent.finalized:
+                return False
+            current = parent
+        return True
 
     def is_ancestor(self, ancestor: BankKey, descendant: BankKey) -> bool | None:
         """True only for a verified parent chain; None for incomplete/invalid lineage."""

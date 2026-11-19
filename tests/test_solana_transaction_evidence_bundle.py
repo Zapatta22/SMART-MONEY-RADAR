@@ -39,13 +39,13 @@ def _swap_data():
     return SWAP_DISCRIMINATOR + _u64(100) + _u64(90)
 
 
-def _event_data():
+def _event_data(*, referral=False):
     body = (
-        bytes(32) + bytes((0, 0, 0))
+        bytes(32) + bytes((0, 0, int(referral)))
         + _u64(100) + _u64(90) + bytes((0,))
         + _u64(95) + _u64(0) + _u64(0) + _u64(90) + (1 << 64).to_bytes(16, "little")
-        + _u64(0) + _u64(0) + _u64(0) + _u64(0)
-        + _u64(100) + _u64(90) + _u64(90)
+        + _u64(0) + _u64(0) + _u64(0) + _u64(5 if referral else 0)
+        + _u64(100) + _u64(90) + _u64(81 if referral else 90)
         + _u64(1_700_000_000) + _u64(1_000) + _u64(2_000)
     )
     return EVENT_CPI_TAG + EVT_SWAP2_DISCRIMINATOR + body
@@ -65,7 +65,7 @@ def _token_balance_entry(index, mint, owner, amount):
     }
 
 
-def _damm_complete_transaction():
+def _damm_complete_transaction(*, referral=False):
     raw = _damm_transaction()
     payload = raw["result"]
     keys = payload["transaction"]["message"]["accountKeys"]
@@ -86,13 +86,13 @@ def _damm_complete_transaction():
             {
                 "programId": TOKEN_2022_PROGRAM_ID,
                 "accounts": [5, 7, 3, 0],
-                "data": _transfer_checked_with_fee(90, 6, 0),
+                "data": _transfer_checked_with_fee(90, 6, 9 if referral else 0),
                 "stackHeight": 2,
             },
             {
                 "programId": METEORA_DAMM_V2_PROGRAM_ID,
                 "accounts": [0],
-                "data": _b58encode(_event_data()),
+                "data": _b58encode(_event_data(referral=referral)),
                 "stackHeight": 2,
             },
         ],
@@ -109,6 +109,18 @@ def _damm_complete_transaction():
         _token_balance_entry(5, keys[7], keys[0], 910),
         _token_balance_entry(3, keys[7], "wallet", 1_090),
     ]
+    if referral:
+        payload["meta"]["innerInstructions"][0]["instructions"].insert(2, {
+            "programId": TOKEN_2022_PROGRAM_ID,
+            "accounts": [5, 7, 11, 0],
+            "data": _b58encode(bytes([12]) + _u64(5) + bytes([6])),
+            "stackHeight": 2,
+        })
+        payload["meta"]["preTokenBalances"].append(_token_balance_entry(11, keys[7], keys[0], 100))
+        post = payload["meta"]["postTokenBalances"]
+        post[2]["uiTokenAmount"]["amount"] = "905"
+        post[3]["uiTokenAmount"]["amount"] = "1081"
+        post.append(_token_balance_entry(11, keys[7], keys[0], 104))
     return raw
 
 

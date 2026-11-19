@@ -116,6 +116,30 @@ class NormalizeAccountUpdateTests(unittest.TestCase):
                 _payload(), stream_id="connection-1", stream_sequence=True
             )
 
+    def test_preserves_bank_id_and_startup_metadata(self):
+        result = normalize_account_update(
+            {**_payload(), "bank_id": 55, "is_startup": False},
+            stream_id="connection-1",
+            stream_sequence=1,
+        )
+        self.assertEqual(result.bank_id, 55)
+        self.assertFalse(result.is_startup)
+
+    def test_startup_account_must_not_claim_bank_id(self):
+        with self.assertRaisesRegex(ValueError, "is_startup"):
+            normalize_account_update(
+                {**_payload(), "bank_id": 55, "is_startup": True},
+                stream_id="connection-1",
+                stream_sequence=1,
+            )
+
+    def test_rejects_non_boolean_startup_flag(self):
+        with self.assertRaisesRegex(ValueError, "is_startup"):
+            normalize_account_update(
+                {**_payload(), "is_startup": 1},
+                stream_id="connection-1",
+                stream_sequence=1,
+            )
     def test_state_hash_is_stable_and_changes_with_account_bytes(self):
         first = normalize_account_update(
             _payload(), stream_id="connection-1", stream_sequence=1

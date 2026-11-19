@@ -6,6 +6,12 @@ from pathlib import Path
 from smart_money_radar.data_sources.geyser_account_updates import NormalizedAccountUpdate
 from smart_money_radar.data_sources.geyser_ingestion import ingest_normalized_event
 from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+from smart_money_radar.storage.geyser_recovery_store import SQLiteGeyserRecoveryStore
+from smart_money_radar.storage.geyser_account_timeline_projection import (
+    PROJECTION_NAME as TIMELINE_PROJECTION_NAME,
+    PROJECTION_VERSION as TIMELINE_PROJECTION_VERSION,
+    SQLiteGeyserAccountTimelineProjection,
+)
 from smart_money_radar.storage.geyser_unsequenced_delivery_audit import (
     POLICY_ID, SQLiteGeyserUnsequencedDeliveryAudit,
 )
@@ -22,9 +28,10 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         self.raw.close()
         self.tmp.cleanup()
 
-    def event(self, *, sequence=None, stream="stream-a", source="source-a", data=b"x"):
+    def event(self, *, sequence=None, stream="stream-a", source="source-a", data=b"x",
+              pubkey="account", slot=10):
         return NormalizedAccountUpdate(
-            pubkey="account", slot=10, write_version=1, txn_signature=None,
+            pubkey=pubkey, slot=slot, write_version=1, txn_signature=None,
             lamports=1, owner="owner", executable=False, rent_epoch=0, data=data,
             stream_id=stream, stream_sequence=sequence, source=source,
             bank_id=7, is_startup=False,
@@ -117,6 +124,72 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
             self.audit.rebuild()
         self.assertEqual(self.audit.get_checkpoint()["generation"], previous["generation"])
         self.assertEqual(len(self.audit.list_deliveries()), 1)
+
+    def test_different_sources_never_reconcile_each_other(self):
+        first = self.ingest(source="source-a")
+        second = self.ingest(source="source-b")
+        self.audit.rebuild()
+        rows = self.audit.list_deliveries()
+        self.assertNotEqual(first.event_id, second.event_id)
+        self.assertEqual(
+            [row["classification"] for row in rows],
+            ["UNSEQUENCED_UNRESOLVED", "UNSEQUENCED_UNRESOLVED"],
+        )
+        self.assertEqual([row["witness_delivery_ids"] for row in rows], [[], []])
+
+    def test_same_slot_and_adjacent_arrival_do_not_reconcile_distinct_events(self):
+        self.ingest(pubkey="account-a", slot=10)
+        self.ingest(pubkey="account-b", slot=10)
+        self.audit.rebuild()
+        rows = self.audit.list_deliveries()
+        self.assertEqual(len(rows), 2)
+        self.assertNotEqual(rows[0]["event_id"], rows[1]["event_id"])
+        self.assertEqual(
+            [row["classification"] for row in rows],
+            ["UNSEQUENCED_UNRESOLVED", "UNSEQUENCED_UNRESOLVED"],
+        )
+        self.assertEqual([row["witness_delivery_ids"] for row in rows], [[], []])
+
+    def test_multiple_unsequenced_deliveries_are_preserved_individually(self):
+        first = self.ingest()
+        second = self.ingest()
+        witness = self.ingest(sequence=45, stream="replay-stream")
+        summary = self.audit.rebuild()
+        rows = self.audit.list_deliveries()
+        by_id = {row["delivery_id"]: row for row in rows}
+        for delivery in (first, second):
+            self.assertEqual(
+                by_id[delivery.delivery_id]["classification"],
+                "UNSEQUENCED_RECONCILED",
+            )
+            self.assertEqual(
+                by_id[delivery.delivery_id]["witness_delivery_ids"],
+                [witness.delivery_id],
+            )
+            self.assertIsNone(by_id[delivery.delivery_id]["stream_sequence"])
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(summary["unsequenced_count"], 2)
+        self.assertEqual(summary["reconciled_count"], 2)
+
+    def test_unsequenced_event_is_not_projected_into_timeline_or_checkpoint(self):
+        self.ingest()
+        timeline = SQLiteGeyserAccountTimelineProjection(self.db)
+        summary = timeline.rebuild()
+        self.assertEqual(summary["account_write_count"], 0)
+        self.assertEqual(timeline.list_account_writes(), [])
+        checkpoint = SQLiteGeyserRecoveryStore(self.db).get_projection_checkpoint(
+            TIMELINE_PROJECTION_NAME, TIMELINE_PROJECTION_VERSION, "source-a"
+        )
+        self.assertIsNotNone(checkpoint)
+        self.assertEqual(checkpoint["projected_event_count"], 0)
+        self.assertEqual(checkpoint["skipped_unsequenced_count"], 1)
+
+    def test_schema_migration_version_is_recorded(self):
+        with sqlite3.connect(self.db) as connection:
+            versions = connection.execute(
+                "SELECT version FROM geyser_unsequenced_delivery_audit_schema_migrations"
+            ).fetchall()
+        self.assertEqual(versions, [(1,)])
 
     def test_raw_and_transport_checkpoints_are_unchanged_by_audit_rebuild(self):
         self.raw.register_stream("source-a", "stream-a", 1)

@@ -2967,3 +2967,27 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 ### Estado
 - Avaliação concluída sem bloqueio estrutural identificado para a integração PR #35 -> PR #34.
 - Próxima ação: aguardar autorização expressa para integrar/mergear PR #35 na branch da PR #34. Não executar automaticamente.
+
+
+## 306. Integração da PR #35 na branch da PR #34 — 19/11/2026
+
+### Autorização e execução
+- Usuário autorizou explicitamente integrar a PR #35 à branch da PR #34; a autorização não incluiu merge em `main`.
+- Antes da integração, CI no HEAD exato da PR #35 `b1afc4b36d300a7f246c6d979ea7d96de23a3058` foi confirmado SUCCESS: workflow `SMR tests`, run `44612741281`.
+- PR #35 estava Draft; foi marcada Ready for review para permitir o merge autorizado.
+- PR #35 foi mergeada na sua base `feat/solana-transaction-evidence-bundle` usando merge commit, com expected head SHA `b1afc4b36d300a7f246c6d979ea7d96de23a3058`.
+- Merge commit: `bfba2128b47178d106723d7e284018923524a02e`.
+
+### Verificação posterior
+- PR #35: CLOSED/MERGED; merge commit confirmado `bfba2128b47178d106723d7e284018923524a02e`.
+- PR #34: continua OPEN/DRAFT, não mergeada; novo HEAD `bfba2128b47178d106723d7e284018923524a02e`, mergeable=true.
+- `main` verificada após o merge e permanece no SHA `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; não foi alterada.
+- CI do merge commit foi iniciado no evento PR #34; na consulta inicial, check `test` estava IN_PROGRESS. Não declarar a combinação final validada até concluir com SUCCESS.
+
+### Escopo e segurança
+- A integração ocorreu somente na branch da PR #34, conforme autorização.
+- Nenhuma alteração foi feita diretamente em `main`; nenhuma execução financeira ou conexão de provider foi habilitada.
+- PR #34 continua Draft para revisão do conjunto integrado. A integração da PR #35 não autoriza merge da PR #34 em `main`.
+
+### Próxima ação
+- Aguardar e verificar CI no HEAD `bfba2128b47178d106723d7e284018923524a02e` da PR #34. Se aprovado, revisar o conjunto integrado e atualizar este registro com o resultado. Nenhum merge adicional sem autorização expressa.

@@ -88,7 +88,9 @@ def normalize_transaction_update(message: Any, *, source_id: str, stream_id: str
                                  stream_sequence: int,
                                  raw_message_bytes: bytes | None = None) -> NormalizedTransactionObservation:
     """Normalize SubscribeUpdateTransaction without inventing missing evidence."""
-    info = message
+    info = getattr(message, "transaction", None)
+    if info is None:
+        raise ValueError("transaction ausente em SubscribeUpdateTransaction")
     transaction = getattr(info, "transaction", None)
     if transaction is None:
         raise ValueError("transaction ausente em SubscribeUpdateTransactionInfo")
@@ -100,7 +102,7 @@ def normalize_transaction_update(message: Any, *, source_id: str, stream_id: str
     nested_signature = _base58_encode(signatures[0], field="transaction.signatures[0]", expected_length=64)
     if nested_signature != signature:
         raise ValueError("signature diverge de transaction.signatures[0]")
-    slot = _u64(getattr(info, "slot", None), "slot")
+    slot = _u64(getattr(message, "slot", None), "slot")
     source_id = _text(source_id, "source_id")
     stream_id = _text(stream_id, "stream_id")
     stream_sequence = _u64(stream_sequence, "stream_sequence")
@@ -117,7 +119,7 @@ def normalize_transaction_update(message: Any, *, source_id: str, stream_id: str
             raise ValueError("raw_message_bytes deve conter bytes protobuf não vazios")
         raw_payload, provenance = raw_message_bytes, "WIRE"
     else:
-        raw_payload = _serialize(info, "SubscribeUpdateTransactionInfo")
+        raw_payload = _serialize(message, "SubscribeUpdateTransaction")
         provenance = "PROTOBUF_DETERMINISTIC_RESERIALIZATION"
     return NormalizedTransactionObservation(
         transaction_signature=signature, slot=slot, source_id=source_id, stream_id=stream_id,

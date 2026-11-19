@@ -1941,3 +1941,26 @@ Foi identificado que um replay tardio de assinatura pendente poderia marcar a as
 - Limites permanecem: `RECONCILED` verifica transferências atribuídas e deltas agregados base por token account, mas não valida ainda snapshots históricos de withheld TransferFeeAmount, epoch/config histórico do mint nem todos os componentes de reserva/fee AMM. Não cria SwapObservation, BUY/SELL ou execução.
 - Nenhuma alteração em `main`, RAW, SQLite, checkpoints, RPC/Helius ou estado on-chain.
 - Próxima ação: validar o merge commit sincronizado e revisar os invariantes adicionais de ownership e reservas DAMM v2 antes de retirar Draft.
+
+
+## 265. PR #23 sincronizada e CI combinado aprovado — 19/11/2026
+
+- Sincronização da PR #23 com a base atual da PR #22 concluída no merge commit `232c11ac2f8b9a754446e10a3d74ec7dbc8c8688`; primeiro parent `0567eb9c4981ba6ffc33e98a402292130667760a`, segundo parent `947c056e01bfc7b22037e19e3600a5248a29e281`.
+- A árvore da base PR #22 foi preservada integralmente; reaplicados somente os quatro arquivos próprios da PR #23: reconciliador, testes, documento e Registro Mestre.
+- Compare após sincronização: 25 commits à frente, 0 atrás; quatro arquivos próprios. GitHub reportou `mergeable=true`, `mergeable_state=clean`.
+- CI #1460 (`44445124525`) no HEAD sincronizado `232c11ac2f8b9a754446e10a3d74ec7dbc8c8688`: **408 testes OK**, compileall aprovado, workflow completed/success.
+- A validação local anterior no Termux permanece registrada: 374 testes aprovados e compileall no commit `d6142ba37c55aae45f9756b9adec2e2be3520895`. A validação mais recente e combinada é o CI #1460.
+- PR #23 continua Draft e não integrada; PR #22 continua Draft e não integrada; `main` intacta.
+
+## 266. Ownership explícito e trilha de withheld fees na PR #23 — 19/11/2026
+
+- `reconcile_damm_v2_economic_batch` agora exige `monitored_wallet`; owner das token accounts input/output deve ser a carteira monitorada e owner dos vaults A/B deve ser `pool_authority`. `payer` não é usado como proxy de owner econômico.
+- Colisão entre as quatro contas principais (input user, input vault, output vault, output user) falha fechado; referral ativa não pode colidir com outra conta do swap.
+- Transferências atribuídas para reconciliação devem ser `TRANSFER_CHECKED` ou `TRANSFER_CHECKED_WITH_FEE`, com amount bruto estritamente positivo. Isso corresponde ao caminho de transferência checked esperado no escopo.
+- O resultado expõe `expected_withheld_fee_deltas`, agregados por conta destino e mint, derivados de bruto menos crédito spendable. `withheld_fee_status` distingue `NOT_REQUIRED` de `EXPECTED_NOT_VERIFIED`.
+- Limite explícito: withheld esperado ainda não é prova do TLV `TransferFeeAmount.withheld_amount` pre/post. O estado histórico do mint, epoch aplicável e o delta TLV da conta ainda precisam ser obtidos e verificados; o estado atual do mint não pode substituir prestate histórico.
+- Testes novos cobrem owner de carteira, owner dos vaults, withheld esperado não verificado e carteira monitorada ausente.
+- Commits desta atualização: reconciliador `0c51441c6022ba6668d89bee78ea7af0e5ad4b85`; testes `24866016f041ac558af8a4d471a0aad6d2153be8` e `2a809c06451c485db87ea54d24afddea1182fed5`; documento `503fd0a825f9c16f3219d1e009c299a307b366fa`.
+- CI #1460 valida o HEAD anterior à atualização de ownership/withheld. Novo CI é obrigatório para o HEAD final desta seção.
+- Nenhuma alteração em `main`, RAW, SQLite, checkpoints, RPC/Helius ou estado on-chain.
+- Próxima ação: executar CI no HEAD final e revisar eventuais falhas; depois planejar a camada histórica de mint/epoch e TLV withheld.

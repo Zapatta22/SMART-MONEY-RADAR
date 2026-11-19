@@ -2696,3 +2696,33 @@ Continuar a auditoria técnica da PR #23 nos módulos de recuperação/backfill,
 
 ### Próxima etapa
 Concluir a revisão da reconciliação econômica DAMM v2 e de suas dependências de transferência/balance snapshots. Até agora, a leitura não encontrou outro bloqueio semântico confirmado nesses módulos; a revisão permanece parcial, não uma aprovação integral da PR #23. Não fazer merge de PR #31, #32 ou #33 sem autorização explícita.
+
+
+## 298. Revisão inicial da reconciliação econômica DAMM v2 e recovery — 19/11/2026
+
+### Escopo lido
+- `src/smart_money_radar/storage/geyser_recovery_store.py` e `tests/test_geyser_recovery_store.py`.
+- `src/smart_money_radar/data_sources/damm_v2_economic_reconciliation.py` e `tests/test_damm_v2_economic_reconciliation.py`.
+- Dependências de linhagem bancária, transfer analyzer, decoder de transferências SPL/Token-2022 e decoder de balance deltas.
+
+### Avaliação preliminar
+- Recovery/backfill exige evidência explícita para finalizar job como COMPLETED: contrato do provider confirmado, intervalo coberto, paginação esgotada, retenção verificada e semântica de consulta idêntica à registrada.
+- A documentação corretamente declara que essa evidência é fornecida pelo futuro adapter e registrada pelo store; não é prova independente das garantias do provider.
+- Contadores de progresso não podem regredir; retomada preserva cursor durável e cria nova tentativa; recuperação de job interrompido não inventa cobertura COMPLETE.
+- A reconciliação econômica DAMM v2 agrega todas as operações por token account, falha fechada em snapshots incompletos, transferências não atribuídas/reutilizadas, CPI não confiável, divergência de gross/net, mint/decimals/owner e fee incompatível.
+- Withheld fee esperado permanece `EXPECTED_NOT_VERIFIED` até snapshots TLV pre/post vinculados à transação. Configuração de TransferFeeConfig Token-2022 é verificada separadamente com prestate do mint, epoch, slot, ordem, assinatura e inventário completo de instruções.
+- Os testes existentes cobrem divergências econômicas, transfer reuse, owners, snapshots TLV, assinatura/ordem, histórico de mint, epoch e inventário de InitializeTransferFeeConfig.
+
+### Limitação de integração a preservar
+- Os contratos atuais da função `reconcile_damm_v2_economic_batch()` exigem que contexts, evidence, all_transfers e balance_deltas pertençam ao mesmo payload/transação, mas os objetos `SolanaTokenBalanceDeltaResult` e `SolanaTokenTransfer` não carregam, por si, assinatura/slot para provar essa associação.
+- Isso não foi classificado como defeito confirmado na camada offline, pois o contrato do chamador declara o lote de uma transação. Porém, antes da integração operacional, o adapter/orquestrador deverá fornecer um envelope de transação comum e impedir mistura de evidências de assinaturas/slots diferentes.
+- A revisão desta etapa é preliminar; não equivale a auditoria completa da reconciliação econômica nem validação com transações mainnet reais.
+
+### Estado
+- Nenhum novo bloqueio confirmado nesta leitura preliminar de recovery/DAMM v2.
+- PR #31, #32 e #33 continuam OPEN/DRAFT, sem merge; os resultados de CI e as decisões estão registrados nas seções 296 e 297.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhum provider, RPC, credencial, VPS, captura contínua ou execução on-chain foi conectado.
+
+### Próxima etapa
+Aprofundar a revisão do contrato transacional end-to-end: garantir que associação swap/EvtSwap2, transfer inventory, balance deltas e snapshots históricos compartilhem a mesma assinatura/slot/ordem. Depois concluir a auditoria do recovery/backfill e dos módulos restantes da PR #23. Não fazer merge sem autorização explícita.

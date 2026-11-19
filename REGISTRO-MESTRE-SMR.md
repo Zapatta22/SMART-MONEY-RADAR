@@ -2991,3 +2991,42 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 
 ### Próxima ação
 - Aguardar e verificar CI no HEAD `bfba2128b47178d106723d7e284018923524a02e` da PR #34. Se aprovado, revisar o conjunto integrado e atualizar este registro com o resultado. Nenhum merge adicional sem autorização expressa.
+
+
+## 307. Integração da PR #34 — SolanaTransactionEvidenceBundle e finality — 19/11/2026
+
+### Autorização e merge
+- O usuário autorizou explicitamente a integração em 19/11/2026.
+- PR #34: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/34
+- Branch de origem: `feat/solana-transaction-evidence-bundle`.
+- Branch de destino configurada na PR: `feat/damm-v2-economic-reconciliation` (não `main`).
+- HEAD aprovado: `268c5d523a9e1ae45b10b504de1cfe440fefa14b`.
+- CI pré-merge no HEAD exato: workflow `SMR tests`, run `44613188412`, SUCCESS.
+- PR #34 marcada Ready for review e mergeada pelo método merge.
+- Merge commit: `6d120e6b250a57539c39037843741442229c855e`.
+- GitHub confirmou PR #34 CLOSED/MERGED em 19/11/2026 20:56:20Z.
+- Branch `feat/damm-v2-economic-reconciliation` passou a apontar para o merge commit acima.
+- PR #23 continua como PR de integração subsequente; a atualização do HEAD da sua branch não equivale a merge da PR #23.
+
+### Validação pós-merge
+- Workflow `SMR tests`, run `44613711343`, executado no merge commit exato `6d120e6b250a57539c39037843741442229c855e`.
+- Conclusão: SUCCESS.
+- Job `test` (`135876655534`): SUCCESS.
+- Passos Install project, Run unit tests e Compile source and tests: SUCCESS.
+- A validação comprova o estado integrado no commit acima; não comprova integração com provider live, coleta de snapshots mainnet ou execução financeira.
+
+### Escopo integrado e limites preservados
+- Bundle transacional Solana com identidade por assinatura, slot, source_id e SHA-256 do payload canonicalizado; inventário de instruções, transfers e balance deltas derivados do mesmo payload.
+- Associação DAMM v2, contas resolvidas, contexts e transfer evidence vinculados ao bundle; reconciliação econômica recebe o bundle e falha fechado quando a evidência está incompleta ou inconsistente.
+- Snapshots históricos de mint/withheld preservam bytes brutos, hashes, source_id e ordering_domain_id; ordens de streams/domínios distintos não são comparadas sem garantia explícita.
+- Política Geyser commitment/finality integrada: PROCESSED/CONFIRMED não autorizam transição; bank-scoped transitions exigem estados e ancestrais explicitamente vinculados como PROVIDER_REPORTED_FINALIZED e utilizáveis; conflitos e SLOT_DEAD mantêm evidência inelegível.
+- `PROVIDER_REPORTED_FINALIZED` continua sendo declaração do provider, não autenticação criptográfica nem prova independente de consenso.
+- Nenhum adapter Geyser/provider live, snapshot mainnet capturado, sinal BUY/SELL, autorização de execução ou execução financeira foi criado por esta integração.
+
+### Estado das branches e próxima ação
+- PR #34: CLOSED/MERGED.
+- PR #35: CLOSED/MERGED dentro da PR #34.
+- Branch `feat/damm-v2-economic-reconciliation`: HEAD `6d120e6b250a57539c39037843741442229c855e`.
+- PR #23 permanece aberta/Draft, com destino `feat/damm-v2-referral-transfer-attribution`; não foi mergeada.
+- `main` verificada após o merge: permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Próxima ação: revisar a integração da PR #23 no seu destino configurado, sem alterar `main` e sem merge sem autorização explícita.

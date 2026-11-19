@@ -10,6 +10,7 @@ from smart_money_radar.data_sources.geyser_bank_lineage import (
 )
 from smart_money_radar.data_sources.geyser_ingestion import ingest_normalized_event
 from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+from smart_money_radar.storage.geyser_recovery_store import SQLiteGeyserRecoveryStore
 from smart_money_radar.storage.geyser_account_timeline_projection import (
     PROJECTION_NAME, PROJECTION_VERSION, SQLiteGeyserAccountTimelineProjection,
 )
@@ -79,6 +80,59 @@ class GeyserAccountTimelineProjectionTests(unittest.TestCase):
         self.assertEqual(len(self.projection.list_banks()),1)
         self.assertEqual(self.projection.list_banks()[0]["invalidated"],1)
 
+    def test_rebuild_records_source_scoped_recovery_checkpoint_after_generation(self):
+        self.raw.register_stream(self.source, self.stream, 1)
+        self.add(self.account(100,1,1))
+        result=self.projection.rebuild()
+        recovery=SQLiteGeyserRecoveryStore(self.db)
+        checkpoint=recovery.get_projection_checkpoint(PROJECTION_NAME,PROJECTION_VERSION,self.source)
+        self.assertEqual(checkpoint["generation"],result["generation"])
+        self.assertEqual(checkpoint["last_delivery_id"],1)
+        self.assertEqual(checkpoint["projected_event_count"],1)
+        self.assertEqual(checkpoint["skipped_unsequenced_count"],0)
+        self.assertEqual(checkpoint["input_coverage_status"],"COMPLETE")
+        self.assertFalse(checkpoint["continuity_interrupted"])
+        self.assertEqual(result["source_checkpoint_count"],1)
+
+    def test_rebuild_checkpoint_coverage_unknown_without_declared_stream_baseline(self):
+        self.add(self.account(100,1,1))
+        self.projection.rebuild()
+        checkpoint=SQLiteGeyserRecoveryStore(self.db).get_projection_checkpoint(
+            PROJECTION_NAME,PROJECTION_VERSION,self.source
+        )
+        self.assertEqual(checkpoint["input_coverage_status"],"UNKNOWN")
+        self.assertFalse(checkpoint["continuity_interrupted"])
+
+    def test_rebuild_checkpoint_is_partial_when_transport_gap_exists(self):
+        self.raw.register_stream(self.source, self.stream, 1)
+        self.add(self.account(100,1,1))
+        self.add(self.account(101,2,3))
+        self.projection.rebuild()
+        checkpoint=SQLiteGeyserRecoveryStore(self.db).get_projection_checkpoint(
+            PROJECTION_NAME,PROJECTION_VERSION,self.source
+        )
+        self.assertEqual(checkpoint["input_coverage_status"],"PARTIAL")
+        self.assertTrue(checkpoint["continuity_interrupted"])
+
+    def test_recovery_checkpoints_are_isolated_per_source(self):
+        self.raw.register_stream(self.source, self.stream, 1)
+        self.add(self.account(100,1,1,pubkey="source-a"))
+        other=NormalizedAccountUpdate(
+            pubkey="source-b",slot=100,write_version=1,txn_signature=None,
+            lamports=1,owner="owner",executable=False,rent_epoch=0,data=b"x",
+            stream_id="stream-b",stream_sequence=1,source="yellowstone-backup",
+            bank_id=10,is_startup=False,
+        )
+        self.raw.register_stream("yellowstone-backup","stream-b",1)
+        self.add(other)
+        self.projection.rebuild()
+        recovery=SQLiteGeyserRecoveryStore(self.db)
+        first=recovery.get_projection_checkpoint(PROJECTION_NAME,PROJECTION_VERSION,self.source)
+        second=recovery.get_projection_checkpoint(PROJECTION_NAME,PROJECTION_VERSION,"yellowstone-backup")
+        self.assertEqual(first["input_coverage_status"],"COMPLETE")
+        self.assertEqual(second["input_coverage_status"],"COMPLETE")
+        self.assertNotEqual(first["source_id"],second["source_id"])
+
     def test_rebuild_is_repeatable_and_checkpoint_is_versioned(self):
         self.add(self.account(100,1,1))
         first=self.projection.rebuild()
@@ -131,10 +185,16 @@ class GeyserAccountTimelineProjectionTests(unittest.TestCase):
             connection.execute("UPDATE geyser_raw_events SET payload_bytes=? WHERE event_id=?",
                                (json.dumps(raw).encode(),second.event_id))
         previous=self.projection.get_checkpoint()
+        recovery=SQLiteGeyserRecoveryStore(self.db)
+        previous_recovery=recovery.get_projection_checkpoint(PROJECTION_NAME,PROJECTION_VERSION,self.source)
         with self.assertRaises(ValueError):
             self.projection.rebuild()
         self.assertEqual(len(self.projection.list_account_writes()),1)
         self.assertEqual(self.projection.get_checkpoint()["generation"],previous["generation"])
+        self.assertEqual(
+            recovery.get_projection_checkpoint(PROJECTION_NAME,PROJECTION_VERSION,self.source)["generation"],
+            previous_recovery["generation"],
+        )
 
 
 if __name__ == "__main__":

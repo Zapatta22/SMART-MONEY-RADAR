@@ -221,6 +221,7 @@ class BankLineageTracker:
         self._fingerprints: set[str] = set()
         self._dead_slots: set[tuple[str, int]] = set()
         self._pending_replacements: dict[tuple[str, int], list[BankKey]] = {}
+        self._conflicted_keys: set[BankKey] = set()
         self._conflicts: list[BankLineageConflict] = []
 
     @property
@@ -234,7 +235,11 @@ class BankLineageTracker:
     def _node(self, key: BankKey) -> BankNode:
         node = self._banks.get(key)
         if node is None:
-            node = BankNode(key=key, dead=(key.source_id, key.slot) in self._dead_slots)
+            node = BankNode(
+                key=key,
+                dead=(key.source_id, key.slot) in self._dead_slots,
+                invalidated=key in self._conflicted_keys,
+            )
             self._banks[key] = node
         return node
 
@@ -243,7 +248,10 @@ class BankLineageTracker:
         # ancestry/transition decision. Keep the conflict as historical evidence
         # and fail closed rather than retaining the previously accepted lineage.
         if key is not None:
-            self._node(key).invalidated = True
+            self._conflicted_keys.add(key)
+            existing = self._banks.get(key)
+            if existing is not None:
+                existing.invalidated = True
         conflict = BankLineageConflict(key, reason, detail)
         self._conflicts.append(conflict)
         return BankUpdateResult("conflict", key, conflict)

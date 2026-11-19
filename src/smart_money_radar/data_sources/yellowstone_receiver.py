@@ -42,6 +42,15 @@ class YellowstoneFrameReceiver:
         self._stream_id = stream_id
         self._ordering_domain_id = ordering_domain_id
 
+    @property
+    def database_path(self) -> str:
+        return self._store.database_path
+
+    @property
+    def scope(self) -> tuple[str, str, str]:
+        """Return the journal source, connection and ordering domain."""
+        return self._source_id, self._stream_id, self._ordering_domain_id
+
     def receive(self, payload: bytes, *, stream_sequence: int) -> WireFrameReceipt:
         """Capture a frame at its assigned coordinate, including frames rejected by decoding."""
         if not isinstance(payload, bytes):

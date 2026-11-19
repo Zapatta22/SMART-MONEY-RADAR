@@ -21,6 +21,7 @@ from smart_money_radar.data_sources.geyser_account_timeline import AccountUpdate
 from smart_money_radar.data_sources.geyser_bank_lineage import (
     BankKey, NormalizedBlockMeta, NormalizedEntryUpdateParent, NormalizedSlotUpdate,
 )
+from smart_money_radar.data_sources.yellowstone_receiver import YellowstoneFrameReceiver
 from smart_money_radar.storage.geyser_recovery_store import SQLiteGeyserRecoveryStore
 
 
@@ -119,6 +120,30 @@ class SQLiteGeyserAccountTimelineProjection:
                     bank_count INTEGER NOT NULL,
                     skipped_count INTEGER NOT NULL,
                     completed_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS geyser_wire_timeline_checkpoints (
+                    source_id TEXT NOT NULL,
+                    stream_id TEXT NOT NULL,
+                    ordering_domain_id TEXT NOT NULL,
+                    last_frame_id INTEGER NOT NULL,
+                    generation INTEGER NOT NULL,
+                    PRIMARY KEY(source_id,stream_id)
+                );
+                CREATE TABLE IF NOT EXISTS geyser_wire_timeline_writes (
+                    source_id TEXT NOT NULL,
+                    stream_id TEXT NOT NULL,
+                    frame_id INTEGER NOT NULL REFERENCES geyser_wire_frames(frame_id),
+                    pubkey TEXT NOT NULL,
+                    slot INTEGER NOT NULL,
+                    write_version INTEGER NOT NULL,
+                    bank_id INTEGER,
+                    txn_signature TEXT,
+                    continuity_epoch INTEGER NOT NULL,
+                    baseline INTEGER NOT NULL CHECK(baseline IN (0,1)),
+                    bank_observation_status TEXT NOT NULL,
+                    PRIMARY KEY(source_id,stream_id,frame_id),
+                    FOREIGN KEY(source_id,stream_id)
+                        REFERENCES geyser_wire_timeline_checkpoints(source_id,stream_id)
                 );
             """)
 
@@ -438,6 +463,98 @@ class SQLiteGeyserAccountTimelineProjection:
                 "bank_count":len(bank_rows),"skipped_count":skipped,
                 "source_checkpoint_count":len(projection_checkpoints),
                 "completed_at":completed_at}
+
+    @staticmethod
+    def _wire_watermark(connection: sqlite3.Connection, scope: tuple[str, str, str]) -> int:
+        source, stream, domain = scope
+        row = connection.execute(
+            """SELECT COALESCE(MAX(f.frame_id), 0)
+               FROM geyser_frame_streams AS s LEFT JOIN geyser_wire_frames AS f
+                    ON f.source_id = s.source_id AND f.stream_id = s.stream_id
+               WHERE s.source_id = ? AND s.stream_id = ? AND s.ordering_domain_id = ?
+               GROUP BY s.source_id, s.stream_id""",
+            (source, stream, domain),
+        ).fetchone()
+        if row is None:
+            raise ValueError("domínio ausente no journal")
+        return row[0]
+
+    def rebuild_wire(self, receiver: YellowstoneFrameReceiver) -> int:
+        """Atomically publish a derived account timeline for one verified wire domain."""
+        if Path(receiver.database_path).resolve() != Path(self.database_path).resolve():
+            raise ValueError("a projeção deve compartilhar o SQLite do receptor")
+        source, stream, domain = receiver.scope
+        with self._connect() as connection:
+            watermark = self._wire_watermark(connection, receiver.scope)
+
+        timeline = receiver.rebuild_account_timeline()
+        records = timeline.timeline_records()
+        with self._connect() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if self._wire_watermark(connection, receiver.scope) != watermark:
+                raise RuntimeError("journal mudou durante reconstrução; repita o replay")
+            prior = connection.execute(
+                """SELECT generation FROM geyser_wire_timeline_checkpoints
+                   WHERE source_id = ? AND stream_id = ?""",
+                (source, stream),
+            ).fetchone()
+            generation = prior[0] + 1 if prior else 1
+            connection.execute(
+                """INSERT INTO geyser_wire_timeline_checkpoints
+                   (source_id, stream_id, ordering_domain_id, last_frame_id, generation)
+                   VALUES (?, ?, ?, ?, ?) ON CONFLICT(source_id, stream_id) DO UPDATE SET
+                   last_frame_id = excluded.last_frame_id, generation = excluded.generation""",
+                (source, stream, domain, watermark, generation),
+            )
+            connection.execute(
+                "DELETE FROM geyser_wire_timeline_writes WHERE source_id = ? AND stream_id = ?",
+                (source, stream),
+            )
+            for record in records:
+                update = record.update
+                frame = connection.execute(
+                    """SELECT frame_id FROM geyser_wire_frames WHERE source_id = ?
+                       AND stream_id = ? AND stream_sequence = ? AND status = 'accepted'""",
+                    (source, stream, update.stream_sequence),
+                ).fetchone()
+                if frame is None:
+                    raise ValueError("frame da observação ausente no journal")
+                connection.execute(
+                    """INSERT INTO geyser_wire_timeline_writes
+                       (source_id, stream_id, frame_id, pubkey, slot, write_version,
+                        bank_id, txn_signature, continuity_epoch, baseline, bank_observation_status)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (source, stream, frame[0], update.pubkey, update.slot, update.write_version,
+                     update.bank_id, update.txn_signature, record.continuity_epoch, int(record.baseline),
+                     timeline.bank_lineage_tracker.account_bank_status(update)),
+                )
+        return generation
+
+    def list_wire_account_writes(self, source_id: str, stream_id: str, ordering_domain_id: str):
+        """Read the current projection and include the originating frame coordinates."""
+        scope = (source_id, stream_id, ordering_domain_id)
+        with self._connect() as connection, connection:
+            connection.execute("BEGIN")
+            watermark = self._wire_watermark(connection, scope)
+            checkpoint = connection.execute(
+                """SELECT last_frame_id, generation FROM geyser_wire_timeline_checkpoints
+                   WHERE source_id = ? AND stream_id = ? AND ordering_domain_id = ?""",
+                scope,
+            ).fetchone()
+            if checkpoint is None or checkpoint[0] != watermark:
+                raise ValueError("projeção ausente ou desatualizada para este domínio")
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """SELECT w.frame_id, f.stream_sequence, f.payload_sha256, w.pubkey,
+                          w.slot, w.write_version, w.bank_id, w.txn_signature,
+                          w.continuity_epoch, w.baseline, w.bank_observation_status
+                   FROM geyser_wire_timeline_writes AS w
+                   JOIN geyser_wire_frames AS f USING (frame_id)
+                   WHERE w.source_id = ? AND w.stream_id = ?
+                   ORDER BY f.stream_sequence""",
+                (source_id, stream_id),
+            )
+            return checkpoint[1], [dict(row) for row in rows]
 
     def get_checkpoint(self):
         with self._connect() as connection:

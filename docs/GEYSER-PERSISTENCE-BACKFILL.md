@@ -425,9 +425,9 @@ stream e domínio dentro da mesma fonte.
 O replay confere os hashes dentro de um snapshot SQLite e produz a sequência
 com eventos decodificados ou a posição do frame de controle. Consumidores
 devem concluir a leitura antes de publicar projeções ou checkpoints, pois
-uma falha de integridade pode surgir no decorrer do cursor. A próxima camada deve vincular esse replay às projeções SQLite e à ingestão
-lógica. Receptores e fornecedores de rede ainda precisam de validação
-operacional.
+uma falha de integridade pode surgir no decorrer do cursor. O replay alimenta a projeção SQLite por conexão. A ingestão lógica de
+transações, os receptores de rede e a validação com fornecedores seguem
+pendentes.
 
 A reconstrução offline da timeline lê um domínio por vez. Frames de transação,
 controle e metadados ocupam suas posições originais sem gerar lacunas
@@ -446,3 +446,17 @@ do descriptor confiável a `load_yellowstone_decoder` e passe o decoder
 resultante a `YellowstoneFrameReceiver`. Um teste de integração offline com
 esses descritores reabriu o banco e repetiu um frame da fixture de conta,
 uma transação sintética e um ping.
+
+### Projeção persistente por conexão
+
+`SQLiteGeyserAccountTimelineProjection.rebuild_wire` grava as observações de
+conta e o checkpoint da geração na mesma transação. Cada observação mantém o
+`frame_id` original e a leitura informa a sequência e o hash do envelope.
+A projeção valida todo o replay antes de publicar e confere se o journal
+recebeu novos frames durante a reconstrução. Qualquer nova entrega invalida
+a leitura da geração anterior até que seja reconstruída. Uma falha de I/O ou
+SQL reverte a publicação inteira. Outras conexões têm gerações independentes.
+
+Esta projeção registra derivações do transporte, incluindo o status de banco
+observado, e ainda precisa ser vinculada ao pipeline de evidência econômica
+e aos critérios de finalidade operacional.

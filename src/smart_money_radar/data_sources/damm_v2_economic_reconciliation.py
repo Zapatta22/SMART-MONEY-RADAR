@@ -23,6 +23,9 @@ from smart_money_radar.data_sources.solana_token_transfer_decoder import (
     TOKEN_2022_PROGRAM_ID,
     SolanaTokenTransfer,
 )
+from smart_money_radar.data_sources.token2022_transfer_fee_state import (
+    TransferFeeAmountDelta,
+)
 
 
 EconomicStatus = Literal["RECONCILED", "INCOMPLETE", "AMBIGUOUS"]
@@ -65,8 +68,7 @@ class DammV2EconomicReconciliation:
 class DammV2WithheldFeeSnapshot:
     token_account: str
     mint: str
-    pre_withheld_amount_raw: int
-    post_withheld_amount_raw: int
+    decoded_delta: TransferFeeAmountDelta
     transaction_signature: str
     transaction_slot: int
     transaction_order: int
@@ -601,14 +603,24 @@ def verify_damm_v2_withheld_fee_deltas(
         ):
             mismatches.append(f"proveniência/hash de snapshot ausente para {expected.token_account}")
             continue
-        amounts = (snapshot.pre_withheld_amount_raw, snapshot.post_withheld_amount_raw)
+        decoded = snapshot.decoded_delta
+        if (
+            not isinstance(decoded, TransferFeeAmountDelta)
+            or 2 not in decoded.extension_types
+        ):
+            mismatches.append(f"delta TLV TransferFeeAmount ausente/inválido para {expected.token_account}")
+            continue
+        amounts = (decoded.pre_withheld_amount, decoded.post_withheld_amount)
         if any(
             isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= (1 << 64) - 1
             for value in amounts
         ):
             mismatches.append(f"quantidade withheld inválida para {expected.token_account}")
             continue
-        observed_delta = snapshot.post_withheld_amount_raw - snapshot.pre_withheld_amount_raw
+        observed_delta = decoded.post_withheld_amount - decoded.pre_withheld_amount
+        if decoded.delta != observed_delta:
+            mismatches.append(f"delta TLV inconsistente para {expected.token_account}")
+            continue
         if observed_delta != expected.expected_withheld_delta_raw:
             mismatches.append(
                 f"withheld diverge para {expected.token_account}: "

@@ -1,0 +1,39 @@
+name: Geyser audit benchmark
+
+on:
+  push:
+    branches:
+      - "perf/geyser-audit-benchmark"
+    paths:
+      - "tools/benchmark_geyser_unsequenced_audit.py"
+      - ".github/workflows/geyser-audit-benchmark.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Run synthetic rebuild benchmark
+        run: |
+          set -o pipefail
+          PYTHONPATH=src python tools/benchmark_geyser_unsequenced_audit.py --sizes 1000 10000 50000 100000 | tee benchmark-results.json
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: geyser-audit-benchmark-results
+          path: benchmark-results.json
+          if-no-files-found: error

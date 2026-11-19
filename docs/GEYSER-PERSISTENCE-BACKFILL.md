@@ -251,7 +251,8 @@ Implemented deterministic event identity for normalized Geyser events:
 - this helper accepts provider-neutral normalized event objects. It does not decode protobuf, capture wire bytes, persist events, or automatically invoke itself from the transport adapter; the future ingestion coordinator must call it and pass its `event_id` to RAW storage;
 - `protobuf_wire` provenance remains valid only when bytes were captured before protobuf decoding. The current adapter receives decoded objects.
 
-Validation for deterministic identity is pending CI at this point in the document. The exact commit/run and test count will be added after the workflow completes.
+Validation for deterministic identity:
+- CI #1674, run `44510167848`, pull_request event, HEAD `bde85727630b4f37994852c67594a9c70887d1a3`: SUCCESS; **539/539 tests OK** in 3.843 s; `python -m compileall -q src tests` passed.
 
 Still not implemented:
 - automatic invocation of the identity helper by a transport/ingestion coordinator and normalized-event persistence;

@@ -11,6 +11,7 @@ from typing import Any
 
 from smart_money_radar.data_sources.geyser_transaction_updates import (
     NormalizedTransactionObservation,
+    bind_transaction_wire,
     normalize_transaction_update,
 )
 from smart_money_radar.data_sources.geyser_account_updates import (
@@ -192,11 +193,15 @@ def adapt_subscribe_update(
         raise TypeError("mensagem deve ser SubscribeUpdate protobuf com WhichOneof")
     kind = which_oneof("update_oneof")
     if kind == "transaction":
-        return adapt_transaction_update(
-            getattr(message, kind), source_id=source_id, stream_id=stream_id,
-            stream_sequence=stream_sequence, raw_message_bytes=raw_message_bytes,
-            ordering_domain_id=ordering_domain_id,
+        if ordering_domain_id is None:
+            raise ValueError("ordering_domain_id deve ser fornecido para transações")
+        observation = adapt_transaction_update(
+            message.transaction, source_id=source_id, stream_id=stream_id,
+            stream_sequence=stream_sequence, ordering_domain_id=ordering_domain_id,
         )
+        if raw_message_bytes is not None:
+            return bind_transaction_wire(observation, message, raw_message_bytes)
+        return observation
     adapters = {
         "account": adapt_account_update,
         "slot": adapt_slot_update,

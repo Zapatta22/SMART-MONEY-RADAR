@@ -2672,3 +2672,39 @@ Validar os testes e compileall em CI no HEAD desta branch. Em seguida, revisar o
 - A execução anterior com 9 erros foi corrigida pela inclusão efetiva de `_is_valid_signature()`; o HEAD validado inclui o código corretivo e este registro.
 - Esta validação confirma testes unitários e compilação no runner GitHub Actions/Python 3.12; não comprova integração econômica DAMM v2, proveniência de snapshots históricos, dados RPC reais ou execução em produção.
 - PR #34 continua Draft, aberta e sem merge. `main` permanece intocada.
+
+
+## 297. Integração inicial de associações e contexts DAMM v2 ao bundle — 19/11/2026
+
+### Objetivo
+Evitar que o chamador monte manualmente `contexts`, `transfers`, `evidence` e `balance_deltas` independentes e os entregue ao reconciliador como se sua origem comum estivesse comprovada.
+
+### Implementação nesta branch
+- Branch: `feat/solana-transaction-evidence-bundle`; PR #34 Draft, base `feat/damm-v2-economic-reconciliation`.
+- `DammV2SwapEventAssociation` passou a preservar `resolved_accounts`, resolvidas no próprio analyzer a partir da lista de contas da instrução DAMM v2 e do account-key table do mesmo payload. Índices booleanos, inválidos ou fora do intervalo não são aceitos como contas resolvidas.
+- A factory `build_solana_transaction_evidence_bundle()` agora executa `analyze_damm_v2_swap_events()` sobre o mesmo payload original usado pelos decoders de transfers e balance deltas.
+- Para cada associação MATCHED, a factory usa as contas resolvidas e o EvtSwap2 para chamar `decode_damm_v2_swap_accounts()`, construindo `DammV2SwapTransferContext`.
+- A factory chama `analyze_damm_v2_transfer_evidence()` com os contexts e a lista de transfers derivados do mesmo payload.
+- Associações não resolvidas, contas ausentes/inválidas ou inconsistência de contexto são registradas em `damm_v2_issues`; a camada não inventa contextos parciais.
+- `damm_v2_complete` exige cobertura de todas as associações por contexts e transfer evidence ATTRIBUTED.
+- Adicionada `reconcile_solana_transaction_damm_v2_bundle()`: recebe o bundle, não listas independentes; usa signature e slot da identidade raiz e bloqueia bundles sem associação, estruturalmente incompletos, com issues ou transfer evidence não atribuída.
+- O wrapper exige bundle criado pela factory validada (token privado interno), reduzindo composição acidental de objetos independentes. Isto é uma proteção de contrato interno, não uma fronteira criptográfica contra código hostil no mesmo processo.
+
+### Testes e validação
+- Teste positivo da cadeia de construção: payload -> associação DAMM -> contas resolvidas -> context -> transfer evidence.
+- Teste negativo para índice de conta inválido, que não cria context e deixa o bundle inelegível.
+- Testes do wrapper: ausência de transferências impede reconciliação; ausência de associações DAMM também bloqueia; bundle recomposto manualmente é rejeitado.
+- Uma execução intermediária teve 1 falha no fixture de teste por codificação incorreta de bytes zero na função Base58 de teste; o fixture foi corrigido. Não foi identificada falha equivalente no código de produção.
+- HEAD de código validado: `fee487e9da7522a6025b9c70df5dbd703dd129bd`.
+- CI `SMR tests`, run `44601037164`, job `135832185607`: SUCCESS; 584 testes em 4,448 s; `python -m compileall -q src tests` aprovado.
+- O CI comprova testes unitários e compilação no runner GitHub Actions; não comprova tráfego RPC real nem execução em produção.
+
+### Limites ainda existentes
+- Não há ainda fixture positivo de reconciliação econômica completa passando pela nova factory até resultado RECONCILED.
+- Snapshots históricos de mint/withheld continuam recebidos como evidências externas e precisam manter sua própria identidade, proveniência e vínculo temporal com a transação-alvo.
+- O envelope ainda não prova a proveniência externa dos snapshots históricos nem substitui a validação específica já implementada no reconciliador.
+- Não foi conectado a adapter operacional/RPC nem a execução financeira.
+- A PR #34 permanece Draft e sem merge; `main` permanece intocada.
+
+### Próxima etapa
+Criar fixture sintético de ponta a ponta que percorra factory -> associação -> contexts -> transfer evidence -> reconciliação econômica, incluindo snapshots históricos quando aplicável. O teste deve provar o caso RECONCILED e os bloqueios para assinatura/slot/payload divergentes antes de qualquer integração operacional.

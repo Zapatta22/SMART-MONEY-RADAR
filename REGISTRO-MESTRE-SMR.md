@@ -2613,3 +2613,37 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 - PR #23 permanece Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`.
 - `main` permanece sem alteração.
 - Próxima ação: especificar e implementar política auditável para RAW sem sequência; depois medir o full rebuild com volume representativo, sem abandonar o fallback integral.
+
+
+## 296. Política e auditoria de deliveries RAW sem sequência — 19/11/2026
+
+### Decisão arquitetural
+- Adotada separação em três camadas: RAW/deliveries como evidência autoritativa; auditoria derivada de deliveries; timeline derivada apenas de eventos com evidência sequenciada elegível.
+- Uma delivery sem sequência nunca recebe sequência inferida. Timestamp, slot, write_version, delivery_id e ordem de chegada não substituem sequência de transporte.
+- Reconciliação é somente uma relação de evidência: exige mesmo event_id, source_id e SHA-256 do payload RAW, além de testemunha sequenciada sem conflito RAW ou anomalia de transporte aberta.
+- Stream diferente pode fornecer testemunha para o mesmo evento lógico, mas a sequência nunca é transferida para a delivery sem sequência.
+- Conflitos de identidade e sequências afetadas por anomalias abertas não são testemunhas elegíveis.
+- Ausência de sequência não cria gap numérico e não muda por si só a semântica COMPLETE/PARTIAL/UNKNOWN.
+ 
+### Implementação nesta branch
+- Criado `docs/GEYSER-UNSEQUENCED-DELIVERY-POLICY.md`, policy `geyser-unsequenced-delivery:v1`.
+- Criado `src/smart_money_radar/storage/geyser_unsequenced_delivery_audit.py`.
+- Criado `tests/test_geyser_unsequenced_delivery_audit.py`.
+- A projeção classifica cada delivery individualmente: SEQUENCED, UNSEQUENCED_UNRESOLVED, UNSEQUENCED_RECONCILED, IDENTITY_CONFLICT ou SEQUENCE_ANOMALY.
+- Auditoria guarda reason_code, referência ao event_id/source/stream/sequence/hash e IDs das deliveries sequenciadas testemunhas.
+- Rebuild da auditoria e checkpoint próprio são gravados na mesma transação SQLite. Falha reverte a geração e mantém checkpoint anterior.
+- Nenhuma tabela RAW, delivery, conflito ou checkpoint de transporte é atualizada pela projeção.
+- Entregas sem sequência continuam fora da timeline. A nova auditoria é paralela e reconstruível.
+
+### Testes e CI
+- Oito testes específicos adicionados: não reconciliado; reconciliação posterior por identidade/hash; testemunha em outra stream; conflito RAW; sequência anômala aberta; rebuild repetido/versionado; rollback forçado; invariância de RAW e checkpoints de transporte.
+- CI #1748 — run `44522143646`, commit `e2daae67601ce38882fa68a5604dd64d952ba3a3`: SUCCESS. Etapas de unit tests e compileall concluídas com sucesso.
+- Não atribuir contagem de testes até consultar o log detalhado do job.
+
+### Estado e limites
+- PR #26: Draft, aberto e sem merge; branch `feat/geyser-unsequenced-raw-audit`.
+- PR #26 tem como base a branch da PR #23 (`feat/damm-v2-economic-reconciliation`), HEAD base `4a517ca15499746ddd3f5522f112c80aaac1433b`.
+- PR #23 continua aberta/Draft; nenhuma integração foi feita na branch base.
+- `main` não foi alterada.
+- Nenhum provedor foi conectado; desenvolvimento offline.
+- Próxima ação: revisão técnica da implementação e da semântica dos estados, depois testes adicionais de borda e escala da auditoria/rebuild. Não fazer merge sem autorização.

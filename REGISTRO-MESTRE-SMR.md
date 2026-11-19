@@ -2727,3 +2727,42 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - PR #26 continua Draft, aberta e sem merge; `main` intacta.
 - Próxima ação: confirmar o resultado do run #1761 para o HEAD com o Registro Mestre atualizado; em seguida iniciar a avaliação de desempenho/memória do rebuild da auditoria, sem alterar a política de evidência.
 - Não fazer merge sem autorização explícita.
+
+
+## 306. Correção de elegibilidade da Timeline Geyser — PR #28 — 19/11/2026
+
+### Branch e PR
+- Branch isolada: `fix/geyser-timeline-delivery-eligibility`.
+- Base exata: HEAD da PR #26, `f0d63038411cc4207fae910a3ef168e3af443784`.
+- PR #28: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/28
+- Título: `fix(geyser): enforce delivery eligibility in account timeline`.
+- PR aberta como Draft; sem merge. A PR #27 permanece paralela, também baseada na PR #26.
+- A correção não altera `main`, RAW, deliveries, checkpoints de transporte nem a projeção separada de auditoria.
+
+### Implementação
+Arquivo `src/smart_money_radar/storage/geyser_account_timeline_projection.py`:
+- A subconsulta de seleção da delivery agora exige `d2.source_id=e.source_id`.
+- Exige `stream_sequence IS NOT NULL`.
+- Exclui delivery com `conflict_id IS NOT NULL`.
+- Exclui todos os eventos com qualquer registro em `geyser_raw_conflicts`.
+- Exclui delivery cuja chave exata `source_id + stream_id + stream_sequence` tenha anomalia de transporte em estado `OPEN`.
+- A seleção continua usando o menor `delivery_id` **entre as deliveries elegíveis**. Se a primeira delivery sequenciada for inelegível, uma reentrega posterior elegível do mesmo evento pode ser escolhida.
+- Nenhuma sequência é transferida; a Timeline decodifica a delivery que efetivamente passou pelo predicado de elegibilidade.
+
+### Testes de regressão adicionados
+Arquivo `tests/test_geyser_account_timeline_projection.py`:
+1. `test_raw_identity_conflict_excludes_event_from_timeline`: evento com conflito RAW não gera account write na Timeline.
+2. `test_open_transport_anomaly_skips_first_delivery_for_later_eligible_replay`: delivery inicial com anomalia aberta é ignorada; reentrega idêntica em outra stream, sequenciada e elegível, é selecionada. A continuidade com o evento anterior da stream elegível é preservada, sem criar baseline artificial.
+- Os testes anteriores de continuidade, gaps, bank lineage, recuperação e rollback permanecem no conjunto.
+
+### CI comprovada
+- Workflow `SMR tests`, run #1815, ID `44577404211`, commit de código/testes `cd070c47661582f0ea2c7566c4b7ac17585268fc`: SUCCESS.
+- Job `test`: instalação concluída, suíte completa `Ran 589 tests in 4.952s — OK`; `compileall -q src tests` também concluído com sucesso.
+- Run #1814, ID `44577367109`, commit anterior de implementação `81f61281f864151a30f56aa0fa75a7cbcc566ab8`: SUCCESS.
+- A atualização documental posterior não altera código nem testes; não exige nova execução de CI.
+
+### Estado e pendências
+- PR #28 é uma correção isolada e validada por CI para o achado da seção 305.
+- A revisão final ainda deve confirmar a relação de branches/PRs e o estado `mergeable` depois do commit documental.
+- PR #23, #26, #27 e #28 permanecem sem merge. `main` intacta.
+- Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain conectado.

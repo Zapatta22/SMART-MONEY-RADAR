@@ -2613,3 +2613,116 @@ Projetar recuperação/backfill com checkpoints granulares, cobertura auditável
 - PR #23 permanece Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`.
 - `main` permanece sem alteração.
 - Próxima ação: especificar e implementar política auditável para RAW sem sequência; depois medir o full rebuild com volume representativo, sem abandonar o fallback integral.
+
+
+## 296. Taint histórico de anomalias de sequência Geyser — 19/11/2026
+
+### Achado da auditoria
+- Na revisão da persistência RAW da PR #23 foi identificado que `resolve_transport_anomaly(anomaly_id, resolution_note)` aceitava justificativa textual livre e, ao mudar o status para `RESOLVED`, podia liberar o checkpoint quando não restassem anomalias/gaps OPEN.
+- A Timeline da PR #23 e a auditoria de deliveries sem sequência da PR #26 filtravam apenas anomalias OPEN.
+- Isso permitia que uma colisão de sequência voltasse a ser tratada como evidência elegível após encerramento administrativo, sem prova de que a sequência foi reparada.
+- Conclusão: `RESOLVED` deve significar apenas encerramento administrativo. Não é evidência de integridade nem reabilita a sequência histórica.
+
+### Correção preparada — PR #31, baseada na PR #23
+- Branch: `fix/geyser-sequence-anomaly-taint`.
+- PR #31: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/31 — OPEN/DRAFT, mergeable, sem merge.
+- HEAD validado: `093742b1409d16aeadb94268243ad8dd85cfd9f7`.
+- `SQLiteGeyserRawStore` mantém o checkpoint interrompido enquanto existir qualquer anomalia histórica na combinação source/stream, mesmo após status RESOLVED.
+- A Timeline exclui deliveries cuja combinação `(source_id, stream_id, stream_sequence)` tenha qualquer anomalia registrada, independentemente do status.
+- A cobertura por fonte considera anomalias históricas; uma sequência contaminada não pode ser promovida a COMPLETE por encerramento administrativo.
+- `PROJECTION_VERSION` da Timeline foi incrementada de 1 para 2 para identificar a mudança semântica da projeção.
+- Documentação de persistência/backfill atualizada: gaps podem ser resolvidos por recuperação de sequência; anomalias históricas permanecem tainted até um procedimento futuro separado, com evidência verificável.
+- Teste integrado reproduz duas identidades lógicas diferentes na mesma sequência, encerra administrativamente a anomalia e comprova que a Timeline não reproduz os eventos ambíguos e mantém cobertura PARTIAL com baseline declarado.
+
+### Correção complementar — PR #32, baseada na PR #26
+- Branch: `fix/geyser-audit-historical-anomaly-taint`.
+- PR #32: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/32 — OPEN/DRAFT, mergeable, sem merge.
+- HEAD validado: `cfd894718bfae760fee2ffba8be47af125db3e73`.
+- A tabela temporária de testemunhas exclui qualquer delivery cuja sequência tenha anomalia histórica, inclusive RESOLVED.
+- A classificação da delivery sequenciada continua `SEQUENCE_ANOMALY` após resolução administrativa.
+- A delivery sem sequência não pode ser reconciliada usando uma testemunha contaminada.
+- `POLICY_ID` foi incrementado para `geyser-unsequenced-delivery:v2`, preservando rastreabilidade da mudança de regra.
+- Política `docs/GEYSER-UNSEQUENCED-DELIVERY-POLICY.md` atualizada para refletir a inelegibilidade histórica.
+
+### Validação CI — HEADs atuais
+- PR #31 — workflow SMR tests, run `44594389528`, HEAD `093742b1409d16aeadb94268243ad8dd85cfd9f7`: SUCCESS; **574 testes OK** em 4,650 s; compileall aprovado.
+- PR #32 — workflow SMR tests, run `44594439303`, HEAD `cfd894718bfae760fee2ffba8be47af125db3e73`: SUCCESS; **593 testes OK** em 7,125 s; compileall aprovado.
+- PR #32 — Geyser audit benchmark, run `44594439374`, mesmo HEAD: SUCCESS; artefato `geyser-audit-benchmark-results`, ID `14566160222`, SHA-256 `1b19051894b71b5a042e69544fc793b077d0b9088b5a3b7ad1ae43b42b6f66ff`.
+- Benchmark é sintético em runner GitHub Actions; não representa tráfego Geyser real nem desempenho em Termux/VPS.
+- Rodadas preliminares expuseram falhas nos testes recém-criados (identidade de fixture e baseline não declarado). Os cenários foram corrigidos; os HEADs finais acima passaram.
+
+### Estado e limites
+- PR #23 permanece OPEN/DRAFT no HEAD `4a517ca15499746ddd3f5522f112c80aaac1433b`.
+- PR #26 permanece OPEN/DRAFT no HEAD `675b03bb00cfa869e5102241bbc5eec72bb20cab`.
+- PR #31 e PR #32 permanecem OPEN/DRAFT e mergeable; nenhuma delas foi mergeada.
+- `main` foi consultada novamente e permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- RAW, deliveries e anomalias originais não são apagados nem reescritos.
+- Nenhum procedimento de reparo/reabilitação de sequência foi criado. A política atual é deliberadamente fail-closed.
+- Nenhum provider Geyser/RPC, credencial, VPS, tráfego contínuo ou execução on-chain foi conectado.
+
+### Próxima etapa
+Continuar a auditoria técnica da PR #23 nos módulos de recuperação/backfill, linhagem de bancos e reconciliação econômica DAMM v2. Manter PR #31/#32 Draft até revisão conjunta das dependências. Não fazer merge #31 → #23, #32 → #26, #26 → #23 ou qualquer merge para `main` sem autorização explícita.
+
+
+## 297. Invalidação fail-closed de identidade de banco após metadados contraditórios — 19/11/2026
+
+### Achado da auditoria
+- Na revisão de `BankLineageTracker`, foi observado que `_conflict()` registrava divergências de blockhash/parent metadata, mas mantinha o nó previamente aceito com `usable_for_observation=True`.
+- `AccountUpdateTimeline.transition_for()` usa `is_bank_usable()` e `is_ancestor()`; portanto, uma cadeia antes válida poderia continuar autorizando pareamento pre/post mesmo depois de uma observação contraditória para a mesma identidade `(source_id, slot, bank_id)`.
+- Isso não selecionava um fork errado por si só, mas preservava indevidamente uma prova de ancestralidade após evidência conflitante.
+
+### Correção preparada — PR #33
+- Branch: `fix/geyser-bank-lineage-conflict-taint`.
+- PR #33: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/33 — OPEN/DRAFT, mergeable, sem merge.
+- HEAD validado: `90ebeca948829325f3f6a5c25e0e7a6887cae27a`.
+- `_conflict()` agora registra a chave em `_conflicted_keys` e invalida um nó já existente.
+- Um conflito sobre identidade ainda não materializada não cria artificialmente um nó; se metadados posteriores materializarem essa chave, `_node()` aplica o taint histórico e cria o nó já invalidado.
+- `is_bank_usable()` passa a falhar fechado para a identidade conflitante e para descendentes cuja cadeia conhecida passe por ela.
+- Nenhuma reparação automática ou seleção de fork canônico foi introduzida.
+- Documentação `docs/GEYSER-ACCOUNT-TIMELINE.md` atualizada.
+- Teste novo reproduz uma cadeia pai/filho inicialmente válida, introduz blockhash contraditório e comprova que a ancestralidade deixa de ser utilizável. O teste de múltiplos bancos limpos também confirma que uma chave conflitante não é materializada, mas permanece tainted caso apareça depois.
+
+### Validação CI
+- PR #33 — workflow SMR tests, run `44595295948`, HEAD `90ebeca948829325f3f6a5c25e0e7a6887cae27a`: SUCCESS; **574 testes OK** em 4,536 s; compileall aprovado.
+- Rodadas preliminares falharam porque a primeira implementação materializava um nó para um replacement ambíguo, contrariando o contrato/teste existente. A correção passou a guardar a chave conflitante separadamente, sem materializar o nó, e o HEAD final passou.
+- PR #31 recebeu atualização documental no Registro Mestre: HEAD `20fc3ba49eae1972887dd421ed12f2aa14839dfb`; CI run `44594779664`: SUCCESS; **574 testes OK** em 4,697 s; compileall aprovado.
+
+### Estado e limites
+- PR #33 é uma correção independente baseada na PR #23; permanece Draft e sem merge.
+- PR #31 e #32 permanecem Draft; seus estados e validações estão registrados na seção 296.
+- PR #23 permanece no HEAD `4a517ca15499746ddd3f5522f112c80aaac1433b`; PR #26 permanece no HEAD `675b03bb00cfa869e5102241bbc5eec72bb20cab`.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Não houve alteração de RAW, seleção de fork canônico, conexão de provider/RPC ou execução on-chain.
+
+### Próxima etapa
+Concluir a revisão da reconciliação econômica DAMM v2 e de suas dependências de transferência/balance snapshots. Até agora, a leitura não encontrou outro bloqueio semântico confirmado nesses módulos; a revisão permanece parcial, não uma aprovação integral da PR #23. Não fazer merge de PR #31, #32 ou #33 sem autorização explícita.
+
+
+## 298. Revisão inicial da reconciliação econômica DAMM v2 e recovery — 19/11/2026
+
+### Escopo lido
+- `src/smart_money_radar/storage/geyser_recovery_store.py` e `tests/test_geyser_recovery_store.py`.
+- `src/smart_money_radar/data_sources/damm_v2_economic_reconciliation.py` e `tests/test_damm_v2_economic_reconciliation.py`.
+- Dependências de linhagem bancária, transfer analyzer, decoder de transferências SPL/Token-2022 e decoder de balance deltas.
+
+### Avaliação preliminar
+- Recovery/backfill exige evidência explícita para finalizar job como COMPLETED: contrato do provider confirmado, intervalo coberto, paginação esgotada, retenção verificada e semântica de consulta idêntica à registrada.
+- A documentação corretamente declara que essa evidência é fornecida pelo futuro adapter e registrada pelo store; não é prova independente das garantias do provider.
+- Contadores de progresso não podem regredir; retomada preserva cursor durável e cria nova tentativa; recuperação de job interrompido não inventa cobertura COMPLETE.
+- A reconciliação econômica DAMM v2 agrega todas as operações por token account, falha fechada em snapshots incompletos, transferências não atribuídas/reutilizadas, CPI não confiável, divergência de gross/net, mint/decimals/owner e fee incompatível.
+- Withheld fee esperado permanece `EXPECTED_NOT_VERIFIED` até snapshots TLV pre/post vinculados à transação. Configuração de TransferFeeConfig Token-2022 é verificada separadamente com prestate do mint, epoch, slot, ordem, assinatura e inventário completo de instruções.
+- Os testes existentes cobrem divergências econômicas, transfer reuse, owners, snapshots TLV, assinatura/ordem, histórico de mint, epoch e inventário de InitializeTransferFeeConfig.
+
+### Limitação de integração a preservar
+- Os contratos atuais da função `reconcile_damm_v2_economic_batch()` exigem que contexts, evidence, all_transfers e balance_deltas pertençam ao mesmo payload/transação, mas os objetos `SolanaTokenBalanceDeltaResult` e `SolanaTokenTransfer` não carregam, por si, assinatura/slot para provar essa associação.
+- Isso não foi classificado como defeito confirmado na camada offline, pois o contrato do chamador declara o lote de uma transação. Porém, antes da integração operacional, o adapter/orquestrador deverá fornecer um envelope de transação comum e impedir mistura de evidências de assinaturas/slots diferentes.
+- A revisão desta etapa é preliminar; não equivale a auditoria completa da reconciliação econômica nem validação com transações mainnet reais.
+
+### Estado
+- Nenhum novo bloqueio confirmado nesta leitura preliminar de recovery/DAMM v2.
+- PR #31, #32 e #33 continuam OPEN/DRAFT, sem merge; os resultados de CI e as decisões estão registrados nas seções 296 e 297.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Nenhum provider, RPC, credencial, VPS, captura contínua ou execução on-chain foi conectado.
+
+### Próxima etapa
+Aprofundar a revisão do contrato transacional end-to-end: garantir que associação swap/EvtSwap2, transfer inventory, balance deltas e snapshots históricos compartilhem a mesma assinatura/slot/ordem. Depois concluir a auditoria do recovery/backfill e dos módulos restantes da PR #23. Não fazer merge sem autorização explícita.

@@ -1,6 +1,6 @@
 # Política de auditoria para entregas RAW sem sequência
 
-**Status:** contrato aprovado para implementação  
+**Status:** implementado e validado por CI/benchmark sintético na PR #26  
 **Policy ID:** `geyser-unsequenced-delivery:v1`  
 **Branch:** `feat/geyser-unsequenced-raw-audit`  
 **Base:** `4a517ca15499746ddd3f5522f112c80aaac1433b`
@@ -114,4 +114,4 @@ Testes mínimos:
 
 ## 10. Critério de aceite
 
-A política só estará concluída após implementação, migração aditiva, testes de invariantes/rollback, CI e `compileall` aprovados, documentação do schema e atualização do Registro Mestre. Até lá, este documento define o contrato; não afirma que a funcionalidade já está implementada.
+A implementação desta política está presente na PR #26, com projeção derivada, schema versionado, rebuild transacional, testes de invariantes/rollback, CI e `compileall` aprovados, benchmark sintético e Registro Mestre atualizado. Esta validação comprova os testes automatizados e os cenários sintéticos documentados; não comprova ainda operação com provider Geyser real, RPC, tráfego contínuo ou ambiente de produção.

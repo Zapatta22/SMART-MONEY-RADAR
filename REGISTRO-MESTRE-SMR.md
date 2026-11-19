@@ -2539,3 +2539,40 @@ Persistir/reconstruir a timeline de conta e os vínculos de banco/fork a partir 
 
 ### Próxima etapa
 Projetar recuperação/backfill com checkpoints granulares, cobertura auditável e reconciliação de eventos RAW sem sequência. Continuar offline; não conectar provider.
+
+
+## 294. Recuperação de backfill e checkpoints granulares — 19/11/2026
+
+### Implementação
+- Criado `src/smart_money_radar/storage/geyser_recovery_store.py`.
+- Criado `tests/test_geyser_recovery_store.py`.
+- Classe `SQLiteGeyserRecoveryStore`, usando o mesmo `smr_geyser.sqlite`, isolado do `smr_events.sqlite`.
+- Migração de recovery versionada separadamente do schema RAW.
+- Tabelas:
+  - `geyser_backfill_jobs`: fonte, intervalo de slots, provider/adapter/schema, semântica da consulta, cursores opacos, estado, cobertura, contadores, tentativas, erro, evidência e timestamps.
+  - `geyser_backfill_attempts`: histórico imutável por tentativa, cursor inicial/final, estado, timestamps e erro.
+  - `geyser_projection_checkpoints`: checkpoint por nome/versão da projeção e `source_id`, geração, maior delivery/evento, contagens, eventos sem sequência, cobertura dos inputs e continuidade interrompida.
+- APIs de job: `create_backfill_job()`, `start_backfill_job()`, `update_backfill_progress()`, `finish_backfill_job()`, `recover_interrupted_jobs()`, `get_backfill_job()`, `list_backfill_jobs()`, `list_backfill_attempts()`.
+- API de projeção: `record_projection_checkpoint()` e `get_projection_checkpoint()`.
+- Estados de job PENDING/RUNNING/PARTIAL/COMPLETED/FAILED; cobertura COMPLETE/PARTIAL/UNKNOWN.
+- Retomada preserva o último cursor durável e cria número de tentativa crescente. Jobs RUNNING abandonados são marcados PARTIAL quando já receberam dados ou FAILED quando ainda vazios; cobertura nunca é promovida automaticamente.
+- Contadores não podem regredir. Apenas jobs RUNNING aceitam progresso/finalização. COMPLETE exige evidência estruturada de contrato confirmado, intervalo coberto, paginação esgotada, retenção verificada e semântica idêntica à consulta registrada.
+- Checkpoints de projeção são por fonte e versão. Geração e delivery_id não podem regredir. Cobertura COMPLETE é recusada quando há continuidade interrompida ou eventos sem sequência ignorados.
+- Checkpoint de projeção deve ser gravado somente depois do commit da geração. Se houver interrupção entre os dois commits, o checkpoint fica atrasado (seguro) e pode ser refeito; não se avança checkpoint antes da projeção.
+
+### Limites
+- Camada offline de persistência/controle; não há cliente, paginação, scheduler ou executor real de backfill.
+- Evidência de cobertura é fornecida pelo futuro adapter e registrada para auditoria; o store não prova independentemente as garantias do provider.
+- Cursores são opacos e não são comparados/interpretados.
+- O rebuild atual da timeline continua integral e ainda não chama automaticamente o novo checkpoint granular.
+- RAW e deliveries continuam imutáveis; não são sintetizados eventos ausentes, canonicalidade, BUY/SELL ou ordens.
+- Nenhum endpoint/credencial/cliente Yellowstone ou Helius, VPS, serviço pago ou operação on-chain foi conectado.
+
+### Testes e CI
+- Dez testes específicos adicionados para lifecycle, prova de cobertura, divergência de semântica, contadores monotônicos, recuperação após interrupção, retomada de cursor/tentativa, isolamento de fonte, cobertura fail-closed, monotonicidade do checkpoint e validação de estado/intervalo.
+- CI da nova implementação: pendente de conclusão nesta atualização.
+
+### Estado
+- PR #23 permanece Draft e sem merge; branch `feat/damm-v2-economic-reconciliation`.
+- `main` não foi alterada.
+- Próxima ação após CI: revisar falhas, corrigir se necessário, validar integração segura dos checkpoints granulares com o rebuild da timeline, mantendo a reconstrução integral como fallback e sem conectar provider.

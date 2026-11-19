@@ -33,6 +33,8 @@ class SolanaInstructionInventory:
     instructions: tuple[SolanaInstructionRecord, ...]
     complete: bool
     issues: tuple[str, ...]
+    transaction_signature: str | None = None
+    slot: int | None = None
 
 
 @dataclass(frozen=True)
@@ -427,12 +429,28 @@ def decode_solana_instruction_inventory(
     if not isinstance(tx, dict) or not isinstance(tx.get("message"), dict):
         return SolanaInstructionInventory((), False, ("transaction/message ausente",))
     message = tx["message"]
+    signatures = tx.get("signatures")
+    transaction_signature = (
+        signatures[0] if isinstance(signatures, list)
+        and signatures and isinstance(signatures[0], str) else None
+    )
+    slot = payload.get("slot")
+    issues: list[str] = []
+    if not isinstance(transaction_signature, str) or not transaction_signature:
+        issues.append("assinatura da transação ausente")
+    if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+        issues.append("slot da transação ausente/inválido")
     meta = payload.get("meta")
     if not isinstance(meta, dict):
-        return SolanaInstructionInventory((), False, ("meta ausente",))
+        return SolanaInstructionInventory(
+            (), False, tuple(issues + ["meta ausente"]),
+            transaction_signature, slot if isinstance(slot, int) and not isinstance(slot, bool) else None,
+        )
     if meta.get("err") is not None:
-        return SolanaInstructionInventory((), False, ("transação não foi executada com sucesso",))
-    issues: list[str] = []
+        return SolanaInstructionInventory(
+            (), False, tuple(issues + ["transação não foi executada com sucesso"]),
+            transaction_signature, slot if isinstance(slot, int) and not isinstance(slot, bool) else None,
+        )
     try:
         keys = _account_keys(message, meta)
     except (TypeError, ValueError) as exc:
@@ -540,4 +558,6 @@ def decode_solana_instruction_inventory(
         instructions=tuple(records),
         complete=not issues,
         issues=tuple(issues),
+        transaction_signature=transaction_signature,
+        slot=slot if isinstance(slot, int) and not isinstance(slot, bool) else None,
     )

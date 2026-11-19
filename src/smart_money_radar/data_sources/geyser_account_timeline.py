@@ -72,7 +72,7 @@ class AccountUpdateTimeline:
         self._events: dict[str, list[_TimelineEntry]] = {}
         self._orphaned: list[NormalizedAccountUpdate] = []
         self._fingerprints: set[str] = set()
-        self._write_identity: dict[tuple[str, int, int], str] = {}
+        self._write_identity: dict[tuple[str, str, int, int | None, int, bool], str] = {}
         self._stream_last: dict[str, int] = {}
         self._stream_sequences: dict[tuple[str, int], str] = {}
         self._active_stream_id: str | None = None
@@ -173,7 +173,7 @@ class AccountUpdateTimeline:
             update.stream_sequence, self._stream_last.get(update.stream_id, update.stream_sequence)
         )
 
-        identity = (update.pubkey, update.slot, update.write_version)
+        identity = (update.source, update.pubkey, update.slot, update.bank_id, update.write_version, update.is_startup)
         existing_identity = self._write_identity.get(identity)
         if existing_identity is not None:
             if existing_identity == update.event_fingerprint:
@@ -231,6 +231,12 @@ class AccountUpdateTimeline:
                 if update.txn_signature != txn_signature or entry.baseline or index == 0:
                     continue
                 previous = entries[index - 1]
+                # Fork-scoped updates require a verified bank-parent chain. This
+                # linear timeline has no tracker dependency, so fail closed.
+                if update.is_startup or previous.update.is_startup:
+                    continue
+                if update.bank_id is not None or previous.update.bank_id is not None:
+                    continue
                 if previous.continuity_epoch != entry.continuity_epoch:
                     continue
                 transitions.append(
@@ -262,7 +268,7 @@ class AccountUpdateTimeline:
                     self._orphaned.append(entry.update)
                     self._fingerprints.discard(entry.update.event_fingerprint)
                     self._write_identity.pop(
-                        (entry.update.pubkey, entry.update.slot, entry.update.write_version), None
+                        (entry.update.source, entry.update.pubkey, entry.update.slot, entry.update.bank_id, entry.update.write_version, entry.update.is_startup), None
                     )
                 else:
                     kept.append(entry)

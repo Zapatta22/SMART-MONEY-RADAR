@@ -2942,3 +2942,28 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - Auditoria downstream atual: sem achados de consumidores produtivos que ignorem a classificação.
 - PR #35 permanece Draft e sem merge; main intacta.
 - Próxima ação recomendada: revisão final do diff completo e confirmação do CI da implementação; depois, apresentar estado para decisão explícita sobre eventual merge, sem executá-lo automaticamente.
+
+
+## 305. Avaliação de integração PR #35 sobre PR #34 — 19/11/2026
+
+### Relação entre branches e PRs
+- PR #34: base `feat/damm-v2-economic-reconciliation`, HEAD `e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`, Draft, aberta, sem merge, mergeable.
+- PR #35: base `feat/solana-transaction-evidence-bundle`, HEAD `71acfdd603cf92d34b78298e6e8b9c524c48bae1`, Draft, aberta, sem merge, mergeable.
+- Comparação GitHub entre a base da PR #35 e seu HEAD: `ahead_by=19`, `behind_by=0`, `merge_base=e3d3cba59c57a9947010dd241bb2ddb2c0b76fe7`, idêntico ao HEAD/base atual da PR #34. Relação linear confirmada: PR #35 está diretamente construída sobre o HEAD da PR #34, sem divergência da base.
+- Diff específico da PR #35 contra a base PR #34: sete arquivos; política de finality, lineage, timeline, testes e Registro Mestre. Os arquivos e commits próprios da PR #34 permanecem como ancestralidade/base, não são reintroduzidos como mudanças da PR #35.
+
+### CI e compatibilidade
+- Após o commit documental da auditoria downstream, o workflow `SMR tests` executou no HEAD exato `71acfdd603cf92d34b78298e6e8b9c524c48bae1`: run `44612471809`, job `135872388784`, SUCCESS.
+- Etapas `Run unit tests` e `Compile source and tests` concluídas com sucesso. Esta consulta confirma o sucesso do workflow completo; não foi obtido nesta consulta um total de testes distinto do registro anterior de 606.
+- O workflow é evento `pull_request` para PR #35 contra o HEAD/base `e3d3cba...` da PR #34, portanto valida a combinação proposta PR #34 + PR #35 no contexto de merge do GitHub.
+- A PR #35 preserva as alterações do bundle da PR #34 como ancestralidade e adiciona a política Geyser de finality; não foi observada divergência de base nem conflito reportado pelo GitHub.
+
+### Conclusão da avaliação
+- Integração proposta tecnicamente coerente: PR #35 é uma continuação direta da PR #34, sem commits da base ausentes ou divergentes.
+- O GitHub reporta ambas as PRs `mergeable=true`; PR #35 está Draft e não mergeada.
+- Isto é uma avaliação de compatibilidade, não autorização nem execução de merge. Nenhuma branch foi movida, nenhuma PR foi retargeted ou merged e `main` permanece intacta.
+- Sequência de integração, caso seja autorizada depois: integrar PR #35 na branch-base da PR #34 (não em `main`); confirmar o novo HEAD da PR #34 e executar/confirmar CI nesse HEAD atualizado; só então revisar a PR #34 como unidade antes de qualquer decisão posterior sobre `main`.
+
+### Estado
+- Avaliação concluída sem bloqueio estrutural identificado para a integração PR #35 -> PR #34.
+- Próxima ação: aguardar autorização expressa para integrar/mergear PR #35 na branch da PR #34. Não executar automaticamente.

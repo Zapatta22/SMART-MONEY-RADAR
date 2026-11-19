@@ -3179,3 +3179,30 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 
 ### Próxima ação
 - Apresentar ao usuário a decisão técnica e aguardar autorização expressa separada antes de marcar a PR #23 como Ready for review ou fazer merge na branch-base. `main` continua protegida e não autorizada para integração.
+
+## 312. Integração da PR #23 na branch-base da PR #22 — 19/11/2026
+
+### Autorização e merge
+- Usuário autorizou continuar com a integração da PR #23 na branch-base `feat/damm-v2-referral-transfer-attribution` em 19/11/2026.
+- PR #23 foi revalidada no HEAD `d08c146cb4f517842b1a950c08e27aad6f0bbd6b`; check `test` run `44616249711`, job `135885605685`, SUCCESS. Run unit tests e Compile source and tests: SUCCESS.
+- Compare imediatamente antes do merge: 307 commits ahead, 0 behind; merge base `0567eb9c4981ba6ffc33e98a402292130667760a`.
+- PR #23 foi marcada Ready for review e mergeada pelo método merge, com expected_head_sha `d08c146cb4f517842b1a950c08e27aad6f0bbd6b`.
+- Merge commit: `e45d9483f852b832bea81530e3a404578953a0de`.
+- GitHub confirmou PR #23 CLOSED/MERGED em 19/11/2026 21:12:16Z.
+- Branch de destino `feat/damm-v2-referral-transfer-attribution`, que é a head da PR #22, foi atualizada para `e45d9483f852b832bea81530e3a404578953a0de`.
+- PR #22 não foi mergeada; `main` não foi alterada.
+
+### CI pós-merge
+- No commit exato `e45d9483f852b832bea81530e3a404578953a0de`, GitHub iniciou dois checks `test`: run `44616389430` (job `135886106076`) e run `44616402476` (job `135886150325`).
+- Na última consulta, ambos estavam IN_PROGRESS. Não declarar CI pós-merge aprovado até confirmação SUCCESS.
+- CI aprovado no HEAD pré-merge da PR #23 permanece run `44616249711`; isso não substitui a validação do merge commit.
+
+### Estado e limites
+- PR #23: CLOSED/MERGED na branch da PR #22.
+- PR #22: permanece como PR de integração subsequente, sem merge.
+- `main` consultada após o merge e permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- A integração reúne a reconciliação econômica DAMM v2, bundle de evidências Solana, política de finality e correções de integridade da Timeline Geyser na branch de trabalho.
+- Não há, por esta integração, provider live habilitado, ingestão mainnet contínua, sinal BUY/SELL, autorização de execução ou operação financeira.
+
+### Próxima ação
+- Aguardar e verificar os dois checks no merge commit `e45d9483f852b832bea81530e3a404578953a0de`; se ambos SUCCESS, atualizar o Registro Mestre e seguir com revisão integrada da PR #22. Não fazer merge da PR #22 sem autorização expressa.

@@ -183,6 +183,8 @@ def _mint_fee_snapshots(input_bps=500, input_max_fee=100, input_epoch=10):
             transfer_fee_init_inventory_complete=True,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(input_bps, input_max_fee, input_epoch),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(input_bps, input_max_fee, input_epoch)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         ),
         DammV2MintFeeConfigSnapshot(
             mint="mint-b", transaction_signature="signature-1", transfer_instruction_index=0,
@@ -193,6 +195,8 @@ def _mint_fee_snapshots(input_bps=500, input_max_fee=100, input_epoch=10):
             transfer_fee_init_inventory_complete=True,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-b-pre", pre_state_data=_mint_account_data(None),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(None)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         ),
     ]
 
@@ -585,11 +589,15 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             post_state_data=_withheld_account_data(15),
             source_id="rpc-a", transaction_payload_sha256="a" * 64,
             pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
             transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "RECONCILED")
         self.assertEqual(result.withheld_fee_status, "VERIFIED")
@@ -613,11 +621,15 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             pre_state_data=_withheld_account_data(10),
             post_state_data=_withheld_account_data(14),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(14)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
             transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("withheld diverge", result.reason)
@@ -635,6 +647,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             base, [], transaction_signature="signature-1",
             transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("snapshot withheld ausente", result.reason)
@@ -658,11 +672,15 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             pre_state_data=_withheld_account_data(10),
             post_state_data=_withheld_account_data(15),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
             transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("assinatura do snapshot diverge", result.reason)
@@ -686,11 +704,15 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             pre_state_data=_withheld_account_data(10),
             post_state_data=_withheld_account_data(15),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
             transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("pre < transação < post", result.reason)
@@ -714,11 +736,15 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             pre_state_data=_withheld_account_data(10),
             post_state_data=_withheld_account_data(15),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_withheld_account_data(10)).hexdigest(), post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot, snapshot], transaction_signature="signature-1",
             transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "AMBIGUOUS")
         self.assertIn("duplicado", result.reason)
@@ -738,6 +764,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "RECONCILED", result.reason)
         self.assertEqual(result.mint_fee_config_status, "VERIFIED")
@@ -756,6 +784,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("transfer fee diverge", result.reason)
@@ -774,6 +804,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("snapshot histórico de mint ausente", result.reason)
@@ -799,12 +831,16 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             pre_state_data=_mint_account_data(500, newer_epoch=20, newer_basis_points=250),
             source_id="rpc-a", transaction_payload_sha256="a" * 64,
             pre_state_sha256=hashlib.sha256(_mint_account_data(500, newer_epoch=20, newer_basis_points=250)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_mint_fee_config(
             base, snapshots,
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("prestate do mint não antecede", result.reason)
@@ -824,6 +860,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "AMBIGUOUS")
         self.assertIn("duplicado", result.reason)
@@ -855,12 +893,16 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             pre_state_data=_mint_account_data(500, newer_epoch=20, newer_basis_points=250),
             source_id="rpc-a", transaction_payload_sha256="a" * 64,
             pre_state_sha256=hashlib.sha256(_mint_account_data(500, newer_epoch=20, newer_basis_points=250)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_mint_fee_config(
             base, snapshots,
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "RECONCILED")
         self.assertEqual(result.mint_fee_config_status, "VERIFIED")
@@ -886,12 +928,16 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transfer_fee_init_inventory_complete=True,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(500),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_mint_fee_config(
             base, snapshots,
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("InitializeTransferFeeConfig ocorreu antes", result.reason)
@@ -920,13 +966,17 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                     snapshot_slot=123, snapshot_order=49,
                     source="ordered-mint-prestate-fixture", state_ref="mint-a-pre",
                     source_id="rpc-a",
-                ),
+                ,
+            ordering_domain_id="stream-a"
+        ),
                 "mint-b": DammV2MintPrestate(
                     mint="mint-b", account_data=_mint_account_data(1_000),
                     snapshot_slot=123, snapshot_order=49,
                     source="ordered-mint-prestate-fixture", state_ref="mint-b-pre",
                     source_id="rpc-a",
-                ),
+                ,
+            ordering_domain_id="stream-a"
+        ),
             },
             _instruction_inventory(),
             transaction_signature="signature-1",
@@ -947,6 +997,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "RECONCILED")
         self.assertEqual(
@@ -962,6 +1014,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(verified.status, "RECONCILED")
         self.assertEqual(verified.mint_fee_config_status, "VERIFIED")
@@ -1008,12 +1062,16 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             transfer_fee_init_inventory_complete=False,
             source="ordered-mint-prestate-fixture", pre_state_ref="mint-a-pre", pre_state_data=_mint_account_data(500),
             source_id="rpc-a", transaction_payload_sha256="a" * 64, pre_state_sha256=hashlib.sha256(_mint_account_data(500)).hexdigest(),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_mint_fee_config(
             base, snapshots,
             transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("inventário de InitializeTransferFeeConfig incompleto", result.reason)
@@ -1027,12 +1085,16 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                     mint="mint-a", account_data=_mint_account_data(500),
                     snapshot_slot=123, snapshot_order=49,
                     source="fixture", state_ref="mint-a-pre", source_id="rpc-a",
-                ),
+                ,
+            ordering_domain_id="stream-a"
+        ),
                 "mint-b": DammV2MintPrestate(
                     mint="mint-b", account_data=_mint_account_data(None),
                     snapshot_slot=123, snapshot_order=49,
                     source="fixture", state_ref="mint-b-pre", source_id="rpc-a",
-                ),
+                ,
+            ordering_domain_id="stream-a"
+        ),
             },
             _instruction_inventory(),
             transaction_signature="signature-1",
@@ -1061,13 +1123,17 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                         snapshot_slot=123, snapshot_order=49,
                         source="fixture", state_ref="mint-a-pre",
                         source_id="rpc-a",
-                    ),
+                    ,
+            ordering_domain_id="stream-a"
+        ),
                     "mint-b": DammV2MintPrestate(
                         mint="mint-b", account_data=_mint_account_data(None),
                         snapshot_slot=123, snapshot_order=49,
                         source="fixture", state_ref="mint-b-pre",
                         source_id="rpc-a",
-                    ),
+                    ,
+            ordering_domain_id="stream-a"
+        ),
                 },
                 _instruction_inventory("other-signature"),
                 transaction_signature="signature-1",
@@ -1085,13 +1151,17 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                         snapshot_slot=122, snapshot_order=49,
                         source="fixture", state_ref="mint-a-pre",
                         source_id="rpc-a",
-                    ),
+                    ,
+            ordering_domain_id="stream-a"
+        ),
                     "mint-b": DammV2MintPrestate(
                         mint="mint-b", account_data=_mint_account_data(None),
                         snapshot_slot=123, snapshot_order=49,
                         source="fixture", state_ref="mint-b-pre",
                         source_id="rpc-a",
-                    ),
+                    ,
+            ordering_domain_id="stream-a"
+        ),
                 },
                 _instruction_inventory(),
                 transaction_signature="signature-1",
@@ -1115,6 +1185,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             base, snapshots, transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("source_id do snapshot diverge", result.reason)
@@ -1136,6 +1208,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             base, snapshots, transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("proveniência do mint ausente", result.reason)
@@ -1161,11 +1235,15 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
             pre_state_data=_withheld_account_data(10),
             post_state_data=_withheld_account_data(15),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
             transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("source_id do snapshot diverge", result.reason)
@@ -1191,11 +1269,15 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
             pre_state_data=_withheld_account_data(11),
             post_state_data=_withheld_account_data(15),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
             transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="a" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("proveniência/hash de snapshot ausente", result.reason)
@@ -1215,6 +1297,8 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             base, _mint_fee_snapshots(), transaction_signature="signature-1",
             transaction_epoch=10, transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="f" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("hash do payload da transação diverge", result.reason)
@@ -1240,11 +1324,15 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
             post_state_sha256=hashlib.sha256(_withheld_account_data(15)).hexdigest(),
             pre_state_data=_withheld_account_data(10),
             post_state_data=_withheld_account_data(15),
+        ,
+            ordering_domain_id="stream-a"
         )
         result = verify_damm_v2_withheld_fee_deltas(
             base, [snapshot], transaction_signature="signature-1",
             transaction_slot=123, transaction_order=50,
             transaction_source_id="rpc-a", transaction_payload_sha256="f" * 64,
+        ,
+            transaction_ordering_domain_id="stream-a"
         )
         self.assertEqual(result.status, "INCOMPLETE")
         self.assertIn("hash do payload da transação diverge", result.reason)
@@ -1258,7 +1346,9 @@ class DammV2EconomicReconciliationTests(unittest.TestCase):
                         mint="mint-a", account_data=_mint_account_data(500),
                         snapshot_slot=123, snapshot_order=49,
                         source="fixture", state_ref="mint-a-pre", source_id="rpc-b",
-                    ),
+                    ,
+            ordering_domain_id="stream-a"
+        ),
                 },
                 _instruction_inventory(),
                 transaction_signature="signature-1",

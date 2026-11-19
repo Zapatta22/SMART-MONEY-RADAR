@@ -210,7 +210,12 @@ class AccountUpdateTimeline:
     def current_state(self, pubkey: str) -> NormalizedAccountUpdate | None:
         """Return the latest observed active state, not necessarily finalized."""
         entries = self._events.get(pubkey, ())
-        return entries[-1].update if entries else None
+        if not entries:
+            return None
+        # Without a BankLineageTracker this linear view cannot choose a fork.
+        if any(entry.update.bank_id is not None for entry in entries):
+            return None
+        return entries[-1].update
 
     def transition_for(
         self, txn_signature: str, *, pubkey: str | None = None

@@ -55,6 +55,10 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
 
     def test_later_sequenced_replay_reconciles_without_rewriting_delivery(self):
         first = self.ingest()
+        initial = self.audit.rebuild()
+        initial_row = self.audit.list_deliveries()[0]
+        self.assertEqual(initial_row["classification"], "UNSEQUENCED_UNRESOLVED")
+        self.assertEqual(initial["unresolved_count"], 1)
         second = self.ingest(sequence=20)
         summary = self.audit.rebuild()
         items = self.audit.list_deliveries()
@@ -183,6 +187,7 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         first = self.ingest()
         second = self.ingest()
         witness = self.ingest(sequence=45, stream="replay-stream")
+        second_witness = self.ingest(sequence=46, stream="backup-stream")
         summary = self.audit.rebuild()
         rows = self.audit.list_deliveries()
         by_id = {row["delivery_id"]: row for row in rows}
@@ -193,7 +198,7 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
             )
             self.assertEqual(
                 by_id[delivery.delivery_id]["witness_delivery_ids"],
-                [witness.delivery_id],
+                [witness.delivery_id, second_witness.delivery_id],
             )
             self.assertIsNone(by_id[delivery.delivery_id]["stream_sequence"])
         self.assertEqual(len(rows), 3)

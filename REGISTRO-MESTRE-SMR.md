@@ -2758,7 +2758,7 @@ Revisar e formalizar o contrato de proveniência dos snapshots históricos de mi
 - O verifier recalcula o hash dos bytes do mint e decodifica novamente o TLV; rejeita bytes alterados ou config_state que não corresponda aos bytes.
 - `DammV2WithheldFeeSnapshot` preserva bytes brutos pre/post, SHA-256 individuais, source ID, hash do payload e referências separadas.
 - `verify_damm_v2_withheld_fee_deltas()` recalcula os hashes, redecodifica TransferFeeAmount dos bytes brutos e compara com `decoded_delta`; também exige source ID e hash do payload iguais aos da transação, assinatura/slot/ordem e `pre < transaction < post`.
-- `reconcile_solana_transaction_damm_v2_bundle()` propaga source ID e payload SHA-256 da identidade raiz para a reconciliação econômica.
+- `reconcile_solana_transaction_damm_v2_bundle()` propaga source ID e payload SHA-256 da identidade raiz para a reconciliação econômica. O caminho de cálculo de fee (`_calculate_fee_from_mint_snapshot`) também recalcula o hash e redecodifica os bytes brutos antes de usar a configuração.
 
 ### Testes negativos adicionados
 - Snapshot de mint com source ID diferente.
@@ -2771,9 +2771,10 @@ Revisar e formalizar o contrato de proveniência dos snapshots históricos de mi
 - Testes anteriores de assinatura, slot, ordem, posição de inicialização, configuração e divergência de taxas continuam ativos.
 
 ### Validação
-- HEAD de código validado: `6527b70d0a66916be668fbfc52f3e7c85b96277d`.
-- Workflow `SMR tests`, run `44604415356`, job `135844149691`: SUCCESS.
-- 595 testes em 4,724 s; `python -m compileall -q src tests` aprovado.
+- HEAD de código validado: `2470284ae8e5b584dd81958ba10d520beebc1366`.
+- Workflow `SMR tests`, run `44604894489`, job `135845841534`: SUCCESS.
+- 595 testes em 5,240 s; `python -m compileall -q src tests` aprovado.
+- O HEAD `6527b70d...` também passou com 595 testes; a validação final inclui a checagem adicional de bytes brutos dentro do caminho de cálculo de fee.
 - O CI valida testes sintéticos/unitários e compilação; não comprova autenticidade do provider, coleta Geyser real, ordering real, mainnet ou execução em produção.
 
 ### Limites explícitos

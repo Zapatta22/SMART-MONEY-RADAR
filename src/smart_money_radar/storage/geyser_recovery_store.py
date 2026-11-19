@@ -336,7 +336,7 @@ class SQLiteGeyserRecoveryStore:
                     UPDATE geyser_backfill_attempts SET status='INTERRUPTED',
                         cursor_end=(SELECT cursor_current FROM geyser_backfill_jobs WHERE job_id=?),
                         ended_at=?,error=? WHERE job_id=? AND attempt_number=?
-                """, (job_id,now,note,job_id,attempt+1))
+                """, (job_id,now,note,job_id,attempt))
                 recovered.append(job_id)
         return [self.get_backfill_job(job_id) for job_id in recovered]
 

@@ -3247,3 +3247,32 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 
 ### Próxima ação
 - Próximo passo é decidir separadamente se a PR #22 deve ser marcada Ready for review e integrada à sua branch-base `feat/token2022-transfer-checked-with-fee`. Nenhum merge está autorizado por esta revisão.
+
+## 314. Integração da PR #22 na branch Token-2022 — 19/11/2026
+
+### Autorização e pré-condições
+- Usuário autorizou expressamente o merge da PR #22 em 19/11/2026 às 21:15:49Z.
+- PR #22 foi reconsultada antes do merge: OPEN/DRAFT, head `f19894d845b413c312bcdde870713e2d2facda14`, base `feat/token2022-transfer-checked-with-fee`, `mergeable=true`, `mergeable_state=clean`.
+- Compare pré-merge: 328 commits ahead, 0 behind; merge base `46dcf389d4cb06973a5d82967ba99fa3965121be`.
+- Check no HEAD documental exato `f19894d845b413c312bcdde870713e2d2facda14`: `test` SUCCESS. O código funcional desse HEAD havia sido validado no HEAD de código `d9ab2fbf78579449e3ed96639c9aa9a49b8d3f76`, run `44616500146`, 609 testes OK e compileall SUCCESS; o commit documental subsequente não alterou código/testes.
+
+### Merge
+- PR #22 marcada Ready for review após a revisão técnica integrada registrada na seção 313.
+- Merge executado com método `merge` e `expected_head_sha=f19894d845b413c312bcdde870713e2d2facda14`.
+- Merge commit: `aa173f7bc13158d641e04d571173763df4962052`.
+- PR #22 CLOSED/MERGED em 19/11/2026 às 21:16:03Z.
+- Branch destino `feat/token2022-transfer-checked-with-fee` atualizada para `aa173f7bc13158d641e04d571173763df4962052`.
+- `main` consultada após o merge permanece `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; não foi alterada.
+
+### CI pós-merge
+- Check `test` no merge commit `aa173f7bc13158d641e04d571173763df4962052`: workflow run `44617037258`, job `135888377740`.
+- Na última consulta, status IN_PROGRESS. Não declarar CI pós-merge aprovado até conclusão SUCCESS.
+
+### Estado e limites
+- PR #22 integrada à branch intermediária Token-2022; nenhuma integração foi feita à `main`.
+- A cadeia de desenvolvimento agora contém atribuição de referral DAMM v2 por FeeMode, reconciliação econômica DAMM v2, bundle de evidências Solana, política de finality e correções Geyser.
+- Atribuição permanece `ATTRIBUTED`, não `MATCHED`; isso não cria BUY/SELL nem autorização de execução.
+- Provider live, ingestão mainnet contínua e execução financeira não foram habilitados por este merge.
+
+### Próxima ação
+- Aguardar e verificar CI pós-merge no commit `aa173f7bc13158d641e04d571173763df4962052`. Após SUCCESS, atualizar o Registro Mestre e avaliar tecnicamente a próxima etapa de integração da branch Token-2022, sem merge para `main` sem autorização expressa.

@@ -94,3 +94,13 @@ Movimentos externos que atinjam as mesmas token accounts também podem provocar 
 - Calcula a taxa no bruto referral com a configuração prestate e epoch, deriva o crédito líquido, agrega o delta da referral account e registra `fee_source=MINT_PRESTATE`.
 - A chamada posterior a `verify_damm_v2_mint_fee_config` revalida todos os snapshots e todas as taxas do lote, incluindo input/output/referral.
 - Sem snapshot, com identidade divergente, epoch incorreto ou possível alteração do mint antes da transferência, o lote retorna `INCOMPLETE`.
+
+
+## Inventário de instruções que inicializam TransferFeeConfig
+
+- `decode_transfer_fee_config_mutation_instruction` reconhece o prefixo Token-2022 `TransferFeeExtension` (tag externa 26) e os sub-tags `InitializeTransferFeeConfig=0` e `SetTransferFee=5`.
+- O snapshot do mint não usa mais uma declaração booleana genérica de que o mint não mudou. Ele recebe `transfer_fee_config_init_positions` e `transfer_fee_init_inventory_complete`.
+- O verifier exige inventário completo das instruções de inicialização para aquele mint e rejeita qualquer `InitializeTransferFeeConfig` anterior ou na mesma posição da transferência.
+- `SetTransferFee` não é tratado como alteração da taxa ativa no epoch corrente: no código Token-2022 fixado, a nova taxa é agendada para `current_epoch + 2` e a taxa ativa anterior é preservada em `older_transfer_fee`. A escolha older/newer continua feita por `fee_for_epoch(transaction_epoch)`.
+- O adapter ainda precisa percorrer instruções externas e CPI, decodificar o programa Token-2022, resolver a conta mint e construir o inventário completo por mint. Sem inventário completo, falha fechado.
+- Fonte de referência: `solana-program/token-2022@875693f53c77534b46f0d06bdf781430870f8177`, `interface/src/extension/transfer_fee/instruction.rs` e `program/src/extension/transfer_fee/processor.rs`.

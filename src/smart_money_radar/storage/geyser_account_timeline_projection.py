@@ -298,7 +298,7 @@ class SQLiteGeyserAccountTimelineProjection:
                 VALUES (?,?,?,?,?,?,?)
             """, [
                 (generation,i,g.stream_id,g.expected_sequence,g.received_sequence,g.reason,g.continuity_epoch)
-                for i,g in enumerate(gap for timeline in timelines.values() for g in timeline.gaps)
+                for i,g in enumerate(g for timeline in timelines.values() for g in timeline.gaps)
             ])
             conflicts = []
             for timeline in timelines.values():

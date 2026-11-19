@@ -106,6 +106,102 @@ class SQLiteGeyserRawStoreTests(unittest.TestCase):
         })
         store.close()
 
+    def test_declared_baseline_records_gap_and_does_not_advance_across_it(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        store.register_stream("yellowstone-mainnet", "stream-a", 100)
+        store.ingest(self.event(b"100", event_id="event-100"), self.delivery(100))
+        store.ingest(self.event(b"102", event_id="event-102"), self.delivery(102))
+        checkpoint = store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")
+        self.assertEqual(checkpoint["initial_sequence"], 100)
+        self.assertEqual(checkpoint["contiguous_sequence"], 100)
+        self.assertEqual(checkpoint["last_seen_sequence"], 102)
+        self.assertTrue(checkpoint["interrupted"])
+        gaps = store.list_transport_gaps("yellowstone-mainnet", "stream-a", status="OPEN")
+        self.assertEqual([(gap["missing_from"], gap["missing_to"]) for gap in gaps], [(101, 101)])
+        store.close()
+
+    def test_out_of_order_delivery_closes_gap_only_after_contiguous_recovery(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        store.register_stream("yellowstone-mainnet", "stream-a", 100)
+        store.ingest(self.event(b"102", event_id="event-102"), self.delivery(102))
+        first = store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")
+        self.assertEqual(first["contiguous_sequence"], 99)
+        self.assertTrue(first["interrupted"])
+        store.ingest(self.event(b"100", event_id="event-100"), self.delivery(100))
+        middle = store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")
+        self.assertEqual(middle["contiguous_sequence"], 100)
+        self.assertTrue(middle["interrupted"])
+        store.ingest(self.event(b"101", event_id="event-101"), self.delivery(101))
+        final = store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")
+        self.assertEqual(final["contiguous_sequence"], 102)
+        self.assertFalse(final["interrupted"])
+        gaps = store.list_transport_gaps("yellowstone-mainnet", "stream-a")
+        self.assertEqual([gap["status"] for gap in gaps], ["RESOLVED"])
+        store.close()
+
+    def test_first_observed_baseline_is_explicitly_unverified(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        store.ingest(self.event(b"55", event_id="event-55"), self.delivery(55))
+        checkpoint = store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")
+        self.assertEqual(checkpoint["baseline_kind"], "first_observed_unverified")
+        self.assertEqual(checkpoint["contiguous_sequence"], 55)
+        self.assertFalse(checkpoint["interrupted"])
+        store.close()
+
+    def test_replay_of_same_event_and_sequence_is_not_a_sequence_collision(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        store.register_stream("yellowstone-mainnet", "stream-a", 1)
+        store.ingest(self.event(), self.delivery(1))
+        store.ingest(self.event(), self.delivery(1, kind="replay"))
+        self.assertEqual(
+            store.list_transport_anomalies("yellowstone-mainnet", "stream-a"), []
+        )
+        self.assertFalse(
+            store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")["interrupted"]
+        )
+        store.close()
+
+    def test_different_events_reusing_sequence_create_resolvable_anomaly(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        store.register_stream("yellowstone-mainnet", "stream-a", 1)
+        store.ingest(self.event(b"first", event_id="event-first"), self.delivery(1))
+        store.ingest(self.event(b"second", event_id="event-second"), self.delivery(1))
+        checkpoint = store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")
+        anomalies = store.list_transport_anomalies("yellowstone-mainnet", "stream-a", status="OPEN")
+        self.assertTrue(checkpoint["interrupted"])
+        self.assertEqual(anomalies[0]["reason"], "sequence_reused_for_different_event")
+        store.resolve_transport_anomaly(anomalies[0]["anomaly_id"], "Conferido em fixture offline")
+        self.assertFalse(
+            store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")["interrupted"]
+        )
+        store.close()
+
+    def test_gap_checkpoint_and_raw_delivery_roll_back_together(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        store.register_stream("yellowstone-mainnet", "stream-a", 10)
+        with store._connection() as connection:
+            connection.execute("""
+                CREATE TRIGGER reject_gap BEFORE INSERT ON geyser_transport_gaps
+                BEGIN SELECT RAISE(ABORT, 'forced gap failure'); END
+            """)
+        with self.assertRaisesRegex(Exception, "forced gap failure"):
+            store.ingest(self.event(b"11", event_id="event-11"), self.delivery(11))
+        self.assertIsNone(store.get_raw_event("event-11"))
+        self.assertEqual(store.counts()["geyser_raw_deliveries"], 0)
+        checkpoint = store.get_transport_checkpoint("yellowstone-mainnet", "stream-a")
+        self.assertEqual(checkpoint["contiguous_sequence"], 9)
+        self.assertEqual(checkpoint["last_seen_sequence"], 9)
+        self.assertFalse(checkpoint["interrupted"])
+        self.assertEqual(store.list_transport_gaps("yellowstone-mainnet", "stream-a"), [])
+        store.close()
+
+    def test_cannot_register_stream_baseline_after_first_delivery(self):
+        store = SQLiteGeyserRawStore(":memory:")
+        store.ingest(self.event(), self.delivery(5))
+        with self.assertRaisesRegex(ValueError, "após ingestão"):
+            store.register_stream("yellowstone-mainnet", "stream-a", 1)
+        store.close()
+
     def test_invalid_event_or_delivery_is_rejected_before_write(self):
         store = SQLiteGeyserRawStore(":memory:")
         with self.assertRaises(TypeError):

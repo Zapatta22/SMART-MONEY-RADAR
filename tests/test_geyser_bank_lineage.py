@@ -157,6 +157,10 @@ class BankLineageTrackerTests(unittest.TestCase):
             stream_id="conn-1", stream_sequence=1,
         )
         self.assertEqual(tracker.account_bank_status(startup), "startup_unassigned")
+        from smart_money_radar.data_sources.geyser_account_timeline import AccountUpdateTimeline
+        timeline = AccountUpdateTimeline()
+        timeline.add(startup)
+        self.assertIsNone(timeline.current_state("acct"))
 
     def test_account_status_resolves_exact_source_slot_and_bank_id(self):
         tracker = BankLineageTracker()

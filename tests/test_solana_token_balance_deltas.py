@@ -82,6 +82,26 @@ class TokenAccountBalanceDeltaTests(unittest.TestCase):
             [_balance(0, amount="100")],
         )), [])
 
+    def test_can_include_unchanged_accounts_for_intermediate_route_reconciliation(self):
+        result = decode_token_account_balance_deltas(
+            _tx(
+                [_balance(0, amount="100")],
+                [_balance(0, amount="100")],
+            ),
+            include_unchanged=True,
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].pre_amount_raw, 100)
+        self.assertEqual(result[0].post_amount_raw, 100)
+        self.assertEqual(result[0].delta_raw, 0)
+
+    def test_rejects_non_boolean_include_unchanged_option(self):
+        with self.assertRaisesRegex(TypeError, "include_unchanged"):
+            decode_token_account_balance_deltas(
+                _tx([], []),
+                include_unchanged=1,
+            )
+
     def test_resolves_loaded_address_table_keys(self):
         result = decode_token_account_balance_deltas(_tx(
             [_balance(3, amount="10")],

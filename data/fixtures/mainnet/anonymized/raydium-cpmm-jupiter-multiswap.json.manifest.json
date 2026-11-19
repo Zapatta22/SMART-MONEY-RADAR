@@ -1,0 +1,14 @@
+{
+  "schema": "smr.pseudonymized-fixture.v2",
+  "fixture_id": "smr-fixture-raydium-cpmm-jupiter-multiswap-v1",
+  "slot": 469955314,
+  "commitment": "finalized",
+  "projection_file": "raydium-cpmm-jupiter-multiswap.json",
+  "projection_sha256": "d56a291093983c9ea2c2c5e92f66b2282d68504fb036188c404e2a8b9a214684",
+  "pseudonymized": true,
+  "anonymized": false,
+  "replaced_addresses": 10,
+  "mapping_file": null,
+  "protected_address_count": 16,
+  "privacy_note": "Public metadata remains potentially correlatable with Solana mainnet. This fixture is pseudonymized, not anonymous. Signature and blockhash fields are synthetic placeholders; raw payload fingerprints and reversible mappings are not published."
+}

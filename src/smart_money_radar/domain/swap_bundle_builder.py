@@ -11,6 +11,7 @@ from smart_money_radar.data_sources.raydium_cpmm_analyzer import (
 from smart_money_radar.data_sources.raydium_cpmm_decoder import (
     RAYDIUM_CPMM_PROGRAM_ID,
 )
+from smart_money_radar.data_sources.solana_token_transfer_decoder import SolanaTokenTransfer
 from smart_money_radar.data_sources.raydium_cpmm_transfer_reconciliation import (
     RaydiumCpmmSwapReconciliation,
 )
@@ -68,6 +69,55 @@ def _classify(
     )
 
 
+def _validate_transfer_evidence(
+    *,
+    transfer: SolanaTokenTransfer,
+    swap: RaydiumCpmmDecodedSwap,
+    source_account: str,
+    destination_account: str,
+    token_program: str,
+    mint: str,
+    decimals: int,
+    label: str,
+) -> None:
+    """Revalida no limite do domínio a transferência que sustenta o MATCHED."""
+    if transfer.execution_status != "EXECUTED" or transfer.instruction_type not in {
+        "TRANSFER", "TRANSFER_CHECKED"
+    }:
+        raise ValueError(f"Transferência de {label} não tem execução/tipo suportado.")
+    if (
+        transfer.instruction_index != swap.instruction_index
+        or transfer.inner_instruction_index is None
+    ):
+        raise ValueError(f"Transferência de {label} não pertence ao grupo da instrução CPMM.")
+    if swap.inner_instruction_index is not None:
+        if (
+            swap.stack_height is None
+            or transfer.stack_height is None
+            or transfer.stack_height <= swap.stack_height
+            or len(transfer.cpi_path) <= len(swap.cpi_path)
+            or transfer.cpi_path[:len(swap.cpi_path)] != swap.cpi_path
+        ):
+            raise ValueError(f"Transferência de {label} não é descendente do CPI CPMM identificado.")
+    if (
+        transfer.source_account != source_account
+        or transfer.destination_account != destination_account
+    ):
+        raise ValueError(f"Contas da transferência de {label} divergem das contas do swap.")
+    if transfer.program_id != token_program:
+        raise ValueError(f"Programa SPL da transferência de {label} diverge do programa do swap.")
+    if transfer.mint is not None and transfer.mint != mint:
+        raise ValueError(f"Mint da transferência de {label} diverge do mint do swap.")
+    if transfer.decimals is not None and transfer.decimals != decimals:
+        raise ValueError(f"Decimals da transferência de {label} divergem dos metadados do swap.")
+    if (
+        isinstance(transfer.amount_raw, bool)
+        or not isinstance(transfer.amount_raw, int)
+        or transfer.amount_raw <= 0
+    ):
+        raise ValueError(f"Quantidade bruta da transferência de {label} é inválida.")
+
+
 def build_swap_domain_bundles(
     reconciliations: Iterable[RaydiumCpmmSwapReconciliation],
     *,
@@ -109,8 +159,55 @@ def build_swap_domain_bundles(
             or item.output_decimals is None
             or item.input_transfer is None
             or item.output_transfer is None
+            or item.input_token_account_delta_raw is None
+            or item.output_token_account_delta_raw is None
+            or item.input_vault_delta_raw is None
+            or item.output_vault_delta_raw is None
         ):
-            raise ValueError("Reconciliação MATCHED sem quantidades, decimals ou transferências completas.")
+            raise ValueError("Reconciliação MATCHED sem quantidades, decimals, transferências ou deltas completos.")
+
+        delta_evidence = (
+            item.input_token_account_delta_raw,
+            item.output_token_account_delta_raw,
+            item.input_vault_delta_raw,
+            item.output_vault_delta_raw,
+        )
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in delta_evidence):
+            raise ValueError("Deltas por conta devem ser inteiros brutos.")
+        if item.input_amount_raw != item.input_transfer.amount_raw:
+            raise ValueError("Quantidade de entrada diverge da transferência selecionada.")
+        if item.output_amount_raw != item.output_transfer.amount_raw:
+            raise ValueError("Quantidade de saída diverge da transferência selecionada.")
+        input_key = (
+            item.input_transfer.instruction_index,
+            item.input_transfer.inner_instruction_index,
+        )
+        output_key = (
+            item.output_transfer.instruction_index,
+            item.output_transfer.inner_instruction_index,
+        )
+        if input_key == output_key:
+            raise ValueError("Transferências de entrada e saída não podem ser a mesma instrução.")
+        _validate_transfer_evidence(
+            transfer=item.input_transfer,
+            swap=swap,
+            source_account=accounts.input_token_account,
+            destination_account=accounts.input_vault,
+            token_program=accounts.input_token_program,
+            mint=accounts.input_token_mint,
+            decimals=item.input_decimals,
+            label="entrada",
+        )
+        _validate_transfer_evidence(
+            transfer=item.output_transfer,
+            swap=swap,
+            source_account=accounts.output_vault,
+            destination_account=accounts.output_token_account,
+            token_program=accounts.output_token_program,
+            mint=accounts.output_token_mint,
+            decimals=item.output_decimals,
+            label="saída",
+        )
 
         operation_id = build_swap_operation_id(
             chain, signature, swap.instruction_index, swap.cpi_path
@@ -147,6 +244,10 @@ def build_swap_domain_bundles(
                 f"output_transfer:{item.output_transfer.instruction_index}:{item.output_transfer.inner_instruction_index}",
                 f"input_token_account:{accounts.input_token_account}:transfer_amount_raw={item.input_transfer.amount_raw}",
                 f"output_token_account:{accounts.output_token_account}:transfer_amount_raw={item.output_transfer.amount_raw}",
+                f"input_token_account_delta_raw:{item.input_token_account_delta_raw}",
+                f"output_token_account_delta_raw:{item.output_token_account_delta_raw}",
+                f"input_vault_delta_raw:{item.input_vault_delta_raw}",
+                f"output_vault_delta_raw:{item.output_vault_delta_raw}",
                 f"pool_state:{accounts.pool_state}",
                 f"input_vault:{accounts.input_vault}",
                 f"output_vault:{accounts.output_vault}",

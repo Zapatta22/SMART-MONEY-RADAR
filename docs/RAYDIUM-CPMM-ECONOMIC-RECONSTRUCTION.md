@@ -126,13 +126,13 @@ O módulo `raydium_cpmm_transfer_reconciliation.py` correlaciona cada swap CPMM 
 
 Para swaps CPI, exige descendência demonstrável por `stackHeight` e prefixo de `cpi_path`. Para swap externo, limita a busca ao grupo `innerInstructions` daquela instrução externa. Exige uma única transferência por lado, programa token correto, mint/decimals compatíveis, proprietário igual nas duas token accounts e igual à carteira monitorada.
 
-Além disso, soma todas as transferências decodificadas que afetam cada token account do usuário e compara o resultado com o delta `post - pre` daquela conta. Isso permite reconciliar várias operações sequenciais que reutilizam a mesma token account sem dividir artificialmente um delta líquido por swap. Uma transferência não pode ser reivindicada por duas operações.
+Além disso, soma todas as transferências decodificadas que afetam cada token account do usuário **e cada vault do pool** e compara o resultado com o delta `post - pre` de cada conta. Isso permite reconciliar várias operações sequenciais que reutilizam as mesmas contas sem dividir artificialmente um delta líquido por swap. Uma transferência não pode ser reivindicada por duas operações. A reconciliação dos vaults é necessária para detectar diferença entre o valor bruto debitado/transferido e o aumento líquido efetivamente observado no vault, inclusive em cenários Token-2022.
 
 O resultado atual é um diagnóstico `MATCHED`, `AMBIGUOUS` ou `INCOMPLETE`, com quantidades brutas somente no estado MATCHED. **Ainda não cria `SwapObservation`, `SwapClassification` ou `SwapEvidence`, nem persiste dados.**
 
 Limites conservadores:
 - Não aceita transferência sem execução confirmada ou variante fora de `TRANSFER` / `TRANSFER_CHECKED`.
-- Qualquer taxa/transferência não decodificada que faça o agregado por token account divergir do saldo pre/post impede MATCHED.
+- Qualquer taxa/transferência não decodificada que faça o agregado de uma token account do usuário **ou de um vault** divergir do saldo pre/post impede MATCHED. Não inferir o valor de uma taxa a partir da diferença; manter INCOMPLETE até haver decodificação explícita e reconciliação segura.
 - Swaps CPI sem stackHeight/caminho hierárquico demonstrável não recebem transferências por proximidade linear.
 - Se um swap externo e outro CPMM aninhado coexistirem no mesmo grupo, o externo fica AMBIGUOUS.
 - Testes sintéticos não substituem fixtures reais mainnet.

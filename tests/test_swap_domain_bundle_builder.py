@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -91,6 +92,10 @@ def _matched():
         output_decimals=6,
         input_transfer=input_transfer,
         output_transfer=output_transfer,
+        input_token_account_delta_raw=-1250000,
+        output_token_account_delta_raw=900000,
+        input_vault_delta_raw=1250000,
+        output_vault_delta_raw=-900000,
     )
 
 
@@ -143,6 +148,8 @@ class SwapDomainBundleBuilderTests(unittest.TestCase):
         self.assertEqual(bundle.evidence.cpi_path, (2, 1))
         self.assertTrue(any(item.startswith("input_transfer:4:8") for item in bundle.evidence.evidence))
         self.assertTrue(any(item.startswith("output_transfer:4:9") for item in bundle.evidence.evidence))
+        self.assertIn("input_token_account_delta_raw:-1250000", bundle.evidence.evidence)
+        self.assertIn("input_vault_delta_raw:1250000", bundle.evidence.evidence)
 
     def test_ignores_ambiguous_and_incomplete_reconciliations(self):
         matched = _matched()
@@ -185,6 +192,36 @@ class SwapDomainBundleBuilderTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "sem quantidades"):
             self._build(matched=incomplete)
+
+    def test_rejects_matched_result_when_amount_or_transfer_identity_disagrees(self):
+        matched = _matched()
+        wrong_delta_type = replace(matched, input_vault_delta_raw=True)
+        with self.assertRaisesRegex(ValueError, "Deltas por conta devem ser inteiros"):
+            self._build(matched=wrong_delta_type)
+
+        wrong_amount = replace(matched, input_amount_raw=matched.input_amount_raw + 1)
+        with self.assertRaisesRegex(ValueError, "Quantidade de entrada"):
+            self._build(matched=wrong_amount)
+
+        wrong_accounts = replace(
+            matched,
+            input_transfer=replace(matched.input_transfer, destination_account="other-vault"),
+        )
+        with self.assertRaisesRegex(ValueError, "Contas da transferência de entrada"):
+            self._build(matched=wrong_accounts)
+
+        wrong_cpi = replace(
+            matched,
+            output_transfer=replace(matched.output_transfer, cpi_path=(9, 9)),
+        )
+        with self.assertRaisesRegex(ValueError, "descendente do CPI"):
+            self._build(matched=wrong_cpi)
+
+    def test_rejects_matched_result_missing_balance_delta_evidence(self):
+        matched = _matched()
+        missing_delta = replace(matched, input_vault_delta_raw=None)
+        with self.assertRaisesRegex(ValueError, "deltas completos"):
+            self._build(matched=missing_delta)
 
     def test_rejects_duplicate_operation_ids(self):
         with self.assertRaisesRegex(ValueError, "operation_id duplicado"):

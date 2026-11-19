@@ -1,0 +1,14 @@
+{
+  "schema": "smr.pseudonymized-fixture.v2",
+  "fixture_id": "smr-fixture-raydium-cpmm-token2022-fee-v1",
+  "slot": 344357800,
+  "commitment": "finalized",
+  "projection_file": "raydium-cpmm-token2022-fee.json",
+  "projection_sha256": "e63ad3fb799b208a5a4209587d3f11d3820476c472f297866a9b4ab244127a73",
+  "pseudonymized": true,
+  "anonymized": false,
+  "replaced_addresses": 3,
+  "mapping_file": null,
+  "protected_address_count": 12,
+  "privacy_note": "Public metadata remains potentially correlatable with Solana mainnet. This fixture is pseudonymized, not anonymous. Signature and blockhash fields are synthetic placeholders; raw payload fingerprints and reversible mappings are not published."
+}

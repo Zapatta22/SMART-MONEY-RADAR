@@ -1,0 +1,14 @@
+{
+  "schema": "smr.pseudonymized-fixture.v2",
+  "fixture_id": "smr-fixture-raydium-cpmm-multivenue-v1",
+  "slot": 388739013,
+  "commitment": "finalized",
+  "projection_file": "raydium-cpmm-route-multivenue.json",
+  "projection_sha256": "308f81447dbe9ed83937edc10d9907ccf77c7fd51974b2841af2391097ad633a",
+  "pseudonymized": true,
+  "anonymized": false,
+  "replaced_addresses": 20,
+  "mapping_file": null,
+  "protected_address_count": 13,
+  "privacy_note": "Public metadata remains potentially correlatable with Solana mainnet. This fixture is pseudonymized, not anonymous. Signature and blockhash fields are synthetic placeholders; raw payload fingerprints and reversible mappings are not published."
+}

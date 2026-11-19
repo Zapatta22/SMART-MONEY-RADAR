@@ -1,4 +1,4 @@
-import base64
+import json
 import sqlite3
 import tempfile
 import unittest

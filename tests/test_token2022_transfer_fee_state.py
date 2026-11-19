@@ -70,10 +70,14 @@ class TransferFeeStateDecoderTests(unittest.TestCase):
             decode_transfer_fee_config(bytes(data))
 
     def test_rejects_wrong_account_type(self):
+        wrong_mint = bytearray(mint_data([tlv(1, config())]))
+        wrong_mint[165] = ACCOUNT_TYPE_ACCOUNT
         with self.assertRaisesRegex(ValueError, "AccountType"):
-            decode_transfer_fee_config(account_data([tlv(1, config())]))
+            decode_transfer_fee_config(bytes(wrong_mint))
+        wrong_account = bytearray(account_data([tlv(2, u64(1))]))
+        wrong_account[165] = ACCOUNT_TYPE_MINT
         with self.assertRaisesRegex(ValueError, "AccountType"):
-            decode_transfer_fee_amount(mint_data([tlv(2, u64(1))]))
+            decode_transfer_fee_amount(bytes(wrong_account))
 
     def test_rejects_missing_extension(self):
         with self.assertRaisesRegex(ValueError, "ausente"):
@@ -124,7 +128,7 @@ class TransferFeeStateDecoderTests(unittest.TestCase):
 
     def test_rejects_invalid_mint_coption_tags(self):
         data = bytearray(mint_data([tlv(1, config())]))
-        data[32] = 2
+        data[0] = 2
         with self.assertRaisesRegex(ValueError, "mint_authority"):
             decode_transfer_fee_config(bytes(data))
         data = bytearray(mint_data([tlv(1, config())]))

@@ -3214,3 +3214,36 @@ Executar CI na branch isolada, corrigir qualquer falha e auditar o diff final. N
 - PR #22 consultada após a integração: OPEN/DRAFT, sem merge. GitHub reportou `mergeable=false` no snapshot consultado; isso precisa ser investigado na revisão da PR #22, não deve ser tratado como aprovado ou como conflito específico sem diagnóstico adicional.
 - `main` novamente verificada: permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
 - Registro Mestre atualizado para refletir a conclusão dos dois checks. Este commit é exclusivamente documental.
+
+## 313. Diagnóstico de mergeability e revisão técnica integrada da PR #22 — 19/11/2026
+
+### Diagnóstico do estado de merge
+- Após a integração PR #23 → branch da PR #22, uma leitura inicial reportou `mergeable=false` no estado da PR #22.
+- Nova consulta direta ao endpoint GitHub da PR #22 confirmou `mergeable=true` e `mergeable_state=clean`; a consulta normalizada também retornou `mergeable=true`.
+- Compare atual entre base `feat/token2022-transfer-checked-with-fee` e head `feat/damm-v2-referral-transfer-attribution`: 327 commits ahead, 0 behind; merge base `46dcf389d4cb06973a5d82967ba99fa3965121be`.
+- Conclusão: o `mergeable=false` anterior era um estado transitório/desatualizado de cálculo do GitHub; não foi encontrado conflito ativo no snapshot posterior. Não foi necessário resolver conflitos nem alterar código.
+
+### CI no HEAD exato da PR #22
+- HEAD consultado: `d9ab2fbf78579449e3ed96639c9aa9a49b8d3f76`.
+- Workflow run `44616500146`, job `135886496789`: SUCCESS.
+- Logs confirmam `Ran 609 tests in 4.697s`, `OK`; `python -m compileall -q src tests` também SUCCESS.
+
+### Revisão técnica integrada
+- Escopo revisado: atribuição DAMM v2 input/output/referral, matriz FeeMode, inventário de instruções externas/CPI, decoders Token-2022, bundle de evidências Solana, reconciliação econômica por lote, snapshots de mint/withheld, Timeline Geyser, projeção persistida, RAW integrity e política de finality.
+- Referral: código exige descendência CPI confiável no mesmo outer instruction e anterior ao EvtSwap2; seleciona vault pela matriz FeeMode; valida destino referral, mint, Token Program, tipo checked, amount u64 positivo, fee explícita quando aplicável e não reutilização de transferências.
+- Testes de FeeMode cobrem as seis combinações collect_fee_mode/trade_direction; testes de referral cobrem vault token A/B, ausência, duplicidade, divergência de amount, flag incompatível, fee inválida e ordenação CPI.
+- Reconciliação econômica é por lote completo de swaps e por token account; não reparte arbitrariamente deltas entre swaps sequenciais; rejeita transferências não atribuídas que toquem contas envolvidas, snapshots incompletos, owner divergente e incompatibilidade bruto/líquido.
+- Bundle Solana deriva inventário, transfers, deltas, associações e contextos do mesmo payload canonicalizado; a reconciliação recebe o bundle de factory, sem listas independentes.
+- Correções PR #36 permanecem presentes: hash SHA-256 RAW verificado antes de projeção, taint histórico de anomalias/conflictos e replay em ordem de sequência dentro da stream.
+- Política Geyser mantém distinção entre provider-reported finalized e prova independente de consenso; estados legacy sem bank_id não podem ser promovidos a VERIFIED.
+- Não foi identificado novo bloqueador técnico no escopo revisado que impeça a conclusão desta fatia de atribuição/reconciliação offline.
+
+### Limites e decisão
+- Resultado da revisão: tecnicamente consistente para integração na cadeia de branches de desenvolvimento; não equivale a declarar o SMR operacional ou pronto para capital real.
+- `ATTRIBUTED` continua distinto de `MATCHED`; `RECONCILED` valida deltas base do lote, mas withheld/mint fee permanecem `EXPECTED_NOT_VERIFIED` até os verificadores históricos apropriados.
+- Não existe adapter live de provider validado nesta etapa; provenance fields e ordering domain dependem de implementação e garantias do coletor futuro.
+- PR #22 permanece OPEN/DRAFT. Esta revisão não alterou o estado da PR, não submeteu aprovação formal GitHub e não executou merge.
+- `main` permanece protegida e sem alteração; último SHA verificado `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+### Próxima ação
+- Próximo passo é decidir separadamente se a PR #22 deve ser marcada Ready for review e integrada à sua branch-base `feat/token2022-transfer-checked-with-fee`. Nenhum merge está autorizado por esta revisão.

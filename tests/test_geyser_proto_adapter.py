@@ -599,6 +599,8 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
 
     def test_reconciles_damm_economics_only_after_finalized_wire_bank(self):
         from smart_money_radar.data_sources.solana_token_transfer_decoder import _decode_base58
+        from dataclasses import replace
+        from test_damm_v2_economic_reconciliation import _withheld_account_data
         from test_solana_transaction_evidence_bundle import _damm_complete_transaction
 
         payload = _damm_complete_transaction()["result"]
@@ -617,6 +619,7 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         tx = frame.transaction
         tx.bank_id = 10
         info = tx.transaction
+        info.index = 1
         message = info.transaction.message
         message.header.num_required_signatures = 1
         message.account_keys.extend(addresses.values())
@@ -668,8 +671,65 @@ class YellowstoneFrameReceiverTests(unittest.TestCase):
         self.assertEqual(result.withheld_fee_status, "EXPECTED_NOT_VERIFIED")
         self.assertEqual(result.mint_fee_config_status, "EXPECTED_NOT_VERIFIED")
 
+        block_frame = _UPDATE()
+        block = block_frame.block
+        block.slot, block.bank_id = tx.slot, tx.bank_id
+        block.blockhash = _b58(bytes([51]) * 32)
+        block.executed_transaction_count = 2
+        previous_signature = bytes([91]) * 64
+        previous = block.transactions.add(signature=previous_signature, index=0)
+        previous.transaction.signatures.append(previous_signature)
+        block.transactions.add().CopyFrom(info)
+        receiver.receive(block_frame.SerializeToString(), stream_sequence=42)
+        meta = _UPDATE()
+        meta.block_meta.slot, meta.block_meta.bank_id = tx.slot, tx.bank_id
+        meta.block_meta.blockhash = block.blockhash
+        meta.block_meta.parent_slot = tx.slot - 1
+        meta.block_meta.parent_blockhash = _b58(bytes([52]) * 32)
+        receiver.receive(meta.SerializeToString(), stream_sequence=43)
+
+        sequence = 44
+        for expected in result.expected_withheld_fee_deltas:
+            account_frame = _parse("account_update")
+            account_frame.account.slot = tx.slot
+            account_frame.account.bank_id = tx.bank_id
+            account = account_frame.account.account
+            account.pubkey = _decode_base58(expected.token_account)
+            account.owner = _decode_base58(names[9])
+            for offset, signature, amount in (
+                (0, previous_signature, 2),
+                (1, info.signature, 2 + expected.expected_withheld_delta_raw),
+            ):
+                account.write_version = sequence + offset
+                account.txn_signature = signature
+                account.data = _decode_base58(expected.mint) + _withheld_account_data(amount)[32:]
+                receiver.receive(account_frame.SerializeToString(), stream_sequence=sequence + offset)
+            sequence += 2
+
+        evidence = receiver.transaction_evidence_at(40, block_sequence=42)
+        verified = evidence.reconcile_damm_v2(monitored_wallet=wallet)
+        self.assertEqual(verified.status, "RECONCILED", verified.reason)
+        self.assertEqual(verified.withheld_fee_status, "VERIFIED")
+        self.assertEqual(verified.mint_fee_config_status, "EXPECTED_NOT_VERIFIED")
+
+        unproven = replace(evidence, block_order=replace(
+            evidence.block_order, previous_transaction_signature=None,
+        ))
+        self.assertEqual(
+            unproven.reconcile_damm_v2(monitored_wallet=wallet).withheld_fee_status,
+            "EXPECTED_NOT_VERIFIED",
+        )
+        transition, *other_transitions = evidence.account_transitions
+        changed = replace(transition.post_state, data=transition.pre_state.data)
+        inconsistent = replace(evidence, account_transitions=(
+            replace(transition, post_state=changed), *other_transitions,
+        ))
+        mismatch = inconsistent.reconcile_damm_v2(monitored_wallet=wallet)
+        self.assertEqual(mismatch.status, "INCOMPLETE")
+        self.assertIn("withheld diverge", mismatch.reason)
+
         slot.slot.status = 6
-        receiver.receive(slot.SerializeToString(), stream_sequence=42)
+        receiver.receive(slot.SerializeToString(), stream_sequence=sequence)
         invalidated = receiver.transaction_evidence_at(40)
         self.assertEqual(invalidated.reconcile_damm_v2(monitored_wallet=wallet).status, "INCOMPLETE")
 

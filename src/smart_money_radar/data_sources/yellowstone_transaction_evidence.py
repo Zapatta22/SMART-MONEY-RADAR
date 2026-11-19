@@ -1,10 +1,15 @@
 """Project a verified Yellowstone transaction into the shared Solana evidence decoders."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import hashlib
 
 from google.protobuf.message import Message
 
-from smart_money_radar.data_sources.damm_v2_economic_reconciliation import DammV2EconomicReconciliation
+from smart_money_radar.data_sources.damm_v2_economic_reconciliation import (
+    DammV2EconomicReconciliation,
+    DammV2WithheldFeeSnapshot,
+    verify_damm_v2_withheld_fee_deltas,
+)
 from smart_money_radar.data_sources.geyser_account_timeline import AccountStateTransition
 from smart_money_radar.data_sources.geyser_proto_adapter import _base58_encode
 from smart_money_radar.data_sources.geyser_transaction_updates import NormalizedTransactionObservation
@@ -13,6 +18,9 @@ from smart_money_radar.data_sources.solana_transaction_evidence_bundle import (
     build_solana_transaction_evidence_bundle,
     reconcile_solana_transaction_damm_v2_bundle,
 )
+
+from smart_money_radar.data_sources.solana_token_transfer_decoder import TOKEN_2022_PROGRAM_ID
+from smart_money_radar.data_sources.token2022_transfer_fee_state import decode_transfer_fee_amount_delta
 
 
 @dataclass(frozen=True)
@@ -23,6 +31,7 @@ class YellowstoneBlockOrder:
     transaction_index: int
     block_sequence: int
     block_wire_sha256: str
+    previous_transaction_signature: str | None = None
 
 
 @dataclass(frozen=True)
@@ -37,14 +46,64 @@ class YellowstoneTransactionEvidence:
     block_order: YellowstoneBlockOrder | None = None
 
     def reconcile_damm_v2(self, *, monitored_wallet: str) -> DammV2EconomicReconciliation:
-        """Reconcile archive-derived economics without claiming historical fee verification."""
+        """Reconcile economics and verify withheld fees when adjacent states are proven."""
         if not self.provider_reported_finalized:
             return DammV2EconomicReconciliation(
                 "INCOMPLETE", len(self.bundle.damm_v2_associations), (),
                 "evidência estrutural ou finalidade do banco Yellowstone insuficiente",
             )
-        return reconcile_solana_transaction_damm_v2_bundle(
+        result = reconcile_solana_transaction_damm_v2_bundle(
             self.bundle, monitored_wallet=monitored_wallet,
+        )
+        if result.status != "RECONCILED" or not result.expected_withheld_fee_deltas:
+            return result
+        order = self.block_order
+        if order is None or not order.previous_transaction_signature:
+            return result
+        observation = self.observation
+        transitions = {item.pubkey: item for item in self.account_transitions}
+        eligible = []
+        for expected in result.expected_withheld_fee_deltas:
+            transition = transitions.get(expected.token_account)
+            if transition is None:
+                return result
+            pre, post = transition.pre_state, transition.post_state
+            if ((pre.slot, pre.bank_id) != (observation.slot, observation.bank_id)
+                    or pre.txn_signature != order.previous_transaction_signature
+                    or pre.owner != TOKEN_2022_PROGRAM_ID or post.owner != TOKEN_2022_PROGRAM_ID):
+                return result
+            eligible.append((expected, pre, post))
+
+        transaction_order = 2 * order.transaction_index
+        payload_hash = self.bundle.identity.payload_sha256
+        snapshots = []
+        for expected, pre, post in eligible:
+            try:
+                if any(_base58_encode(state.data[:32], field="token mint", expected_length=32)
+                       != expected.mint for state in (pre, post)):
+                    raise ValueError("mint Token-2022 diverge")
+                delta = decode_transfer_fee_amount_delta(pre.data, post.data)
+            except (TypeError, ValueError) as exc:
+                return replace(result, status="INCOMPLETE", reason=str(exc))
+            snapshots.append(DammV2WithheldFeeSnapshot(
+                token_account=expected.token_account, mint=expected.mint, decoded_delta=delta,
+                transaction_signature=observation.transaction_signature, transaction_slot=observation.slot,
+                transaction_order=transaction_order,
+                pre_snapshot_order=transaction_order - 1, post_snapshot_order=transaction_order + 1,
+                source="yellowstone-journal",
+                pre_state_ref=f"{observation.stream_id}:{pre.stream_sequence}",
+                post_state_ref=f"{observation.stream_id}:{post.stream_sequence}",
+                source_id=observation.source_id, transaction_payload_sha256=payload_hash,
+                pre_state_sha256=hashlib.sha256(pre.data).hexdigest(),
+                post_state_sha256=hashlib.sha256(post.data).hexdigest(),
+                pre_state_data=pre.data, post_state_data=post.data,
+                ordering_domain_id=observation.ordering_domain_id,
+            ))
+        return verify_damm_v2_withheld_fee_deltas(
+            result, snapshots, transaction_signature=observation.transaction_signature,
+            transaction_slot=observation.slot, transaction_order=transaction_order,
+            transaction_source_id=observation.source_id, transaction_payload_sha256=payload_hash,
+            transaction_ordering_domain_id=observation.ordering_domain_id,
         )
 
 
@@ -79,7 +138,13 @@ def verify_yellowstone_block_order(
             or (item.meta.SerializeToString(deterministic=True) if item.HasField("meta") else None)
             != observation.meta_payload):
         raise ValueError("índice ou conteúdo da transação diverge no bloco Yellowstone")
-    return YellowstoneBlockOrder(block.blockhash, item.index, block_sequence, block_wire_sha256)
+    previous = next((candidate.signature for candidate in transactions
+                     if candidate.index + 1 == item.index), None)
+    return YellowstoneBlockOrder(
+        block.blockhash, item.index, block_sequence, block_wire_sha256,
+        _base58_encode(previous, field="previous signature", expected_length=64)
+        if previous is not None else None,
+    )
 
 
 def _instruction(item: Message) -> dict:

@@ -239,6 +239,11 @@ class BankLineageTracker:
         return node
 
     def _conflict(self, key, reason, detail):
+        # Conflicting observations make this bank identity unsafe for any
+        # ancestry/transition decision. Keep the conflict as historical evidence
+        # and fail closed rather than retaining the previously accepted lineage.
+        if key is not None:
+            self._node(key).invalidated = True
         conflict = BankLineageConflict(key, reason, detail)
         self._conflicts.append(conflict)
         return BankUpdateResult("conflict", key, conflict)

@@ -2321,3 +2321,43 @@ Desenhar o contrato de persistência histórica e backfill (RAW imutável + time
 
 ### Próxima etapa
 Revisar o contrato documental e, em etapa separada, iniciar apenas os contratos de schema/migração e testes de persistência offline. Não conectar provider, não contratar infraestrutura, não implementar backfill real e não alterar a main sem autorização explícita.
+
+
+## 288. Primeira implementação offline de persistência RAW Geyser — 19/11/2026
+
+### Escopo executado
+- Implementação restrita à branch `feat/damm-v2-economic-reconciliation`, PR #23.
+- Criado `src/smart_money_radar/storage/geyser_raw_store.py`.
+- Criado `tests/test_geyser_raw_store.py`.
+- Atualizado `docs/GEYSER-PERSISTENCE-BACKFILL.md` para separar o que está implementado das próximas camadas ainda pendentes.
+
+### Implementação comprovada no código
+- `SQLiteGeyserRawStore` usa banco dedicado informado pelo chamador; não altera nem reutiliza `SQLiteEventStore` ou checkpoints de carteira.
+- Migração versionada v1 cria `geyser_raw_events`, `geyser_raw_deliveries`, `geyser_raw_conflicts` e `geyser_schema_migrations), com índices para fonte/tipo, stream/sequence, evento e conflito.
+- Arquivo SQLite usa WAL e `synchronous=FULL`; modo `:memory:` é suportado para testes offline.
+- Evento RAW é separado de cada entrega. Replay de conteúdo idêntico cria nova delivery e mantém um único RAW.
+- Reutilização de `event_id` com source, tipo, schema, encoding ou bytes incompatíveis preserva o RAW original e registra conflito com hash e bytes recebidos, além de registrar a delivery conflitante.
+- SHA-256 é calculado sobre os bytes exatos recebidos. O storage não serializa protobuf nem declara origem wire por conta própria.
+- Inserção RAW nova + delivery ocorre na mesma transação. Teste com trigger que força falha ao inserir delivery confirma rollback do RAW.
+- A identidade estável `event_id` ainda é fornecida pelo chamador; derivação determinística por tipo de evento não foi implementada.
+
+### Commits da implementação
+- `1d29fc6` — módulo inicial de persistência RAW.
+- `79d5a88` — testes de RAW, replay, conflitos, reabertura e validação.
+- `e7714bb` — migração de schema tornada explicitamente atômica.
+- `92ba36d494e23932d11ec4b7c25ffd9afebe2916` — teste de rollback transacional; HEAD funcional validado.
+- `7bdb07a5379e8c552af8e7f6e3ca40800aed10dc` — atualização documental de status e validação.
+
+### Validação CI comprovada
+- CI #1645 — run `44462300540`, evento push, commit `92ba36d494e23932d11ec4b7c25ffd9afebe2916`: completed/success; **522/522 testes OK** em 4,033 s; `python -m compileall -q src tests` aprovado.
+- CI #1646 — run `44462306301`, evento pull_request, mesmo commit: completed/success; **522/522 testes OK**; compileall aprovado.
+- O CI valida o código/testes no commit `92ba36d...`; commits posteriores alteraram somente documentação.
+
+### Estado GitHub e limites
+- PR #23 permanece OPEN, Draft, `merged=false`, base `feat/damm-v2-referral-transfer-attribution`.
+- Nenhuma alteração ou merge na `main`.
+- Nenhum cliente gRPC, captura wire, conexão Yellowstone/Helius, credencial, VPS, captura contínua, checkpoint de transporte/continuidade, gap recovery, timeline persistida ou backfill foi implementado.
+- Não há autorização de execução financeira ou operação on-chain.
+
+### Próxima etapa técnica
+Revisar e formalizar derivação de identidade por tipo de evento; depois implementar checkpoints de transporte e gaps com transação atômica, sem conectar provider. Só após essa camada devem entrar persistência normalizada e reconstrução da timeline.

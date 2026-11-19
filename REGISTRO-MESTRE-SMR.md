@@ -3264,3 +3264,38 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - O Registro Mestre foi atualizado depois da execução do CI, gerando o commit 14728293ff2785d6e2fd422b603b6d482647538b. Esse commit contém apenas esta atualização documental; o resultado CI #1343 corresponde ao commit de sincronização 1f2167162a1f61cf35b817f12678fda90273e0fd.
 - Estado atual da branch feat/damm-v2-transaction-pipeline: 14728293ff2785d6e2fd422b603b6d482647538b. Main permanece em 5060bc65ddf181a4736fdb662c44c3fec0dd7259.
 - Próxima ação: revisão final dos diffs e checks da cadeia #21–#25, sem merge até que a revisão esteja concluída. A fixture única com swaps positivos simultâneos DAMM v2 + Raydium CPMM continua sendo uma cobertura adicional desejável, não um resultado já comprovado.
+
+
+## 228. Revisão técnica do pipeline Raydium CPMM e contratos compartilhados — 19/11/2026
+
+Escopo revisado em modo somente leitura na branch `feat/damm-v2-transaction-pipeline`, HEAD de referência `552978f9d6a11b8d20e674aae8cdc608d875ae7f`:
+
+- `src/smart_money_radar/domain/raydium_cpmm_persistence_pipeline.py`
+- `src/smart_money_radar/domain/swap_bundle_builder.py`
+- `src/smart_money_radar/domain/models.py`
+- `src/smart_money_radar/data_sources/damm_v2_swap_domain_adapter.py`
+- `src/smart_money_radar/domain/damm_v2_persistence_pipeline.py`
+- `src/smart_money_radar/services/wallet_monitor.py`
+- `tests/test_raydium_cpmm_persistence_pipeline.py`
+- `tests/test_real_mainnet_raydium_cpmm_multivenue.py`
+- `tests/test_wallet_monitor.py`
+
+Conclusões verificadas no código:
+
+1. O pipeline CPMM valida que a assinatura informada é a primeira assinatura única do payload antes de persistir.
+2. A observação bruta/normalizada é persistida sem avançar checkpoint; transação on-chain falha ou ausência de swaps CPMM são estados terminais tratados explicitamente.
+3. Para swaps encontrados, a identidade da reconciliação compara o conjunto de (instrução externa, índice inner, caminho CPI), detecta duplicatas e registra explicitamente como `UNRESOLVED` qualquer swap sem resultado do reconciliador.
+4. Somente reconciliações `MATCHED` geram bundles. O pipeline confere conjunto/cardinalidade dos operation_ids e alinhamento entre observation, classification e evidence antes de marcar a assinatura processada.
+5. Falhas, divergências e exceções deixam a transação replayável e o checkpoint intacto. Bundles positivos podem ser persistidos de forma idempotente enquanto outros swaps permanecem pendentes.
+6. O builder CPMM valida transferências executadas, contas, programa SPL, mint, decimals, quantidades, posição na instrução e descendência CPI; gera evidência com programa, venue, caminho CPI, transferências e deltas de token accounts/vaults.
+7. Os contratos compartilhados mantêm `SwapObservation`, `SwapClassification` e `SwapEvidence` separados e vinculados pelo mesmo `operation_id`. BUY/SELL exige exatamente um mint explicitamente configurado como referência; caso contrário, classificação UNKNOWN com confiança zero.
+8. O adaptador DAMM v2 usa os mesmos contratos, exige reconciliação de lote, associação evento/instrução e evidências de transferência, e não avança checkpoint. O WalletMonitor chama DAMM v2 antes do CPMM e só o CPMM conclui/avança o checkpoint.
+9. Os testes de pipeline cobrem reconciliação positiva, pendência, ausência de resultado, duplicidade de reconciliação, divergência de identidade de bundle, replay e checkpoint. A fixture Mainnet CPMM pseudonimizada valida caminho positivo pelo WalletMonitor. Os testes do monitor cobrem bloqueio DAMM e ordenação DAMM→CPMM.
+
+Resultado da revisão desta parte: **nenhum defeito confirmado** nos arquivos examinados. Nenhum código funcional foi alterado.
+
+Lacuna de cobertura mantida explicitamente: ainda não foi demonstrada, por uma fixture única, uma transação com pelo menos um swap DAMM v2 positivo e um swap Raydium CPMM positivo, ambos reconciliados e persistidos pelo mesmo WalletMonitor. A validação Mainnet #89 cobre a transação mista com dois bundles DAMM v2 e evidências cross-venue; o teste CPMM Mainnet cobre uma transação separada em que DAMM v2 libera por ausência de swap. A coordenação sequencial está coberta, mas isso não substitui a fixture simultânea. Não afirmar que a cobertura simultânea já existe.
+
+Progresso da revisão técnica: estimativa atualizada de **75%** (antes 65%), pois o pipeline CPMM, o builder e a compatibilidade estrutural dos contratos foram examinados. O progresso geral do módulo permanece **92%**. Esses percentuais são estimativas de revisão/conclusão, não métricas de testes.
+
+Próxima ação: revisar os detalhes restantes da compatibilidade e da cadeia de PRs #21–#25; decidir se a lacuna de fixture simultânea pode ser coberta com payload Mainnet adequado ou se deve permanecer como critério explícito antes do fechamento. PR #25 permanece OPEN/DRAFT e não mergeada; nenhuma alteração na `main`. Não iniciar PumpSwap/Meteora DLMM como módulo novo antes do fechamento desta integração.

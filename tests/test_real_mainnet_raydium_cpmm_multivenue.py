@@ -174,5 +174,48 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
 
 
 
+    def test_real_mainnet_cpmm_fixture_runs_through_shared_wallet_monitor(self) -> None:
+        import asyncio
+
+        from smart_money_radar.services.wallet_monitor import WalletMonitor
+        from smart_money_radar.settings import HeliusSettings
+
+        fixture = self._fixture_with_resolved_loaded_addresses(self.fixture)
+        result = fixture["result"]
+        wallet = result["transaction"]["message"]["accountKeys"][0]
+        signature = result["transaction"]["signatures"][0]
+
+        class ReplaySource:
+            async def get_transaction_async(self, requested_signature: str):
+                if requested_signature != signature:
+                    raise ValueError("WalletMonitor solicitou assinatura divergente.")
+                return fixture
+
+        store = SQLiteEventStore(":memory:")
+        try:
+            monitor = WalletMonitor(
+                HeliusSettings(api_key="fixture-validation"),
+                ReplaySource(),
+                store,
+            )
+            completed = asyncio.run(
+                monitor._collect_transaction(wallet, signature)
+            )
+
+            self.assertTrue(completed)
+            self.assertTrue(store.has_processed_signature(wallet, signature))
+            self.assertEqual(store.get_checkpoint(wallet), signature)
+            attempts = store.get_swap_reconciliation_attempts(wallet, signature)
+            self.assertEqual(len(attempts), 1)
+            self.assertEqual(attempts[0]["status"], "MATCHED")
+            operation_id = attempts[0]["operation_id"]
+            bundle = store.get_swap_bundle(operation_id)
+            self.assertIsNotNone(bundle)
+            self.assertEqual(bundle["evidence"].venue, "Raydium CPMM")
+            self.assertEqual(bundle["classification"].side, "UNKNOWN")
+        finally:
+            store.close()
+
+
 if __name__ == "__main__":
     unittest.main()

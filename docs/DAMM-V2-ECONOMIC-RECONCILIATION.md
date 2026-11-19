@@ -63,3 +63,13 @@ Movimentos externos que atinjam as mesmas token accounts também podem provocar 
 - O decoder valida bytes/TLV, mas não prova que os bytes são snapshots imediatamente antes/depois da transação. A proveniência temporal, assinatura, slot e ordenação devem ser garantidos pelo coletor.
 - O resultado do reconciliador DAMM ainda mantém `withheld_fee_status=EXPECTED_NOT_VERIFIED` até que os deltas TLV observados sejam ligados à mesma transação e comparados com `expected_withheld_fee_deltas`.
 - `getTransaction` com `preTokenBalances/postTokenBalances` não substitui os bytes TLV pre/post da token account; o valor spendable e o withheld extension são campos distintos.
+
+
+## Verificação de withheld vinculado à transação
+
+- `verify_damm_v2_withheld_fee_deltas` recebe o resultado base, snapshots TLV decodificados e a identidade da transação (assinatura, slot e ordem).
+- Cada snapshot precisa corresponder à mesma assinatura/slot/ordem e comprovar `pre_snapshot_order < transaction_order < post_snapshot_order` no mesmo domínio de ordenação do coletor.
+- O snapshot precisa trazer referências distintas para os estados pre/post e a saída tipada de `decode_transfer_fee_amount_delta`; o verifier compara o delta observado com o valor esperado por conta/mint.
+- Resultado `withheld_fee_status=VERIFIED` só é emitido quando todas as contas com fee esperada têm snapshots correspondentes e os deltas TLV coincidem exatamente.
+- Falta de snapshot, identidade diferente, ordem não demonstrada, extensão ausente ou valor divergente mantém o lote fora de verificação e retorna `INCOMPLETE` (duplicidade retorna `AMBIGUOUS`).
+- Os campos de proveniência são um contrato do coletor, não uma prova criptográfica por si só. A implementação do adapter precisa garantir que os refs/hash correspondam aos bytes realmente coletados na fronteira da transação.

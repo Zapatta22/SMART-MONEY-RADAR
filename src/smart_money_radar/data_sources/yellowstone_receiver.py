@@ -10,6 +10,7 @@ from google.protobuf.message import DecodeError, Message
 from smart_money_radar.data_sources.geyser_account_timeline import AccountUpdateTimeline
 from smart_money_radar.data_sources.geyser_account_updates import NormalizedAccountUpdate
 from smart_money_radar.data_sources.geyser_bank_lineage import (
+    BankKey,
     NormalizedBlockMeta,
     NormalizedEntryUpdateParent,
     NormalizedSlotUpdate,
@@ -123,7 +124,10 @@ class YellowstoneFrameReceiver:
         observation = evidence.observation
         if signatures[observation.transaction_signature] != 1:
             raise ValueError("assinatura Yellowstone ambígua no domínio")
-        if not observation.bank_id or not evidence.bundle.structurally_complete:
+        if (not observation.bank_id or not evidence.bundle.structurally_complete
+                or timeline.bank_lineage_tracker.is_bank_finalized(
+                    BankKey(observation.source_id, observation.slot, observation.bank_id),
+                ) is not True):
             return evidence
         conflicted_accounts = {item.pubkey for item in timeline.conflicts}
         matching = [
@@ -137,9 +141,11 @@ class YellowstoneFrameReceiver:
             and update.pre_state.stream_id == update.post_state.stream_id == observation.stream_id
         ]
         counts = Counter(update.pubkey for update in matching)
-        return replace(evidence, account_transitions=tuple(
-            update for update in matching if counts[update.pubkey] == 1
-        ))
+        return replace(
+            evidence,
+            provider_reported_finalized=True,
+            account_transitions=tuple(update for update in matching if counts[update.pubkey] == 1),
+        )
 
     def rebuild_account_timeline(self) -> AccountUpdateTimeline:
         """Return a timeline only after every frame in this domain passes replay."""

@@ -43,6 +43,7 @@ def _parser() -> argparse.ArgumentParser:
     evidence.add_argument("--stream", required=True)
     evidence.add_argument("--domain", required=True)
     evidence.add_argument("--sequence", type=int, required=True)
+    evidence.add_argument("--damm-wallet", help="reconcilia DAMM v2 para esta carteira Solana")
     capture = subparsers.add_parser(
         "geyser-capture", help="captura um fluxo Yellowstone TLS com limites de duração e frames"
     )
@@ -112,7 +113,7 @@ def _inspect_geyser_evidence(args: argparse.Namespace) -> None:
         if evidence is None:
             raise ValueError("nenhuma transação na sequência informada")
         observation, bundle = evidence.observation, evidence.bundle
-        print(json.dumps({
+        report = {
             "source": observation.source_id,
             "stream": observation.stream_id,
             "ordering_domain": observation.ordering_domain_id,
@@ -123,6 +124,7 @@ def _inspect_geyser_evidence(args: argparse.Namespace) -> None:
             "wire_sha256": observation.payload_sha256,
             "projection_sha256": bundle.identity.payload_sha256,
             "structurally_complete": bundle.structurally_complete,
+            "provider_reported_finalized": evidence.provider_reported_finalized,
             "instruction_issues": bundle.instruction_inventory.issues,
             "transfer_count": len(bundle.transfers),
             "balance_delta_count": len(bundle.balance_deltas.deltas),
@@ -136,7 +138,17 @@ def _inspect_geyser_evidence(args: argparse.Namespace) -> None:
                 }
                 for transition in evidence.account_transitions
             ],
-        }, ensure_ascii=False))
+        }
+        if args.damm_wallet is not None:
+            result = evidence.reconcile_damm_v2(monitored_wallet=args.damm_wallet)
+            report["damm_v2"] = {
+                "status": result.status,
+                "operation_count": result.operation_count,
+                "reason": result.reason,
+                "withheld_fee_status": result.withheld_fee_status,
+                "mint_fee_config_status": result.mint_fee_config_status,
+            }
+        print(json.dumps(report, ensure_ascii=False))
     except DecodeError as exc:
         raise ValueError("frame incompatível com o descriptor Yellowstone") from exc
     finally:

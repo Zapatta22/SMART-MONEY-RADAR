@@ -2727,3 +2727,340 @@ Obter execução verificável dos 14 testes novos, da suíte completa e de `pyth
 - PR #26 continua Draft, aberta e sem merge; `main` intacta.
 - Próxima ação: confirmar o resultado do run #1761 para o HEAD com o Registro Mestre atualizado; em seguida iniciar a avaliação de desempenho/memória do rebuild da auditoria, sem alterar a política de evidência.
 - Não fazer merge sem autorização explícita.
+
+## 300. Benchmark sintético de escala da auditoria Geyser — 19/11/2026
+
+### Isolamento e método
+- Criada branch independente `perf/geyser-audit-benchmark`, partindo do HEAD validado da PR #26 (`f0d63038411cc4207fae910a3ef168e3af443784`). A PR #26 e `main` não foram alteradas.
+- Adicionado `tools/benchmark_geyser_unsequenced_audit.py` e workflow `.github/workflows/geyser-audit-benchmark.yml`.
+- Workflow #1, run ID `44559378178`, conclusão SUCCESS.
+- Fixture sintética determinística gravada diretamente no schema SQLite em transação, para isolar o custo da projeção do overhead de ingestão. Cada evento lógico tem duas deliveries: uma sem sequência e uma testemunha sequenciada em outra stream.
+- Métrica de memória: pico de alocações Python observado por `tracemalloc` durante `rebuild()`; não equivale ao RSS total do processo e não inclui o custo de preparação da fixture.
+- Sem provider, RPC, dados reais, credenciais ou execução on-chain.
+
+### Resultados observados
+| Eventos lógicos | Deliveries | Rebuild | Deliveries/s | Pico Python |
+|---:|---:|---:|---:|---:|
+| 1.000 | 2.000 | 0,063 s | 31.582,91 | 1,38 MiB |
+| 10.000 | 20.000 | 0,644 s | 31.036,27 | 14,35 MiB |
+| 50.000 | 100.000 | 3,667 s | 27.273,51 | 75,15 MiB |
+| 100.000 | 200.000 | 7,331 s | 27.279,93 | 150,48 MiB |
+
+### Integridade e interpretação
+- Todas as quatro escalas terminaram com workflow SUCCESS.
+- Classificações esperadas em todas as escalas: uma delivery `SEQUENCED` e uma `UNSEQUENCED_RECONCILED` por evento lógico.
+- Contagens RAW permaneceram iguais às da fixture; `PRAGMA integrity_check` retornou `ok` em todas as escalas.
+- Throughput caiu de aproximadamente 31,6 mil para 27,3 mil deliveries/s e estabilizou entre 100 mil e 200 mil deliveries no ambiente GitHub Actions usado.
+- Memória Python cresceu aproximadamente de forma linear: 75,15 MiB em 100 mil deliveries e 150,48 MiB em 200 mil. Extrapolação linear para milhões de deliveries é apenas indicativa, não uma medição.
+- O perfil confirma o custo O(N) em memória já identificado no rebuild atual (lista completa de deliveries, conjuntos auxiliares, mapa de testemunhas e lista de linhas de auditoria). Para uma operação contínua de grande escala, o pico observado justifica otimização antes de conectar produção.
+- O tempo medido inclui `tracemalloc` ativo; usar os valores para comparação relativa entre as escalas, não como latência de produção. O benchmark não mede RSS total, concorrência, latência de ingestão, disco sob pressão ou comportamento de provider.
+
+### Próxima decisão técnica
+- Não alterar a política nem os critérios de reconciliação.
+- Próximo trabalho recomendado: projetar rebuild com memória limitada/streaming e staging SQLite temporário ou tabelas auxiliares transacionais, preservando atomicidade, determinismo e rollback. Evitar apenas reduzir estruturas em memória se isso enfraquecer a auditabilidade.
+- Implementar otimização em branch separada, comparar com este baseline nas mesmas escalas e manter teste de equivalência das classificações/IDs de testemunha.
+- PR #26 permanece Draft, aberta e sem merge. `main` intacta.
+- Artefato JSON do benchmark: run #1, artifact `geyser-audit-benchmark-results`, ID `14546462526`.
+
+
+## 301. Otimização de memória do rebuild da auditoria Geyser — 19/11/2026
+
+### Decisão e isolamento
+- Decisão técnica: avançar com a redução do pico de memória observado no benchmark da seção 300, antes de ampliar escala ou conectar provider.
+- Criada branch independente `perf/geyser-audit-bounded-rebuild`, a partir do HEAD do benchmark `6561a66bf45e61ba0783fbe73ae8ee43d4628ba6`.
+- PR #26, branch `feat/geyser-unsequenced-raw-audit`, e `main` não foram alteradas. Nenhum merge realizado.
+
+### Implementação inicial
+- Modificado `src/smart_money_radar/storage/geyser_unsequenced_delivery_audit.py`.
+- O rebuild deixou de carregar todas as deliveries, todos os conflitos/anomalias, o mapa Python de testemunhas e a lista completa de linhas de auditoria em memória.
+- Elegibilidade das testemunhas passou a ser materializada em tabela TEMP SQLite indexada pela chave `event_id + source_id + payload_sha256 + delivery_id`, com exclusão SQL de conflitos RAW e anomalias abertas.
+- Deliveries são lidas em lotes de 500 via `fetchmany(500)`; cada lote é inserido na tabela de auditoria dentro da mesma transação `BEGIN IMMEDIATE`.
+- IDs de testemunhas são consultados por chave e serializados em ordem crescente de `delivery_id`; a sequência continua apenas como referência e nunca é transferida.
+- Mantidos o mesmo esquema persistente, política v1, códigos de classificação, checkpoint e commit atômico. Exceções antes do commit devem reverter exclusão, inserções e checkpoint como antes.
+- Tabela TEMP e índice são locais à conexão e desaparecem ao fechar; nenhuma tabela RAW, delivery, conflito ou checkpoint de transporte é modificada.
+
+### Testes adicionados
+- Adicionado `test_rebuild_streams_across_multiple_delivery_batches`: 501 eventos lógicos, 1.002 deliveries (acima do limite de lote), 501 reconciliações, uma testemunha por delivery reconciliada e `integrity_check == ok`.
+- Os 14 testes anteriores da auditoria foram preservados.
+- Commit de implementação: `ea4f84965b7b7c41e3b17e461e8bfaca84600cdf`.
+- Commit do teste multi-lote: `970ed5efce7a7fb96aed6e993551a3aab90ab8a3`.
+
+### Validação comprovada
+- CI `SMR tests` run #1770, ID `44560521402`, no HEAD `4ef7ad0393c2d8796f897274c3b7aaefb7cee6ef`: SUCCESS.
+- Log confirma o teste multi-lote e `Ran 588 tests in 6.612s`, `OK`; etapa `python -m compileall -q src tests` concluída com SUCCESS.
+- Job `geyser-audit-benchmark` do run #1770: SUCCESS; artefato `geyser-audit-bounded-rebuild-results`, ID `14549585032`.
+- Workflow dedicado de benchmark #5, run ID `44560521447`: SUCCESS, mesma fixture e mesmas quatro escalas.
+
+### Comparação com o baseline da seção 300
+| Eventos lógicos | Deliveries | Baseline: rebuild | Novo: rebuild | Baseline: pico Python | Novo: pico Python |
+|---:|---:|---:|---:|---:|---:|
+| 1.000 | 2.000 | 0,063325 s | 0,028314 s | 1,38 MiB | 0,59 MiB |
+| 10.000 | 20.000 | 0,644407 s | 0,305129 s | 14,35 MiB | 0,42 MiB |
+| 50.000 | 100.000 | 3,666561 s | 1,694234 s | 75,15 MiB | 0,60 MiB |
+| 100.000 | 200.000 | 7,331397 s | 3,194474 s | 150,48 MiB | 0,42 MiB |
+
+- Tempo de rebuild melhorou entre 52,6% e 56,4% (aproximadamente 2,1–2,3x mais rápido) nas quatro escalas.
+- Pico de alocações Python caiu 57,2% na escala de 2 mil deliveries e entre 97,1% e 99,7% nas três escalas maiores. Na escala de 200 mil deliveries, caiu de 150,48 MiB para 0,42 MiB.
+- Em todas as escalas, as classificações permaneceram exatamente as esperadas: uma `SEQUENCED` e uma `UNSEQUENCED_RECONCILED` por evento lógico.
+- Contagens RAW de eventos/deliveries permaneceram intactas e `PRAGMA integrity_check` retornou `ok` em todas as escalas.
+- O teste adicional atravessou mais de um lote de leitura e verificou 501 reconciliações, testemunhas individuais e integridade SQLite.
+
+### Limites e interpretação
+- `tracemalloc` mede alocações Python, não RSS total nem todas as alocações internas do SQLite/C; portanto, 0,42 MiB não representa o consumo total do processo.
+- A nova estratégia transfere estruturas de trabalho para tabela TEMP e índice SQLite; o benchmark sintético não mediu espaço temporário em disco, pressão de cache, concorrência, latência de ingestão nem workload real de provider.
+- O tempo medido inclui `tracemalloc` ativo e deve ser comparado apenas com o baseline executado sob o mesmo método/runner.
+- A lista de IDs testemunhas de um único evento ainda é materializada como JSON em uma string pelo SQLite; cardinalidade extrema por evento permanece uma limitação a testar.
+- Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+- PR #27 continua Draft, aberta e sem merge; PR #26 permanece inalterada e Draft; `main` intacta.
+- HEAD de código/testes validado pelo CI #1770: `4ef7ad0393c2d8796f897274c3b7aaefb7cee6ef`; commits posteriores alteraram somente o Registro Mestre.
+- Verificação GitHub: PR #27 OPEN/DRAFT, `merged=false`, base `feat/geyser-unsequenced-raw-audit`; PR #26 OPEN/DRAFT, `merged=false`, HEAD preservado em `f0d63038411cc4207fae910a3ef168e3af443784`; `main` preservada em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+### Próxima ação
+- Obter CI verde no HEAD atual (suíte completa e compileall); corrigir falhas com evidência antes de benchmark.
+- Depois executar o mesmo benchmark da seção 300, nas mesmas quatro escalas, comparar tempo e pico Python e validar classificações, IDs de testemunhas, contagens RAW e integridade SQLite.
+- Manter esta branch isolada; não fazer merge nem alterar PR #26 ou `main` sem nova decisão explícita.
+
+
+## 302. Cardinalidade de testemunhas, RSS e alocação TEMP SQLite — 19/11/2026
+> **Nota de correção (seção 303):** os valores `process_rss_peak_mib` desta seção, calculados com `resource.getrusage().ru_maxrss`, foram contaminados pelo high-water mark do processo pai que preparou a fixture antes de iniciar o subprocesso. Portanto, os números de 87,12 MiB não representam o pico exclusivo do worker de rebuild e estão supersedidos pela medição `/proc/self/status` da seção 303. Os valores `tracemalloc` e TEMP SQLite continuam sendo medições independentes.
+
+
+### Objetivo e alterações
+- Continuação autorizada da revisão da otimização da auditoria Geyser na branch isolada `perf/geyser-audit-bounded-rebuild`.
+- Adicionada métrica `last_rebuild_metrics` no auditor para observar páginas e bytes alocados no banco TEMP SQLite após materialização da tabela/índice de testemunhas. Métrica é diagnóstica e não altera schema persistente nem retorno de `rebuild()`.
+- Benchmark passou a executar o rebuild em processo filho isolado após a preparação da fixture, medindo `ru_maxrss` (RSS high-water mark) sem incluir a memória usada pelo processo pai para semear o banco.
+- Benchmark também mede páginas TEMP SQLite (`PRAGMA temp.page_count * temp.page_size`) e adiciona cenário de fanout com um evento lógico, uma delivery sem sequência e 10.000 testemunhas sequenciadas.
+- Adicionado teste `test_high_cardinality_witnesses_are_complete_and_sorted`: uma delivery sem sequência e 4.096 testemunhas; confirma todos os IDs, ordenação crescente, nenhuma transferência de sequência e integridade RAW/SQLite.
+- Teste de rollback fortalecido: após falha forçada na inserção da nova geração, compara todas as linhas projetadas anteriores, checkpoint, contagens RAW e `integrity_check`.
+- Removido job de benchmark duplicado do workflow de testes; benchmark permanece no workflow dedicado `.github/workflows/geyser-audit-benchmark.yml`.
+
+### CI e artefato
+- PR CI #1786, run ID `44561492702`, HEAD `e3763dd47f6ede8b5dfc3fc16b8ec11fc6f835e7`: SUCCESS.
+- Log confirma `test_high_cardinality_witnesses_are_complete_and_sorted ... ok`, `Ran 589 tests in 6.388s`, `OK`; `python -m compileall -q src tests` executado com sucesso.
+- Workflow dedicado Geyser audit benchmark #19, run ID `44561492784`: SUCCESS.
+- Artefato `geyser-audit-benchmark-results`, ID `14550045706`, disponível até 2027-02-17.
+
+### Medições no processo isolado
+| Eventos lógicos | Deliveries | RSS pico do processo | TEMP SQLite alocado | Pico tracemalloc | Rebuild |
+|---:|---:|---:|---:|---:|---:|
+| 1.000 | 2.000 | 25,77 MiB | 253.952 B | 0,59 MiB | 0,048756 s |
+| 10.000 | 20.000 | 31,42 MiB | 2.428.928 B | 0,59 MiB | 0,514730 s |
+| 50.000 | 100.000 | 55,80 MiB | 12.156.928 B | 0,60 MiB | 2,641332 s |
+| 100.000 | 200.000 | 87,12 MiB | 24.399.872 B | 0,60 MiB | 5,300452 s |
+
+### Fanout de alta cardinalidade
+- Cenário sintético: 1 evento lógico, 1 delivery sem sequência e 10.000 deliveries sequenciadas elegíveis.
+- Resultado: 10.000 IDs de testemunha completos e ordenados; 10.001 deliveries RAW preservadas; `integrity_check == ok`.
+- Rebuild: 0,305554 s; pico `tracemalloc`: 0,61 MiB; RSS high-water mark: 87,12 MiB; alocação TEMP SQLite: 510 páginas × 4.096 bytes = 2.088.960 bytes (~1,99 MiB).
+- O teste unitário independente com 4.096 testemunhas também passou.
+
+### Interpretação e limites
+- `ru_maxrss` é o pico residente do processo filho que executou o rebuild; a preparação da fixture foi feita no processo pai e não compõe esse pico. É uma medida de processo no runner Linux, não uma medição em Android/Termux nem em produção.
+- `temp_db_allocated_bytes` mede páginas do banco TEMP SQLite no ponto instrumentado; não deve ser interpretado automaticamente como bytes físicos gravados em disco. O modo efetivo de armazenamento temporário, I/O físico e comportamento sob pressão de disco/cache ainda precisam de medição específica.
+- A memória Python permaneceu próxima de 0,6 MiB, mas RSS chegou a 87,12 MiB nas escalas maiores e no fanout de 10 mil. Isso demonstra que `tracemalloc` sozinho não representa o custo total; a atribuição detalhada do RSS entre SQLite, alocadores nativos e cache ainda não foi estabelecida.
+- O fanout de 10 mil não perdeu nem reordenou testemunhas, mas continua exigindo materialização de um JSON completo por delivery sem sequência. Não aumentar esse limite sem testar limites de tamanho, cardinalidade extrema e custos nativos.
+- Tempos variaram em relação ao benchmark anterior; runner compartilhado/contenda e método isolado mudaram. Não usar estes tempos como comparação direta com a tabela da seção 301.
+- Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+### Estado e próxima ação
+- PR #27 permanece OPEN/DRAFT, `merged=false`; PR #26 permanece OPEN/DRAFT e sem alteração; `main` permanece intacta.
+- HEAD atual da PR #27: `03c2c425b451c35427b656e0e6f2626bcf9a9023`; CI #1786 e benchmark #19 validaram o commit de código/workflows `e3763dd47f6ede8b5dfc3fc16b8ec11fc6f835e7`; o commit posterior `03c2c42...` atualizou somente o Registro Mestre.
+- HEAD de código/testes e workflows validado pelo CI: `e3763dd47f6ede8b5dfc3fc16b8ec11fc6f835e7`.
+- Próxima revisão técnica: investigar a diferença entre o pico RSS (~87 MiB) e `tracemalloc` (~0,6 MiB), além de medir se TEMP SQLite está em memória ou em arquivo no runner e como o comportamento varia com cache/disco. Preservar a serialização completa, ordenação, atomicidade e rollback.
+- Não fazer merge sem revisão e aprovação explícitas.
+
+
+## 303. Correção de RSS e diagnóstico do armazenamento TEMP SQLite — 19/11/2026
+
+### Correção metodológica
+- Investigação identificou que `resource.getrusage(RUSAGE_SELF).ru_maxrss` no subprocesso não era uma medida confiável para este benchmark: o valor reportado estava contaminado pelo high-water mark do processo pai que semeava a fixture antes de chamar `subprocess.run`.
+- Os valores anteriores de 87–95 MiB não devem ser atribuídos ao rebuild nem ao SQLite. A seção 302 foi anotada para marcar essa medição como supersedida.
+- Benchmark corrigido para usar `VmHWM` de `/proc/self/status` e snapshots de `VmRSS`, `smaps_rollup:Rss`, `Pss` e `Private_Dirty` dentro do próprio worker. Assim, o high-water mark é lido no espaço de processo do worker, sem a métrica herdada do pai.
+- Adicionado parâmetro opcional `temp_store=None|"FILE"|"MEMORY"` ao auditor. O padrão continua sem override; opções explícitas são aplicadas por conexão antes da criação de objetos TEMP. Valores não suportados são rejeitados.
+- Benchmark compara DEFAULT, FILE e MEMORY em 100.000 eventos lógicos / 200.000 deliveries; as classificações, contagens RAW e integridade são verificadas em todos os modos.
+- Testes cobrem FILE, MEMORY e rejeição de modo inválido.
+
+### Evidência de modo TEMP
+- Opções de compilação SQLite do runner: `TEMP_STORE=1` e `DEFAULT_CACHE_SIZE=-2000`.
+- Com `PRAGMA temp_store=0` (DEFAULT), o SQLite usa o default compilado `TEMP_STORE=1`, isto é, armazenamento TEMP baseado em arquivo.
+- Override FILE resulta em `PRAGMA temp_store=1`; override MEMORY resulta em `PRAGMA temp_store=2`.
+- O tamanho de TEMP no cenário de 200.000 deliveries foi 5.957 páginas × 4.096 bytes = 24.399.872 bytes (~23,27 MiB). Isso mede páginas alocadas pela base TEMP; não é medição direta de bytes físicos gravados no dispositivo nem prova de que o filesystem subjacente não seja tmpfs.
+
+### RSS corrigido e comparação de modos
+| Modo TEMP | RSS pico real do worker (VmHWM) | RSS antes | RSS depois | Rebuild | Throughput |
+|---|---:|---:|---:|---:|---:|
+| DEFAULT (TEMP_STORE=1) | 28,91 MiB | 23,00 MiB | 28,79 MiB | 5,565 s | 35.937,55 deliveries/s |
+| FILE | 29,06 MiB | 23,03 MiB | 28,83 MiB | 5,622 s | 35.573,77 deliveries/s |
+| MEMORY | 53,24 MiB | 22,98 MiB | 53,24 MiB | 5,543 s | 36.080,69 deliveries/s |
+
+- Os tempos acima são uma execução no runner compartilhado e não sustentam diferença de performance significativa entre os modos.
+- MEMORY elevou o RSS em aproximadamente 24 MiB adicionais em relação ao modo FILE/DEFAULT, sem ganho de velocidade mensurável. Não adotar MEMORY como padrão.
+- Para 200.000 deliveries no cenário principal, DEFAULT apresentou `VmHWM=29,0 MiB`, `VmRSS` pós-rebuild ~28,8 MiB, TEMP de 24.399.872 bytes e `tracemalloc=0,60 MiB`.
+- Fanout de 10.000 testemunhas: 10.001 deliveries; `VmHWM=28,70 MiB`, `VmRSS` pós-rebuild ~28,8 MiB, TEMP 2.088.960 bytes (~1,99 MiB), `tracemalloc=0,60 MiB`, 10.000 IDs completos/ordenados e `integrity_check=ok`.
+- O incremento de RSS no modo DEFAULT/FILE foi de cerca de 5,8 MiB sobre o processo inicial (~23 MiB), enquanto MEMORY reteve cerca de 30 MiB adicionais. Isso é compatível com TEMP em arquivo no runner e TEMP em memória no modo explícito.
+
+### Validação
+- CI SMR tests #1800, run ID `44562544337`, HEAD `d78b7dceafedad8a596156dfb42dbf80330d83c7`: SUCCESS.
+- Log: `Ran 591 tests in 6.343s`, `OK`; `python -m compileall -q src tests` SUCCESS.
+- Geyser audit benchmark #29, run ID `44562529547`, mesmo HEAD: SUCCESS.
+- Artefato `geyser-audit-benchmark-results`, ID `14550116560`, disponível até 2027-02-17.
+- Nenhuma alteração na política de reconciliação; RAW e resultados de classificação permaneceram íntegros nos três modos.
+
+### Conclusão e estado
+- O pico anterior de 87–95 MiB era artefato de medição, não evidência de consumo real do rebuild.
+- No runner Linux, o modo TEMP padrão efetivo é FILE e o rebuild manteve RSS de pico próximo a 29 MiB em 200.000 deliveries. O modo MEMORY aumenta RSS para ~53 MiB sem ganho de throughput relevante.
+- Manter DEFAULT (SQLite file-backed TEMP) como comportamento padrão; não mudar para MEMORY.
+- A evidência não mede RSS em Android/Termux, VPS ou produção, nem confirma se o diretório temporário do runner está num filesystem físico ou tmpfs.
+- PR #27 permanece OPEN/DRAFT, sem merge; PR #26 e `main` não foram alteradas.
+- HEAD de código/testes/benchmark validado: `d78b7dceafedad8a596156dfb42dbf80330d83c7`; commits de registro posteriores, se houver, devem ser identificados separadamente.
+- Próxima ação: revisão final de implementação e documentação, especialmente validar o parâmetro opcional TEMP_STORE e decidir se ele permanece como opção diagnóstica ou é removido após o experimento. Nenhum merge sem aprovação explícita.
+
+
+## 304. Revisão de integração da auditoria Geyser — 19/11/2026
+
+### Ajustes autorizados e implementados na branch isolada
+- Removido o parâmetro `temp_store` do construtor operacional de `SQLiteGeyserUnsequencedDeliveryAudit`; a auditoria usa o default SQLite sem override operacional.
+- A comparação DEFAULT/FILE/MEMORY permanece exclusivamente no benchmark, por meio de uma subclasse privada `_BenchmarkAudit`; nenhum modo de armazenamento temporário é exposto pela API do produto.
+- Removidos os testes de configuração TEMP operacional e substituídos por teste que confirma que o construtor rejeita esse argumento.
+- Adicionado teste concorrente com duas instâncias e barreira sincronizada; ambas executam rebuild no mesmo banco, devem serializar via `BEGIN IMMEDIATE`, produzir gerações 1 e 2 e preservar contagens/integridade RAW.
+- Removida a chave duplicada `temp_store_requested` no resultado do worker.
+- Documentado que `VmHWM` mede o high-water mark durante toda a vida do worker isolado (incluindo imports e construção do auditor), não o pico exclusivo de `rebuild()`. O isolamento elimina a contaminação do processo pai, mas não isola o rebuild de toda a memória anterior do próprio worker.
+
+### Validação desta revisão
+- Commit de código/testes/benchmark validado: `7ff820e966b67b8f65a05bf07a992f44a4c5d8b6`.
+- CI SMR tests #? — run ID `44564297986`: SUCCESS; inclui o teste concorrente de duas reconstruções e a suíte completa.
+- Geyser audit benchmark #? — run ID `44564298047`: SUCCESS; artefato `geyser-audit-benchmark-results`, ID `14551905844`, disponível até 2027-02-17.
+- Execuções anteriores de CI falharam durante a própria revisão por dois erros introduzidos nas edições (import `threading` ausente e quebra de linha literal no benchmark); ambos foram corrigidos. A validação final acima é a execução posterior às correções.
+- `VmHWM` é descrito como high-water mark do worker inteiro, não como pico exclusivo de `rebuild()`.
+- Nenhuma alteração à política de reconciliação, tabelas RAW ou Timeline.
+- PR #27 permanece OPEN/DRAFT e sem merge. PR #26 e `main` não foram modificadas.
+- Próxima ação: revisão final do diff atualizado e conferência do resultado agregado da PR antes de qualquer proposta de integração. Nenhum merge sem aprovação explícita.
+
+
+## 305. Revisão de integração PR #26 + PR #27 — 19/11/2026
+
+### Estado da cadeia de branches confirmado
+- PR #23 permanece OPEN/DRAFT, sem merge; base `feat/damm-v2-referral-transfer-attribution`, HEAD `4a517ca15499746ddd3f5522f112c80aaac1433b`.
+- PR #26 permanece OPEN/DRAFT, `merged=false`; base `feat/damm-v2-economic-reconciliation` (HEAD base `4a517ca15499746ddd3f5522f112c80aaac1433b`), HEAD `f0d63038411cc4207fae910a3ef168e3af443784`.
+- PR #27 permanece OPEN/DRAFT, `merged=false`; base `feat/geyser-unsequenced-raw-audit`, e seu `base_sha` coincide exatamente com o HEAD da PR #26 (`f0d63038411cc4207fae910a3ef168e3af443784`); HEAD documental consultado `56190344951bf65112c8190178b56ca6a855f7d4`.
+- A cadeia de PRs está corretamente empilhada: PR #27 adiciona a otimização sobre a implementação da PR #26, que por sua vez depende da PR #23. Nenhuma alteração em `main`; nenhum merge executado.
+
+### Revisão da compatibilidade entre auditoria e otimização
+- PR #27 altera o rebuild da projeção, mas preserva o contrato persistente, a policy ID `geyser-unsequenced-delivery:v1`, os códigos de classificação e a regra de reconciliação da PR #26.
+- A tabela TEMP indexada materializa somente testemunhas sequenciadas sem conflito de identidade e sem anomalia de transporte aberta; a chave continua `event_id + source_id + payload_sha256`, sem incluir `stream_id`.
+- Entregas são lidas em lotes de 500; testemunhas são consultadas por chave e ordenadas por `delivery_id`; IDs completos são serializados sem transferir sequência à delivery não sequenciada.
+- `BEGIN IMMEDIATE`, substituição da projeção e atualização do checkpoint permanecem na mesma transação. O teste concorrente verifica duas instâncias serializadas e gerações sucessivas; o teste de rollback compara linhas projetadas, checkpoint, contagens RAW e integridade.
+- O benchmark permanece fora da API operacional. Não foi identificada alteração de RAW, deliveries, conflitos, checkpoints de transporte ou contrato de Timeline pelo código da PR #27.
+- Validações finais de código/testes/benchmark já registradas na seção 304 continuam válidas para o commit de código validado; esta revisão não repetiu CI nem benchmark.
+
+### Achado de integração — Timeline não filtra todas as deliveries inelegíveis
+- Arquivo: `src/smart_money_radar/storage/geyser_account_timeline_projection.py`, método `SQLiteGeyserAccountTimelineProjection.rebuild()`.
+- A consulta atual seleciona a delivery por `MIN(delivery_id)` com a única condição `d2.stream_sequence IS NOT NULL`. Ela não filtra `conflict_id`, conflitos em `geyser_raw_conflicts` nem anomalias abertas em `geyser_transport_anomalies`.
+- Em contraste, a auditoria da PR #26 classifica deliveries com conflito de identidade como `IDENTITY_CONFLICT` e deliveries sequenciadas afetadas por anomalia aberta como `SEQUENCE_ANOMALY`; nenhuma delas é testemunha elegível para reconciliar uma delivery sem sequência.
+- Consequência: uma delivery sequenciada que a auditoria considera inelegível ainda pode ser escolhida pela Timeline. Se houver uma delivery inelegível com menor `delivery_id`, a seleção também pode preferi-la a uma delivery sequenciada elegível posterior.
+- O teste adicionado na PR #26 comprova que uma delivery sem sequência não entra na Timeline, mas não cobre a exclusão de deliveries sequenciadas com conflito RAW ou anomalia aberta.
+- O achado é uma lacuna de integração entre a política aprovada e a projeção Timeline preexistente; não é defeito introduzido pela otimização da PR #27. A consulta e os testes de Timeline precisam ser ajustados para consumir a mesma regra de elegibilidade (ou predicado compartilhado equivalente), preservando o isolamento da auditoria e sem transferir sequência.
+
+### Conclusão e próxima ação
+- A otimização da PR #27 é compatível com o contrato de auditoria da PR #26 na revisão estática realizada; a cadeia de branches está corretamente empilhada.
+- **Integração ainda não pode ser considerada totalmente aprovada** enquanto a Timeline puder selecionar deliveries sequenciadas com conflito RAW ou anomalia aberta.
+- Próxima ação recomendada: preparar uma correção isolada para a elegibilidade da Timeline, com testes que demonstrem exclusão de conflito RAW e anomalia aberta, e teste que escolha uma delivery elegível posterior quando a primeira sequenciada for inelegível. Reexecutar CI somente na branch que receber essa correção.
+- PR #23, #26 e #27 permanecem OPEN/DRAFT e sem merge. `main` permanece intacta. Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain foi conectado.
+
+
+## 306. Correção de elegibilidade da Timeline Geyser — PR #28 — 19/11/2026
+
+### Branch e PR
+- Branch isolada: `fix/geyser-timeline-delivery-eligibility`.
+- Base exata: HEAD da PR #26, `f0d63038411cc4207fae910a3ef168e3af443784`.
+- PR #28: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/28
+- Título: `fix(geyser): enforce delivery eligibility in account timeline`.
+- PR aberta como Draft; sem merge. A PR #27 permanece paralela, também baseada na PR #26.
+- A correção não altera `main`, RAW, deliveries, checkpoints de transporte nem a projeção separada de auditoria.
+
+### Implementação
+Arquivo `src/smart_money_radar/storage/geyser_account_timeline_projection.py`:
+- A subconsulta de seleção da delivery agora exige `d2.source_id=e.source_id`.
+- Exige `stream_sequence IS NOT NULL`.
+- Exclui delivery com `conflict_id IS NOT NULL`.
+- Exclui todos os eventos com qualquer registro em `geyser_raw_conflicts`.
+- Exclui delivery cuja chave exata `source_id + stream_id + stream_sequence` tenha anomalia de transporte em estado `OPEN`.
+- A seleção continua usando o menor `delivery_id` **entre as deliveries elegíveis**. Se a primeira delivery sequenciada for inelegível, uma reentrega posterior elegível do mesmo evento pode ser escolhida.
+- Nenhuma sequência é transferida; a Timeline decodifica a delivery que efetivamente passou pelo predicado de elegibilidade.
+
+### Testes de regressão adicionados
+Arquivo `tests/test_geyser_account_timeline_projection.py`:
+1. `test_raw_identity_conflict_excludes_event_from_timeline`: evento com conflito RAW não gera account write na Timeline.
+2. `test_open_transport_anomaly_skips_first_delivery_for_later_eligible_replay`: delivery inicial com anomalia aberta é ignorada; reentrega idêntica em outra stream, sequenciada e elegível, é selecionada. A continuidade com o evento anterior da stream elegível é preservada, sem criar baseline artificial.
+- Os testes anteriores de continuidade, gaps, bank lineage, recuperação e rollback permanecem no conjunto.
+
+### CI comprovada
+- Workflow `SMR tests`, run #1815, ID `44577404211`, commit de código/testes `cd070c47661582f0ea2c7566c4b7ac17585268fc`: SUCCESS.
+- Job `test`: instalação concluída, suíte completa `Ran 589 tests in 4.952s — OK`; `compileall -q src tests` também concluído com sucesso.
+- Run #1814, ID `44577367109`, commit anterior de implementação `81f61281f864151a30f56aa0fa75a7cbcc566ab8`: SUCCESS.
+- A atualização documental posterior não altera código nem testes; não exige nova execução de CI.
+
+### Estado e pendências
+- PR #28 é uma correção isolada e validada por CI para o achado da seção 305.
+- Revisão final concluída: PR #28 permanece OPEN/DRAFT, `merged=false`, `mergeable=true`; base SHA coincide com o HEAD da PR #26. O workflow PR #28 run ID `44577550530` também concluiu SUCCESS no HEAD documental `abc8a1a591f65d0dc525c2cf633fa6b6524fce50`.
+- PR #23, #26, #27 e #28 permanecem sem merge. `main` intacta.
+- Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain conectado.
+
+
+
+## 307. Revisão conjunta de arquitetura e integração das PRs Geyser #26, #27 e #28 — 19/11/2026
+
+### Escopo e resultado
+- Revisadas em conjunto a política/auditoria RAW sem sequência (PR #26), a otimização de rebuild em lotes e TEMP SQLite (PR #27) e a elegibilidade da Account Timeline (PR #28).
+- Resultado: **nenhuma divergência semântica bloqueadora identificada** entre a política de reconciliação, o conjunto de testemunhas elegíveis e o predicado de seleção da Timeline.
+- A otimização da PR #27 preserva o contrato da PR #26. A PR #28 corrige a seleção da Timeline sem alterar RAW nem a auditoria.
+- Revisão não autoriza merge. Todas as PRs permanecem Draft/abertas; main permanece intacta.
+
+### Equivalência semântica auditada
+A PR #26 e a versão otimizada da PR #27 selecionam testemunhas sequenciadas com os mesmos requisitos:
+- `stream_sequence IS NOT NULL`;
+- `event_id` não nulo e evento RAW existente;
+- `delivery.conflict_id IS NULL`;
+- `event.source_id = delivery.source_id`;
+- hash RAW não nulo;
+- nenhum conflito RAW associado ao `event_id`;
+- nenhuma anomalia de transporte OPEN para a chave exata `source_id + stream_id + stream_sequence`.
+
+A Timeline da PR #28 aplica o mesmo núcleo de elegibilidade para a delivery efetivamente projetada: sequência presente, fonte igual à do evento, sem `conflict_id`, sem conflito RAW do evento e sem anomalia OPEN na chave exata da delivery. O schema RAW declara `payload_sha256 NOT NULL`, portanto a ausência de filtro explícito de hash na Timeline não cria uma classe divergente no schema atual.
+
+Precedência e efeito:
+- Conflito de identidade impede projeção/reconciliação; a Timeline exclui o evento e a auditoria classifica `IDENTITY_CONFLICT`.
+- Anomalia OPEN impede que a delivery seja testemunha/projetada; a auditoria classifica delivery sequenciada afetada como `SEQUENCE_ANOMALY`.
+- Delivery sem sequência continua sem sequência; pode ser `UNSEQUENCED_RECONCILED` apenas por referência a testemunhas elegíveis, nunca pela transferência de sequência.
+- A Timeline seleciona o menor `delivery_id` entre deliveries elegíveis, permitindo replay elegível posterior quando uma delivery anterior é inelegível.
+- `COMPLETE/PARTIAL/UNKNOWN` e checkpoints de transporte não são reescritos pela auditoria.
+
+### Revisão da otimização PR #27
+- TEMP table é conexão-local e materializa somente testemunhas elegíveis; índice usa `event_id + source_id + payload_sha256 + delivery_id`.
+- Leitura da auditoria é feita com `fetchmany(500)`; gravação em lotes mantém o working set de Python limitado.
+- Consulta das testemunhas preserva todos os IDs em ordem determinística; nenhuma sequência é transferida.
+- `BEGIN IMMEDIATE` envolve rebuild, projeção e checkpoint; a falha reverte a geração/checkpoint. Testes cobrem rollback e concorrência entre instâncias.
+- A otimização não muda `POLICY_ID`, classificações, códigos de motivo ou schema persistente.
+- Benchmarks e limites de interpretação permanecem os da seção 304: fixture sintética, runner compartilhado, VmHWM do worker inteiro, não métrica exclusiva do rebuild nem previsão de produção.
+
+### Integração entre branches
+- PR #26: base `feat/damm-v2-economic-reconciliation` em `4a517ca15499746ddd3f5522f112c80aaac1433b`; HEAD `f0d63038411cc4207fae910a3ef168e3af443784`.
+- PR #27: base PR #26 em `f0d63038411cc4207fae910a3ef168e3af443784`; HEAD `d281daea02dc8d93c7159c5095d8a47579becf7c`.
+- PR #28: base PR #26 em `f0d63038411cc4207fae910a3ef168e3af443784`; HEAD documental antes deste registro `b6cd259f6cc2e08dd9238ef72b27a4633cb85c92`.
+- Os arquivos de código e testes de PR #27 e #28 não se sobrepõem. Ambas alteram `REGISTRO-MESTRE-SMR.md`; portanto, apesar de cada PR estar individualmente mergeable contra a base atual, a integração conjunta exige rebase/atualização e resolução do histórico documental. Não tratar o estado `mergeable=true` individual como prova de que as duas podem ser integradas em sequência sem ajuste.
+- Sequência recomendada para futura integração: manter PR #26 como base; integrar uma PR filha por vez, atualizar/rebasear a outra sobre a base avançada, resolver o Registro Mestre e validar o diff combinado antes de seguir. A ordem entre #27 e #28 pode ser escolhida na etapa de integração; não há dependência de código entre elas.
+- PR #23 permanece ancestral/base acima da PR #26; sua integração continua separada.
+
+### Evidências atuais de CI e estado remoto
+- PR #26 HEAD `f0d63038411cc4207fae910a3ef168e3af443784`: check-run `test` SUCCESS, run ID `44548677924`.
+- PR #27 HEAD `d281daea02dc8d93c7159c5095d8a47579becf7c`: check-runs `test` e `benchmark` SUCCESS, IDs `44574595397` e `44574595312`.
+- PR #28 HEAD anterior a este commit documental `b6cd259f6cc2e08dd9238ef72b27a4633cb85c92`: check-run `test` SUCCESS, run ID `44577659605`.
+- PR #26, #27 e #28 estavam OPEN/DRAFT, `merged=false`, `mergeable=true` em consulta individual. PR #27 e #28 baseadas no mesmo HEAD da PR #26.
+- `main` confirmada em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`; sem alteração.
+- Nenhum provider, RPC, credencial, VPS, dado real ou execução on-chain conectado.
+
+### Pendências reais e próxima ação
+1. Não há correção de código adicional exigida pela revisão conjunta atual.
+2. Antes de qualquer merge, executar integração controlada das PRs filhas na branch-base da PR #26, resolvendo o conflito potencial do Registro Mestre e revisando o diff combinado.
+3. Depois, validar a PR #26 resultante contra sua base PR #23; só então decidir a integração posterior com PR #23.
+4. Não fazer merge de nenhuma PR sem ordem explícita do usuário.

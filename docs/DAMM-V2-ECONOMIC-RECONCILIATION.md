@@ -142,7 +142,7 @@ Pesquisa documental de 19/11/2026:
 ## Proveniência e integridade dos snapshots históricos
 
 - `DammV2MintPrestate` exige `source_id` igual à origem da transação. O construtor `build_damm_v2_mint_fee_config_snapshots` recebe também o SHA-256 do payload da transação e vincula esses valores a cada snapshot de mint.
-- O construtor calcula SHA-256 dos bytes brutos do mint prestate, preserva os próprios bytes no snapshot e deriva `config_state` decodificando esses bytes. A verificação posterior recalcula o hash e decodifica novamente o TLV; rejeita hash divergente ou `config_state` que não corresponda aos bytes.
+- O construtor calcula SHA-256 dos bytes brutos do mint prestate, preserva os próprios bytes no snapshot e deriva `config_state` decodificando esses bytes. Tanto o caminho de cálculo de fee quanto a verificação posterior recalculam o hash e decodificam novamente o TLV; rejeitam hash divergente ou `config_state` que não corresponda aos bytes.
 - `verify_damm_v2_mint_fee_config` exige `transaction_source_id` e `transaction_payload_sha256` do contexto da transação. Compara ambos com cada snapshot, além de assinatura, slot, epoch, ordem, mint e posição exata da transferência.
 - `DammV2WithheldFeeSnapshot` preserva bytes brutos pre/post, seus SHA-256, source ID, hash do payload da transação e referências separadas dos estados. `verify_damm_v2_withheld_fee_deltas` recalcula os dois hashes, decodifica novamente `TransferFeeAmount` a partir dos bytes e compara o resultado com `decoded_delta` recebido.
 - O verifier withheld exige a mesma origem e o mesmo hash do payload transacional, além de assinatura, slot, ordem e `pre < transaction < post`. Snapshot de outra fonte, payload, bytes alterados ou delta que não corresponda aos bytes falha fechado.

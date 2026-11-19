@@ -2333,7 +2333,7 @@ Revisar o contrato documental e, em etapa separada, iniciar apenas os contratos 
 
 ### Implementação comprovada no código
 - `SQLiteGeyserRawStore` usa banco dedicado informado pelo chamador; não altera nem reutiliza `SQLiteEventStore` ou checkpoints de carteira.
-- Migração versionada v1 cria `geyser_raw_events`, `geyser_raw_deliveries`, `geyser_raw_conflicts` e `geyser_schema_migrations), com índices para fonte/tipo, stream/sequence, evento e conflito.
+- Migração versionada v1 cria `geyser_raw_events`, `geyser_raw_deliveries`, `geyser_raw_conflicts` e `geyser_schema_migrations`, com índices para fonte/tipo, stream/sequence, evento e conflito.
 - Arquivo SQLite usa WAL e `synchronous=FULL`; modo `:memory:` é suportado para testes offline.
 - Evento RAW é separado de cada entrega. Replay de conteúdo idêntico cria nova delivery e mantém um único RAW.
 - Reutilização de `event_id` com source, tipo, schema, encoding ou bytes incompatíveis preserva o RAW original e registra conflito com hash e bytes recebidos, além de registrar a delivery conflitante.

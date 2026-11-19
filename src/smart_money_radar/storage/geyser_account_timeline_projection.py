@@ -136,9 +136,7 @@ class SQLiteGeyserAccountTimelineProjection:
     @staticmethod
     def _decode_event(row):
         event_id, source_id, event_kind, schema_version, payload_encoding, payload_bytes, stream_id, sequence = row
-        if payload_encoding != "normalized_json":
-            return None
-        if sequence is None:
+        if payload_encoding != "normalized_json" or sequence is None or stream_id is None:
             return None
         envelope = json.loads(payload_bytes.decode("utf-8"))
         if (
@@ -160,6 +158,10 @@ class SQLiteGeyserAccountTimelineProjection:
                 data = base64.b64decode(data64, validate=True)
             except (binascii.Error, ValueError) as exc:
                 raise ValueError(f"data_base64 inválido: {event_id}") from exc
+            if not isinstance(p.get("executable"), bool) or not isinstance(p.get("is_startup"), bool):
+                raise ValueError(f"flags booleanas inválidas: {event_id}")
+            if p.get("is_startup") and p.get("bank_id") is not None:
+                raise ValueError(f"startup não pode carregar bank_id: {event_id}")
             return NormalizedAccountUpdate(
                 pubkey=_text(p.get("pubkey"), "pubkey"),
                 slot=_u64(p.get("slot"), "slot"),
@@ -212,7 +214,7 @@ class SQLiteGeyserAccountTimelineProjection:
                 FROM geyser_raw_events e
                 JOIN geyser_raw_deliveries d ON d.delivery_id=(
                     SELECT MIN(d2.delivery_id) FROM geyser_raw_deliveries d2
-                    WHERE d2.event_id=e.event_id
+                    WHERE d2.event_id=e.event_id AND d2.stream_sequence IS NOT NULL
                 )
                 ORDER BY d.delivery_id,e.event_id
             """).fetchall()
@@ -221,7 +223,7 @@ class SQLiteGeyserAccountTimelineProjection:
             ).fetchone()[0]
             timeline = AccountUpdateTimeline()
             replayed = 0
-            skipped = 0
+            skipped = source_count - len(rows)
             for row in rows:
                 event = self._decode_event(row)
                 if event is None:

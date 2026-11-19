@@ -71,16 +71,9 @@ def _transaction_identity(
     payload = _rpc_payload(raw_transaction)
     transaction = payload.get("transaction")
     signatures = transaction.get("signatures") if isinstance(transaction, dict) else None
-    signature = (
-        signatures[0]
-        if isinstance(signatures, list)
-        and signatures
-        and isinstance(signatures[0], str)
-        and signatures[0].strip()
-        else None
-    )
-    if signature is None:
-        raise ValueError("assinatura da transação ausente ou inválida")
+    signature = signatures[0] if isinstance(signatures, list) and signatures else None
+    if not _is_valid_signature(signature):
+        raise ValueError("assinatura Solana ausente ou inválida (Base58 de 64 bytes)")
 
     slot = payload.get("slot")
     if isinstance(slot, bool) or not isinstance(slot, int) or not 0 <= slot <= (1 << 64) - 1:

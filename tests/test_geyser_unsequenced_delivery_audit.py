@@ -209,6 +209,50 @@ class GeyserUnsequencedDeliveryAuditTests(unittest.TestCase):
         self.assertEqual(summary["unsequenced_count"], 2)
         self.assertEqual(summary["reconciled_count"], 2)
 
+    def test_rebuild_streams_across_multiple_delivery_batches(self):
+        received_at = "2026-11-19T12:00:00+00:00"
+        for index in range(501):
+            event_id = f"batch-event-{index:04d}"
+            self.raw.ingest(
+                RawEventInput(
+                    event_id=event_id,
+                    source_id="source-a",
+                    event_kind="account",
+                    schema_version="geyser-v16",
+                    payload_encoding="normalized_json",
+                    payload_bytes=f"payload-{index}".encode("ascii"),
+                ),
+                RawDeliveryInput(
+                    stream_id="unsequenced",
+                    stream_sequence=None,
+                    received_at=received_at,
+                ),
+            )
+            self.raw.ingest(
+                RawEventInput(
+                    event_id=event_id,
+                    source_id="source-a",
+                    event_kind="account",
+                    schema_version="geyser-v16",
+                    payload_encoding="normalized_json",
+                    payload_bytes=f"payload-{index}".encode("ascii"),
+                ),
+                RawDeliveryInput(
+                    stream_id="replay",
+                    stream_sequence=index + 1,
+                    received_at=received_at,
+                ),
+            )
+
+        summary = self.audit.rebuild()
+        self.assertEqual(summary["delivery_count"], 1002)
+        self.assertEqual(summary["unsequenced_count"], 501)
+        self.assertEqual(summary["reconciled_count"], 501)
+        rows = self.audit.list_deliveries("UNSEQUENCED_RECONCILED")
+        self.assertEqual(len(rows), 501)
+        self.assertTrue(all(len(row["witness_delivery_ids"]) == 1 for row in rows))
+        self.assertEqual(self.raw.integrity_check(), ["ok"])
+
     def test_unsequenced_event_is_not_projected_into_timeline_or_checkpoint(self):
         self.ingest()
         timeline = SQLiteGeyserAccountTimelineProjection(self.db)

@@ -2409,3 +2409,41 @@ Revisar e formalizar derivação de identidade por tipo de evento; depois implem
 
 ### Próxima etapa técnica
 Formalizar a derivação determinística de `event_id` por tipo de evento e versão do schema, com tratamento de colisão e compatibilidade. Depois, em etapa separada, implementar persistência de eventos normalizados. Não conectar provider.
+
+
+## 290. Identidade determinística versionada para eventos Geyser — 19/11/2026
+
+### Escopo implementado
+- Implementação offline na branch `feat/damm-v2-economic-reconciliation`, PR #23.
+- Criado `src/smart_money_radar/data_sources/geyser_event_identity.py`.
+- Criado `tests/test_geyser_event_identity.py`.
+- Contrato versionado `IDENTITY_VERSION = "geyser-event-id:v1"`; API `derive_event_identity(event, schema_version=...)`.
+
+### Chaves lógicas por tipo
+- Account: source_id, pubkey, slot, write_version, bank_id e is_startup.
+- Slot: source_id, slot, status e bank_id.
+- BlockMeta: source_id, slot e bank_id.
+- EntryUpdateParent: source_id, slot e cleared_bank_id.
+- `stream_id` e `stream_sequence` são excluídos da identidade; pertencem à delivery.
+- A versão explícita do schema upstream e a versão do contrato de identidade entram no JSON canônico antes do SHA-256.
+- Campos de conteúdo excluídos da chave (por exemplo account data, parent hashes, parent_block_id, parent_slot e dead_error) não são descartados: permanecem protegidos pela comparação de bytes/hash do RAW store. Reutilizar o mesmo event_id com payload diferente deve resultar em conflito preservando o RAW original.
+- A identidade é de evento normalizado provider-neutral. Não é identidade byte-for-byte do protobuf wire; o adapter atual recebe mensagens decodificadas.
+
+### Testes adicionados
+- Determinismo entre streams/reconnects e alterações de stream_sequence.
+- Independência de campos de conteúdo que devem gerar conflito no RAW, em vez de novo evento.
+- Separação por schema version, tipo de evento, slot/write_version/bank.
+- Rejeição de tipo não suportado e schema_version vazio.
+- Integração de teste com `SQLiteGeyserRawStore`: mesmo event_id + bytes alterados gera conflito e mantém payload original imutável.
+
+### Limites
+- O helper ainda precisa ser chamado pelo futuro coordenador de ingestão; não está acoplado ao adapter protobuf nem ao método `ingest`.
+- Nenhuma persistência normalizada, timeline persistente, continuidade/epoch ou backfill foi implantado nesta etapa.
+- Sem endpoint/cliente Yellowstone/Helius, captura wire, credenciais, VPS, operação on-chain ou execução financeira.
+- PR #23 continua Draft e sem merge; `main` permanece intocada.
+
+### Validação
+- Aguardar CI de push e pull_request no HEAD desta etapa; registrar hashes, runs e contagem final após sucesso.
+
+### Próxima etapa
+Integrar o helper ao contrato de ingestão RAW sem acoplar identidade a transporte; depois implementar persistência normalizada com versionamento e diagnósticos. Não conectar provider.

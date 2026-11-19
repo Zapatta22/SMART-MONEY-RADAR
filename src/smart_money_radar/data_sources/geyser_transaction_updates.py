@@ -67,6 +67,7 @@ class NormalizedTransactionObservation:
     slot: int
     source_id: str
     stream_id: str
+    ordering_domain_id: str
     stream_sequence: int
     transaction_index: int | None
     is_vote: bool
@@ -78,14 +79,14 @@ class NormalizedTransactionObservation:
 
     @property
     def ordering_key(self) -> tuple[str, str, int]:
-        return (self.source_id, self.stream_id, self.stream_sequence)
+        return (self.source_id, self.ordering_domain_id, self.stream_sequence)
 
     @property
     def evidence_complete(self) -> bool:
         return self.meta_payload is not None
 
 def normalize_transaction_update(message: Any, *, source_id: str, stream_id: str,
-                                 stream_sequence: int,
+                                 ordering_domain_id: str, stream_sequence: int,
                                  raw_message_bytes: bytes | None = None) -> NormalizedTransactionObservation:
     """Normalize SubscribeUpdateTransaction without inventing missing evidence."""
     info = getattr(message, "transaction", None)
@@ -105,6 +106,7 @@ def normalize_transaction_update(message: Any, *, source_id: str, stream_id: str
     slot = _u64(getattr(message, "slot", None), "slot")
     source_id = _text(source_id, "source_id")
     stream_id = _text(stream_id, "stream_id")
+    ordering_domain_id = _text(ordering_domain_id, "ordering_domain_id")
     stream_sequence = _u64(stream_sequence, "stream_sequence")
     raw_index = getattr(info, "index", None)
     transaction_index = None if raw_index is None else _u64(raw_index, "transaction.index")
@@ -123,7 +125,7 @@ def normalize_transaction_update(message: Any, *, source_id: str, stream_id: str
         provenance = "PROTOBUF_DETERMINISTIC_RESERIALIZATION"
     return NormalizedTransactionObservation(
         transaction_signature=signature, slot=slot, source_id=source_id, stream_id=stream_id,
-        stream_sequence=stream_sequence, transaction_index=transaction_index, is_vote=is_vote,
+        ordering_domain_id=ordering_domain_id, stream_sequence=stream_sequence, transaction_index=transaction_index, is_vote=is_vote,
         transaction_payload=transaction_payload, meta_payload=meta_payload, raw_payload=raw_payload,
         raw_payload_provenance=provenance, payload_sha256=hashlib.sha256(raw_payload).hexdigest(),
     )

@@ -9,7 +9,7 @@ on:
       - "pyproject.toml"
       - ".github/workflows/smr-tests.yml"
   pull_request:
-    branches: [main, 'feat/**']
+    branches: [main, 'feat/**', 'integration/**']
   workflow_dispatch:
 
 permissions:

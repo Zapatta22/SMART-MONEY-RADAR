@@ -1675,6 +1675,7 @@ Implementar, isoladamente e com testes sintéticos, o decoder de estado Token-20
 - Efeito colateral de integração identificado, sem alteração no PR #18: como sua branch foi criada sobre o antigo head do PR #17 (`58606137e3d096e19b34eb84bae604101c07fef`), a comparação atual mostra PR #18 divergente da nova base: 16 commits à frente e 6 atrás; `mergeable=false`. Nenhum rebase/update foi executado nele.
 - Próxima ação: decidir e executar separadamente a atualização/rebase da branch do PR #18 para incorporar a nova base do PR #17, mantendo ambos em Draft e sem merge.
 
+
 ## 85. PR #18 — decoder de estado TransferFee Token-2022 (18/11/2026)
 
 - Branch `feat/token2022-transfer-fee-state-decoder` criada sobre o head do PR #17 (`58606137e3d096e19b34eb84bae604101c07fef`), sem alterar `main`.
@@ -1813,3 +1814,107 @@ Aguardar CI e validar no Termux em clone separado PR18: testes focais, suíte co
 - Issue #19 foi renomeada para auditar e avançar a reconciliação econômica DAMM v2 usando os módulos existentes.
 - Próximo trabalho correto: auditar invariantes de ponta a ponta entre `EvtSwap2`, transferências atribuídas, taxas Token-2022 por epoch e deltas de token accounts/vaults por operação. Não criar outro decoder.
 - Nenhuma alteração em `main`, RAW fixtures, banco, imports, RPC/Helius, checkpoints ou operações on-chain.
+
+
+## 250. Integração das dependências CPMM e segurança do painel local — 19/11/2026
+
+### Integrações concluídas em branches intermediárias
+
+- PR #9 integrada: merge commit `802243877dc7f1350ab72b17565f8468785d1c29`; CI no head da PR #9 run `44434553632` passou (539 testes + compileall).
+- PR #10 integrada: merge commit `a7e8a47a6ff29817d1ec13e2d2f965d6e857a425`; CI do merge commit run `44437095983` passou: **182 testes OK** + compileall.
+- PR #12 integrada: merge commit `6ba4df2e50f24abfaafb69ff037d11b83cb479ca`; CI do merge commit run `44437214287` passou: **183 testes** + compileall.
+- PR #13 integrada: merge commit `f4cbbd8d08438a9f01ab3bae1019fc9a027dd588`; CI do merge commit run `44437322311` passou: **196 testes** + compileall.
+- PR #14 integrada: merge commit `c6f2687c519a691d953244b09b18ecf445bde52a`; CI do merge commit run `44437738900` passou: **225 testes** + compileall.
+- Todas essas integrações ocorreram em branches de feature; nenhuma foi mergeada na `main`.
+
+### Correção adicional do checkpoint no EventStore (PR #14)
+
+Foi identificado que um replay tardio de assinatura pendente poderia marcar a assinatura como processada e regredir o checkpoint para um slot mais antigo. `mark_processed()` agora sempre registra a assinatura concluída, mas só avança o checkpoint quando a posição temporal comprovada não é anterior ao cursor atual; em slots iguais, preserva conservadoramente o checkpoint existente porque o EventStore não armazena índice de transação dentro do slot. Teste dedicado cobre processamento de slot 100, depois slot 200, seguido de replay do slot 100; checkpoint permanece no slot 200.
+
+### PR #15 — diagnóstico e painel Android somente leitura
+
+- PR #15 permanece OPEN/DRAFT, branch `feat/reconciliation-diagnostics`, base `integration/pr13-sqlite-persistence`.
+- Foi necessário sincronizar a cadeia empilhada: branch-base estava quatro commits à frente. As alterações sobrepostas foram conciliadas preservando o EventStore/fixture do PR #14, os métodos de diagnóstico da PR #15 e o workflow que testa `integration/**`.
+- Commit de merge de branches na head da PR #15: `298c33949b4e2086e054d121ec0170eaedb5eff3`, com a base `395fd0c72a4cc96f105cf65616f1c84a281d934e` como segundo parent. Compare posterior confirma base como ancestral, `behind_by=0`.
+- CI final da head antes da documentação: run `44438224828`, commit `d78fc2db04ea1e691e6bd1e1b94e15cf49d08a3f`: **249 testes OK** e `python -m compileall -q src tests` aprovado.
+- Foi encontrada uma falha de segurança no desenho inicial: o painel usaria `SQLiteEventStore` padrão, cujo construtor executa inicialização/migração. Isso contrariava a promessa de leitura somente. Corrigido com `read_only=True`: exige arquivo existente, valida esquema, abre via URI `mode=ro`, não chama `_initialize()`, não cria tabelas/índices, não migra e não habilita WAL. Tentativas de escrita são recusadas pelo SQLite.
+- `dashboard_http.main()` agora usa explicitamente o modo somente leitura. O script Termux valida previamente o banco; a proteção efetiva também existe no EventStore, mesmo se o comando for chamado diretamente.
+- Painel local: loopback-only, token Bearer, métodos de mutação rejeitados, conteúdo dinâmico inserido via `textContent`, sem Helius/RPC, sem coleta, sem assinatura ou envio de transações.
+- Testes novos cobrem banco ausente sem criação, consulta permitida, escrita negada e esquema incompleto sem migração. CI final inclui esses casos.
+
+### Estado atual e próximo passo
+
+- PR #15 ainda não foi mergeada; documentação desta seção e do modo read-only foi adicionada depois do CI de código. Aguardar CI documental se disparado, então marcar ready e integrar #15 à sua base `integration/pr13-sqlite-persistence`; validar CI no merge commit.
+- Próxima dependência da cadeia: PR #16, somente após fechar #15.
+- PR #25 continua OPEN/DRAFT; `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Progresso: módulo CPMM/SQLite/diagnóstico **95%**; revisão técnica **96%**. Não significa produto em produção: ainda não há serviço iniciado, banco real validado no Android, integração final na `main` nem execução financeira.
+
+
+
+## 251. Sincronização do PR #16 e endurecimento fail-closed — 19/11/2026
+
+- PR #15 foi integrada à branch-base intermediária por merge commit `4951eaf30b3da3b357213016a5eff65156cccd42`; CI do merge run `44438389847`: 249 testes e compileall aprovados.
+- PR #16 continua OPEN/DRAFT. Sua base é `feat/reconciliation-diagnostics` (`116eddecd956a3e283828e485580292afe6b46d0`); head antes da sincronização `7da1e2574f1d72f2618cc3cf13e33407d22883f1`.
+- CI do head funcional atualizado do PR #16, run `44438946997`, passou com **314 testes OK** e compileall.
+- Revisão da fonte oficial fixada `MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f99868ba8e` confirmou o layout do evento `EvtSwap2`, os 14 accounts da instrução swap e a ordem dos parâmetros/campos usados pelo decoder.
+- Correção fail-closed: associação DAMM v2 não é produzida quando `meta.err` está ausente; somente `meta.err = null` prova sucesso explícito.
+- Correção no planejador histórico: `meta.err` ausente resulta em `EXECUTION_STATUS_UNKNOWN`, nunca `READY_FOR_REVIEW`; campos de carteira inválidos resultam em `WALLET_MAPPING_INVALID` e declarações conflitantes em `WALLET_MAPPING_CONFLICT`.
+- Correção de privacidade/localidade: o inspetor estrutural agora rejeita manifestos e RAW por symlink e exige que os caminhos resolvidos permaneçam dentro do diretório autorizado. Testes cobrem symlink de manifesto e de payload.
+- CI final após essas correções: run `44438946997`, commit `075abfa56a957cd01c25dc220b46b22361248170`, **314 testes OK**, compileall aprovado. A atualização documental subsequente não alterou código.
+- A sincronização com PR #15 preserva no mesmo resultado a camada de diagnóstico/painel read-only e os novos artefatos DAMM v2. O CI da árvore combinada ainda precisa ser executado e aprovado antes de integrar PR #16.
+- Nenhum reconciliador econômico DAMM v2 foi implementado: associação swap↔EvtSwap2 e atribuição de transferências são evidências estruturais; cobertura de quatro deltas não prova igualdade econômica. Token-2022, fees, referral e exclusividade por operação continuam exigindo validação.
+- Nenhuma importação histórica, acesso RPC/Helius, gravação SQLite, checkpoint, assinatura ou execução on-chain foi realizada.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. PR #16 ainda não integrada; PR #25 continua OPEN/DRAFT.
+
+## 252. CI da árvore combinada PR #16 + PR #15 — 19/11/2026
+
+- Após a sincronização explícita da base `feat/reconciliation-diagnostics` com a head da PR #16, o compare passou a `ahead_by=134`, `behind_by=0`; GitHub reporta `mergeable=true`.
+- Merge commit de sincronização na head PR #16: `cebb8c76812147fc2af67759a3871c48da52ab6d`, com a base `116eddecd956a3e283828e485580292afe6b46d0` como segundo parent.
+- CI da árvore combinada: run `44439231241`, job `135275637353`, SUCCESS; log confirma **318 testes**, `OK`, e `python -m compileall -q src tests`.
+- Esse CI valida conjuntamente os artefatos DAMM v2/offline do PR #16 com EventStore read-only, dashboard e diagnósticos do PR #15. Nenhuma importação histórica ou execução foi feita.
+- PR #16 permanece OPEN/DRAFT até a conversão para ready e merge autorizado; a próxima validação será o CI do merge commit na branch-base `feat/reconciliation-diagnostics`.
+
+## 253. CI do merge PR #16 concluído — 19/11/2026
+
+- PR #16 CLOSED/MERGED na branch intermediária `feat/reconciliation-diagnostics`.
+- Merge commit: `24ccb262b52bda0f20dac0db1b3e499156f9fc51`.
+- CI do merge commit: run `44439364246`, job `135276068763`, SUCCESS; log confirma **318 testes**, `OK`, e `python -m compileall -q src tests`.
+- A base DAMM v2 offline, o planejador histórico dry-run, os auditores redigidos e a camada de painel read-only foram validados em conjunto.
+- Nenhuma reconciliação econômica, importação histórica, RPC, gravação, checkpoint ou execução financeira foi habilitada.
+- Próxima etapa da cadeia: auditar PR #17 (matemática econômica/fees DAMM v2), sem presumir que os campos de evento já equivalem a quantidades reconciliadas.
+- `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+
+
+## 254. PR #17 — validação de aritmética e sincronização pendente — 19/11/2026
+
+- A fonte Token-2022 foi fixada em `solana-program/token-2022@875693f53c77534b46f0d06bdf781430870f8177`; Meteora permanece fixada em `MeteoraAg/damm-v2@18936b18c26708f6e9b52cacc01ea2f99868ba8e`.
+- Correção conforme a fonte oficial: `get_excluded_fee_amount` permite taxa AMM de 100% e retorna líquido zero; `get_included_fee_amount` rejeita 100% porque a inversão divide por denominador zero. Teste dedicado cobre a assimetria.
+- Teste adicional verifica minimalidade da inversão Token-2022 numa grade de basis points, maximum_fee e net amounts.
+- CI do head PR #17 após essas correções: run `44439675835`, job `135277096545`, SUCCESS; **330 testes OK** e compileall aprovado.
+- A PR #17 também reforça o fail-closed do Raydium CPMM: swap interno exige `cpi_path_valid=True`; swap externo continua escopado pelo grupo `innerInstructions` da instrução externa. Testes cobrem ambos.
+- PR #17 permanece OPEN/DRAFT. A base `feat/offline-fixture-inspector` avançou 26 commits após a criação da branch; será incorporada por merge commit controlado e validada em CI combinado antes de integrar a PR.
+- Aritmética pura validada não é reconciliação econômica: ainda faltam decodificação de estado histórico de mint/epoch, leitura de TransferFeeAmount, cálculo de PartialFill, atribuição exclusiva de referral/transferências e conciliação com deltas e EvtSwap2.
+- Nenhum RAW, mint state, RPC, SQLite, checkpoint ou execução on-chain foi acessado/alterado por esta etapa. `main` permanece em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+## 255. CI combinado PR #17 + PR #16 aprovado — 19/11/2026
+
+- A branch `feat/damm-v2-economic-fee-math` foi sincronizada com a base `feat/offline-fixture-inspector` por merge commit `adddfac41326cf7061cf0e80f734ffb4ae26fc96`, com a base `533dbf1ef95aba0099ab1cfe797dafc33eece2d2` como segundo parent.
+- Compare da árvore sincronizada: `ahead_by=20`, `behind_by=0`; GitHub reporta `mergeable=true`.
+- CI da árvore combinada: runs `44439855614` (push) e `44439847810` (PR), ambos SUCCESS. Os logs confirmam **339 testes OK** e `python -m compileall -q src tests`.
+- Os testes incluem aritmética Token-2022/DAMM, caso de taxa AMM 100%, minimalidade do gross-up, correção de proveniência CPI do Raydium e toda a base offline/painel do PR #16.
+- PR #17 pode sair de Draft e ser integrada à branch-base intermediária `feat/offline-fixture-inspector`; depois validar CI no merge commit.
+- A integração não habilita decodificação histórica de mint/epoch, PartialFill, reconciliação econômica, importação, RPC, SQLite write, checkpoint ou execução.
+
+
+
+## 256. PR #18 — decoder Token-2022 alinhado ao parser oficial e CI local — 19/11/2026
+
+- PR #18 continua OPEN/DRAFT, base `feat/damm-v2-economic-fee-math`, head `feat/token2022-transfer-fee-state-decoder`.
+- CI final do código do PR #18: run `44440551264`, job `135280013271`, SUCCESS; **351 testes OK** e `python -m compileall -q src tests` aprovado.
+- Fonte oficial fixada: `solana-program/token-2022@875693f53c77534b46f0d06bdf781430870f8177`. Decoder agora valida o estado base Mint/TokenAccount, tags COption, estado Frozen, padding, colisão de tamanho Multisig 355, tipos TLV conhecidos 0–28 e limites/duplicações.
+- Tipos TLV conhecidos não alvo são preservados em `extension_types`; tipos desconhecidos falham fechados. O chamador deve inspecionar essa lista e bloquear extensões fora do escopo, como taxas confidenciais ou hooks.
+- A seleção de taxa continua exigindo epoch explícito; o decoder não consulta Clock, RPC ou estado atual. O owner do account não é validado pelo parser e precisa ser comprovado pelo chamador.
+- O decoder não associa TransferFeeAmount a uma transferência, não reconcilia bruto/líquido/withheld por operação e não persiste dados.
+- Próxima ação: incorporar a base atual do PR #17 à branch #18 por merge commit controlado; rodar CI combinado antes de retirar Draft ou integrar.
+- Nenhum acesso RPC, SQLite, importação histórica, checkpoint, assinatura ou operação financeira. `main` continua em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.

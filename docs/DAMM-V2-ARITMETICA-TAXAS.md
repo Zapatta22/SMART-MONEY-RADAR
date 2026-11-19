@@ -15,7 +15,7 @@ Arquivos:
   - `programs/cp-amm/src/state/fee.rs`: `get_excluded_fee_amount`, `get_included_fee_amount`, `split_fees` e `FeeMode::get_fee_mode`.
   - `programs/cp-amm/src/state/pool.rs`: uso dessas funções em partial fill.
   - `programs/cp-amm/src/instructions/swap/swap_partial_fill.rs`: limite bruto, cálculo do consumo e gross-up do valor efetivamente transferido.
-- Token-2022: `solana-program/token-2022/interface/src/extension/transfer_fee/mod.rs`
+- Token-2022: `solana-program/token-2022@875693f53c77534b46f0d06bdf781430870f8177/interface/src/extension/transfer_fee/mod.rs`
   - `TransferFee::calculate_fee`: ceil da taxa em basis points, limitada por maximum_fee.
   - `calculate_pre_fee_amount` e `calculate_inverse_fee`: menor valor bruto que produz o líquido solicitado, com arredondamento e cap.
   - `TransferFeeConfig::get_epoch_fee`: escolha entre older/newer fee conforme epoch.
@@ -51,3 +51,12 @@ Os vetores são inteiros raw e determinísticos; não dependem de rede, banco, r
 ## Próxima validação
 
 Executar os 17 testes focais e a suíte completa em clone atualizado; revisar os casos de borda e a equivalência com as fontes fixadas. Depois, implementar decodificação explícita do estado de transfer fee e só então compor as evidências de transferências/deltas em um reconciliador puro.
+
+
+### Casos-limite de 100% da taxa AMM
+
+A fonte oficial distingue as duas direções:
+- `get_excluded_fee_amount` permite numerador igual ao denominador: a taxa consome todo o valor incluído e o valor líquido excluído é zero.
+- `get_included_fee_amount` não pode inverter uma taxa de 100%, pois o denominador da divisão fica zero; essa entrada é rejeitada.
+
+O helper e os testes refletem essa assimetria. O inverso Token-2022 também recebe teste de minimalidade em uma grade determinística de taxas, caps e valores líquidos.

@@ -31,27 +31,70 @@ class SwapReconciliationRecord:
 class SQLiteEventStore:
     """Persiste eventos sem armazenar chaves ou credenciais."""
 
-    def __init__(self, database_path: Path | str) -> None:
+    def __init__(
+        self, database_path: Path | str, *, read_only: bool = False
+    ) -> None:
+        if not isinstance(read_only, bool):
+            raise TypeError("read_only deve ser bool")
         self.database_path = Path(database_path)
+        self.read_only = read_only
         self._memory_connection: sqlite3.Connection | None = None
-        if str(self.database_path) == ":memory:":
+        if read_only:
+            if str(database_path) == ":memory:":
+                raise ValueError("read_only exige um arquivo SQLite existente.")
+            if not self.database_path.is_file():
+                raise FileNotFoundError(
+                    f"Banco SQLite não encontrado para abertura somente leitura: {self.database_path}"
+                )
+            self._validate_read_only_schema()
+        elif str(database_path) == ":memory:":
             # Keep one connection alive: a fresh SQLite :memory: connection is
             # a different database and would lose the schema/data immediately.
             self._memory_connection = sqlite3.connect(":memory:")
+            self._initialize()
         else:
             self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+            self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
         if self._memory_connection is not None:
             self._memory_connection.execute("PRAGMA foreign_keys = ON")
             return self._memory_connection
+        if self.read_only:
+            uri = self.database_path.resolve().as_uri() + "?mode=ro"
+            connection = sqlite3.connect(uri, uri=True, timeout=15.0)
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 15000")
+            return connection
         connection = sqlite3.connect(self.database_path, timeout=15.0)
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 15000")
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
         return connection
+
+    def _validate_read_only_schema(self) -> None:
+        """Valida o esquema existente sem criar tabelas, índices ou migrações."""
+        required = {
+            "activity_events", "wallet_checkpoints", "observed_transactions",
+            "token_balance_deltas", "processed_signatures", "swap_observations",
+            "swap_classifications", "swap_evidence", "swap_reconciliation_attempts",
+        }
+        uri = self.database_path.resolve().as_uri() + "?mode=ro"
+        connection = sqlite3.connect(uri, uri=True, timeout=15.0)
+        try:
+            present = {
+                row[0] for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+        finally:
+            connection.close()
+        missing = sorted(required - present)
+        if missing:
+            raise sqlite3.DatabaseError(
+                "Banco SQLite sem o esquema completo para leitura: " + ", ".join(missing)
+            )
 
     @contextmanager
     def _connection_scope(self):
@@ -371,17 +414,54 @@ class SQLiteEventStore:
         )
 
     def mark_processed(self, wallet_address: str, signature: str) -> None:
-        """Marca uma transação como concluída somente após todo o pipeline terminar."""
+        """Marca a transação como concluída sem regredir o checkpoint por replay antigo."""
         if not wallet_address.strip() or not signature.strip():
             raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
         with self._connection_scope() as connection:
             with connection:
                 parent = connection.execute(
-                    "SELECT 1 FROM observed_transactions WHERE wallet_address = ? AND signature = ?",
+                    """SELECT slot, observed_at FROM observed_transactions
+                       WHERE wallet_address = ? AND signature = ?""",
                     (wallet_address, signature),
                 ).fetchone()
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes de marcar como processada.")
+
+                current = connection.execute(
+                    """SELECT observed.slot, observed.observed_at
+                       FROM wallet_checkpoints AS checkpoint
+                       LEFT JOIN observed_transactions AS observed
+                         ON observed.wallet_address = checkpoint.wallet_address
+                        AND observed.signature = checkpoint.signature
+                       WHERE checkpoint.wallet_address = ?""",
+                    (wallet_address,),
+                ).fetchone()
+                if current is not None:
+                    new_slot, new_observed_at = parent
+                    current_slot, current_observed_at = current
+                    # A recuperação de uma assinatura antiga pode terminar depois
+                    # de assinaturas mais novas. Ela deve ser marcada como processada,
+                    # mas nunca pode mover o cursor para trás. Em slots iguais não há
+                    # índice de transação disponível neste armazenamento; manter o
+                    # checkpoint atual é a escolha conservadora.
+                    if current_slot is not None and (
+                        new_slot is None or new_slot <= current_slot
+                    ):
+                        connection.execute(
+                            """INSERT OR IGNORE INTO processed_signatures
+                               (wallet_address, signature) VALUES (?, ?)""",
+                            (wallet_address, signature),
+                        )
+                        return
+                    if current_slot is None and current_observed_at is not None and (
+                        new_observed_at is None or new_observed_at <= current_observed_at
+                    ):
+                        connection.execute(
+                            """INSERT OR IGNORE INTO processed_signatures
+                               (wallet_address, signature) VALUES (?, ?)""",
+                            (wallet_address, signature),
+                        )
+                        return
                 self._mark_processed_in_connection(connection, wallet_address, signature)
 
     def save_swap_bundle(

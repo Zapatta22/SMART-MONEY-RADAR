@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import base64
 import json
 import os
 import sys
+from types import SimpleNamespace
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -26,6 +28,8 @@ from smart_money_radar.domain.damm_v2_persistence_pipeline import (
     process_damm_v2_observation,
 )
 from smart_money_radar.storage.event_store import SQLiteEventStore
+from smart_money_radar.services.wallet_monitor import WalletMonitor
+from smart_money_radar.settings import HeliusSettings
 from smart_money_radar.data_sources.token2022_fee_proof_resolver import (
     resolve_token2022_no_fee_proofs,
 )
@@ -244,6 +248,88 @@ def main() -> int:
                 })
         finally:
             memory_store.close()
+
+        # Reexecute the same Mainnet payload through the production coordinator.
+        # The in-memory store and replay source keep this validation isolated:
+        # no production database, WebSocket subscription, or order execution.
+        monitor_store = SQLiteEventStore(":memory:")
+
+        class ReplaySource:
+            async def get_transaction_async(self, signature: str):
+                if signature != args.signature:
+                    raise ValueError("WalletMonitor solicitou assinatura divergente.")
+                return {"result": raw}
+
+        def replay_fee_resolver(
+            transaction, *, monitored_wallet, signature, rpc_endpoint
+        ):
+            if monitored_wallet != wallet or signature != args.signature:
+                raise ValueError("Contexto do resolver diverge da transação Mainnet.")
+            return SimpleNamespace(
+                proofs=tuple(fee_absence_proofs),
+                reasons=tuple(fee_proof_resolution.reasons),
+                unresolved_mints=tuple(unresolved_fee_mints),
+            )
+
+        try:
+            monitor = WalletMonitor(
+                HeliusSettings(api_key="read-only-mainnet-validation"),
+                ReplaySource(),
+                monitor_store,
+                token2022_fee_proof_resolver=replay_fee_resolver,
+            )
+            wallet_monitor_completed = asyncio.run(
+                monitor._collect_transaction(wallet, args.signature)
+            )
+            if not wallet_monitor_completed:
+                raise RuntimeError(
+                    "WalletMonitor manteve a transação Mainnet pendente; checkpoint preservado."
+                )
+            wallet_monitor_checkpoint = monitor_store.get_checkpoint(wallet)
+            if wallet_monitor_checkpoint != args.signature:
+                raise RuntimeError(
+                    "WalletMonitor não concluiu o checkpoint esperado no SQLite em memória."
+                )
+            if not monitor_store.has_processed_signature(wallet, args.signature):
+                raise RuntimeError(
+                    "WalletMonitor não marcou a transação como processada."
+                )
+
+            wallet_monitor_bundles = []
+            for bundle in output.bundles:
+                stored = monitor_store.get_swap_bundle(bundle.observation.operation_id)
+                if stored is None:
+                    raise RuntimeError(
+                        "WalletMonitor não persistiu bundle DAMM v2 esperado."
+                    )
+                wallet_monitor_bundles.append({
+                    "operation_id": bundle.observation.operation_id,
+                    "venue": stored["evidence"].venue,
+                    "classification_side": stored["classification"].side,
+                    "cross_venue_evidence_count": sum(
+                        "cross-venue CPI transfer outer=" in item
+                        for item in stored["evidence"].evidence
+                    ),
+                    "fee_proof_count": sum(
+                        "Token-2022 transfer fee comprovadamente zero para mint " in item
+                        for item in stored["evidence"].evidence
+                    ),
+                })
+            if len(wallet_monitor_bundles) != len(output.bundles):
+                raise RuntimeError(
+                    "Quantidade de bundles persistidos pelo WalletMonitor diverge da análise."
+                )
+            wallet_monitor_validation = {
+                "completed": True,
+                "processed": True,
+                "checkpoint": wallet_monitor_checkpoint,
+                "damm_bundles": wallet_monitor_bundles,
+                "coordinator_order": ["Meteora DAMM v2", "Raydium CPMM"],
+                "database": "SQLite :memory:",
+                "orders_executed": False,
+            }
+        finally:
+            monitor_store.close()
     except (KeyError, TypeError, ValueError, RuntimeError) as exc:
         print(json.dumps({"status": "ERROR", "reason": str(exc)}, ensure_ascii=False))
         return 2
@@ -316,6 +402,7 @@ def main() -> int:
         "persistence_ready_for_next_venue": persistence_result.ready_for_next_venue,
         "checkpoint_after_persistence": checkpoint_after_persistence,
         "persistence_verified_bundles": persisted_bundle_evidence,
+        "wallet_monitor_validation": wallet_monitor_validation,
         "cross_venue_transfers": [
             {
                 "outer_instruction_index": transfer.outer_instruction_index,

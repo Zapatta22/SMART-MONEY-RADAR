@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from google.protobuf.message import Message
 
+from smart_money_radar.data_sources.geyser_account_timeline import AccountStateTransition
 from smart_money_radar.data_sources.geyser_proto_adapter import _base58_encode
 from smart_money_radar.data_sources.geyser_transaction_updates import NormalizedTransactionObservation
 from smart_money_radar.data_sources.solana_transaction_evidence_bundle import (
@@ -18,6 +19,8 @@ class YellowstoneTransactionEvidence:
 
     observation: NormalizedTransactionObservation
     bundle: SolanaTransactionEvidenceBundle
+    transaction_accounts: frozenset[str]
+    account_transitions: tuple[AccountStateTransition, ...] = ()
 
 
 def _instruction(item: Message) -> dict:
@@ -93,6 +96,7 @@ def project_yellowstone_evidence(
     if (not message.HasField("header")
             or not 0 < len(signatures) == message.header.num_required_signatures <= len(keys)):
         raise ValueError("cabeçalho Yellowstone incompatível com contas ou assinaturas")
+    meta = _project_meta(info, message)
     payload = {
         "slot": frame.transaction.slot,
         "transaction": {
@@ -102,11 +106,14 @@ def project_yellowstone_evidence(
                 "instructions": [_instruction(item) for item in message.instructions],
             },
         },
-        "meta": _project_meta(info, message),
+        "meta": meta,
     }
     bundle = build_solana_transaction_evidence_bundle(payload, source_id=observation.source_id)
     if (bundle.identity.transaction_signature, bundle.identity.slot) != (
         observation.transaction_signature, observation.slot,
     ):
         raise ValueError("identidade da evidência diverge do envelope Yellowstone")
-    return YellowstoneTransactionEvidence(observation, bundle)
+    loaded = meta["loadedAddresses"] if meta is not None else {"writable": (), "readonly": ()}
+    return YellowstoneTransactionEvidence(
+        observation, bundle, frozenset((*keys, *loaded["writable"], *loaded["readonly"])),
+    )

@@ -1,6 +1,8 @@
 """Offline receiver for a single Yellowstone SubscribeUpdate transport session."""
 
+from collections import Counter
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 
 from google.protobuf import descriptor_pb2, message_factory
 from google.protobuf.message import DecodeError, Message
@@ -102,18 +104,58 @@ class YellowstoneFrameReceiver:
             )
             yield sequence, frame, event
 
+    def transaction_evidence_at(self, stream_sequence: int) -> YellowstoneTransactionEvidence | None:
+        """Resolve a transaction and its finalized account transitions in one wire snapshot."""
+        timeline = AccountUpdateTimeline()
+        signatures: Counter[str] = Counter()
+        evidence = None
+        for sequence, frame, event in self._replay_frames():
+            self._apply_timeline_event(timeline, sequence, event)
+            if isinstance(event, NormalizedTransactionObservation):
+                signatures[event.transaction_signature] += 1
+                if sequence == stream_sequence:
+                    evidence = project_yellowstone_evidence(frame, event)
+        if evidence is None:
+            return None
+        observation = evidence.observation
+        if signatures[observation.transaction_signature] != 1:
+            raise ValueError("assinatura Yellowstone ambígua no domínio")
+        if not observation.bank_id or not evidence.bundle.structurally_complete:
+            return evidence
+        conflicted_accounts = {item.pubkey for item in timeline.conflicts}
+        matching = [
+            update for update in timeline.transition_for(observation.transaction_signature)
+            if update.evidence_classification == "BANK_PROVIDER_REPORTED_FINALIZED"
+            and update.pubkey in evidence.transaction_accounts
+            and update.pubkey not in conflicted_accounts
+            and update.slot == observation.slot
+            and update.post_state.bank_id == observation.bank_id
+            and update.pre_state.source == update.post_state.source == observation.source_id
+            and update.pre_state.stream_id == update.post_state.stream_id == observation.stream_id
+        ]
+        counts = Counter(update.pubkey for update in matching)
+        return replace(evidence, account_transitions=tuple(
+            update for update in matching if counts[update.pubkey] == 1
+        ))
+
     def rebuild_account_timeline(self) -> AccountUpdateTimeline:
         """Return a timeline only after every frame in this domain passes replay."""
         timeline = AccountUpdateTimeline()
         for sequence, event in self.replay():
-            if isinstance(event, NormalizedAccountUpdate):
-                timeline.add(event)
-                continue
-            timeline.advance_transport(self._stream_id, sequence)
-            if isinstance(event, NormalizedSlotUpdate):
-                timeline.add_slot_update(event)
-            elif isinstance(event, NormalizedBlockMeta):
-                timeline.add_block_meta(event)
-            elif isinstance(event, NormalizedEntryUpdateParent):
-                timeline.add_entry_update_parent(event)
+            self._apply_timeline_event(timeline, sequence, event)
         return timeline
+
+    def _apply_timeline_event(
+        self, timeline: AccountUpdateTimeline, sequence: int,
+        event: NormalizedGeyserEvent | NormalizedTransactionObservation | None,
+    ) -> None:
+        if isinstance(event, NormalizedAccountUpdate):
+            timeline.add(event)
+            return
+        timeline.advance_transport(self._stream_id, sequence)
+        if isinstance(event, NormalizedSlotUpdate):
+            timeline.add_slot_update(event)
+        elif isinstance(event, NormalizedBlockMeta):
+            timeline.add_block_meta(event)
+        elif isinstance(event, NormalizedEntryUpdateParent):
+            timeline.add_entry_update_parent(event)

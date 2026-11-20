@@ -305,21 +305,57 @@ class SQLiteEventStore:
                            PRIMARY KEY(pool, identity, sha256)
                        )"""
                 )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS cpmm_launch_stream_cursor (
+                           source_id TEXT PRIMARY KEY,
+                           first_sequence INTEGER NOT NULL CHECK(first_sequence >= 0),
+                           last_sequence INTEGER NOT NULL CHECK(last_sequence >= first_sequence),
+                           updated_at TEXT NOT NULL
+                       )"""
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS cpmm_launch_stream_delivery (
+                           source_id TEXT NOT NULL,
+                           sequence INTEGER NOT NULL CHECK(sequence >= 0),
+                           sha256 TEXT NOT NULL REFERENCES cpmm_launch_raw(sha256),
+                           PRIMARY KEY(source_id, sequence)
+                       )"""
+                )
 
-    def archive_cpmm_launches(self, payloads: list[bytes]) -> dict:
-        """Archive each detected identity and RAW envelope before reporting a pool."""
+    def archive_cpmm_launches(
+        self, payloads: list[bytes], *,
+        source_id: str | None = None, first_sequence: int | None = None,
+    ) -> dict:
+        """Archive RAW and identities; optional durable consumer sequence in same commit.
+
+        The sequence is assigned by the upstream consumer, NOT a Solana slot.
+        The first seen sequence is a local baseline, not proof of prior coverage.
+        """
         from smart_money_radar.data_sources.raydium_cpmm_launch import detect_cpmm_pool_initializations
 
         if self.read_only:
             raise ValueError("arquivo de lançamentos exige SQLite gravável")
+        if (source_id is None) != (first_sequence is None):
+            raise ValueError("origem e primeira sequência devem ser informadas juntas")
+        if source_id is not None:
+            if (not isinstance(source_id, str) or not source_id.strip()
+                    or len(source_id) > 256 or "\x00" in source_id):
+                raise ValueError("identidade do consumidor inválida")
+            if (type(first_sequence) is not int or first_sequence < 0
+                    or not payloads or first_sequence + len(payloads) - 1 > 2**63 - 1):
+                raise ValueError("intervalo de sequência inválido")
         inputs = []
+        frames = []
         candidates = {}
         records = []
         for raw in payloads:
+            if not isinstance(raw, bytes):
+                raise ValueError("payload RAW deve conter bytes")
             payload = json.loads(raw)
             if not isinstance(payload, dict):
                 raise ValueError("transação do Launch Radar precisa ser um objeto JSON")
             digest = hashlib.sha256(raw).hexdigest()
+            frames.append((digest, raw))
             found = detect_cpmm_pool_initializations(payload)
             inputs.append({"sha256": digest, "matched_initializations": len(found)})
             if not found:
@@ -334,8 +370,37 @@ class SQLiteEventStore:
 
         new_pools = []
         conflicts = []
+        stream_report = None
         with self._connection_scope() as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
+            new_deliveries = []
+            replayed_count = 0
+            if source_id is not None:
+                previous = connection.execute(
+                    "SELECT first_sequence, last_sequence FROM cpmm_launch_stream_cursor "
+                    "WHERE source_id = ?", (source_id,),
+                ).fetchone()
+                start = previous[0] if previous else None
+                last = previous[1] if previous else None
+                for offset, (digest, _) in enumerate(frames):
+                    sequence = first_sequence + offset
+                    saved = connection.execute(
+                        "SELECT sha256 FROM cpmm_launch_stream_delivery "
+                        "WHERE source_id = ? AND sequence = ?", (source_id, sequence),
+                    ).fetchone()
+                    if saved is not None:
+                        if saved[0] != digest:
+                            raise ValueError("conflito de identidade RAW na sequência já arquivada")
+                        if last is None or sequence > last:
+                            raise ValueError("cursor de lançamentos inconsistente")
+                        replayed_count += 1
+                        continue
+                    if last is not None and sequence != last + 1:
+                        raise ValueError("lacuna ou sequência histórica desconhecida no consumidor")
+                    if start is None:
+                        start = sequence
+                    new_deliveries.append((source_id, sequence, digest))
+                    last = sequence
             known = {
                 pool for pool in candidates if connection.execute(
                     "SELECT 1 FROM cpmm_launch_evidence WHERE pool = ? LIMIT 1", (pool,)
@@ -358,9 +423,37 @@ class SQLiteEventStore:
                     conflicts.append(pool)
                 elif pool not in known:
                     new_pools.append(observation)
-        return {
+            if source_id is not None:
+                # Save even non-Initialize frames: the cursor must never claim
+                # an examined delivery without its immutable RAW bytes.
+                connection.executemany(
+                    "INSERT OR IGNORE INTO cpmm_launch_raw VALUES (?, ?, ?)",
+                    ((digest, raw, archived_at) for digest, raw in frames),
+                )
+                connection.executemany(
+                    "INSERT INTO cpmm_launch_stream_delivery VALUES (?, ?, ?)", new_deliveries,
+                )
+                if new_deliveries:
+                    connection.execute(
+                        """INSERT INTO cpmm_launch_stream_cursor
+                           VALUES (?, ?, ?, ?)
+                           ON CONFLICT(source_id) DO UPDATE SET
+                               last_sequence = excluded.last_sequence,
+                               updated_at = excluded.updated_at""",
+                        (source_id, start, last, archived_at),
+                    )
+                stream_report = {
+                    "source_id": source_id, "first_sequence": start,
+                    "last_sequence": last, "new_deliveries": len(new_deliveries),
+                    "replayed_deliveries": replayed_count,
+                    "prior_coverage": "UNKNOWN",
+                }
+        report = {
             "inputs": inputs, "initializations": new_pools, "conflicted_pools": conflicts,
         }
+        if stream_report is not None:
+            report["stream_cursor"] = stream_report
+        return report
 
     def save_events(self, events: list[ActivityEvent]) -> int:
         """Grava eventos e retorna quantos registros novos foram inseridos."""

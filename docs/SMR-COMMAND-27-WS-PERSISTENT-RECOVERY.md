@@ -15,14 +15,14 @@ Data: 2026-11-20. PR [#111](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/
 6. A inserção do frame e o checkpoint local permanecem vinculados pela transação SQLite existente; idempotência e detecção de SHA-256 continuam responsabilidade do store reaproveitado. Checkpoint local comprova só frames arquivados, nunca a continuidade da rede.
 
 ## Evidências de teste
-- CI final **1.039 testes, zero falhas**, Python compilation aprovada, commit de código `3134dff8d4c24e0f10909230c38e10c2a715ac69`: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44836443939.
+- CI final **1.043 testes, zero falhas**, Python compilation aprovada, commit de código `f2187d42ee42e076426b648352cb6af15dde2f4a`: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44836760223.
 - Testes novos de reinício SQLite, RAW arquivado após resposta tardia, isolamento de duas sessões, falha/timeout RPC, domínio órfão, prazo global e manutenção de `UNKNOWN`, usando exclusivamente transportes sintéticos.
-- Testes anteriores de conflito SHA-256, contiguidade, replay, slot regressivo e SQLite permanecem na suíte integrada. Não houve consulta RPC/WebSocket real nesta etapa.
+- Testes adversariais específicos confirmam rejeição de slot RPC regressivo, dados RPC incompletos, rollback RAW/ checkpoint na mesma transação SQLite sob falha injetada e colisão SHA-256 sem avanço indevido. Não houve consulta RPC/WebSocket real nesta etapa.
 
 ## Pendências que NÃO foram promovidas a conclusão
 - **Reconexão live demonstrada: NÃO.** Último baseline real continua slot 471887787; não inventar novas assinaturas, slots, notificações ou atualização CPMM.
-- Ausente teste explícito de interrupção elétrica do SQLite e recuperação durante cada ponto intermediário de commit, embora as operações existentes sejam transacionais. Ausente prova live de sequência contínua ou backfill de lacunas. Falta provar com fixture válida o tratamento de regressão de slot e baseline incompleto nesta integração específica.
+- O rollback SQLite sob falha injetada já foi testado; ainda não houve teste de queda física do dispositivo nem SIGKILL em todas as fases. Ausentes prova live de sequência contínua e backfill de lacunas. Regressão de slot e baseline incompleto foram testados offline com resposta sintética, não com prova real de rede.
 - `coverage=UNKNOWN`; execução financeira permanece desautorizada. A API de leitura/gravação de sessão deve ser usada por **um** capturador por `source_id` para evitar disputa entre processos; exclusividade multiprocesso não foi implementada.
 
 ## Próximo gate
-Executar testes adversariais restantes de slot regressivo, resposta incompleta, concorrência e crash injetado no checkpoint; revisar e consolidar PRs Draft por ordem de dependências. Depois, avaliar uma única sessão Solana real, curta e auditável, sem forçar desconexões na infraestrutura pública. Não executar compras ou vendas, não efetuar merge automático.
+Concluir a auditoria de concorrência multiprocesso e interrupção do processo nos pontos ainda não simulados; revisar e consolidar PRs Draft por dependência. Depois, avaliar uma única sessão Solana real, curta e auditável, sem forçar desconexões na infraestrutura pública. Não executar compras ou vendas, não efetuar merge automático.

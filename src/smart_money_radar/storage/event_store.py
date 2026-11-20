@@ -244,6 +244,7 @@ class SQLiteEventStore:
                         operation_id TEXT NOT NULL UNIQUE,
                         wallet_address TEXT NOT NULL,
                         program_id TEXT NOT NULL,
+                        pool_address TEXT,
                         input_mint TEXT NOT NULL,
                         output_mint TEXT NOT NULL,
                         input_amount TEXT NOT NULL,
@@ -256,6 +257,11 @@ class SQLiteEventStore:
                             ON DELETE CASCADE
                     )"""
                 )
+                replay_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(swap_replay_archive)")
+                }
+                if "pool_address" not in replay_columns:
+                    connection.execute("ALTER TABLE swap_replay_archive ADD COLUMN pool_address TEXT")
                 connection.execute(
                     """CREATE INDEX IF NOT EXISTS idx_swap_replay_scope
                        ON swap_replay_archive(wallet_address, program_id, receipt_id)"""
@@ -460,8 +466,14 @@ class SQLiteEventStore:
                         observation = item.observation
                         if (observation.wallet_address, observation.signature) != (wallet_address, signature):
                             raise ValueError("bundle de replay não pertence à transação processada")
+                        pools = {
+                            record.removeprefix("pool_state:").strip()
+                            for record in item.evidence.evidence
+                            if record.startswith("pool_state:") and record.removeprefix("pool_state:").strip()
+                        }
+                        pool_address = next(iter(pools)) if len(pools) == 1 else None
                         receipts.append((
-                            observation.operation_id, wallet_address, item.evidence.program_id,
+                            observation.operation_id, wallet_address, item.evidence.program_id, pool_address,
                             observation.input_mint, observation.output_mint,
                             str(observation.input_amount), str(observation.output_amount),
                             item.classification.side, str(item.classification.confidence),
@@ -469,9 +481,9 @@ class SQLiteEventStore:
                         ))
                     connection.executemany(
                         """INSERT INTO swap_replay_archive
-                           (operation_id, wallet_address, program_id, input_mint, output_mint,
+                           (operation_id, wallet_address, program_id, pool_address, input_mint, output_mint,
                             input_amount, output_amount, side, confidence, occurred_at, available_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                            ON CONFLICT(operation_id) DO NOTHING""",
                         receipts,
                     )
@@ -579,7 +591,7 @@ class SQLiteEventStore:
                 return previous is None
 
     def list_swap_replay_archive(
-        self, *, wallet: str, program: str, base_mint: str, quote_mint: str,
+        self, *, wallet: str, program: str, base_mint: str, quote_mint: str, pool: str | None = None,
     ) -> list[dict]:
         """Read first-seen swap evidence in durable arrival order."""
         with self._connection_scope() as connection:
@@ -587,15 +599,19 @@ class SQLiteEventStore:
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'swap_replay_archive'"
             ).fetchone() is None:
                 raise ValueError("banco sem arquivo prospectivo de swaps para paper replay")
-            cursor = connection.execute(
-                """SELECT operation_id, input_mint, input_amount, output_amount, side,
-                          confidence, occurred_at, available_at
-                   FROM swap_replay_archive
-                   WHERE wallet_address = ? AND program_id = ?
-                     AND ((input_mint = ? AND output_mint = ?) OR (input_mint = ? AND output_mint = ?))
-                   ORDER BY receipt_id""",
-                (wallet, program, base_mint, quote_mint, quote_mint, base_mint),
-            )
+            query = """SELECT operation_id, input_mint, input_amount, output_amount, side,
+                              confidence, occurred_at, available_at
+                       FROM swap_replay_archive
+                       WHERE wallet_address = ? AND program_id = ?
+                         AND ((input_mint = ? AND output_mint = ?) OR (input_mint = ? AND output_mint = ?))"""
+            params = (wallet, program, base_mint, quote_mint, quote_mint, base_mint)
+            if pool is not None:
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(swap_replay_archive)")}
+                if "pool_address" not in columns:
+                    raise ValueError("arquivo legado sem proveniência de pool")
+                query += " AND pool_address = ?"
+                params += (pool,)
+            cursor = connection.execute(query + " ORDER BY receipt_id", params)
             columns = tuple(item[0] for item in cursor.description)
             return [dict(zip(columns, row)) for row in cursor]
 

@@ -40,7 +40,7 @@ class PaperAcceptanceTests(unittest.TestCase):
                     Decimal(10), Decimal(1), at(event_time), "acceptance-fixture",
                 )
                 classification = SwapClassification(operation, side, Decimal("0.95"), "fixture")
-                evidence = SwapEvidence(operation, "program", None, 0)
+                evidence = SwapEvidence(operation, "program", None, 0, evidence=("pool_state:pool-a",))
                 store.save_observation(
                     "wallet", signature, {"meta": {"err": None}}, [], parse_status="no_events",
                     parser_version="v1", advance_checkpoint=False,
@@ -54,7 +54,7 @@ class PaperAcceptanceTests(unittest.TestCase):
             store.close()
 
             scenario = root / "scenario.json"
-            market = {"program": "program", "base_mint": "base", "quote_mint": "quote"}
+            market = {"program": "program", "base_mint": "base", "quote_mint": "quote", "pool": "pool-a"}
             scenario.write_text(json.dumps({
                 "config": {"initial_cash": "1000", "max_entry_cash": "100", "max_exposure": "0.1",
                            "fee_bps": "100", "stop_loss": "0.3", "take_profit": "0.8"},
@@ -67,7 +67,8 @@ class PaperAcceptanceTests(unittest.TestCase):
                 "quotes": [
                     {"quote_id": f"q{second}", "market_at": at(second).isoformat(),
                      "available_at": at(second).isoformat(), "bid": str(bid), "ask": str(ask),
-                     "bid_size": "100", "ask_size": "100", "volume": str(volume)}
+                     "bid_size": "100", "ask_size": "100", "volume": str(volume),
+                     "bid_route_pool_ids": ["pool-a"], "ask_route_pool_ids": ["pool-a"]}
                     for second, bid, ask, volume in (
                         (4, 9, 10, 10), (5, 10, 11, 20), (6, 11, 12, 30),
                         (10, 11, 12, 30), (11, 13, 14, 30),
@@ -113,3 +114,9 @@ class PaperAcceptanceTests(unittest.TestCase):
                     self.assertGreater(Decimal(result["total_fees"]), 0)
                     self.assertGreater(Decimal(result["max_drawdown"]), 0)
             self.assertLess(Decimal(comparison["equity_delta"]), 0)
+
+            file = json.loads(quotes.read_text())
+            file["quotes"][0]["ask_route_pool_ids"] = ["pool-a", "pool-b"]
+            quotes.write_text(json.dumps(file))
+            with self.assertRaisesRegex(SystemExit, "rota bid/ask diverge"):
+                run()

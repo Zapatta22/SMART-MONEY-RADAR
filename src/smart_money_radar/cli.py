@@ -161,6 +161,8 @@ def _paper_replay(args: argparse.Namespace) -> None:
 
             market = scenario["market"]
             scope = {key: market[key] for key in ("wallet", "program", "base_mint", "quote_mint")}
+            if "pool" in market:
+                scope["pool"] = market["pool"]
             if (any(not isinstance(value, str) or not value.strip() for value in scope.values())
                     or scope["base_mint"] == scope["quote_mint"]):
                 raise ValueError("mercado do replay inválido")
@@ -181,18 +183,20 @@ def _paper_replay(args: argparse.Namespace) -> None:
                 quote_archive = json.loads(args.quotes.read_text(encoding="utf-8"), parse_float=Decimal)
                 source = quote_archive["source"]
                 if (not isinstance(source, str) or not source.strip()
+                        or quote_archive.get("pool") != scope.get("pool")
                         or any(quote_archive[key] != scope[key]
                                for key in ("program", "base_mint", "quote_mint"))):
                     raise ValueError("fonte ou mercado das cotações não corresponde ao cenário")
                 ticks, selected_quotes = ticks_from_quote_archive(
                     quote_archive["quotes"], ticks, signal_ttl_seconds=market["signal_ttl_seconds"],
-                    as_of=as_of,
+                    as_of=as_of, pool=scope.get("pool"),
                 )
                 canonical_quotes = json.dumps(
                     selected_quotes, sort_keys=True, separators=(",", ":"), default=str,
                 ).encode()
                 quote_report = {
                     "source": source, "quotes": len(selected_quotes),
+                    "pool_scope": scope.get("pool"),
                     "sha256": hashlib.sha256(canonical_quotes).hexdigest(),
                     "signal_ttl_seconds": market["signal_ttl_seconds"],
                 }

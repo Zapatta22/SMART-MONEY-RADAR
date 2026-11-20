@@ -142,3 +142,12 @@ do cenário e a qualidade da amostra precisa de avaliação separada. O relatór
 também separa o atraso médio entre decisão e evento de mercado e o atraso
 médio entre evento e disponibilidade. O primeiro é simulado. O segundo
 reflete os horários registrados na entrada e, em fixtures, também é sintético.
+
+Para fixar um pool, inclua `market.pool` no cenário e `pool` no cabeçalho
+do arquivo de cotações. Nesse modo, cada cotação exige
+`bid_route_pool_ids` e `ask_route_pool_ids` contendo somente o pool
+escolhido. O arquivo SQLite usa o pool publicado pela evidência CPMM e
+exclui recibos antigos ou ambíguos sem identidade de pool. Assim, uma
+cotação agregada do mesmo par que passa por outro pool fica inelegível.
+A origem declarada das rotas precisa ser sustentada pelo dado bruto
+coletado.

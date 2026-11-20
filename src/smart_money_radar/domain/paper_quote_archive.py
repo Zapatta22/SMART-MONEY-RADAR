@@ -10,7 +10,7 @@ from smart_money_radar.domain.paper_replay import ReplayTick
 
 def ticks_from_quote_archive(
     quotes: list[dict], signals: list[ReplayTick], *, signal_ttl_seconds: int,
-    as_of: datetime | None = None,
+    as_of: datetime | None = None, pool: str | None = None,
 ) -> tuple[list[ReplayTick], list[dict]]:
     """Consume actionable signals only after a newer market observation exists."""
     if type(signal_ttl_seconds) is not int or not 1 <= signal_ttl_seconds <= 86_400:
@@ -31,6 +31,10 @@ def ticks_from_quote_archive(
                 raise ValueError("cotação exige horário de disponibilidade com fuso")
             if as_of is not None and arrival > as_of:
                 continue
+            if pool is not None and any(
+                row.get(field) != [pool] for field in ("bid_route_pool_ids", "ask_route_pool_ids")
+            ):
+                raise ValueError("rota bid/ask diverge do pool selecionado")
             market_at = datetime.fromisoformat(row["market_at"])
             quote_id = row["quote_id"]
             if (not isinstance(quote_id, str) or not quote_id.strip() or quote_id in ids

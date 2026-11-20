@@ -151,3 +151,22 @@ exclui recibos antigos ou ambíguos sem identidade de pool. Assim, uma
 cotação agregada do mesmo par que passa por outro pool fica inelegível.
 A origem declarada das rotas precisa ser sustentada pelo dado bruto
 coletado.
+
+## Estimativa direta de um pool CPMM
+
+`smr cpmm-quote-model REQUEST.json RESPONSE.json --base-mint BASE --quote-mint QUOTE --base-size-raw N --block-time UNIX_SECONDS`
+estima o preço bid/ask para a quantidade fixa `N` a partir de uma resposta
+RPC arquivada. A requisição deve ser `getMultipleAccounts`, com compromisso
+`finalized`, encoding `base64` e a ordem pool, configuração, vault 0, vault 1.
+Forneça o horário de `getBlockTime` do slot da resposta. Esse horário é
+atribuído ao operador no relatório. O comando verifica o programa e os
+vínculos entre as quatro contas, subtrai fundos reservados para taxas,
+aplica a taxa de trade com arredondamento inteiro e registra os hashes dos
+arquivos. O layout foi conferido no [código CPMM fixado](https://github.com/raydium-io/raydium-cp-swap/tree/3d69122790e97cd6aff24e8ba95940793773f58c).
+
+A versão inicial cobre SPL clássico com taxa de criador desabilitada. O
+resultado é rotulado `modeled_from_reserves`. Ele corresponde a um tamanho
+e a um slot específicos. Para uma comparação prospectiva, ainda são
+necessários um conjunto de estados contemporâneos aos sinais, horários de
+disponibilidade registrados e volume medido separadamente. O comando não
+produz uma série de cotações observadas nem envia transações.

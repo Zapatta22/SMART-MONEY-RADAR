@@ -82,6 +82,15 @@ def _parser() -> argparse.ArgumentParser:
     paper.add_argument("--quotes", type=Path, help="arquivo de cotações bid/ask independente")
     paper.add_argument("--archive", type=Path, help="lê swaps concluídos de um banco SQLite local")
     paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
+    model = subparsers.add_parser(
+        "cpmm-quote-model", help="estima preços de um snapshot CPMM finalizado e arquivado",
+    )
+    model.add_argument("request", type=Path)
+    model.add_argument("response", type=Path)
+    model.add_argument("--base-mint", required=True)
+    model.add_argument("--quote-mint", required=True)
+    model.add_argument("--base-size-raw", type=int, required=True)
+    model.add_argument("--block-time", type=int, required=True)
     return parser
 
 
@@ -111,6 +120,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         if args.command == "paper-replay":
             _paper_replay(args)
             return
+        if args.command == "cpmm-quote-model":
+            _model_cpmm_quotes(args)
+            return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)
         if args.command == "check":
@@ -122,6 +134,29 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
     except (OSError, SettingsError, RuntimeError, ValueError, sqlite3.Error) as exc:
         raise SystemExit(str(exc)) from None
+
+
+def _model_cpmm_quotes(args: argparse.Namespace) -> None:
+    from smart_money_radar.data_sources.raydium_cpmm_quote_snapshot import (
+        decode_cpmm_snapshot,
+        model_cpmm_quotes,
+    )
+
+    request, response = args.request.read_bytes(), args.response.read_bytes()
+    try:
+        snapshot = decode_cpmm_snapshot(
+            json.loads(request), json.loads(response), base_mint=args.base_mint,
+            quote_mint=args.quote_mint, block_time=args.block_time,
+        )
+        prices = model_cpmm_quotes(snapshot, base_size_raw=args.base_size_raw)
+    except (AttributeError, KeyError, TypeError) as exc:
+        raise ValueError("arquivos RPC do snapshot CPMM inválidos") from exc
+    print(json.dumps({
+        **asdict(snapshot), **prices, "price_kind": "modeled_from_reserves",
+        "block_time": args.block_time, "block_time_provenance": "operator_supplied",
+        "request_sha256": hashlib.sha256(request).hexdigest(),
+        "response_sha256": hashlib.sha256(response).hexdigest(),
+    }, default=str, ensure_ascii=False))
 
 
 def _paper_replay(args: argparse.Namespace) -> None:

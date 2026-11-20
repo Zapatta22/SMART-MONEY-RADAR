@@ -105,3 +105,14 @@ Não afirmar que testes passaram. Inspecionar workflows, executar suíte complet
 - CI integrada **791 testes, zero falhas e compileall**, SHA de código `f6dfa66b10f7feef803d600e57f4b2c2309494e7`: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44776739674. Testes SQLite com `read_only=True` após reinício e `mark_processed` idempotente passaram. Não somar suítes de branches.
 - Runbook `docs/SMR-SQLITE-HISTORICAL-REPLAY.md`. `swap_replay_archive` não atesta slot, finalized, fonte RPC RAW nem quote econômico; estes campos e PnL permanecem UNKNOWN. Helius real pendente; sem gastos ou operações reais.
 - **Próximo trabalho desbloqueado:** integrar prova RAW signature/slot/tempo aos recibos imutáveis e quote observado com `replay_with_required_risk` já existente; comparar modos sem inventar preço/resultado. Progresso global não mensurável.
+
+
+### Comando Mestre 12 — RAW e preços verificáveis (2026-11-20)
+
+- Estado inicial inspecionado: PR #90 Draft, head `7527075d41dc46f8373525c4e192ae23dea0b09d`, base #87; `main` mantida `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Documento de continuidade lido.
+- Zero agentes Codex independentes; duas frentes em branches isoladas: #91 (`codex/smr-raw-receipt-provenance`) para vínculo de recibo SQLite a transação local; #92 (`codex/smr-observed-quote-gate`) para preflight de quote. PR #93 é a integração em `codex/smr-raw-quote-evidence-integration`, base PR #90, sem merge da main.
+- `receipt_raw_link.py` inspeciona `get_swap_bundle`, `get_raw_transaction`, `get_observation_metadata`, assinatura, programa, pool, slot, horário e hash canônico SHA-256; todas as evidências continuam UNKNOWN para autenticidade RPC/finalized. Não confundir JSON persistido com RAW bytes da rede.
+- `observed_quote_gate.py` exige escopo pool, slot, fonte declarada, horários, hash, bid/ask, profundidade, volume, tarifas e slippage; retorna UNKNOWN/REJECTED diante de lacunas. Mesmo quote de teste com flags atestadas mantém `economics_supported=False` e `entry_allowed=False`, sem autorização de operação financeira.
+- GitHub Actions comprovado no SHA de código `e4a2e1b20159473e74c8fe092323bc39d949bfb6`: **809 testes aprovados, zero falhas e compileall**, https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44779992846. Não somar totais das branches.
+- Especificação em `docs/SMR-RAW-QUOTES-REPLAY.md`. Solana Live real e Helius permanecem pendentes. Métricas PnL/ROI/drawdown confiáveis continuam indisponíveis. Progresso global não mensurável.
+- Próxima tarefa crítica: ligação verificável de RAW original/finalized e cotação com origem autenticada, slot, pool, `quote_id`, first-publication e preflight estrito `replay_with_required_risk` já existente; comparar modos só depois de evidências suficientes.

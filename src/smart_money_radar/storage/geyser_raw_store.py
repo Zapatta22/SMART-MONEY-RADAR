@@ -93,7 +93,7 @@ class SQLiteGeyserRawStore:
     recorded, including conflicting deliveries.
     """
 
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
 
     def __init__(self, database_path: Path | str, *, read_only: bool = False) -> None:
         self.database_path = str(database_path)
@@ -104,7 +104,7 @@ class SQLiteGeyserRawStore:
                 raise ValueError("a leitura do journal exige um arquivo SQLite")
             with self._connection() as connection:
                 row = connection.execute("SELECT MAX(version) FROM geyser_schema_migrations").fetchone()
-                if row[0] not in (3, self.SCHEMA_VERSION):
+                if row[0] not in (3, 4, self.SCHEMA_VERSION):
                     raise ValueError("schema SQLite incompatível com a leitura do journal Yellowstone")
         elif self.database_path == ":memory:":
             self._memory_connection = sqlite3.connect(":memory:")
@@ -305,6 +305,54 @@ class SQLiteGeyserRawStore:
                     COMMIT;
                 """)
 
+            if current < 5:
+                connection.executescript("""
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE IF NOT EXISTS geyser_capture_source_leases (
+                        source_id TEXT PRIMARY KEY,
+                        owner_id TEXT NOT NULL UNIQUE,
+                        acquired_at TEXT NOT NULL
+                    );
+                    INSERT OR IGNORE INTO geyser_schema_migrations(version, applied_at)
+                        VALUES (5, CURRENT_TIMESTAMP);
+                    COMMIT;
+                """)
+
+    def acquire_capture_source_lease(self, *, source_id: str, owner_id: str) -> None:
+        """Exclusive same-source ownership, held in the existing SQLite transaction layer.
+
+        A persistent source lease fails closed after process death until explicitly
+        released or forcibly recovered by a verified dead-owner procedure. This
+        avoids silently declaring another live writer interrupted.
+        """
+        _text(source_id, "source_id")
+        _text(owner_id, "owner_id")
+        with self._connection() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT 1 FROM geyser_capture_source_leases WHERE source_id = ?",
+                (source_id,),
+            ).fetchone():
+                raise ValueError("capture source already owned; do not recover active writer")
+            connection.execute(
+                """INSERT INTO geyser_capture_source_leases
+                   (source_id, owner_id, acquired_at) VALUES (?, ?, ?)""",
+                (source_id, owner_id, datetime.now(timezone.utc).isoformat()),
+            )
+
+    def release_capture_source_lease(self, *, source_id: str, owner_id: str) -> None:
+        _text(source_id, "source_id")
+        _text(owner_id, "owner_id")
+        with self._connection() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            result = connection.execute(
+                """DELETE FROM geyser_capture_source_leases
+                   WHERE source_id = ? AND owner_id = ?""",
+                (source_id, owner_id),
+            )
+            if result.rowcount != 1:
+                raise ValueError("capture source lease not owned by caller")
+
     def start_capture_session(self, source_id: str, stream_id: str) -> None:
         """Record an attempt before opening its network connection."""
         with self._connection() as connection, connection:
@@ -344,6 +392,11 @@ class SQLiteGeyserRawStore:
         _text(source_id, "source_id")
         with self._connection() as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT 1 FROM geyser_capture_source_leases WHERE source_id = ?",
+                (source_id,),
+            ).fetchone():
+                raise ValueError("cannot recover incomplete sessions while source leased")
             # Also recover a kill between registering the stream and creating
             # its session metadata: both operations were previously separate.
             orphaned = connection.execute(

@@ -25,11 +25,11 @@ class CpmmRecoveryRunner:
     def __init__(self, recovery:BoundedCpmmRecovery, *,
                  ws_connect, rpc_fetch, snapshot_identity:dict,
                  duration_seconds:float=75., max_frames:int=80,
-                 sleep=asyncio.sleep, clock=time.monotonic,
+                 sleep=asyncio.sleep, clock=time.monotonic, rpc_timeout_seconds:float=12.,
                  now=lambda:datetime.now(timezone.utc)):
         if not 1<=duration_seconds<=600 or not 4<=max_frames<=1000:
             raise ValueError("bounded session required")
-        self.recovery=recovery
+        if not 0 < rpc_timeout_seconds <= 120:\n            raise ValueError("bounded RPC timeout required")\n        self.rpc_timeout_seconds=rpc_timeout_seconds\n        self.recovery=recovery
         self.ws_connect=ws_connect
         self.rpc_fetch=rpc_fetch
         self.snapshot_identity=dict(snapshot_identity)
@@ -75,7 +75,7 @@ class CpmmRecoveryRunner:
                         "new_ordering_domain":scope}
                 self.manifest["connections"].append(report)
                 raw_notifications=[]
-                baseline_task=None
+                baseline_task=None\n                baseline_scope=None\n                baseline_cutoff=None
                 report["websocket_requests"]=[]
                 report["wire_raw_frames_sha256"]=[]
                 report["rpc_baseline_request_raw"]=None
@@ -108,7 +108,7 @@ class CpmmRecoveryRunner:
                                 report["rpc_baseline_request_raw"]=req.decode()
                                 report["baseline_attempts"]=1
                                 self.manifest["rpc_baseline_calls"]+=1
-                                baseline_task=asyncio.create_task(self.rpc_fetch(req))
+                                baseline_scope=scope\n                                baseline_cutoff=self.now()\n                                baseline_task=asyncio.create_task(\n                                    asyncio.wait_for(self.rpc_fetch(req), timeout=\n                                        min(self.rpc_timeout_seconds, max(.01, deadline-self.clock()))))
                             failure_phase="receive"
                             try:
                                 message=await asyncio.wait_for(ws.recv(),
@@ -164,7 +164,7 @@ class CpmmRecoveryRunner:
                 finally:
                     if baseline_task is not None:
                         try:
-                            requested,available,response,error=await baseline_task
+                            # A result can only describe its originating session.\n                            # The RPC task is bounded even if the WS already failed.\n                            if baseline_task.done():\n                                requested,available,response,error=await baseline_task\n                            else:\n                                baseline_task.cancel()\n                                try:\n                                    await baseline_task\n                                except (asyncio.CancelledError, asyncio.TimeoutError):\n                                    pass\n                                report["baseline_error"]="cancelled_after_ws_end"\n                                continue_result=False\n                                requested=available=response=error=None\n                            if requested is None:\n                                raise ValueError("baseline_cancelled_after_ws_end")\n                            if baseline_scope!=scope or not connection_healthy or not session.active:\n                                report["baseline_error"]="stale_session_result"\n                                raise ValueError("baseline_stale_session")\n                            if available>self.now() or self.clock()>=deadline:\n                                report["baseline_error"]="response_after_cutoff"\n                                raise ValueError("baseline_after_cutoff")
                             report["baseline_requested_at"]=requested.isoformat()
                             report["baseline_available_at"]=available.isoformat()
                             report["baseline_rpc_error"]=error

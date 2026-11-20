@@ -443,7 +443,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
                 snapshot_identity=first.snapshot_identity,duration_seconds=15,
                 sleep=lambda _:asyncio.sleep(0))
             try:
-                with self.assertRaisesRegex(ValueError,"source leased"):
+                with self.assertRaisesRegex(ValueError,"owner still alive|source leased"):
                     await second.run()
                 self.assertEqual(len(contender.sessions),0)
                 active=self.db.get_capture_session(

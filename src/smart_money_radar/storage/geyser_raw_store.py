@@ -389,6 +389,18 @@ class SQLiteGeyserRawStore:
         except (OSError, ValueError) as exc:
             raise ValueError("cannot establish local process identity") from exc
 
+    def get_capture_source_lease(self, *, source_id: str) -> dict | None:
+        """Read current local lease for safe owner-identity recovery."""
+        _text(source_id, "source_id")
+        with self._connection() as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                """SELECT source_id, owner_id, pid, pid_start_ticks, acquired_at
+                   FROM geyser_capture_source_leases WHERE source_id = ?""",
+                (source_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
     def release_dead_capture_source_lease(self, *, source_id: str,
                                           owner_id: str) -> bool:
         """Reclaim only if procfs conclusively identifies a different/absent owner."""

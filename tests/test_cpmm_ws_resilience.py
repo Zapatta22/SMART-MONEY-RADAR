@@ -115,9 +115,10 @@ class ResilienceTests(unittest.TestCase):
                 payload=b'{"a":2}',frame_kind="solana_ws_jsonrpc")
         self.assertNotEqual(receipt.status,"accepted")
         self.assertNotEqual(receipt.status,"duplicate")
-        self.assertEqual(
-            self.store.verify_wire_session("test-solana-ws","conn1","conn1")["verified_frames"],1)
-        self.assertEqual(self.store.get_wire_frame(receipt.frame_id),b'{"a":1}') if receipt.frame_id else None
+        # A conflicting sequence taints the stream; verification must fail closed.
+        with self.assertRaisesRegex(ValueError,"interrompido|anomalia"):
+            self.store.verify_wire_session("test-solana-ws","conn1","conn1")
+        self.assertEqual(self.store.integrity_check(),["ok"])
 
     def test_sqlite_interruption_does_not_advance_frames(self):
         self.s._record(b'{"a":1}',"solana_ws_jsonrpc")

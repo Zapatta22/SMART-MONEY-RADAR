@@ -1,0 +1,39 @@
+name: SMR first Solana mainnet proof (read only)
+
+on:
+  push:
+    branches:
+      - codex/smr-first-solana-proof
+    paths:
+      - tools/first_solana_proof.py
+      - .github/workflows/smr-first-solana-proof.yml
+
+permissions:
+  contents: read
+
+jobs:
+  first-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout isolated draft branch
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Capture at most one public getTransaction response
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python tools/first_solana_proof.py
+      - name: Persist exact RAW and audit manifest even if RPC is unavailable
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-first-solana-proof
+          path: /tmp/smr-first-proof/
+          retention-days: 7
+          if-no-files-found: error

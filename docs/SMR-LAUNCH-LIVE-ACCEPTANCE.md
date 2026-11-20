@@ -40,3 +40,13 @@ Validação CI geral: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/run
 Validação operacional **PENDENTE**. Eventos reais coletados nesta sessão: 0;
 latência p95 real: não medida; cobertura: UNKNOWN.
 Procedimento: `docs/SMR-SOLANA-LIVE-REAL-VALIDATION.md`.
+
+
+## Marco econômico — Comando Mestre 8, 2026-11-20
+
+| Frente | Implementação | Testes | Integração | Bloqueio |
+| --- | --- | --- | --- | --- |
+| Helius Solana Live | `launch_live_preflight.py`: pré-checagem offline de autorização, presença de chave, cluster, duração e limites por ensaio | 790 testes no SHA `65a3de41`, zero falhas, compileall: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44770956441 | PR #81 Draft, base #79 | Validação operacional real Helius ainda não efetuada; quotas reais desconhecidas |
+| Consenso Smart Money | `wallet_consensus.py`: múltiplas carteiras, direção/identidade de assinaturas e alerta Sybil; nunca torna sinal executável | 734 testes no SHA `8aaa7f2f`, zero falhas: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44770842197 | PR #80 Draft, base #66, dependência independente de Solana Live | Independência econômica não comprovada; ranking e modelos pendentes |
+
+Os totais acima pertencem a **duas branches diferentes**; não somá-los nem interpretá-los como 790 testes na `main`. Sem pesos e aceites fim-a-fim acordados, avanço global permanece não mensurável.

@@ -198,7 +198,11 @@ class CpmmRecoveryRunner:
                     self.manifest["stop_reason"]="persistence_failed_no_retry"
                     break
             if self.manifest["stop_reason"] is None:
-                self.manifest["stop_reason"]="retry_or_deadline_exhausted"
+                self.manifest["stop_reason"]=(
+                    "reconnect_budget_exhausted" if
+                    len(self.manifest["connections"])>=1+self.recovery.policy.max_reconnects
+                    and bool(self.manifest["gaps"])
+                    else "retry_or_deadline_exhausted")
             return self.manifest
         finally:
             self.recovery.finalize("runner_end")

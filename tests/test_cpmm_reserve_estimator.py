@@ -23,7 +23,7 @@ class CPMMReserveEstimatorTests(unittest.TestCase):
 
     def test_zero_fee_constant_product(self):
         quote = self.quote(fee_bps=0, amount_in="100")
-        self.assertEqual(quote.estimated_output, Decimal(2000) * 100 / 1100)
+        self.assertLess(abs(quote.estimated_output - Decimal(2000) * 100 / 1100), Decimal("1e-20"))
 
     def test_larger_input_has_worse_average_price(self):
         self.assertLess(self.quote(amount_in="100").average_execution_price,

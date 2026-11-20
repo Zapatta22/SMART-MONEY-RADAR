@@ -24,7 +24,7 @@ class FixtureRPC:
         self.fail_on = set()
         self.calls = []
 
-    async def get_signatures_for_address_async(
+    async def get_finalized_signatures_for_address_async(
         self, address, *, limit=100, before=None, until=None,
     ):
         self.calls.append(("page", before))
@@ -36,7 +36,7 @@ class FixtureRPC:
         size = min(limit, self.page_limit) if self.page_limit else limit
         return self.entries[offset:offset + size]
 
-    async def get_transaction_async(self, signature):
+    async def get_finalized_transaction_async(self, signature):
         self.calls.append(("transaction", signature))
         if signature in self.fail_on:
             return None

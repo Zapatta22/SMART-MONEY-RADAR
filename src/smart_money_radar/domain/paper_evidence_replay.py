@@ -90,3 +90,24 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
         "comparison": compare_paper_reports(immediate, confirmed),
         "evidence_policy": "OBSERVED_ONLY" if require_observed_quote else "MODEL_ALLOWED_PAPER_ONLY",
     }
+
+
+def replay_with_required_risk(ticks: list[ReplayTick], evidence_by_quote: dict,
+                              *, config: PaperConfig, expected_pool: str,
+                              risk_limits: EntryRiskLimits,
+                              risk_by_quote: dict,
+                              as_of: datetime | None = None):
+    """Strict paper entry point: observed evidence and risk are mandatory.
+
+    Do not use this function as a live trading authorization. Caller-supplied
+    risk snapshots and quote evidence still need independent verification.
+    """
+    if not isinstance(risk_limits, EntryRiskLimits):
+        raise ValueError("política de risco obrigatória")
+    if not isinstance(risk_by_quote, dict):
+        raise ValueError("snapshots de risco obrigatórios")
+    return replay_with_evidence(
+        ticks, evidence_by_quote, config=config, expected_pool=expected_pool,
+        require_observed_quote=True, as_of=as_of,
+        risk_limits=risk_limits, risk_by_quote=risk_by_quote,
+    )

@@ -29,7 +29,10 @@ class CpmmRecoveryRunner:
                  now=lambda:datetime.now(timezone.utc)):
         if not 1<=duration_seconds<=600 or not 4<=max_frames<=1000:
             raise ValueError("bounded session required")
-        if not 0 < rpc_timeout_seconds <= 120:\n            raise ValueError("bounded RPC timeout required")\n        self.rpc_timeout_seconds=rpc_timeout_seconds\n        self.recovery=recovery
+        if not 0 < rpc_timeout_seconds <= 120:
+            raise ValueError("bounded RPC timeout required")
+        self.rpc_timeout_seconds=rpc_timeout_seconds
+        self.recovery=recovery
         self.ws_connect=ws_connect
         self.rpc_fetch=rpc_fetch
         self.snapshot_identity=dict(snapshot_identity)
@@ -75,7 +78,9 @@ class CpmmRecoveryRunner:
                         "new_ordering_domain":scope}
                 self.manifest["connections"].append(report)
                 raw_notifications=[]
-                baseline_task=None\n                baseline_scope=None\n                baseline_cutoff=None
+                baseline_task=None
+                baseline_scope=None
+                baseline_cutoff=None
                 report["websocket_requests"]=[]
                 report["wire_raw_frames_sha256"]=[]
                 report["rpc_baseline_request_raw"]=None
@@ -108,7 +113,11 @@ class CpmmRecoveryRunner:
                                 report["rpc_baseline_request_raw"]=req.decode()
                                 report["baseline_attempts"]=1
                                 self.manifest["rpc_baseline_calls"]+=1
-                                baseline_scope=scope\n                                baseline_cutoff=self.now()\n                                baseline_task=asyncio.create_task(\n                                    asyncio.wait_for(self.rpc_fetch(req), timeout=\n                                        min(self.rpc_timeout_seconds, max(.01, deadline-self.clock()))))
+                                baseline_scope=scope
+                                baseline_cutoff=self.now()
+                                baseline_task=asyncio.create_task(
+                                    asyncio.wait_for(self.rpc_fetch(req), timeout=
+                                        min(self.rpc_timeout_seconds, max(.01, deadline-self.clock()))))
                             failure_phase="receive"
                             try:
                                 message=await asyncio.wait_for(ws.recv(),

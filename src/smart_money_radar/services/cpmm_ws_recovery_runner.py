@@ -12,6 +12,7 @@ from datetime import datetime,timezone
 from hashlib import sha256
 import json
 import time
+import uuid
 from typing import Callable
 
 from smart_money_radar.services.cpmm_ws_recovery import BoundedCpmmRecovery
@@ -50,13 +51,22 @@ class CpmmRecoveryRunner:
     async def run(self)->dict:
         deadline=self.clock()+self.duration_seconds
         source=self.recovery.source_id
-        # A previous process may have died with an open journal session.
-        # Close its metadata as incomplete, never reuse that ordering domain.
-        self.manifest["recovered_incomplete_session_ids"] = (
-            self.recovery.store.recover_incomplete_capture_sessions(source_id=source))
+        owner_id=str(uuid.uuid4())
+        # A persistent lease prevents concurrent writers and unsafe recovery.
+        self.recovery.store.acquire_capture_source_lease(
+            source_id=source,owner_id=owner_id)
         prev_failure=None
         failure_phase="connect"
         try:
+            # Recovery happens under this runner's ownership. The store
+            # refuses recovery while leased, so explicitly prove ownership
+            # and release temporarily before recovering in one-writer scope.
+            self.recovery.store.release_capture_source_lease(
+                source_id=source,owner_id=owner_id)
+            self.manifest["recovered_incomplete_session_ids"] = (
+                self.recovery.store.recover_incomplete_capture_sessions(source_id=source))
+            self.recovery.store.acquire_capture_source_lease(
+                source_id=source,owner_id=owner_id)
             while self.clock()<deadline and len(self.manifest["connections"])<=self.recovery.policy.max_reconnects:
                 if prev_failure is not None:
                     if not self.recovery.can_retry():
@@ -304,4 +314,8 @@ class CpmmRecoveryRunner:
                     else "retry_or_deadline_exhausted")
             return self.manifest
         finally:
-            self.recovery.finalize("runner_end")
+            try:
+                self.recovery.finalize("runner_end")
+            finally:
+                self.recovery.store.release_capture_source_lease(
+                    source_id=source,owner_id=owner_id)

@@ -96,6 +96,15 @@ class StrictPaperCliTests(unittest.TestCase):
         cutoff = self.run_cli("--as-of", "2026-11-19T00:00:00+00:00")
         self.assertEqual(cutoff["strict_evidence"]["verified_ticks"], 1)
         self.assertEqual(cutoff["immediate"]["fills"], [])
+        self.assertEqual(cutoff["strict_evidence"]["excluded_after_cutoff"], 1)
+        original = self.scenario.read_text()
+        future_bad = json.loads(original)
+        future_bad["ticks"][1]["price"] = "invalid"
+        self.scenario.write_text(json.dumps(future_bad))
+        self.payload["risk_by_quote"]["q1"] = {"equity": "invalid"}
+        self.assertEqual(cutoff, self.run_cli("--as-of", "2026-11-19T00:00:00+00:00"))
+        self.scenario.write_text(original)
+        self.payload["risk_by_quote"]["q1"] = self.payload["risk_by_quote"]["q0"].copy()
         self.payload["evidence_by_quote"]["q1"][0]["raw_capture_sha256"] = "0" * 64
         with self.assertRaisesRegex(SystemExit, "evidência inválida no histórico protegido"):
             self.run_cli()

@@ -150,12 +150,20 @@ def _paper_replay(args: argparse.Namespace) -> None:
             raise ValueError("valor decimal não pode ser booleano")
         return Decimal(value)
 
+    excluded_strict_ticks = 0
     try:
         config = PaperConfig(**{key: decimal(value) for key, value in scenario["config"].items()})
         if args.archive is None:
-            ticks = [
-                ReplayTick(
-                    datetime.fromisoformat(row["at"]), decimal(row["price"]), decimal(row["volume"]),
+            ticks = []
+            for row in scenario["ticks"]:
+                observed_at = datetime.fromisoformat(row["at"])
+                if observed_at.utcoffset() is None:
+                    raise ValueError("observação exige horário com fuso")
+                if as_of is not None and observed_at > as_of:
+                    excluded_strict_ticks += 1
+                    continue
+                ticks.append(ReplayTick(
+                    observed_at, decimal(row["price"]), decimal(row["volume"]),
                     row.get("signal", "NONE"), row.get("entry_allowed", False), row.get("halted", False),
                     market_at=datetime.fromisoformat(row["market_at"]) if row.get("market_at") else None,
                     bid=decimal(row["bid"]) if row.get("bid") is not None else None,
@@ -163,9 +171,7 @@ def _paper_replay(args: argparse.Namespace) -> None:
                     bid_size=decimal(row["bid_size"]) if row.get("bid_size") is not None else None,
                     ask_size=decimal(row["ask_size"]) if row.get("ask_size") is not None else None,
                     quote_id=row.get("quote_id"),
-                )
-                for row in scenario["ticks"]
-            ]
+                ))
             archive_report = None
         else:
             from smart_money_radar.domain.paper_swap_archive import ticks_from_swap_archive
@@ -229,16 +235,18 @@ def _paper_replay(args: argparse.Namespace) -> None:
         raw = json.loads(args.strict_evidence.read_bytes(), parse_float=Decimal)
         try:
             limits = EntryRiskLimits(**{k: decimal(v) for k, v in raw["risk_limits"].items()})
+            covered_quote_ids = {tick.quote_id for tick in ticks}
             snapshots = {qid: EntryRiskSnapshot(**{
                 k: v if k in ("emergency_halt", "evidence_verified") else decimal(v)
                 for k, v in values.items()
-            }) for qid, values in raw["risk_by_quote"].items()}
+            }) for qid, values in raw["risk_by_quote"].items() if qid in covered_quote_ids}
             strict = replay_with_required_risk(
                 ticks, raw["evidence_by_quote"], config=config, expected_pool=raw["pool"],
                 risk_limits=limits, risk_by_quote=snapshots, as_of=as_of,
             )
         except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
             raise ValueError("arquivo de evidência ou risco inválido no replay protegido") from exc
+        strict["excluded_after_cutoff"] += excluded_strict_ticks
         results = {mode: strict[mode] for mode in modes}
         strict_metadata = {k: v for k, v in strict.items()
                            if k not in ("immediate", "confirmed", "comparison")}

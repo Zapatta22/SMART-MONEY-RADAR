@@ -7,10 +7,12 @@ bounded finalized RPC reconciliation, and reconnect always starts with backfill.
 from __future__ import annotations
 
 import asyncio
+import math
 import json
 import logging
 import random
 import time
+from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -32,6 +34,25 @@ class LaunchLiveMetrics:
     incomplete_reconciliations: int
     last_reconciliation_seconds: float | None
     coverage: str = "UNKNOWN"
+    finalized_hints: int = 0
+    duplicate_notifications: int = 0
+    unresolved_hints: int = 0
+    rate_limit_errors: int = 0
+    notification_to_finalized_p50_ms: float | None = None
+    notification_to_finalized_p95_ms: float | None = None
+    notification_to_finalized_p99_ms: float | None = None
+    finalized_samples: int = 0
+    rpc_collection_p95_ms: float | None = None
+    persistence_p95_ms: float | None = None
+    reconnect_p95_ms: float | None = None
+
+
+def _percentile(samples: deque[float], proportion: float) -> float | None:
+    """Nearest-rank empirical percentile, only with >=20 observations."""
+    if len(samples) < 20:
+        return None
+    ordered = sorted(samples)
+    return round(ordered[max(0, math.ceil(len(ordered) * proportion) - 1)], 3)
 
 
 class LaunchLiveMonitor:
@@ -81,25 +102,66 @@ class LaunchLiveMonitor:
         self.reconciliations = self.recovered_deliveries = 0
         self.incomplete_reconciliations = 0
         self.last_reconciliation_seconds = None
+        self.finalized_hints = 0
+        self.duplicate_notifications = 0
+        self.rate_limit_errors = 0
+        self._pending_hints: dict[tuple[str, str], float] = {}
+        self._finalized_latency_ms: deque[float] = deque(maxlen=4096)
+        self._rpc_latency_ms: deque[float] = deque(maxlen=4096)
+        self._persistence_latency_ms: deque[float] = deque(maxlen=4096)
+        self._reconnect_latency_ms: deque[float] = deque(maxlen=4096)
+        self._disconnected_since: float | None = None
 
     @property
     def metrics(self) -> LaunchLiveMetrics:
         return LaunchLiveMetrics(
-            self.sessions, self.reconnects, self.notifications,
-            self.reconciliations, self.recovered_deliveries,
-            self.incomplete_reconciliations, self.last_reconciliation_seconds,
+            sessions=self.sessions,
+            reconnects=self.reconnects,
+            notifications=self.notifications,
+            reconciliations=self.reconciliations,
+            recovered_deliveries=self.recovered_deliveries,
+            incomplete_reconciliations=self.incomplete_reconciliations,
+            last_reconciliation_seconds=self.last_reconciliation_seconds,
+            finalized_hints=self.finalized_hints,
+            duplicate_notifications=self.duplicate_notifications,
+            unresolved_hints=len(self._pending_hints),
+            rate_limit_errors=self.rate_limit_errors,
+            notification_to_finalized_p50_ms=_percentile(self._finalized_latency_ms, 0.50),
+            notification_to_finalized_p95_ms=_percentile(self._finalized_latency_ms, 0.95),
+            notification_to_finalized_p99_ms=_percentile(self._finalized_latency_ms, 0.99),
+            finalized_samples=len(self._finalized_latency_ms),
+            rpc_collection_p95_ms=_percentile(self._rpc_latency_ms, 0.95),
+            persistence_p95_ms=_percentile(self._persistence_latency_ms, 0.95),
+            reconnect_p95_ms=_percentile(self._reconnect_latency_ms, 0.95),
         )
 
     async def _reconcile(self, address: str, stop: asyncio.Event) -> None:
         start = self.clock()
         try:
             outcome = await self.backfill.synchronize(address, stop_event=stop)
-        except Exception:
+        except Exception as exc:
             self.incomplete_reconciliations += 1
+            if "429" in str(exc):
+                self.rate_limit_errors += 1
             raise
         self.reconciliations += 1
         self.recovered_deliveries += outcome.new_deliveries
         self.last_reconciliation_seconds = max(0.0, self.clock() - start)
+        rpc_elapsed = getattr(outcome, "rpc_elapsed_seconds", None)
+        persistence_elapsed = getattr(outcome, "persistence_seconds", None)
+        if rpc_elapsed is not None:
+            self._rpc_latency_ms.append(max(0.0, rpc_elapsed) * 1000)
+        if persistence_elapsed is not None:
+            self._persistence_latency_ms.append(max(0.0, persistence_elapsed) * 1000)
+        # The timestamp is local reception, not provider emission time.
+        # Only the matching signature returned by finalized RPC can close a hint.
+        for signature in getattr(outcome, "finalized_signatures", ()):
+            received_at = self._pending_hints.pop((address, signature), None)
+            if received_at is not None:
+                self._finalized_latency_ms.append(
+                    max(0.0, self.clock() - received_at) * 1000
+                )
+                self.finalized_hints += 1
 
     async def _listen(self, stop: asyncio.Event) -> None:
         async with self.connector(
@@ -128,6 +190,11 @@ class LaunchLiveMonitor:
                         or subscription_id in subs):
                     raise ConnectionError("logsSubscribe foi recusado ou retornou ID inválido")
                 subs[subscription_id] = requests[request_id]
+            if self._disconnected_since is not None:
+                self._reconnect_latency_ms.append(
+                    max(0.0, self.clock() - self._disconnected_since) * 1000
+                )
+                self._disconnected_since = None
             # Subscribe first, then bounded backfill; socket buffers hints.
             for address in self.addresses:
                 await self._reconcile(address, stop)
@@ -151,7 +218,18 @@ class LaunchLiveMonitor:
                     raise ConnectionError("notificação não pertence à assinatura ativa")
                 if not isinstance(value.get("signature"), str) or not value["signature"]:
                     raise ConnectionError("notificação sem assinatura")
+                signature = value["signature"]
                 self.notifications += 1
+                key = (address, signature)
+                if key in self._pending_hints:
+                    self.duplicate_notifications += 1
+                else:
+                    if len(self._pending_hints) >= 4096:
+                        raise ConnectionError(
+                            "limite de notificações não finalizadas atingido; "
+                            "auditoria de cobertura obrigatória"
+                        )
+                    self._pending_hints[key] = self.clock()
                 # Never use a confirmed notification to populate finalized evidence.
                 await self._reconcile(address, stop)
 
@@ -175,6 +253,8 @@ class LaunchLiveMonitor:
                 if stop.is_set():
                     return
             self.reconnects += 1
+            if self._disconnected_since is None:
+                self._disconnected_since = self.clock()
             if self.clock() - started >= 60:
                 delay = self.initial_backoff
             jitter_value = self.jitter()

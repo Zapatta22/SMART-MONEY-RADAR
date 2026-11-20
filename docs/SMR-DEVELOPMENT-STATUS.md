@@ -13,8 +13,8 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | C. Interpretação econômica | 1/0/0 | 33,3% | Na main há contratos de swap e parser conservador. As branches CPMM/DAMM v2 têm decodificadores, reconciliação e fixtures. | Integrar CPI, CPMM, DAMM v2, Token-2022 e wSOL. Validar evidência de BUY/SELL e rejeição da ambiguidade. |
 | D. Launch Radar | 0/0/0 | 0% | Catálogo de programas na main. | Integrar detecção de mints e pools, liquidez, permissões, concentração, volume, preço e sinais de fraude. |
 | E. Smart Money Radar | 1/0/0 | 33,3% | Monitor de carteiras com backfill e testes na main. | Validar histórico, acumulação, atividade coordenada e classificação de sinais com evidência. |
-| F. Motor de decisão | 0/0/0 | 0% | Contratos de observação e classificação na main. | Testar entrada imediata e confirmação por preço/volume com os mesmos bloqueios. Demonstrar pontuação, exposição, slippage, deduplicação, kill switch e saídas. |
-| G. Simulação | 0/0/0 | 0% | Há replay de ingestão na main. | Validar paper trading, custos, backtest sem dados futuros, comparação dos modos, drawdown e latência. |
+| F. Motor de decisão | 0/0/0 | 0% | Contratos na main. A PR #59 exercita os dois modos e bloqueios de risco em simulação offline. | Testar entrada imediata e confirmação por preço/volume com os mesmos bloqueios. Demonstrar pontuação, exposição, slippage, deduplicação, kill switch e saídas. |
+| G. Simulação | 0/0/0 | 0% | Replay de ingestão na main. A PR #59 compara entradas no mesmo cenário cronológico com custos, exposição, drawdown e tempos simulados. | Validar paper trading, custos, backtest sem dados futuros, comparação dos modos, drawdown e latência. |
 | H. Interface | 0/0/0 | 0% | Serviço de dashboard somente leitura e testes em branches avançadas. | Integrar e testar em desktop e celular monitoramento, configurações, modos, sinais, alertas e relatórios. |
 | I. Preparação operacional | 1/0/0 | 33,3% | CI, configuração local testada e documentação de coleta e execução Android. | Exercitar implantação, segredos, disponibilidade, recuperação, integração, carga e checklist de segurança. |
 
@@ -52,12 +52,15 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | `db52904` (#56) | 657 testes aprovados. Schema 3 legível, migração preservada e resultados gRPC persistidos com contagem de frames. |
 | `e0b32f7` (#57) | 658 testes aprovados. Lista lacunas e contagens por tipo e status em um snapshot somente leitura. |
 | `05ee472` (#58) | 659 testes aprovados. Verifica continuidade e integridade de cada frame aceito e permite comparar cópias pelo SHA-256. |
+| `6ea04de` (#59) | 667 testes aprovados. Replay offline compara os modos usando preenchimento em observação posterior, custos, limite de entrada, kill switch e posição final. |
 
 Validação operacional pendente. Permanecem pendentes a captura de eventos Yellowstone, recuperação ponta a ponta com provider, carga em volume representativo e implantação.
 
 ## Próxima tarefa prioritária
 
 Validar as PRs #50–#58 com um endpoint Yellowstone autorizado e um getEpochSchedule arquivado da mesma rede. Capturar transações, contas, slots, metadados e blocos completos da mesma sessão. Exercitar um swap DAMM v2, preferencialmente com referral, e registrar a cobertura real dos estados adjacentes exigidos pelos verificadores de taxa.
+
+Na trilha independente de simulação, ligar o replay da PR #59 ao instante observável dos sinais, preços e volumes arquivados. Validar que nenhuma observação posterior altera o significado de um sinal anterior e medir desempenho em dados auditados. A PR inicial recebe as observações e filtros como entradas do operador.
 
 A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguida da aplicação das correções nas branches descendentes da integração #14.
 
@@ -84,6 +87,7 @@ A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguid
 | [#56](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/56) | `codex/smr-yellowstone-capture-audit` | `db52904` | `7e051fe` (#55) |
 | [#57](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/57) | `codex/smr-yellowstone-session-inspection` | `e0b32f7` | `db52904` (#56) |
 | [#58](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/58) | `codex/smr-yellowstone-session-verification` | `05ee472` | `e0b32f7` (#57) |
+| [#59](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/59) | `codex/smr-offline-paper-replay` | `6ea04de` | `05ee472` (#58) |
 
 Use o SHA exibido no resumo do GitHub Actions para vincular a validação ao commit. Inicie a retomada pela tarefa prioritária acima.
 

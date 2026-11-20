@@ -1,7 +1,7 @@
 import hashlib
 import unittest
 from smart_money_radar.domain.cpmm_reserve_snapshot import (
-    validate_snapshot, estimate_from_snapshot,
+    validate_snapshot, estimate_from_snapshot, estimate_from_raw_units,
 )
 
 
@@ -24,6 +24,31 @@ class SnapshotTests(unittest.TestCase):
         result = estimate_from_snapshot(snapshot, "10")
         self.assertFalse(result.is_observed_quote)
         self.assertEqual(result.slot, 123)
+
+    def test_raw_integer_reserves_match_declared_decimals(self):
+        snapshot = validate_snapshot(self.record(), self.RAW)
+        quote = estimate_from_raw_units(
+            snapshot, amount_in_raw=10_000_000_000,
+            reserve_in_raw=1_000_000_000_000,
+            reserve_out_raw=2_000_000_000,
+        )
+        self.assertEqual(quote.estimated_output,
+                         estimate_from_snapshot(snapshot, "10").estimated_output)
+
+    def test_raw_integer_reserve_mismatch_fails_closed(self):
+        snapshot = validate_snapshot(self.record(), self.RAW)
+        with self.assertRaisesRegex(ValueError, "reservas RAW divergentes"):
+            estimate_from_raw_units(
+                snapshot, amount_in_raw=10_000_000_000,
+                reserve_in_raw=1_000_000_000_001,
+                reserve_out_raw=2_000_000_000,
+            )
+        with self.assertRaises(ValueError):
+            estimate_from_raw_units(
+                snapshot, amount_in_raw=True,
+                reserve_in_raw=1_000_000_000_000,
+                reserve_out_raw=2_000_000_000,
+            )
 
     def test_rejects_tampered_raw(self):
         with self.assertRaisesRegex(ValueError, "hash RAW"):

@@ -90,6 +90,9 @@ class PublicCpmmWsSession:
         if receipt.status not in ("accepted","duplicate"):
             self.gaps.append("journal_frame_"+receipt.status)
             self.status="UNKNOWN"
+            # Failure must prevent interpretation of a frame not safely
+            # persisted in the journal. A conflict receipt is not acceptance.
+            raise ValueError("conflicting_or_rejected_raw_frame:"+receipt.status)
         return sha256(raw).hexdigest()
 
     def process_frame(self,raw:bytes,*,received_at:datetime)->LiveRpcAccountObservation|None:

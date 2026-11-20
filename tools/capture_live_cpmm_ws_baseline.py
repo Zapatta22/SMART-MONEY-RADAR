@@ -16,6 +16,11 @@ from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
 from smart_money_radar.services.cpmm_public_ws_capture import PublicCpmmWsSession
 from smart_money_radar.services.cpmm_ws_baseline_bridge import inspect_contemporaneous_baseline
 from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+from smart_money_radar.services.cpmm_ws_resilience import (
+    WsResiliencePolicy, disconnect_record, reconnection_is_new_observation,
+)
+POLICY=WsResiliencePolicy()
+
 
 ROOT=Path("data/evidence/mainnet/2026-11-20")
 OUT=Path("/tmp/smr-cpmm-baseline-live")
@@ -72,6 +77,8 @@ async def run():
     session.start()
     start=utcnow()
     deadline=time.monotonic()+MAX_SECONDS
+    connection_last_activity=time.monotonic()
+    error_detail=None
     notifications=[]
     request_accounts={}
     for i,a in enumerate(ACCOUNTS):
@@ -95,12 +102,18 @@ async def run():
         "first_valid_notification_sha256":None,
         "first_valid_notification_slot":None,
         "first_valid_notification_account":None,
-        "verification_rpc_attempts":0}
+        "verification_rpc_attempts":0,
+        "ws_keepalive_ping_interval_seconds":POLICY.ping_interval_seconds,
+        "ws_keepalive_ping_timeout_seconds":POLICY.ping_timeout_seconds,
+        "read_timeout_seconds":POLICY.read_timeout_seconds,
+        "disconnection":None,"reconnect_attempts":0,
+        "reconnect_gaps":[],"continuous_delivery_proven":False}
     outcome="ended"
     task=None
     try:
         async with websockets.connect(WS_ENDPOINT,open_timeout=8,close_timeout=2,
-                        max_size=1_000_000,ping_interval=None) as ws:
+                        max_size=1_000_000,ping_interval=POLICY.ping_interval_seconds,
+                        ping_timeout=POLICY.ping_timeout_seconds) as ws:
             for i in range(1,5):
                 await ws.send((OUT/f"ws-request-{i}.raw.json").read_bytes().decode())
             while time.monotonic()<deadline and result["frames_received"]<MAX_FRAMES:
@@ -109,12 +122,16 @@ async def run():
                     task=asyncio.create_task(asyncio.to_thread(rpc_once,rpc_request))
                 try:
                     rawmessage=await asyncio.wait_for(ws.recv(),
-                        timeout=min(2,max(.01,deadline-time.monotonic())))
+                        timeout=min(POLICY.read_timeout_seconds,
+                                    max(.01,deadline-time.monotonic())))
                 except asyncio.TimeoutError:
+                    # No accountNotification does not imply transport failure.
+                    # Ping/pong is managed by the websockets library.
                     continue
                 if not isinstance(rawmessage,str):
                     session.gaps.append("unexpected_binary_ws")
                     continue
+                connection_last_activity=time.monotonic()
                 raw=rawmessage.encode("utf-8")
                 if len(raw)>1_000_000:
                     session.gaps.append("oversized_ws_payload")
@@ -155,6 +172,10 @@ async def run():
         result["error"]=type(exc).__name__
         result["status"]="NETWORK_OR_WS_ERROR"
         outcome="interrupted"
+        error_detail=disconnect_record(session_id=session.session_id,exc=exc,
+                              phase="receive",frames=session.next_local_sequence,
+                              when=utcnow())
+        result["disconnection"]=error_detail.__dict__
         session.mark_disconnect()
     finally:
         # Always finish any in-flight baseline RPC before finalizing the

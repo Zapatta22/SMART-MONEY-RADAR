@@ -1,7 +1,8 @@
 """Strict binary decoders for Raydium CPMM PoolState and AmmConfig.
 
-Layouts follow raydium-io/raydium-cp-swap programs/cp-swap/src/states
-(pool.rs and config.rs). This does not authenticate the RPC provider or PDAs.
+Layouts follow PoolState and AmmConfig in raydium-io/raydium-cp-swap
+commit 3d69122790e97cd6aff24e8ba95940793773f58c. This does not authenticate
+the RPC provider or PDAs.
 """
 from dataclasses import dataclass
 from hashlib import sha256
@@ -19,7 +20,7 @@ def _pubkey(raw):
     while number:
         number, digit = divmod(number, 58)
         result = ALPHABET[digit] + result
-    return "1" * (len(raw) - len(raw.lstrip(b"\\x00"))) + result
+    return "1" * (len(raw) - len(raw.lstrip(b"\x00"))) + result
 
 
 def _u64(raw, start):
@@ -45,6 +46,9 @@ class PoolStateFields:
     fund_fees_token_1: int
     creator_fees_token_0: int
     creator_fees_token_1: int
+    open_time: int = 0
+    creator_fee_on: int = 0
+    enable_creator_fee: bool = False
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,7 @@ class AmmConfigFields:
     fund_fee_rate: int
     creator_fee_rate: int
     disable_create_pool: bool
+    creator_fee_share_rate: int = 0
 
 
 def decode_pool_state(raw: bytes) -> PoolStateFields:
@@ -64,6 +69,8 @@ def decode_pool_state(raw: bytes) -> PoolStateFields:
     decimals0, decimals1 = raw[331], raw[332]
     if status & ~7 or decimals0 > 18 or decimals1 > 18:
         raise ValueError("status ou decimals PoolState inválidos")
+    if raw[389] not in (0, 1, 2) or raw[390] not in (0, 1):
+        raise ValueError("configuração de taxa do criador PoolState inválida")
     return PoolStateFields(
         amm_config=keys[0], token_0_vault=keys[2], token_1_vault=keys[3],
         token_0_mint=keys[5], token_1_mint=keys[6],
@@ -76,6 +83,7 @@ def decode_pool_state(raw: bytes) -> PoolStateFields:
         fund_fees_token_1=_u64(raw, 365),
         creator_fees_token_0=_u64(raw, 397),
         creator_fees_token_1=_u64(raw, 405),
+        open_time=_u64(raw, 373), creator_fee_on=raw[389], enable_creator_fee=bool(raw[390]),
     )
 
 
@@ -84,10 +92,10 @@ def decode_amm_config(raw: bytes) -> AmmConfigFields:
         raise ValueError("layout/discriminador AmmConfig inválido")
     if raw[9] not in (0, 1):
         raise ValueError("flag AmmConfig inválida")
-    rates = [_u64(raw, offset) for offset in (12, 20, 28, 108)]
+    rates = [_u64(raw, offset) for offset in (12, 20, 28, 108, 116)]
     if any(rate > 1_000_000 for rate in rates):
         raise ValueError("taxa CPMM fora do limite")
-    return AmmConfigFields(rates[0], rates[1], rates[2], rates[3], bool(raw[9]))
+    return AmmConfigFields(rates[0], rates[1], rates[2], rates[3], bool(raw[9]), rates[4])
 
 
 def verify_pool_swap_identity(pool: PoolStateFields, config: AmmConfigFields,

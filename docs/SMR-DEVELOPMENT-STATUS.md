@@ -14,7 +14,7 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | D. Launch Radar | 0/0/0 | 0% | Catálogo de programas na main. | Integrar detecção de mints e pools, liquidez, permissões, concentração, volume, preço e sinais de fraude. |
 | E. Smart Money Radar | 1/0/0 | 33,3% | Monitor de carteiras com backfill e testes na main. | Validar histórico, acumulação, atividade coordenada e classificação de sinais com evidência. |
 | F. Motor de decisão | 0/0/0 | 0% | Contratos na main. A PR #59 exercita os dois modos e bloqueios de risco em simulação offline. | Testar entrada imediata e confirmação por preço/volume com os mesmos bloqueios. Demonstrar pontuação, exposição, slippage, deduplicação, kill switch e saídas. |
-| G. Simulação | 0/0/0 | 0% | Replay de ingestão na main. A PR #59 compara os dois modos. A #60 reproduz recibos CPMM prospectivos pelo horário de disponibilidade, com cutoff e digest do conjunto de dados. A #61 usa arquivo independente de cotações bid/ask e tamanhos disponíveis. | Validar paper trading, custos, backtest sem dados futuros, comparação dos modos, drawdown e latência. |
+| G. Simulação | 0/0/0 | 0% | Replay de ingestão na main. A PR #59 compara os dois modos. A #60 reproduz recibos CPMM prospectivos pelo horário de disponibilidade, com cutoff e digest do conjunto de dados. A #61 usa arquivo independente de cotações bid/ask e tamanhos disponíveis. A #62 valida a comparação de ponta a ponta em cenário sintético e configura a moeda de cotação durante a coleta de sinais. | Validar paper trading, custos, backtest sem dados futuros, comparação dos modos, drawdown e latência. |
 | H. Interface | 0/0/0 | 0% | Serviço de dashboard somente leitura e testes em branches avançadas. | Integrar e testar em desktop e celular monitoramento, configurações, modos, sinais, alertas e relatórios. |
 | I. Preparação operacional | 1/0/0 | 33,3% | CI, configuração local testada e documentação de coleta e execução Android. | Exercitar implantação, segredos, disponibilidade, recuperação, integração, carga e checklist de segurança. |
 
@@ -55,6 +55,7 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | `6ea04de` (#59) | 667 testes aprovados. Replay offline compara os modos usando preenchimento em observação posterior, custos, limite de entrada, kill switch e posição final. |
 | `2c5e456` (#60) | 668 testes aprovados. Fixture CPMM pseudonimizada, revisão sem alterar o primeiro sinal, rota incompleta excluída e execução somente com evento posterior à decisão. |
 | `5c5bc5f` (#61) | 670 testes aprovados. Cotações separadas dos swaps, bid/ask, profundidade, validade dos sinais e cutoff comum. |
+| `0413950` (#62) | 673 testes aprovados. Aceitação de SQLite a CLI com ambos os modos, caixa e taxas conferidos, cutoff causal, reprodutibilidade e referência de cotação na coleta. |
 
 Validação operacional pendente. Permanecem pendentes a captura de eventos Yellowstone, recuperação ponta a ponta com provider, carga em volume representativo e implantação.
 
@@ -62,7 +63,9 @@ Validação operacional pendente. Permanecem pendentes a captura de eventos Yell
 
 Validar as PRs #50–#58 com um endpoint Yellowstone autorizado e um getEpochSchedule arquivado da mesma rede. Capturar transações, contas, slots, metadados e blocos completos da mesma sessão. Exercitar um swap DAMM v2, preferencialmente com referral, e registrar a cobertura real dos estados adjacentes exigidos pelos verificadores de taxa.
 
-Na trilha independente de simulação, coletar uma série prospectiva de sinais e cotações auditáveis e medir os dois modos com dados representativos. A PR #60 já usa a disponibilidade arquivada e distingue a hora de mercado. O modo padrão usa preços aproximados dos swaps. A #61 já aceita bid/ask e profundidade de um arquivo independente, ainda sem série prospectiva de produção.
+O módulo em foco é Simulação. A aceitação offline da PR #62 compara ambos os modos em um cenário reproduzível. Para concluir a validação com dados reais é necessário coletar recibos CPMM concluídos e cotações independentes bid/ask do mesmo mercado e intervalo, com profundidade e horários de evento e disponibilidade. A série ainda não está disponível. Comparar custos, drawdown, latência observada na captura e latência simulada de fill, rejeições e operações concluídas, com cutoff e hashes registrados. O modo padrão com preço aproximado por swap continua disponível para pesquisa.
+
+Depois de concluir Simulação, iniciar Launch Radar pela detecção offline de inicialização de pools CPMM em fixtures auditadas. Aceitação inicial: identidade estável de pool, mints, programa, slot e assinatura; deduplicação por replay; fixtures positivas e negativas para inicialização versus swap ou depósito. Usar a base de evidência Solana existente e manter fora do alerta os eventos incompletos.
 
 A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguida da aplicação das correções nas branches descendentes da integração #14.
 
@@ -92,6 +95,7 @@ A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguid
 | [#59](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/59) | `codex/smr-offline-paper-replay` | `6ea04de` | `05ee472` (#58) |
 | [#60](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/60) | `codex/smr-point-in-time-paper-replay` | `2c5e456` | `6ea04de` (#59) |
 | [#61](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/61) | `codex/smr-paper-quote-replay` | `5c5bc5f` | `2c5e456` (#60) |
+| [#62](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/62) | `codex/smr-paper-acceptance` | `0413950` | `5c5bc5f` (#61) |
 
 Use o SHA exibido no resumo do GitHub Actions para vincular a validação ao commit. Inicie a retomada pela tarefa prioritária acima.
 

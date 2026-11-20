@@ -4163,3 +4163,11 @@ O registro histórico acima não representa sozinho a versão atual do código. 
 
 - **1.049 testes, zero falhas, compileall OK** no código `24e967ddb231315750ce69e4ba8c6685accf0e19`; CI https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44838111116. SQLite RAW versão 5, isolamento entre capturadores por posse exclusiva, identificação de processo Linux por PID e ticks de inicialização, recuperação atômica de sessões incompletas e rollback SQLite sob falha injetada. `main` mantida em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`, PR #111 Draft.
 - **Conclusão offline SIM (conforme cenários testados); homologação live NÃO**. Último baseline real conhecido no slot 471887787, 0 notificações. Captura real somente via opt-in manual `.github/workflows/smr-cm27-live-gate.yml`, ainda não acionado. Cobertura `UNKNOWN`; nenhuma ordem financeira ou merge.
+
+
+## CM28 — continuidade 2026-11-20
+
+- PR #111 Draft; código classificador do live e testes #CM28 1.052/1.052 aprovados em `d6e49886e9eaac5e85b81e819442873db4574201`, CI https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44840348051, Python compile OK. Ajuste de limpeza `f4af94cadc99192908b94691e31c4cf95e2d4e19`; nenhum merge. `main` segue `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Workflow CM27 live existe no branch mas a conexão GitHub do assistente não oferece operação `workflow_dispatch`; nenhuma execução live foi disparada. Não há novo baseline, notificação ou reconexão real demonstrada; cobertura `UNKNOWN`, finanças bloqueadas.
+- Auditoria de PRs: 87 abertas, cadeia complexa de bases; PR #112 é divergente da #111, não mergear automaticamente nem reimplementar por duplicidade. Plano com inventário e caminho crítico: `docs/SMR-COMMAND-28-LIVE-INTEGRATION-PLAN.md`.
+- Próximo gate: execução oficial do workflow via GitHub Actions quando visível/disponível e captura de artifact; paralelamente testar integração envelope RAW→sinais→risco→simulação→painel sem aumentar permissão financeira. Um executor, zero auxiliares; economia de créditos não quantificada.

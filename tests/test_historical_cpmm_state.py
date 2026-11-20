@@ -41,6 +41,8 @@ class HistoricalCpmmStateTests(unittest.TestCase):
         self.assertIsNone(s.cpmm_trade_fee_rate)
         self.assertFalse(s.economic_replay_eligible)
         self.assertEqual(s.status,"PARTIAL_HISTORICAL_TX_ONLY")
+        self.assertEqual(s.balance_scope,"TRANSACTION_PRE_POST_NOT_PRE_SWAP")
+        self.assertIn("instruction_level_prestate_not_proven",s.reasons)
 
     def test_captured_later_cannot_backfill_decision_on_event_day(self):
         with self.assertRaisesRegex(ValueError,"cutoff"):

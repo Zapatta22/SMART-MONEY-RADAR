@@ -85,6 +85,60 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
             "input_token_program":"unknown","output_token_program":"unknown"},
             duration_seconds=15,sleep=lambda _:asyncio.sleep(0))
 
+    async def test_restart_marks_incomplete_session_and_unknown_gap_durable(self):
+        old=self.recovery.new_connection(new_session_id="interrupted-session")
+        old._record(ack(1).encode(),"solana_ws_subscription_ack")
+        self.assertIsNone(self.db.get_capture_session("test-solana-ws", old.session_id)["finished_at"])
+        path=Path(self.tmp.name)/"journal.sqlite"
+        self.db.close()
+        reopened=SQLiteGeyserRawStore(path)
+        restarted=BoundedCpmmRecovery(reopened,source_id="test-solana-ws",
+                                      accounts=ADDRESS,policy=self.policy)
+        self.assertEqual(restarted.interrupted_sessions,["interrupted-session"])
+        capture=reopened.get_capture_session("test-solana-ws","interrupted-session")
+        self.assertEqual(capture["outcome"],"process_interrupted")
+        self.assertEqual(capture["frame_count"],1)
+        self.assertEqual(reopened.list_capture_gaps("test-solana-ws","interrupted-session")[0]["reason"],
+                         "process_interrupted")
+        self.assertEqual(list(reopened.iter_wire_frames("test-solana-ws","interrupted-session",
+                                                       "interrupted-session"))[0][1],ack(1).encode())
+        fresh=restarted.new_connection()
+        self.assertNotEqual(fresh.session_id,old.session_id)
+        self.assertEqual(reopened.integrity_check(),["ok"])
+        restarted.finalize("test_end")
+        reopened.close()
+        self.db=SQLiteGeyserRawStore(path)
+
+    async def test_disconnect_gap_survives_reopen_without_fake_sequence(self):
+        connector=FakeConnector([[ack(1),ConnectionClosedError()],
+                                 [ack(1),ConnectionClosedError()]])
+        report=await self.runner(connector,FakeRPC()).run()
+        sid=report["connections"][0]["session_id"]
+        gaps=self.db.list_capture_gaps("test-solana-ws",sid)
+        self.assertEqual(len(gaps),1)
+        self.assertEqual(gaps[0]["reason"],report["gaps"][0]["failure"])
+        self.db.close()
+        reopened=SQLiteGeyserRawStore(Path(self.tmp.name)/"journal.sqlite")
+        self.assertEqual(reopened.list_capture_gaps("test-solana-ws",sid),gaps)
+        self.assertIsNone(reopened.get_transport_checkpoint("test-solana-ws",sid))
+        self.assertEqual(reopened.integrity_check(),["ok"])
+        reopened.close()
+        self.db=SQLiteGeyserRawStore(Path(self.tmp.name)/"journal.sqlite")
+
+    async def test_late_rpc_cannot_promote_closed_session(self):
+        async def late_rpc(request):
+            await asyncio.sleep(0.2)
+            return NOW,NOW+timedelta(milliseconds=1),b'{"result":null}',None
+        connector=FakeConnector([[ack(1),ack(2),ack(3),ack(4),ConnectionClosedError()],
+                                 [ack(1),ack(2),ack(3),ack(4),ConnectionClosedError()]])
+        result=await self.runner(connector,late_rpc).run()
+        self.assertEqual(len(result["connections"]),2)
+        for item in result["connections"]:
+            self.assertEqual(item["baseline_status"],"UNKNOWN")
+            self.assertIsNone(item["baseline_slot"])
+            self.assertEqual(item["coverage"],"UNKNOWN")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
     async def test_reconnect_four_new_subscriptions_and_new_baseline(self):
         connector=FakeConnector([[ack(1),ack(2),ack(3),ack(4),
                 ConnectionClosedError("broken")],

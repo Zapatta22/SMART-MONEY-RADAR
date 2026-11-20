@@ -328,7 +328,9 @@ class SQLiteGeyserRawStore:
                     CREATE TABLE IF NOT EXISTS geyser_capture_source_leases (
                         source_id TEXT PRIMARY KEY,
                         owner_id TEXT NOT NULL UNIQUE,
-                        acquired_at TEXT NOT NULL
+                        acquired_at TEXT NOT NULL,
+                        pid INTEGER,
+                        pid_start_ticks INTEGER
                     );
                     INSERT OR IGNORE INTO geyser_schema_migrations(version, applied_at)
                         VALUES (5, CURRENT_TIMESTAMP);
@@ -353,8 +355,10 @@ class SQLiteGeyserRawStore:
                 raise ValueError("capture source already owned; do not recover active writer")
             connection.execute(
                 """INSERT INTO geyser_capture_source_leases
-                   (source_id, owner_id, acquired_at) VALUES (?, ?, ?)""",
-                (source_id, owner_id, datetime.now(timezone.utc).isoformat()),
+                   (source_id, owner_id, acquired_at, pid, pid_start_ticks)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (source_id, owner_id, datetime.now(timezone.utc).isoformat(),
+                 os.getpid(), self.local_process_start_ticks(os.getpid())),
             )
 
     def release_capture_source_lease(self, *, source_id: str, owner_id: str) -> None:
@@ -370,56 +374,59 @@ class SQLiteGeyserRawStore:
             if result.rowcount != 1:
                 raise ValueError("capture source lease not owned by caller")
 
-    def release_dead_capture_source_lease(
-        self, *, source_id: str, owner_id: str, pid: int, pid_start_ticks: int,
-    ) -> bool:
-        """Release a dead local owner only with positive OS identity evidence.
-
-        This deliberately refuses to infer death from an elapsed timeout. An
-        unavailable /proc, inaccessible PID or uncertain process identity is
-        NOT proof of death; such cases remain blocked for operator review.
-        """
-        _text(source_id, "source_id")
-        _text(owner_id, "owner_id")
-        if type(pid) is not int or pid <= 0 or type(pid_start_ticks) is not int or pid_start_ticks <= 0:
-            raise ValueError("valid PID and start ticks required")
-        # /proc/<pid>/stat field 22 distinguishes PID reuse. Exit code for
-        # missing PID is only accepted on a local Linux procfs mount.
-        proc = Path("/proc")
-        if not proc.is_dir():
-            raise ValueError("local procfs unavailable: no proof of dead owner")
-        entry = proc / str(pid) / "stat"
+    @staticmethod
+    def local_process_start_ticks(pid: int) -> int:
+        """Read a Linux process start identity; fail closed if unavailable."""
+        if type(pid) is not int or pid <= 0:
+            raise ValueError("valid PID required")
         try:
-            content = entry.read_text()
-        except FileNotFoundError:
-            content = None
-        except OSError as exc:
-            raise ValueError("cannot verify process liveness") from exc
-        if content is not None:
-            close = content.rfind(")")
-            if close < 0:
-                raise ValueError("malformed procfs process stat")
-            fields = content[close + 2:].split()
+            raw = (Path("/proc") / str(pid) / "stat").read_text()
+            closing = raw.rfind(")")
+            fields = raw[closing + 2:].split() if closing >= 0 else []
             if len(fields) <= 19:
                 raise ValueError("incomplete procfs process stat")
-            current_start = int(fields[19])
-            if current_start == pid_start_ticks:
-                raise ValueError("capture owner still alive")
-            # PID was reused; old process identity is no longer running.
+            return int(fields[19])
+        except (OSError, ValueError) as exc:
+            raise ValueError("cannot establish local process identity") from exc
+
+    def release_dead_capture_source_lease(self, *, source_id: str,
+                                          owner_id: str) -> bool:
+        """Reclaim only if procfs conclusively identifies a different/absent owner."""
+        _text(source_id, "source_id")
+        _text(owner_id, "owner_id")
+        if not Path("/proc/self/stat").exists():
+            raise ValueError("procfs unavailable; operator review required")
         with self._connection() as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                """SELECT owner_id FROM geyser_capture_source_leases
+                """SELECT owner_id, pid, pid_start_ticks
+                   FROM geyser_capture_source_leases
                    WHERE source_id = ?""", (source_id,),
             ).fetchone()
             if row is None or row[0] != owner_id:
-                raise ValueError("capture ownership changed; cannot release")
-            result = connection.execute(
+                raise ValueError("capture ownership changed")
+            pid, start_ticks = row[1:]
+            if type(pid) is not int or type(start_ticks) is not int:
+                raise ValueError("legacy lease without process identity; operator review")
+            if pid <= 0 or start_ticks <= 0:
+                raise ValueError("invalid lease process identity")
+            try:
+                existing = self.local_process_start_ticks(pid)
+            except ValueError as exc:
+                # Only a missing /proc/<pid> directory is positive proof that
+                # this local PID is gone. Permission/parse errors fail closed.
+                if (Path("/proc") / str(pid)).exists():
+                    raise ValueError("process liveness is ambiguous") from exc
+            else:
+                if existing == start_ticks:
+                    raise ValueError("capture owner still alive")
+                # PID reused since the original lease was acquired.
+            connection.execute(
                 """DELETE FROM geyser_capture_source_leases
                    WHERE source_id = ? AND owner_id = ?""",
                 (source_id, owner_id),
             )
-            return result.rowcount == 1
+            return True
 
     def start_capture_session(self, source_id: str, stream_id: str) -> None:
         """Record an attempt before opening its network connection."""
@@ -470,8 +477,10 @@ class SQLiteGeyserRawStore:
                 _text(owner_id, "owner_id")
                 connection.execute(
                     """INSERT INTO geyser_capture_source_leases
-                       (source_id, owner_id, acquired_at) VALUES (?, ?, ?)""",
-                    (source_id, owner_id, datetime.now(timezone.utc).isoformat()),
+                       (source_id, owner_id, acquired_at, pid, pid_start_ticks)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (source_id, owner_id, datetime.now(timezone.utc).isoformat(),
+                     os.getpid(), self.local_process_start_ticks(os.getpid())),
                 )
             # Also recover a kill between registering the stream and creating
             # its session metadata: both operations were previously separate.

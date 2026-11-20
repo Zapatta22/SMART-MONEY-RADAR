@@ -14,7 +14,7 @@ CONCLUÍDO sem evidências reproduzíveis e links de CI.
 | CPMM-02 | PENDENTE | Confirmar offsets, discriminadores, comprimentos e taxas de PoolState/AmmConfig contra código oficial versionado e contas mainnet finalizadas. Registrar hashes e fixtures. |
 | CPMM-03 | PENDENTE | Provar owner/program ID, pool, config, vaults, mints, autoridade, decimais e saldo efetivo no mesmo contexto de slot; documentar limitações de RPC. |
 | CPMM-04 | PENDENTE | Comparar estimativas com swaps reais finalizados no mesmo pool, com fee/rounding e eventual Token-2022 explicitados; reportar desvios. |
-| CPMM-05 | PENDENTE | Testar que replay não usa snapshots posteriores ao instante de disponibilidade e que estimativas não são tratadas como quotes observadas ou executáveis. |
+| CPMM-05 | PARCIAL — TESTES NÃO EXECUTADOS | O adaptador filtra ticks sem evidência e aplica cutoff as-of; falta integrar CLI, validar no pipeline completo e executar CI. |\n| CPMM-06 | PENDENTE | Vincular criptograficamente a cotação (quote_id, preço bid/ask, pool, payload e timestamps) à evidência RAW; rótulos declarados pelo arquivo não bastam para autenticar quotes. |\n| CPMM-07 | PENDENTE | Auditar paridade dos offsets/layouts binários com versão fixa do código Raydium e fixtures reais; decodificador recém-adicionado ainda não foi validado. |
 
 ## Política de retomada
 

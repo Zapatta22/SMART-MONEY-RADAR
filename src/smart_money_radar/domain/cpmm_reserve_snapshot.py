@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 import hashlib
-import json
 
 from smart_money_radar.domain.cpmm_reserve_estimator import estimate_exact_input
 
@@ -102,3 +101,26 @@ def estimate_from_snapshot(snapshot: AuditedReserveSnapshot, amount_in):
         reserve_in=snapshot.reserve_in, reserve_out=snapshot.reserve_out,
         amount_in=amount_in, fee_bps=snapshot.fee_bps,
     )
+
+
+def estimate_from_raw_units(snapshot: AuditedReserveSnapshot, *, amount_in_raw: int,
+                            reserve_in_raw: int, reserve_out_raw: int):
+    """Estimate using integer token quantities and explicit mint decimals.
+
+    The integer balances must have been independently verified as effective
+    pool reserves; this method does not authenticate vaults or pool ownership.
+    """
+    if not isinstance(snapshot, AuditedReserveSnapshot):
+        raise ValueError("snapshot não validado")
+    for name, value in (("amount_in_raw", amount_in_raw),
+                        ("reserve_in_raw", reserve_in_raw),
+                        ("reserve_out_raw", reserve_out_raw)):
+        if type(value) is not int or value <= 0:
+            raise ValueError(f"{name} inválido")
+    input_scale = Decimal(10) ** snapshot.input_decimals
+    output_scale = Decimal(10) ** snapshot.output_decimals
+    reserve_in = Decimal(reserve_in_raw) / input_scale
+    reserve_out = Decimal(reserve_out_raw) / output_scale
+    if reserve_in != snapshot.reserve_in or reserve_out != snapshot.reserve_out:
+        raise ValueError("reservas RAW divergentes do snapshot")
+    return estimate_from_snapshot(snapshot, Decimal(amount_in_raw) / input_scale)

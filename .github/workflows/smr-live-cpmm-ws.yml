@@ -1,0 +1,37 @@
+name: SMR bounded public WebSocket CPMM accountSubscribe (one-shot)
+
+on:
+  push:
+    branches:
+      - codex/smr-live-cpmm-public-ws
+    paths:
+      - .github/workflows/smr-live-cpmm-ws.yml
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing project dependencies
+        run: python -m pip install -e .
+      - name: Read-only bounded capture of four CPMM account subscriptions
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python tools/capture_live_cpmm_ws.py
+      - name: Preserve exact received frames, SQLite journal and failure manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-live-cpmm-ws-one-shot
+          path: /tmp/smr-cpmm-ws-live/
+          retention-days: 7
+          if-no-files-found: error

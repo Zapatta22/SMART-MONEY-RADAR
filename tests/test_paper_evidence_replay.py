@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from smart_money_radar.domain.paper_evidence_replay import replay_with_evidence
+from smart_money_radar.domain.paper_entry_risk_policy import EntryRiskLimits, EntryRiskSnapshot
 from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick
 
 
@@ -92,6 +93,29 @@ class EvidenceReplayTests(unittest.TestCase):
     def test_as_of_rejects_naive_datetime(self):
         with self.assertRaisesRegex(ValueError, "as_of"):
             self.replay({}, as_of=datetime(2026, 11, 19))
+
+    def test_shared_risk_policy_blocks_both_modes(self):
+        records = {f"q{i}": self.evidence(i) for i in range(4)}
+        limits = EntryRiskLimits(Decimal("0.2"), Decimal("0.05"),
+                                 Decimal("100"), Decimal("1000"))
+        blocked = EntryRiskSnapshot(
+            Decimal("1000"), Decimal("100"), Decimal("0"),
+            Decimal("20"), Decimal("2000"), True, True,
+        )
+        risk = {f"q{i}": blocked for i in range(4)}
+        result = self.replay(records, risk_limits=limits, risk_by_quote=risk)
+        self.assertEqual(result["rejected_risk_ticks"], 4)
+        self.assertFalse(result["immediate"].fills)
+        self.assertFalse(result["confirmed"].fills)
+
+    def test_missing_risk_snapshot_blocks_entry(self):
+        records = {f"q{i}": self.evidence(i) for i in range(4)}
+        limits = EntryRiskLimits(Decimal("0.2"), Decimal("0.05"),
+                                 Decimal("100"), Decimal("1000"))
+        result = self.replay(records, risk_limits=limits, risk_by_quote={})
+        self.assertEqual(result["rejected_risk_ticks"], 4)
+        self.assertFalse(result["immediate"].fills)
+        self.assertFalse(result["confirmed"].fills)
 
     def test_model_mode_explicitly_non_executable(self):
         records = {f"q{i}": self.evidence(i, source="MODEL_ESTIMATE_NOT_OBSERVED")

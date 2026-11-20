@@ -117,7 +117,6 @@ async def run():
             else "C_UNVALIDATED_OR_RECOVERY_FAILURE")
         manifest["coverage"]="UNKNOWN"
         manifest["financial_execution_authorized"]=False
-        manifest["financial_execution_authorized"]=False
         (OUT/"manifest.json").write_text(json.dumps(manifest,sort_keys=True,
                                         indent=2,default=str)+"\n")
         print("SMR_RECOVERY connections="+str(len(manifest["connections"])))

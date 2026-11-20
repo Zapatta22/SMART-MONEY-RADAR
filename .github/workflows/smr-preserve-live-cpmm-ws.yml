@@ -1,0 +1,88 @@
+name: SMR archive observed public CPMM WebSocket session offline
+
+on:
+  push:
+    branches:
+      - codex/smr-live-cpmm-public-ws
+    paths:
+      - .github/workflows/smr-preserve-live-cpmm-ws.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch successful live artifact without reconnecting
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh run download 44815956132 --name smr-live-cpmm-ws-fixed-one-shot --dir /tmp/smr-live-cpmm
+      - name: Verify SQLite and preserve originals
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+          src=Path("/tmp/smr-live-cpmm")
+          mbytes=(src/"manifest.json").read_bytes()
+          m=json.loads(mbytes)
+          assert m["status"]=="NO_NOTIFICATIONS_OBSERVED"
+          assert m["subscriptions_acknowledged"]==4
+          assert m["notifications_received"]==0
+          assert m["received_raw_frames"]==4
+          assert m["frames_stored"]==4
+          assert m["coverage"]=="UNKNOWN"
+          assert m["economic_execution_authorized"] is False
+          assert m["baseline_validated"] is False
+          assert not m["session"]["observations"]
+          assert len(m["accounts"])==4
+          assert m["endpoint"]=="wss://api.mainnet-beta.solana.com/"
+          session=m["session"]
+          s=SQLiteGeyserRawStore(src/"geyser-raw.sqlite",read_only=True)
+          audit=s.verify_wire_session(session["source_id"],session["session_id"],session["session_id"])
+          assert audit["verified_frames"]==4
+          assert audit["sha256"]==m["journal_frame_report"]["sha256"]
+          assert s.integrity_check()==["ok"]
+          s.close()
+          for i in range(1,5):
+              q=(src/("request-"+str(i)+".raw.json")).read_bytes()
+              o=json.loads(q)
+              assert o["method"]=="accountSubscribe"
+              assert o["params"][0]==m["accounts"][i-1]
+              assert o["params"][1]["commitment"]=="finalized"
+          for i in range(4):
+              raw=(src/("frame-"+f"{i:03d}"+".raw.json")).read_bytes()
+              o=json.loads(raw)
+              assert type(o.get("id")) is int
+              assert type(o.get("result")) is int
+          dst=Path("data/evidence/mainnet/2026-11-20/live-cpmm-ws-session")
+          if dst.exists():
+              raise ValueError("immutable archive path already exists")
+          dst.mkdir(parents=True)
+          for item in src.iterdir():
+              if item.is_file():
+                  (dst/item.name).write_bytes(item.read_bytes())
+          print("SMR_WS_ARCHIVE real_notifications=0")
+          print("SMR_WS_ARCHIVE subscription_acks=4")
+          print("SMR_WS_ARCHIVE verified_sqlite_frames="+str(audit["verified_frames"]))
+          print("SMR_WS_ARCHIVE no_new_network_requests=True")
+          PY
+      - name: Commit original RAW and SQLite journal to Draft branch only
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence/mainnet/2026-11-20/live-cpmm-ws-session/
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: preserve real four-account Solana WS session with zero notifications"
+          git push origin HEAD:codex/smr-live-cpmm-public-ws

@@ -19,7 +19,7 @@ def _pubkey(raw):
     while number:
         number, digit = divmod(number, 58)
         result = ALPHABET[digit] + result
-    return "1" * (len(raw) - len(raw.lstrip(b"\\x00"))) + result
+    return "1" * (len(raw) - len(raw.lstrip(bytes([0])))) + result
 
 
 def _u64(raw, start):

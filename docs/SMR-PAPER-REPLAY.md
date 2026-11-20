@@ -55,3 +55,29 @@ Estimativas usam taxa e slippage fixos. O volume funciona como confirmação
 e disponibilidade e ainda falta modelar a profundidade do mercado,
 preenchimentos parciais, qualidade de preço e latência real. Este comando
 consome JSON local e opera exclusivamente sobre caixa simulado.
+
+## Replay de swaps arquivados
+
+`smr paper-replay scenario.json --archive monitor.sqlite` usa o arquivo
+prospectivo gravado pelo pipeline CPMM em vez da lista manual de ticks.
+O cenário fornece a mesma configuração de simulação e uma seção `market`
+com `wallet`, `program`, `base_mint`, `quote_mint` e `min_confidence`.
+O banco é aberto em modo somente leitura para o replay.
+
+O pipeline arquiva os valores do primeiro processamento concluído de cada
+operação, com o horário original de mercado e o horário local de publicação
+no SQLite. Operações pendentes ou sem horário de mercado são omitidas.
+Reprocessar uma operação pode atualizar a classificação atual, mas preserva
+a classificação inicialmente arquivada. Dados anteriores à migração não
+recebem um horário retroativo de disponibilidade.
+
+O preço histórico é o quociente entre as quantidades de cotação e base do
+swap da carteira e do programa escolhidos. O volume é o valor em cotação.
+Só gera sinal uma classificação coerente com o fluxo base/cotação e acima
+ou igual ao limiar informado. Preço e volume de um swap arquivado são
+aproximações para simulação neste escopo. O relatório lista operações
+omitidas por horário inválido, repetido ou regressivo. O instante do sinal
+é o da sua disponibilidade. Confirmações e fills exigem uma observação cujo
+evento de mercado ocorreu estritamente depois da decisão correspondente.
+Esses dados ainda não representam cotações executáveis, liquidez geral do
+mercado ou todos os filtros de risco da operação.

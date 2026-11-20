@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from smart_money_radar.cli import main
 from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, replay_paper
+from smart_money_radar.domain.paper_swap_archive import ticks_from_swap_archive
 
 
 class PaperReplayTests(unittest.TestCase):
@@ -102,6 +103,28 @@ class PaperReplayTests(unittest.TestCase):
         self.assertTrue(replay_paper([first], config=self.config, mode="confirmed").awaiting_confirmation)
         with self.assertRaisesRegex(ValueError, "estritamente crescente"):
             replay_paper([first, first], config=self.config, mode="immediate")
+
+    def test_archive_waits_for_market_data_after_signal_availability(self):
+        def row(name, occurred, available, price, side):
+            return {
+                "operation_id": name, "input_mint": "quote", "input_amount": str(price),
+                "output_amount": "1", "side": side, "confidence": "0.9",
+                "occurred_at": (self.start + timedelta(seconds=occurred)).isoformat(),
+                "available_at": (self.start + timedelta(seconds=available)).isoformat(),
+            }
+
+        ticks, skipped = ticks_from_swap_archive([
+            row("decision", 1, 4, 10, "BUY"), row("late-price", 2, 5, 30, "UNKNOWN"),
+            row("out-of-order", 1, 6, 50, "UNKNOWN"), row("after-decision", 7, 8, 11, "UNKNOWN"),
+            row("after-confirmation", 9, 10, 12, "UNKNOWN"),
+        ], quote_mint="quote", min_confidence=Decimal("0.8"))
+        self.assertEqual(skipped, ["out-of-order"])
+        immediate = replay_paper(ticks, config=self.config, mode="immediate")
+        confirmed = replay_paper(ticks, config=self.config, mode="confirmed")
+        self.assertEqual(immediate.fills[0].price, 11)
+        self.assertEqual(confirmed.fills[0].price, 12)
+        self.assertEqual(immediate.fills[0].decision_at, ticks[0].at)
+        self.assertEqual(confirmed.fills[0].decision_at, ticks[2].at)
 
     def test_cli_runs_both_modes_without_network(self):
         scenario = {"config": {"initial_cash": "1000", "max_entry_cash": "100", "max_exposure": "0.1"},

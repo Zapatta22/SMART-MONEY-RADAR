@@ -7,6 +7,10 @@ from decimal import Decimal
 import json
 import unittest
 from pathlib import Path
+from contextlib import redirect_stdout
+from io import StringIO
+
+from smart_money_radar.cli import main
 
 from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
 from smart_money_radar.data_sources.raydium_cpmm_transfer_reconciliation import reconcile_raydium_cpmm_swaps
@@ -126,8 +130,36 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
                 self.assertEqual(bundle["observation"].input_amount, Decimal("4484.029903"))
                 self.assertEqual(bundle["observation"].output_amount, Decimal("1.65074030"))
                 self.assertEqual(bundle["classification"].side, "UNKNOWN")
+
+                observation = bundle["observation"]
+                market = {
+                    "wallet": wallet, "program": bundle["evidence"].program_id,
+                    "base_mint": observation.output_mint, "quote_mint": observation.input_mint,
+                }
+                archived, = store.list_swap_replay_archive(**market)
+                self.assertEqual(archived["operation_id"], operation_id)
+                self.assertGreater(datetime.fromisoformat(archived["available_at"]),
+                                   datetime.fromisoformat(archived["occurred_at"]))
+                process_raydium_cpmm_observation(
+                    store, self.fixture, wallet_address=wallet, signature=signature,
+                    reference_mints=(observation.input_mint,),
+                )
+                self.assertEqual(store.get_swap_bundle(operation_id)["classification"].side, "BUY")
+                self.assertEqual(store.list_swap_replay_archive(**market), [archived])
+                path = Path(directory) / "scenario.json"
+                path.write_text(json.dumps({
+                    "config": {"initial_cash": "1000", "max_entry_cash": "100", "max_exposure": "0.1"},
+                    "market": {**market, "min_confidence": "0.6"},
+                }))
+                stdout = StringIO()
+                with redirect_stdout(stdout):
+                    main(["paper-replay", str(path), "--archive", str(store.database_path)])
+                report = json.loads(stdout.getvalue())
+                self.assertEqual(report["archive"]["ticks"], 1)
+                self.assertEqual(report["immediate"]["fills"], [])
+                self.assertIsNone(report["immediate"]["pending_side"])
                 audit = store.get_swap_reconciliation_attempts(wallet, signature)
-                self.assertEqual(len(audit), 1)
+                self.assertEqual(len(audit), 2)
                 self.assertEqual(audit[0]["status"], "MATCHED")
                 self.assertIn("reconciliados", audit[0]["reason"])
 

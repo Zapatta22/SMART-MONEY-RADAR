@@ -74,6 +74,7 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--expected-sha256")
     paper = subparsers.add_parser("paper-replay", help="simula entradas em observações locais")
     paper.add_argument("scenario", type=Path)
+    paper.add_argument("--archive", type=Path, help="lê swaps concluídos de um banco SQLite local")
     paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
     return parser
 
@@ -132,20 +133,39 @@ def _paper_replay(args: argparse.Namespace) -> None:
 
     try:
         config = PaperConfig(**{key: decimal(value) for key, value in scenario["config"].items()})
-        ticks = [
-            ReplayTick(
-                datetime.fromisoformat(row["at"]), decimal(row["price"]), decimal(row["volume"]),
-                row.get("signal", "NONE"), row.get("entry_allowed", False), row.get("halted", False),
+        if args.archive is None:
+            ticks = [
+                ReplayTick(
+                    datetime.fromisoformat(row["at"]), decimal(row["price"]), decimal(row["volume"]),
+                    row.get("signal", "NONE"), row.get("entry_allowed", False), row.get("halted", False),
+                )
+                for row in scenario["ticks"]
+            ]
+            archive_report = None
+        else:
+            from smart_money_radar.domain.paper_swap_archive import ticks_from_swap_archive
+
+            market = scenario["market"]
+            scope = {key: market[key] for key in ("wallet", "program", "base_mint", "quote_mint")}
+            if (any(not isinstance(value, str) or not value.strip() for value in scope.values())
+                    or scope["base_mint"] == scope["quote_mint"]):
+                raise ValueError("mercado do replay inválido")
+            store = SQLiteEventStore(args.archive, read_only=True)
+            try:
+                rows = store.list_swap_replay_archive(**scope)
+            finally:
+                store.close()
+            ticks, skipped = ticks_from_swap_archive(
+                rows, quote_mint=scope["quote_mint"], min_confidence=decimal(market["min_confidence"]),
             )
-            for row in scenario["ticks"]
-        ]
+            archive_report = {**scope, "ticks": len(ticks), "skipped_operation_ids": skipped}
     except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
-        raise ValueError("arquivo de cenário paper-replay inválido") from exc
+        raise ValueError("arquivo de cenário ou dados do paper-replay inválidos") from exc
     modes = ("immediate", "confirmed") if args.mode == "both" else (args.mode,)
-    print(json.dumps(
-        {mode: asdict(replay_paper(ticks, config=config, mode=mode)) for mode in modes},
-        default=str, ensure_ascii=False,
-    ))
+    report = {mode: asdict(replay_paper(ticks, config=config, mode=mode)) for mode in modes}
+    if archive_report is not None:
+        report["archive"] = archive_report
+    print(json.dumps(report, default=str, ensure_ascii=False))
 
 
 def _inspect_geyser_evidence(args: argparse.Namespace) -> None:

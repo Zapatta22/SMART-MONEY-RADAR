@@ -19,11 +19,16 @@ class ReplayTick:
     signal: Literal["BUY", "SELL", "NONE"] = "NONE"
     entry_allowed: bool = False
     halted: bool = False
+    market_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.at.utcoffset() is None:
             raise ValueError("observação exige horário com fuso")
         object.__setattr__(self, "at", self.at.astimezone(timezone.utc))
+        if self.market_at is not None:
+            if self.market_at.utcoffset() is None or self.market_at > self.at:
+                raise ValueError("horário de mercado precisa ser conhecido na observação")
+            object.__setattr__(self, "market_at", self.market_at.astimezone(timezone.utc))
         if not self.price.is_finite() or self.price <= 0:
             raise ValueError("preço da observação inválido")
         if not self.volume.is_finite() or self.volume < 0:
@@ -137,7 +142,13 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
         prior = tick.at
         sell_price = tick.price * (ONE - slippage)
 
-        if pending is not None and (pending.side == "BUY" or tick.volume > 0):
+        market_at = tick.market_at or tick.at
+        cancel_entry = pending is not None and pending.side == "BUY" and (
+            tick.halted or not tick.entry_allowed or tick.signal == "SELL"
+        )
+        if pending is not None and (cancel_entry or (
+            market_at > pending.signal.at and (pending.side == "BUY" or tick.volume > 0)
+        )):
             if pending.side == "SELL":
                 fee = quantity * sell_price * fee_rate
                 proceeds = quantity * sell_price - fee
@@ -190,6 +201,8 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
             confirmation = None
             continue
         if confirmation is not None:
+            if market_at <= confirmation.at:
+                continue
             if tick.price > confirmation.price and tick.volume > confirmation.volume:
                 pending = _Order("BUY", tick, "confirmed_signal")
                 decisions.append(PaperDecision(tick.at, "schedule_buy", pending.reason))

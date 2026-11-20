@@ -188,7 +188,12 @@ class RealMainnetJupiterMultiSwapFixtureTests(unittest.TestCase):
                 )
 
                 self.assertFalse(first.checkpoint_advanced)
-                self.assertIsNotNone(store.get_swap_bundle(matched_operation_id))
+                matched = store.get_swap_bundle(matched_operation_id)
+                self.assertIsNotNone(matched)
+                self.assertEqual(store.list_swap_replay_archive(
+                    wallet=wallet, program=matched["evidence"].program_id,
+                    base_mint=matched["observation"].output_mint, quote_mint=matched["observation"].input_mint,
+                ), [])
                 self.assertFalse(store.has_processed_signature(wallet, signature))
                 self.assertEqual(store.get_pending_signatures(wallet), [signature])
 

@@ -220,7 +220,10 @@ def process_raydium_cpmm_observation(
                 False,
             )
 
-        store.mark_processed(wallet_address, signature)
+        store.mark_processed(
+            wallet_address, signature,
+            replay_bundles=tuple(bundles) if normalized.transaction.occurred_at is not None else (),
+        )
         return RaydiumCpmmPipelineResult(
             "processed",
             signature,

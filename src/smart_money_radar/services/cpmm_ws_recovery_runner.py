@@ -73,6 +73,10 @@ class CpmmRecoveryRunner:
                 self.manifest["connections"].append(report)
                 raw_notifications=[]
                 baseline_task=None
+                report["websocket_requests"]=[]
+                report["wire_raw_frames_sha256"]=[]
+                report["rpc_baseline_request_raw"]=None
+                report["rpc_baseline_response_raw"]=None
                 connection_healthy=False
                 failure_phase="connect"
                 try:
@@ -85,6 +89,7 @@ class CpmmRecoveryRunner:
                                 "encoding":"base64","commitment":"finalized"}]},
                                 sort_keys=True,separators=(",",":")).encode()
                             expected[i]=account
+                            report["websocket_requests"].append(request.decode())
                             await ws.send(request.decode())
                         while self.clock()<deadline and report["frames"]<self.max_frames:
                             if len(session.subscription_accounts)==4 and baseline_task is None:
@@ -97,6 +102,7 @@ class CpmmRecoveryRunner:
                                     "encoding":"base64","commitment":"finalized"}]},
                                     sort_keys=True,separators=(",",":")).encode()
                                 report["baseline_request_sha256"]=sha256(req).hexdigest()
+                                report["rpc_baseline_request_raw"]=req.decode()
                                 report["baseline_attempts"]=1
                                 self.manifest["rpc_baseline_calls"]+=1
                                 baseline_task=asyncio.create_task(self.rpc_fetch(req))
@@ -122,6 +128,7 @@ class CpmmRecoveryRunner:
                                 acc=expected.get(req_id)
                                 sub=parsed.get("result")
                                 session._record(raw,"solana_ws_subscription_ack")
+                                report["wire_raw_frames_sha256"].append(sha256(raw).hexdigest())
                                 report["frames"]+=1
                                 if acc is None or type(sub) is not int:
                                     raise ValueError("subscription_ack_invalid")
@@ -129,6 +136,7 @@ class CpmmRecoveryRunner:
                                 report["subscriptions_acknowledged"]+=1
                             else:
                                 observation=session.process_frame(raw,received_at=when)
+                                report["wire_raw_frames_sha256"].append(sha256(raw).hexdigest())
                                 report["frames"]+=1
                                 if observation:
                                     raw_notifications.append((observation,raw))
@@ -159,6 +167,7 @@ class CpmmRecoveryRunner:
                             report["baseline_rpc_error"]=error
                             if response is not None:
                                 report["baseline_response_sha256"]=sha256(response).hexdigest()
+                                report["rpc_baseline_response_raw"]=response.decode()
                                 audit=inspect_contemporaneous_baseline(
                                     session=session,request_raw=req,response_raw=response,
                                     requested_at=requested,available_at=available,

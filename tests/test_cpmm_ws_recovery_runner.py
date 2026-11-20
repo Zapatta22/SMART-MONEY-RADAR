@@ -528,5 +528,41 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.db.integrity_check(),["ok"])
         old.active=False
 
+
+    async def test_dead_local_process_lease_is_reclaimed_without_raw_loss(self):
+        import os
+        import subprocess
+        db_path=Path(self.tmp.name)/"journal.sqlite"
+        # External process exits before ownership recovery. Its PID and
+        # start identity are captured while alive and checked by procfs.
+        worker=subprocess.Popen(["python","-c","import time; time.sleep(0.05)"])
+        try:
+            ticks=self.db.local_process_start_ticks(worker.pid)
+            owner="dead-worker"
+            self.db.acquire_capture_source_lease(
+                source_id="test-solana-ws",owner_id=owner)
+            with sqlite3.connect(db_path) as connection:
+                connection.execute(
+                    """UPDATE geyser_capture_source_leases
+                       SET pid=?, pid_start_ticks=?
+                       WHERE source_id=?""",
+                    (worker.pid,ticks,"test-solana-ws"),
+                )
+            session=self.recovery.new_connection()
+            session._record(b"before-kill","synthetic")
+            sid=session.session_id
+        finally:
+            worker.wait(timeout=3)
+        self.assertTrue(self.db.release_dead_capture_source_lease(
+            source_id="test-solana-ws",owner_id=owner))
+        self.assertEqual(self.db.recover_incomplete_capture_sessions(
+            source_id="test-solana-ws"),[sid])
+        self.assertEqual(self.db.get_capture_session(
+            "test-solana-ws",sid)["frame_count"],1)
+        self.assertEqual(list(self.db.iter_wire_frames(
+            "test-solana-ws",sid,sid)),[(0,b"before-kill")])
+        self.assertEqual(self.db.integrity_check(),["ok"])
+        session.active=False
+
 if __name__=="__main__":
     unittest.main()

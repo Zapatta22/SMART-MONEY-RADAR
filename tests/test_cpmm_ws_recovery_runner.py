@@ -159,5 +159,79 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.recovery.report()["coverage"],"UNKNOWN")
         self.assertFalse(self.recovery.report()["checkpoint_proves_ledger_coverage"])
 
+
+    async def test_crashed_subscription_is_closed_on_restart_with_new_identity(self):
+        old=self.recovery.new_connection()
+        original_id=old.session_id
+        old._record(b'{"jsonrpc":"2.0","id":1,"result":201}',"solana_ws_subscription_ack")
+        # Simulate abrupt process death: do not call finish().
+        self.db.close()
+        reopened=SQLiteGeyserRawStore(Path(self.tmp.name)/"journal.sqlite")
+        recovered=BoundedCpmmRecovery(reopened,source_id="test-solana-ws",
+                                       accounts=ADDRESS,policy=self.policy)
+        result=await CpmmRecoveryRunner(recovered,ws_connect=FakeConnector([[
+            ack(1),ack(2),ack(3),ack(4),ConnectionClosedError()]]),
+            rpc_fetch=FakeRPC(),snapshot_identity={
+            "endpoint":"https://example.invalid","original_swap_slot":1,
+            "authority":"unknown","input_mint":"unknown","output_mint":"unknown",
+            "input_token_program":"unknown","output_token_program":"unknown"},
+            duration_seconds=15,sleep=lambda _:asyncio.sleep(0)).run()
+        previous=reopened.get_capture_session("test-solana-ws",original_id)
+        self.assertEqual(previous["outcome"],"process_interrupted_unknown")
+        self.assertEqual(previous["frame_count"],1)
+        self.assertNotEqual(result["connections"][0]["session_id"],original_id)
+        self.assertEqual(result["coverage"],"UNKNOWN")
+        self.assertEqual(reopened.integrity_check(),["ok"])
+        self.db=reopened
+
+    async def test_rpc_failure_never_promotes_baseline(self):
+        conn=FakeConnector([[ack(1),ack(2),ack(3),ack(4),
+                             ConnectionClosedError()]])
+        result=await self.runner(conn,FakeRPC(fail=True)).run()
+        self.assertEqual(result["connections"][0]["baseline_status"],"UNKNOWN")
+        self.assertFalse(result["continuous_delivery_proven"])
+        self.assertEqual(result["coverage"],"UNKNOWN")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
+    async def test_rpc_response_bound_to_origin_session(self):
+        class SlowRPC:
+            def __init__(self):
+                self.calls=0
+            async def __call__(self,request):
+                self.calls+=1
+                if self.calls==1:
+                    # Cancellation is delivered after the first socket fails.
+                    await asyncio.sleep(3600)
+                return NOW,NOW,None,"simulated_null"
+        conn=FakeConnector([[ack(1),ack(2),ack(3),ack(4),
+                             ConnectionClosedError()],
+                            [ack(1),ack(2),ack(3),ack(4),
+                             ConnectionClosedError()]])
+        report=await self.runner(conn,SlowRPC()).run()
+        self.assertEqual(len(report["connections"]),2)
+        self.assertEqual(report["connections"][0]["baseline_error"],"CancelledError")
+        self.assertEqual(report["connections"][0]["baseline_status"],"UNKNOWN")
+        self.assertNotEqual(report["connections"][0]["session_id"],
+                            report["connections"][1]["session_id"])
+        self.assertTrue(all(x["coverage"]=="UNKNOWN" for x in report["connections"]))
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
+    async def test_store_recovery_is_idempotent(self):
+        old=self.recovery.new_connection()
+        old._record(b"immutable", "synthetic_frame")
+        sid=old.session_id
+        self.db.close()
+        reopened=SQLiteGeyserRawStore(Path(self.tmp.name)/"journal.sqlite")
+        self.assertEqual(reopened.recover_incomplete_capture_sessions(
+            source_id="test-solana-ws"),[sid])
+        self.assertEqual(reopened.recover_incomplete_capture_sessions(
+            source_id="test-solana-ws"),[])
+        self.assertEqual(reopened.get_capture_session(
+            "test-solana-ws",sid)["frame_count"],1)
+        self.assertEqual(list(reopened.iter_wire_frames(
+            "test-solana-ws",sid,sid)),[(0,b"immutable")])
+        self.assertEqual(reopened.integrity_check(),["ok"])
+        self.db=reopened
+
 if __name__=="__main__":
     unittest.main()

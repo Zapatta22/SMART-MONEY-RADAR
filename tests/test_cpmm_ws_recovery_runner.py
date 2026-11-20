@@ -482,6 +482,11 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             restarted.release_capture_source_lease(
                 source_id="test-solana-ws",owner_id="another-owner")
+        # The owner PID is still alive in this test: automatic takeover
+        # correctly fails closed, even after the SQLite handle is closed.
+        with self.assertRaisesRegex(ValueError,"owner still alive"):
+            restarted.release_dead_capture_source_lease(
+                source_id="test-solana-ws",owner_id=owner)
         restarted.release_capture_source_lease(
             source_id="test-solana-ws",owner_id=owner)
         self.assertEqual(restarted.recover_incomplete_capture_sessions(

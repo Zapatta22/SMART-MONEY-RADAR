@@ -604,5 +604,20 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         old.active=False
         self.db=restarted
 
+
+    async def test_live_entrypoint_requires_explicit_network_opt_in(self):
+        import importlib.util
+        import os
+        import unittest.mock
+        script=Path(__file__).resolve().parents[1]/"tools"/"capture_live_cpmm_ws_baseline.py"
+        spec=importlib.util.spec_from_file_location("smr_cm27_capture_gate",script)
+        module=importlib.util.module_from_spec(spec)
+        with unittest.mock.patch.dict(os.environ,{"SMR_LIVE_CAPTURE_OPT_IN":""}):
+            spec.loader.exec_module(module)
+            self.assertFalse(module.LIVE_CAPTURE_OPT_IN)
+            with self.assertRaisesRegex(RuntimeError,"requires explicit"):
+                await module.run()
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
 if __name__=="__main__":
     unittest.main()

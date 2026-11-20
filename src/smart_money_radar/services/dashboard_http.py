@@ -19,12 +19,15 @@ _DASHBOARD_HTML = """<!doctype html>
 </style></head><body>
 <h1>SMART MONEY RADAR</h1><p class="muted">Painel local · consulta somente leitura</p>
 <section class="panel"><div class="row"><input id="token" type="password" autocomplete="off" placeholder="Token local SMR_API_TOKEN"><button id="connect">Conectar</button><button id="refresh" disabled>Atualizar</button></div><p id="message" role="status" aria-live="polite"></p><p class="muted">O token permanece somente na memória desta página e não é salvo no navegador. Abra no mesmo dispositivo onde o SMR está executando.</p></section>
+<section class="panel"><label for="wallet">Filtrar por carteira</label><div class="row"><input id="wallet" type="text" autocomplete="off" spellcheck="false" placeholder="Endereço público"><button id="applyWallet" disabled>Aplicar</button></div><p class="muted" id="checkpoint"></p></section>
 <section class="panel"><h2>Visão geral</h2><div class="grid" id="metrics"></div><h3>Status de reconciliação</h3><div class="grid" id="statuses"></div></section>
 <section class="panel"><h2>Motivos recorrentes</h2><div id="reasons" class="muted">Aguardando conexão.</div></section>
+<section class="panel"><h2>Transações pendentes</h2><p class="muted" id="pendingSummary"></p><div class="tablewrap"><table><thead><tr><th>Observada em</th><th>Carteira</th><th>Assinatura</th><th>Status do parser</th></tr></thead><tbody id="pending"></tbody></table></div></section>
 <section class="panel"><h2>Últimos eventos</h2><div class="tablewrap"><table><thead><tr><th>Data</th><th>Carteira</th><th>Ativo</th><th>Direção</th><th>Quantidade</th></tr></thead><tbody id="events"></tbody></table></div></section>
 <section class="panel"><div class="row"><h2 style="flex:1">Auditoria de swaps</h2><select id="statusFilter"><option value="">Todos os status</option><option>MATCHED</option><option>INCOMPLETE</option><option>AMBIGUOUS</option><option>UNRESOLVED</option></select><button id="loadAttempts" disabled>Consultar</button></div><div class="tablewrap"><table><thead><tr><th>Data</th><th>Status</th><th>Operação</th><th>Instrução</th><th>Motivo</th></tr></thead><tbody id="attempts"></tbody></table></div></section>
 <script>
-let token="";
+let token="", wallet="", filterVersion=0;
+function walletQuery(){const q=new URLSearchParams();if(wallet)q.set("wallet_address",wallet);return q;}
 const el=id=>document.getElementById(id), val=v=>v===null||v===undefined||v===""?"—":String(v), short=v=>{v=val(v);return v.length>18?v.slice(0,8)+"…"+v.slice(-6):v};
 async function api(path){const r=await fetch(path,{headers:{Authorization:"Bearer "+token},cache:"no-store"});if(!r.ok){if(r.status===401)throw Error("Token inválido ou ausente.");throw Error("Falha HTTP "+r.status);}return r.json();}
 function td(tr,v){const x=document.createElement("td");x.textContent=val(v);tr.append(x);return x;}
@@ -34,11 +37,37 @@ function render(data){
  nums.forEach((n,i)=>{const box=document.createElement("div"),l=document.createElement("span"),b=document.createElement("b");box.className="metric";l.className="muted";l.textContent=labels[i];b.textContent=val(n);box.append(l,b);m.append(box);});
  const s=el("statuses");s.replaceChildren();Object.entries(st).forEach(([k,n])=>{const box=document.createElement("div"),l=document.createElement("span"),b=document.createElement("b");box.className="metric";l.className="muted";l.textContent=k;b.textContent=val(n);b.className=k==="MATCHED"?"good":k==="INCOMPLETE"?"warn":"bad";box.append(l,b);s.append(box);});
  const reasons=el("reasons");reasons.replaceChildren();(d.top_reasons||[]).forEach(x=>{const p=document.createElement("p");p.textContent=val(x.reason)+" · "+val(x.count)+" ocorrência(s)";reasons.append(p);});if(!reasons.children.length)reasons.textContent="Nenhum motivo registrado.";
+ el("checkpoint").textContent=data.wallet_address?"Checkpoint da carteira: "+val(data.checkpoint_signature):"";
+ const pending=el("pending"),pendingItems=d.pending_transactions||[];pending.replaceChildren();
+ pendingItems.forEach(x=>{const tr=document.createElement("tr");td(tr,x.observed_at);td(tr,short(x.wallet_address));const signature=td(tr,short(x.signature));signature.title=val(x.signature);td(tr,x.parse_status);pending.append(tr);});
+ el("pendingSummary").textContent=pendingItems.length<d.pending_transactions_count?"Exibindo "+pendingItems.length+" de "+d.pending_transactions_count:"";
+ if(!pending.children.length)rowEmpty(pending,4,"Nenhuma transação pendente.");
  const events=el("events");events.replaceChildren();(data.recent_events||[]).forEach(x=>{const tr=document.createElement("tr");td(tr,x.occurred_at);td(tr,short(x.wallet_address));td(tr,short(x.token_mint));td(tr,x.direction);td(tr,x.amount);events.append(tr);});if(!events.children.length)rowEmpty(events,5,"Nenhum evento persistido.");
 }
-async function refresh(){el("message").textContent="Consultando banco local…";try{render(await api("/api/v1/dashboard"));el("message").textContent="Conectado · dados atualizados · somente leitura";}catch(e){el("message").textContent=e.message;}}
-async function attempts(){el("message").textContent="Consultando auditoria…";try{const q=new URLSearchParams({limit:"100"});if(el("statusFilter").value)q.set("status",el("statusFilter").value);const data=await api("/api/v1/reconciliation/attempts?"+q),body=el("attempts");body.replaceChildren();(data.items||[]).forEach(x=>{const tr=document.createElement("tr"),s=td(tr,x.attempted_at),status=td(tr,x.status);status.className=x.status==="MATCHED"?"good":x.status==="INCOMPLETE"?"warn":"bad";td(tr,short(x.operation_id));td(tr,x.instruction_index);td(tr,x.reason);body.append(tr);});if(!body.children.length)rowEmpty(body,5,"Nenhuma tentativa encontrada.");el("message").textContent="Auditoria atualizada.";}catch(e){el("message").textContent=e.message;}}
-el("connect").addEventListener("click",async()=>{token=el("token").value.trim();if(token.length<32){token="";el("message").textContent="Informe o token completo (mínimo 32 caracteres).";return;}el("refresh").disabled=false;el("loadAttempts").disabled=false;await refresh();});
+async function refresh(){
+ const version=filterVersion;
+ el("message").textContent="Consultando banco local…";
+ try{const data=await api("/api/v1/dashboard?"+walletQuery());if(version!==filterVersion)return;render(data);el("message").textContent="Conectado · dados atualizados · somente leitura";}
+ catch(e){if(version===filterVersion)el("message").textContent=e.message;}
+}
+async function attempts(){
+ const version=filterVersion;
+ el("message").textContent="Consultando auditoria…";
+ try{
+  const q=walletQuery();q.set("limit","100");if(el("statusFilter").value)q.set("status",el("statusFilter").value);
+  const data=await api("/api/v1/reconciliation/attempts?"+q);if(version!==filterVersion)return;
+  const body=el("attempts");body.replaceChildren();(data.items||[]).forEach(x=>{const tr=document.createElement("tr");td(tr,x.attempted_at);const status=td(tr,x.status);status.className=x.status==="MATCHED"?"good":x.status==="INCOMPLETE"?"warn":"bad";td(tr,short(x.operation_id));td(tr,x.instruction_index);td(tr,x.reason);body.append(tr);});
+  if(!body.children.length)rowEmpty(body,5,"Nenhuma tentativa encontrada.");el("message").textContent="Auditoria atualizada.";
+ }catch(e){if(version===filterVersion)el("message").textContent=e.message;}
+}
+function applyWallet(){
+ wallet=el("wallet").value.trim();filterVersion++;
+ for(const key of ["metrics","statuses","reasons","pending","events","attempts"])el(key).replaceChildren();
+ el("checkpoint").textContent="";el("pendingSummary").textContent="";
+ return refresh();
+}
+el("connect").addEventListener("click",async()=>{token=el("token").value.trim();if(token.length<32){token="";el("message").textContent="Informe o token completo (mínimo 32 caracteres).";return;}el("refresh").disabled=false;el("loadAttempts").disabled=false;el("applyWallet").disabled=false;await applyWallet();});
+el("applyWallet").addEventListener("click",applyWallet);
 el("refresh").addEventListener("click",refresh);el("loadAttempts").addEventListener("click",attempts);
 </script></body></html>"""
 

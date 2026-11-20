@@ -3,9 +3,12 @@
 import unittest
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock
 
 from smart_money_radar.services.dashboard_read import DashboardReadService
+from smart_money_radar.storage.event_store import SQLiteEventStore
 from smart_money_radar.services.reconciliation_diagnostics import (
     ReconciliationDiagnosticsService,
 )
@@ -23,6 +26,7 @@ class DashboardReadServiceTests(unittest.TestCase):
             "pending_transactions": [],
         }
         store.get_reconciliation_diagnostics.return_value = report
+        store.get_checkpoint.return_value = "sig-checkpoint"
         store.storage_stats.return_value = {
             "observed_transactions": 2, "database_bytes": 4096,
         }
@@ -41,6 +45,8 @@ class DashboardReadServiceTests(unittest.TestCase):
         self.assertEqual(result["mode"], "read_only")
         self.assertEqual(result["wallet_address"], "wallet-a")
         self.assertEqual(result["storage"]["database_bytes"], 4096)
+        self.assertEqual(result["checkpoint_signature"], "sig-checkpoint")
+        store.get_checkpoint.assert_called_once_with("wallet-a")
         self.assertEqual(result["reconciliation"], report)
         self.assertEqual(result["recent_events"][0]["occurred_at"],
                          "2026-11-18T00:00:00+00:00")
@@ -66,7 +72,35 @@ class DashboardReadServiceTests(unittest.TestCase):
         result = DashboardReadService(store, diagnostics).get_overview()
 
         self.assertEqual(result["reconciliation"], {"total_attempts": 0})
+        self.assertIsNone(result["checkpoint_signature"])
+        store.get_checkpoint.assert_not_called()
         diagnostics.get_report.assert_called_once_with(wallet_address=None)
+
+    def test_wallet_overview_reports_checkpoint_and_pending_from_read_only_database(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "history.sqlite3"
+            store = SQLiteEventStore(path)
+            for wallet, signature, processed in (
+                ("wallet-a", "finished", True),
+                ("wallet-a", "pending-a", False),
+                ("wallet-b", "pending-b", False),
+            ):
+                store.save_observation(
+                    wallet, signature, {"meta": {"err": None}}, [],
+                    parse_status="no_events", parser_version="1", advance_checkpoint=processed,
+                )
+            store.close()
+
+            read_only = SQLiteEventStore(path, read_only=True)
+            try:
+                result = DashboardReadService(read_only).get_overview(wallet_address="wallet-a")
+                self.assertEqual(result["checkpoint_signature"], "finished")
+                self.assertEqual(result["reconciliation"]["pending_transactions_count"], 1)
+                pending, = result["reconciliation"]["pending_transactions"]
+                self.assertEqual(pending["signature"], "pending-a")
+                self.assertEqual(pending["parse_status"], "no_events")
+            finally:
+                read_only.close()
 
     def test_no_network_or_mutation_methods_are_exposed(self):
         service = DashboardReadService(Mock())

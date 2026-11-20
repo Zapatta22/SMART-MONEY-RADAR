@@ -141,13 +141,11 @@ class EvidenceReplayTests(unittest.TestCase):
                                  Decimal("100"), Decimal("1000"))
         risk = EntryRiskSnapshot(Decimal("1000"), Decimal("100"), Decimal("0"),
                                  Decimal("20"), Decimal("2000"), False, True)
-        result = replay_with_required_risk(
-            ticks, records, config=self.config, expected_pool="pool-a",
-            risk_limits=limits, risk_by_quote={"q0": risk, "q1": risk},
-        )
-        self.assertEqual(result["verified_ticks"], 0)
-        self.assertFalse(result["immediate"].fills)
-        self.assertFalse(result["confirmed"].fills)
+        with self.assertRaisesRegex(ValueError, "evidência inválida"):
+            replay_with_required_risk(
+                ticks, records, config=self.config, expected_pool="pool-a",
+                risk_limits=limits, risk_by_quote={"q0": risk, "q1": risk},
+            )
 
     def test_strict_rejects_invalid_middle_evidence_before_replay(self):
         ticks = [self.tick(i, "BUY" if i == 0 else "NONE") for i in range(4)]

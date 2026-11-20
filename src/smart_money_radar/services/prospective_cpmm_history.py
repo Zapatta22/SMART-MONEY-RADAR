@@ -166,7 +166,9 @@ def compare_captures(first:CpmmCapture,second:CpmmCapture,*,cutoff:datetime)->Cp
     if x.slot==y.slot:reasons.add("same_slot_no_proven_transition")
     elif slot_delta is None:reasons.add("slot_missing")
     elif slot_delta<0:reasons.add("reversed_slots")
-    if utc(x.available_at)>=utc(y.available_at):
+    if utc(x.available_at)>utc(y.available_at) or (
+        utc(x.available_at)==utc(y.available_at) and first.capture_id!=second.capture_id
+    ):
         reasons.add("non_increasing_availability")
     if (x.status!="RPC_DECLARED_PROSPECTIVE_ONLY"
         or y.status!="RPC_DECLARED_PROSPECTIVE_ONLY"):

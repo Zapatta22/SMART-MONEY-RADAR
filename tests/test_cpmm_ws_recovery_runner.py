@@ -107,6 +107,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reopened.integrity_check(),["ok"])
         restarted.finalize("test_end")
         reopened.close()
+        self.recovery.current.active=False
         self.db=SQLiteGeyserRawStore(path)
 
     async def test_disconnect_gap_survives_reopen_without_fake_sequence(self):

@@ -1,0 +1,67 @@
+name: SMR preserve one-off alternative RPC evidence offline
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-tx-account-temporal-links
+    paths:
+      - .github/workflows/smr-preserve-alt-cpmm-rpc.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download prior alternate RPC attempt without requerying
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh run download 44812142868 --name smr-cpmm-unknown-alternate-rpc --dir /tmp/smr-alt-cpmm
+      - name: Verify exact evidence and preserve RAW
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          src=Path('/tmp/smr-alt-cpmm')
+          m=(src/'manifest.json').read_bytes()
+          j=json.loads(m)
+          assert j['attempt_count']==1 and j['status']=='UNKNOWN'
+          assert j['expected_slot']==471857488
+          assert j['economic_execution_authorized'] is False
+          assert j['independent_backend_proven'] is False
+          assert j['endpoint']=='https://solana-rpc.publicnode.com'
+          q=(src/'request.raw.json').read_bytes()
+          assert hashlib.sha256(q).hexdigest()==j['request_sha256']
+          assert json.loads(q)['params'][0]==j['signature']
+          out=Path('data/evidence/mainnet/2026-11-20/cpmm-interval-471856996-471860762/alternate-rpc')
+          out.mkdir(parents=True,exist_ok=True)
+          (out/'request.raw.json').write_bytes(q)
+          (out/'manifest.json').write_bytes(m)
+          response=src/'response.raw.json'
+          if j.get('response_sha256'):
+              raw=response.read_bytes()
+              assert hashlib.sha256(raw).hexdigest()==j['response_sha256']
+              assert json.loads(raw).get('result') is None
+              (out/'response.raw.json').write_bytes(raw)
+          print('SMR_ALT_ARCHIVE status=UNKNOWN; new_queries=0')
+          PY
+      - name: Append to the Draft branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence/mainnet/2026-11-20/cpmm-interval-471856996-471860762/alternate-rpc/
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: preserve alternative RPC null response for unresolved CPMM transaction"
+          git push origin HEAD:codex/smr-cpmm-tx-account-temporal-links

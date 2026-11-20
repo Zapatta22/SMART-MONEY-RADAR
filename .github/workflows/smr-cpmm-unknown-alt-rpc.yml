@@ -1,0 +1,80 @@
+name: SMR one-off alternative RPC check for unresolved CPMM transaction
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-tx-account-temporal-links
+    paths:
+      - .github/workflows/smr-cpmm-unknown-alt-rpc.yml
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Query unresolved signature ONCE from a different public RPC hostname
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,hashlib
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError,URLError
+          path=Path("/tmp/smr-cpmm-unknown-alt")
+          path.mkdir(parents=True,exist_ok=True)
+          signature="3JSyzXZWsNBxqkqRt4Gbri2B3ZuanWq1z8f8Vgbi6zCNoCKys1xT325UHN9Wrkd4oeJkiSuXdTBWfmqZjsW66Bz4"
+          endpoint="https://solana-rpc.publicnode.com"
+          query={"jsonrpc":"2.0","id":1,"method":"getTransaction",
+            "params":[signature,{"commitment":"finalized","encoding":"json",
+                 "maxSupportedTransactionVersion":0}]}
+          raw=json.dumps(query,sort_keys=True,separators=(",",":")).encode()
+          (path/"request.raw.json").write_bytes(raw)
+          m={"schema":"smr.cpmm.alt-rpc-one-shot.v1","endpoint":endpoint,"signature":signature,
+             "expected_slot":471857488,"attempt_count":1,
+             "reason":"original_solana_rpc_returned_null_try_alternate_provider_once",
+             "requested_commitment":"finalized","request_sha256":hashlib.sha256(raw).hexdigest(),
+             "independent_backend_proven":False,"economic_execution_authorized":False,
+             "status":"UNKNOWN","observed_at":None,"available_at":None}
+          try:
+              req=Request(endpoint,data=raw,headers={"Content-Type":"application/json"},method="POST")
+              start=datetime.now(timezone.utc)
+              with urlopen(req,timeout=10) as resp:
+                  ans=resp.read(2_000_001)
+              end=datetime.now(timezone.utc)
+              m["observed_at"]=start.isoformat()
+              m["available_at"]=end.isoformat()
+              if len(ans)>2_000_000:raise ValueError("response_above_limit")
+              (path/"response.raw.json").write_bytes(ans)
+              m["response_sha256"]=hashlib.sha256(ans).hexdigest()
+              parsed=json.loads(ans)
+              result=parsed.get("result") if isinstance(parsed,dict) else None
+              if isinstance(result,dict):
+                  m["returned_slot"]=result.get("slot")
+                  matched=(result.get("slot")==m["expected_slot"] and
+                           result["transaction"]["signatures"][0]==signature and
+                           result["meta"]["err"] is None)
+                  m["status"]="RPC_CONSISTENT_UNATTESTED" if matched else "CONFLICT"
+              else:
+                  m["status"]="UNKNOWN"
+                  m["reason_detail"]="null_or_error_result"
+          except (HTTPError,URLError,TimeoutError,OSError,ValueError,KeyError,IndexError,TypeError) as e:
+              m["reason_detail"]="rpc_unavailable_or_invalid:"+type(e).__name__
+          (path/"manifest.json").write_text(json.dumps(m,sort_keys=True,indent=2)+"\n")
+          print("SMR_ALT_RPC status="+m["status"])
+          print("SMR_ALT_RPC reason="+str(m.get("reason_detail","none")))
+          print("SMR_ALT_RPC attempts=1")
+          print("SMR_ALT_RPC backend_independence=False")
+          PY
+      - name: Keep original request/response and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-cpmm-unknown-alternate-rpc
+          path: /tmp/smr-cpmm-unknown-alt/
+          retention-days: 7

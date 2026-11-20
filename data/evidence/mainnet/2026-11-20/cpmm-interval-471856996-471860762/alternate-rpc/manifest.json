@@ -1,0 +1,17 @@
+{
+  "attempt_count": 1,
+  "available_at": "2026-11-20T20:31:38.456415+00:00",
+  "economic_execution_authorized": false,
+  "endpoint": "https://solana-rpc.publicnode.com",
+  "expected_slot": 471857488,
+  "independent_backend_proven": false,
+  "observed_at": "2026-11-20T20:31:38.395127+00:00",
+  "reason": "original_solana_rpc_returned_null_try_alternate_provider_once",
+  "reason_detail": "null_or_error_result",
+  "request_sha256": "5a733b22924b3c346a8f6a974edb411b496db9a106b0d9633ff03acf3f69f204",
+  "requested_commitment": "finalized",
+  "response_sha256": "54bd6392bccf8e0984e11b59d2ec7749e865a13797af136fd42aa421e47359d8",
+  "schema": "smr.cpmm.alt-rpc-one-shot.v1",
+  "signature": "3JSyzXZWsNBxqkqRt4Gbri2B3ZuanWq1z8f8Vgbi6zCNoCKys1xT325UHN9Wrkd4oeJkiSuXdTBWfmqZjsW66Bz4",
+  "status": "UNKNOWN"
+}

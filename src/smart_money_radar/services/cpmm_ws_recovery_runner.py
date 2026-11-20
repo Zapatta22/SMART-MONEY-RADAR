@@ -285,6 +285,22 @@ class CpmmRecoveryRunner:
                             report["baseline_verified_as_snapshot"]=False
                         if baseline_task.done() and baseline_task.cancelled():
                             report.setdefault("baseline_error","CancelledError")
+                    # These evidence-based fields are observational only.
+                    # Four ACKs and a sound RPC snapshot are not proof of
+                    # continuous ledger coverage or a successful recovery.
+                    report["four_subscriptions_confirmed"]=(
+                        report["subscriptions_acknowledged"]==4)
+                    report["baseline_snapshot_confirmed"]=(
+                        report.get("baseline_verified_as_snapshot") is True
+                        and not report.get("baseline_error")
+                        and failure_record is None)
+                    report["transport_reconnected_after_natural_disconnect"]=(
+                        len(self.manifest["connections"])>1
+                        and prev_failure is not None)
+                    report["recovery_snapshot_confirmed"]=(
+                        report["transport_reconnected_after_natural_disconnect"]
+                        and report["four_subscriptions_confirmed"]
+                        and report["baseline_snapshot_confirmed"])
                     if failure_record is not None and session.active:
                         self.recovery.note_failure(failure_record)
                     elif session.active and connection_healthy:
@@ -314,6 +330,21 @@ class CpmmRecoveryRunner:
                     len(self.manifest["connections"])>=1+self.recovery.policy.max_reconnects
                     and bool(self.manifest["gaps"])
                     else "retry_or_deadline_exhausted")
+            self.manifest["observed_notifications"]=sum(
+                item["notifications"] for item in self.manifest["connections"])
+            self.manifest["recovery_live_proven"]=any(
+                item["recovery_snapshot_confirmed"]
+                for item in self.manifest["connections"])
+            self.manifest["stable_baseline_observed"]=any(
+                item["four_subscriptions_confirmed"]
+                and item["baseline_snapshot_confirmed"]
+                for item in self.manifest["connections"])
+            self.manifest["live_real_reconnection_observed"]=any(
+                item["transport_reconnected_after_natural_disconnect"]
+                for item in self.manifest["connections"])
+            # These values never change source/ledger coverage:
+            # a reconnect still leaves a potentially unfilled gap.
+            self.manifest["coverage"]="UNKNOWN"
             return self.manifest
         finally:
             try:

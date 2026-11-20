@@ -111,3 +111,15 @@ profundidade e horários de disponibilidade. Os snapshots de reserva
 continuam classificados como estimativas. A validação prospectiva e a aceitação operacional seguem pendentes.
 A execução financeira permanece desabilitada. A `main` segue em
 `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+
+### Marco verificável — cursor durável do Launch Radar (PR #70, 2026-11-20)
+
+- Branch de trabalho: `codex/smr-launch-stream-cursor`, derivada de `codex/smr-launch-journal@493e7b4` (PR #69). `main` intocada; nenhuma PR mesclada.
+- Código `d4d3456` acrescenta ao `SQLiteEventStore.archive_cpmm_launches` um cursor opcional por `source_id` e `first_sequence`. RAW de todas as entregas, inclusive sem Initialize, identidades CPMM e cursor são persistidos numa única transação SQLite.
+- Testes `3cebcab2c1cd021ecd45abc5a94736ab8371ea53` cobrem reabertura, repetição idempotente, sequências ausentes, replays conflitantes, isolamento por origem, rollback forçado e validação de parâmetros.
+- GitHub Actions **aprovado** para o commit com código e testes `3cebcab`: **756 testes**, `compileall` e instalação Python 3.12 bem-sucedidos. Log: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44757088354. Documentação posterior não altera código.
+- Contrato e ressalvas: `docs/SMR-LAUNCH-STREAM-CURSOR.md`. A sequência é criada pelo consumidor e **não** é slot/seq nativa da Solana. Cobertura anterior ao primeiro evento: `UNKNOWN`. Nem provedor nem horário estão autenticados.
+- Estado: **persistência de cursor offline validada em CI; consumidor online e reconciliação de lacunas remotas pendentes**.
+- Próxima tarefa independente: criar/adaptar consumidor Solana de leitura para alimentar lotes RAW, armazenar origem estável e fazer backfill e reconexão fail-closed; testar atrasos e eventos perdidos. Em paralelo, a simulação continua bloqueada até cotações com proveniência externa e swaps contemporâneos do mesmo pool.
+- Negociação real desabilitada; nenhum merge ou contratação autorizados. Não inventar percentual global sem critérios de aceite.

@@ -139,6 +139,25 @@ class LiveEvidenceMetricsTests(unittest.TestCase):
         self.assertEqual(monitor.metrics.unresolved_hints, 1)
         self.assertEqual(monitor.metrics.incomplete_reconciliations, 1)
 
+    def test_bursty_notifications_reduce_rpc_calls_without_claiming_coverage(self):
+        rpc = FinalizedRPC()
+        monitor, _ = build_monitor(
+            rpc, [notification("first"), notification("second"), notification("second")],
+        )
+        # Constant injected monotonic time: a real burst within one second.
+        monitor.clock = lambda: 100.0
+        monitor.minimum_reconcile_interval_seconds = 1.0
+        asyncio.run(monitor.run(asyncio.Event(), max_sessions=1))
+        m = monitor.metrics
+        self.assertEqual(m.notifications, 3)
+        self.assertEqual(m.reconciliations, 1)  # mandatory initial backfill
+        self.assertEqual(len(rpc.calls), 1)
+        self.assertEqual(m.coalesced_notifications, 3)
+        self.assertEqual(m.duplicate_notifications, 1)
+        self.assertEqual(m.unresolved_hints, 2)
+        self.assertEqual(m.finalized_hints, 0)
+        self.assertEqual(m.coverage, "UNKNOWN")
+
     def test_sample_percentile_not_fabricated_for_small_samples(self):
         from collections import deque
         self.assertIsNone(_percentile(deque(), 0.95))

@@ -124,9 +124,10 @@ def _paper_replay(args: argparse.Namespace) -> None:
     from datetime import datetime, timezone
     from decimal import Decimal, InvalidOperation
 
-    from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, replay_paper
+    from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, compare_paper_reports, replay_paper
 
-    scenario = json.loads(args.scenario.read_text(encoding="utf-8"), parse_float=Decimal)
+    scenario_bytes = args.scenario.read_bytes()
+    scenario = json.loads(scenario_bytes, parse_float=Decimal)
     if args.archive is None and (args.as_of is not None or args.quotes is not None):
         raise ValueError("--as-of e --quotes exigem --archive")
     as_of = datetime.fromisoformat(args.as_of) if args.as_of is not None else None
@@ -202,7 +203,11 @@ def _paper_replay(args: argparse.Namespace) -> None:
     except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
         raise ValueError("arquivo de cenário ou dados do paper-replay inválidos") from exc
     modes = ("immediate", "confirmed") if args.mode == "both" else (args.mode,)
-    report = {mode: asdict(replay_paper(ticks, config=config, mode=mode)) for mode in modes}
+    results = {mode: replay_paper(ticks, config=config, mode=mode) for mode in modes}
+    report = {mode: asdict(result) for mode, result in results.items()}
+    if args.mode == "both":
+        report["comparison"] = compare_paper_reports(results["immediate"], results["confirmed"])
+        report["comparison"]["scenario_sha256"] = hashlib.sha256(scenario_bytes).hexdigest()
     if archive_report is not None:
         report["archive"] = archive_report
     print(json.dumps(report, default=str, ensure_ascii=False))

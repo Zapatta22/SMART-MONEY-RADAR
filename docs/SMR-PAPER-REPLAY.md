@@ -107,3 +107,26 @@ O relatório inclui fonte e SHA-256 da seleção de cotações. O cutoff
 `--as-of` limita swaps e cotações pelo momento de disponibilidade.
 Cotações e profundidade são fornecidas pelo arquivo e a execução continua
 simulada. O modelo opera com fills integrais.
+
+## Aceitação do módulo
+
+Execute a suíte de integração com
+`PYTHONPATH=src:tests python -m unittest test_paper_acceptance -v`.
+Ela usa recibos e cotações sintéticos em arquivos separados e cruza SQLite,
+CLI, cutoff por disponibilidade, preços de execução, caixa, taxas,
+drawdown e atraso simulado. O teste compara duas execuções idênticas e
+verifica que o cutoff preserva os fills anteriores. Cada fill aponta o
+instante do mercado, a chegada da cotação e o instante da decisão.
+
+O relatório com os dois modos inclui `comparison`. Os deltas são o valor
+do modo confirmado menos o do modo imediato. O SHA-256 do cenário, dos
+recibos e das cotações identifica as entradas da comparação. Use a mesma
+configuração e período para comparar os dois modos.
+
+Para validação com dados reais, use uma série prospectiva com recibos
+CPMM concluídos e cotações independentes contemporâneas da mesma fonte de
+mercado, com horários de observação e de disponibilidade e profundidade
+registrados. Preserve o cutoff e os hashes publicados. Um conjunto sem
+sinais elegíveis ou sem cotações posteriores permite validar o fluxo,
+mas não medir a qualidade da execução dos dois modos. O atraso do
+relatório é simulado.

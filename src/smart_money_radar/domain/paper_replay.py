@@ -93,6 +93,7 @@ class PaperFill:
     fee: Decimal
     reason: str
     quote_id: str | None = None
+    market_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,24 @@ class PaperReport:
     realized_pnl: Decimal
     total_fees: Decimal
     average_fill_delay_seconds: Decimal | None
+
+
+def compare_paper_reports(immediate: PaperReport, confirmed: PaperReport) -> dict:
+    """Compare mode outcomes on the shared replay inputs."""
+    with localcontext() as context:
+        context.prec = 40
+        return {
+            "basis": "confirmed_minus_immediate",
+            "equity_delta": confirmed.final_equity - immediate.final_equity,
+            "realized_pnl_delta": confirmed.realized_pnl - immediate.realized_pnl,
+            "fee_delta": confirmed.total_fees - immediate.total_fees,
+            "drawdown_delta": confirmed.max_drawdown - immediate.max_drawdown,
+            "rejected_entry_delta": confirmed.rejected_entries - immediate.rejected_entries,
+            "closed_trades": {
+                "immediate": sum(fill.side == "SELL" for fill in immediate.fills),
+                "confirmed": sum(fill.side == "SELL" for fill in confirmed.fills),
+            },
+        }
 
 
 @dataclass(frozen=True)
@@ -176,7 +195,7 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
                 cash += proceeds
                 realized_pnl += proceeds - entry_cost
                 fills.append(PaperFill("SELL", pending.signal.at, tick.at, sell_price,
-                                       quantity, fee, pending.reason, tick.quote_id))
+                                       quantity, fee, pending.reason, tick.quote_id, market_at))
                 quantity = ZERO
                 opened_at = None
             else:
@@ -197,7 +216,7 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
                     cash -= entry_cost
                     opened_at = tick.at
                     fills.append(PaperFill("BUY", pending.signal.at, tick.at, buy_price,
-                                           quantity, fee, pending.reason, tick.quote_id))
+                                           quantity, fee, pending.reason, tick.quote_id, market_at))
             pending = None
 
         liquidation = quantity * sell_price * (ONE - fee_rate)

@@ -38,6 +38,9 @@ class DashboardReadService:
     def get_overview(self, *, wallet_address: str | None = None) -> dict:
         """Retorna resumo de persistência e reconciliação em formato serializável."""
         report = self._diagnostics.get_report(wallet_address=wallet_address)
+        checkpoint = (
+            self._event_store.get_checkpoint(wallet_address) if wallet_address is not None else None
+        )
         storage = self._event_store.storage_stats()
         recent_events = self._event_store.get_events(
             wallet_address=wallet_address, limit=20
@@ -54,6 +57,7 @@ class DashboardReadService:
             "mode": "read_only",
             "wallet_address": wallet_address,
             "storage": self._json_value(storage),
+            "checkpoint_signature": checkpoint,
             "reconciliation": self._json_value(report),
             "recent_events": events,
         }

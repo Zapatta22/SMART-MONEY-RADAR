@@ -19,6 +19,7 @@ class DashboardHTTPTests(unittest.TestCase):
         }
         self.store.storage_stats.return_value = {}
         self.store.get_events.return_value = []
+        self.store.get_checkpoint.return_value = "stored-signature"
         self.token = "t" * 40
         self.server = create_read_only_server(
             self.store, auth_token=self.token, port=0
@@ -48,6 +49,8 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertIn("SMART MONEY RADAR", body)
         self.assertIn("SMR_API_TOKEN", body)
         self.assertIn("/api/v1/dashboard", body)
+        self.assertIn("Transações pendentes", body)
+        self.assertIn('q.set("wallet_address",wallet)', body)
 
     def test_dashboard_requires_bearer_token(self):
         with self.assertRaises(HTTPError) as caught:
@@ -60,6 +63,13 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertEqual(payload["mode"], "read_only")
         self.assertIn("reconciliation", payload)
         self.assertIn("storage", payload)
+
+    def test_dashboard_limits_checkpoint_lookup_to_selected_wallet(self):
+        with self.request("/api/v1/dashboard?wallet_address=wallet-a", self.token) as response:
+            payload = json.loads(response.read())
+        self.assertEqual(payload["wallet_address"], "wallet-a")
+        self.assertEqual(payload["checkpoint_signature"], "stored-signature")
+        self.store.get_checkpoint.assert_called_once_with("wallet-a")
 
     def test_reconciliation_query_rejects_limit_above_500(self):
         with self.assertRaises(HTTPError) as caught:

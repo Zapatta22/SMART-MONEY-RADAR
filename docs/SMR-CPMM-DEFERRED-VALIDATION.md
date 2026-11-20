@@ -12,7 +12,7 @@ CONCLUÍDO sem evidências reproduzíveis e links de CI.
 | --- | --- | --- |
 | CPMM-01 | PENDENTE | GitHub Actions verde no SHA final da PR #64, com suíte completa e testes novos executados. Registrar URL e SHA. |
 | CPMM-02 | VALIDADO LOCALMENTE NO POOL DE REFERÊNCIA | Confirmar offsets, discriminadores, comprimentos e taxas de PoolState/AmmConfig contra código oficial versionado e contas mainnet finalizadas. Registrar hashes e fixtures. |
-| CPMM-03 | PENDENTE | Provar owner/program ID, pool, config, vaults, mints, autoridade, decimais e saldo efetivo no mesmo contexto de slot; documentar limitações de RPC. |
+| CPMM-03 | PARCIAL — SNAPSHOT LOCAL VALIDADO | Provar owner/program ID, pool, config, vaults, mints, autoridade, decimais e saldo efetivo no mesmo contexto de slot; documentar limitações de RPC. |
 | CPMM-04 | PENDENTE | Comparar estimativas com swaps reais finalizados no mesmo pool, com fee/rounding e eventual Token-2022 explicitados; reportar desvios. |
 | CPMM-05 | PARCIAL — TESTES NÃO EXECUTADOS | O adaptador filtra ticks sem evidência e aplica cutoff as-of; falta integrar CLI, validar no pipeline completo e executar CI. |
 | CPMM-06 | PENDENTE | Vincular criptograficamente a cotação (quote_id, preço bid/ask, pool, payload e timestamps) à evidência RAW; rótulos declarados pelo arquivo não bastam para autenticar quotes. |
@@ -35,9 +35,24 @@ corrigiu a preservação de zeros binários iniciais na conversão Base58 e
 expôs `open_time`, modo e flag de creator fee e taxa de participação do
 criador conforme o layout fixado. [PoolState versionado](https://github.com/raydium-io/raydium-cp-swap/blob/3d69122790e97cd6aff24e8ba95940793773f58c/programs/cp-swap/src/states/pool.rs) · [AmmConfig versionado](https://github.com/raydium-io/raydium-cp-swap/blob/3d69122790e97cd6aff24e8ba95940793773f58c/programs/cp-swap/src/states/config.rs)
 
-A captura documenta um pool específico e a ordem do pedido arquivado. Ainda
-faltam a prova de autoridade dos vaults no caminho de produção, a autenticação
-da origem, a captura prospectiva e a comparação com swaps do mesmo pool.
+O validador `validate_finalized_cpmm_snapshot` usa um par de arquivos
+JSON-RPC arquivados. Confere IDs, opção `finalized`, ausência de recorte,
+slot esperado e a ordem pool/config/vault0/vault1. Os vínculos vêm dos
+bytes de PoolState. A verificação SPL compara os mints, o estado inicializado
+e a autoridade dos dois vaults. A autoridade mainnet é
+`GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL` com bump 253. A derivação
+foi conferida localmente com `solders==0.26.0`, usando o seed publicado
+`vault_and_lp_mint_auth_seed` e o program ID CPMM mainnet. Essa conferência
+não acrescenta uma dependência ao projeto. [Seed e program ID versionados](https://github.com/raydium-io/raydium-cp-swap/blob/3d69122790e97cd6aff24e8ba95940793773f58c/programs/cp-swap/src/lib.rs)
+
+As reservas efetivas do snapshot de referência foram `2289766103` e
+`166893788` unidades brutas, após a subtração das taxas reservadas. O
+horário do bloco, necessário para checar `open_time`, é fornecido pelo
+chamador. O validador só cobre SPL clássico com taxa de criador desabilitada
+e não autentica a origem de arquivos fornecidos ao replay. A associação do
+primeiro endereço depende da preservação conjunta do pedido arquivado
+e da resposta. Ainda faltam a ingestão prospectiva em produção, a
+autenticação de origem e a comparação com swaps contemporâneos do mesmo pool.
 
 ## Política de retomada
 

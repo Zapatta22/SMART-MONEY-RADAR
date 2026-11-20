@@ -47,6 +47,7 @@ class PoolStateFields:
     creator_fees_token_0: int
     creator_fees_token_1: int
     open_time: int = 0
+    auth_bump: int = 0
     creator_fee_on: int = 0
     enable_creator_fee: bool = False
 
@@ -83,7 +84,8 @@ def decode_pool_state(raw: bytes) -> PoolStateFields:
         fund_fees_token_1=_u64(raw, 365),
         creator_fees_token_0=_u64(raw, 397),
         creator_fees_token_1=_u64(raw, 405),
-        open_time=_u64(raw, 373), creator_fee_on=raw[389], enable_creator_fee=bool(raw[390]),
+        open_time=_u64(raw, 373), auth_bump=raw[328],
+        creator_fee_on=raw[389], enable_creator_fee=bool(raw[390]),
     )
 
 

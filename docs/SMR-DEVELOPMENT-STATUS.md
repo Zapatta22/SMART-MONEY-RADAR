@@ -55,7 +55,7 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | `6ea04de` (#59) | 667 testes aprovados. Replay offline compara os modos usando preenchimento em observação posterior, custos, limite de entrada, kill switch e posição final. |
 | `2c5e456` (#60) | 668 testes aprovados. Fixture CPMM pseudonimizada, revisão sem alterar o primeiro sinal, rota incompleta excluída e execução somente com evento posterior à decisão. |
 | `5c5bc5f` (#61) | 670 testes aprovados. Cotações separadas dos swaps, bid/ask, profundidade, validade dos sinais e cutoff comum. |
-| `0413950` (#62) | 673 testes aprovados. Aceitação de SQLite a CLI com ambos os modos, caixa e taxas conferidos, cutoff causal, reprodutibilidade e referência de cotação na coleta. |
+| `477c7ee` (#62) | 673 testes aprovados. Aceitação de SQLite a CLI com ambos os modos, caixa e taxas conferidos, cutoff causal, reprodutibilidade, referência de cotação na coleta, cobertura de operações fechadas e distinção entre atraso simulado e disponibilidade do dado. |
 
 Validação operacional pendente. Permanecem pendentes a captura de eventos Yellowstone, recuperação ponta a ponta com provider, carga em volume representativo e implantação.
 
@@ -95,7 +95,7 @@ A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguid
 | [#59](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/59) | `codex/smr-offline-paper-replay` | `6ea04de` | `05ee472` (#58) |
 | [#60](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/60) | `codex/smr-point-in-time-paper-replay` | `2c5e456` | `6ea04de` (#59) |
 | [#61](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/61) | `codex/smr-paper-quote-replay` | `5c5bc5f` | `2c5e456` (#60) |
-| [#62](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/62) | `codex/smr-paper-acceptance` | `0413950` | `5c5bc5f` (#61) |
+| [#62](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/62) | `codex/smr-paper-acceptance` | `477c7ee` | `5c5bc5f` (#61) |
 
 Use o SHA exibido no resumo do GitHub Actions para vincular a validação ao commit. Inicie a retomada pela tarefa prioritária acima.
 

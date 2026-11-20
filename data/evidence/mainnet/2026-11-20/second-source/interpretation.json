@@ -1,0 +1,13 @@
+{
+  "comment": "Original capture manifest has source_agreement_on_signature=true, populated from the requested signature even though result=null; it is NOT a verified second-source signature. Preserve original bytes unchanged.",
+  "independent_provider_proven": false,
+  "not_contradictory_slot": true,
+  "pool_vault_verified_by_second_rpc": false,
+  "raw_sha256": "ca3db3fe00f86a9485058afc1daf2f0547027fc3262b67c570f89d0b4638c8c6",
+  "rpc_result_null": true,
+  "schema": "smr.second-source-interpretation.v1",
+  "second_endpoint": "https://solana-rpc.publicnode.com",
+  "status": "UNKNOWN",
+  "transaction_signature_verified_by_second_rpc": false,
+  "transaction_slot_verified_by_second_rpc": false
+}

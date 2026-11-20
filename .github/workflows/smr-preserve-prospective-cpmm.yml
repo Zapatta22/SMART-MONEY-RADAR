@@ -1,0 +1,110 @@
+name: SMR preserve observed prospective CPMM RAW (offline)
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-prospective-account-witness
+    paths:
+      - .github/workflows/smr-preserve-prospective-cpmm.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch previous captured artifact without any new Solana RPC calls
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh run download 44803809348 --name smr-prospective-cpmm-one-shot --dir /tmp/smr-cpmm-evidence
+      - name: Revalidate original request and response bytes and preserve them
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          from datetime import datetime
+          from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+          from smart_money_radar.services.prospective_cpmm_account_snapshot import inspect_prospective_cpmm_response
+          src=Path("/tmp/smr-cpmm-evidence")
+          req=(src/"request.raw.json").read_bytes()
+          rsp=(src/"response.raw.json").read_bytes()
+          original_manifest_bytes=(src/"manifest.json").read_bytes()
+          manifest=json.loads(original_manifest_bytes)
+          assert manifest["requests_attempted"]==1
+          assert manifest["status"]=="RPC_DECLARED_PROSPECTIVE_ONLY"
+          assert manifest["original_slot"]==471039497
+          assert manifest["context_slot"]==471856996
+          assert manifest["historical_original_swap_state_verified"] is False
+          assert manifest["economic_execution_authorized"] is False
+          assert hashlib.sha256(req).hexdigest()==manifest["request_sha256"]
+          assert hashlib.sha256(rsp).hexdigest()==manifest["response_sha256"]
+          first_root=Path("data/evidence/mainnet/2026-11-20")
+          first=json.loads((first_root/"first-proof.manifest.json").read_bytes())
+          first_raw=(first_root/first["raw_file"]).read_bytes()
+          assert hashlib.sha256(first_raw).hexdigest()==first["raw_sha256"]
+          swaps=decode_raydium_cpmm_swaps(json.loads(first_raw))
+          assert len(swaps)==1
+          a=swaps[0].accounts
+          original_req=json.loads(req)
+          assert original_req["method"]=="getMultipleAccounts"
+          assert original_req["params"][0]==[
+              a.pool_state,a.amm_config,a.input_vault,a.output_vault]
+          result=inspect_prospective_cpmm_response(
+              response_raw=rsp,request_raw=req,
+              source_id="solana-public-mainnet-triton",endpoint=manifest["endpoint"],
+              observed_at=datetime.fromisoformat(manifest["observed_at"]),
+              available_at=datetime.fromisoformat(manifest["available_at"]),
+              pool=a.pool_state,amm_config=a.amm_config,
+              input_vault=a.input_vault,output_vault=a.output_vault,
+              input_mint=a.input_token_mint,output_mint=a.output_token_mint,
+              authority=a.authority,
+              input_token_program=a.input_token_program,
+              output_token_program=a.output_token_program,
+              original_swap_slot=first["slot_observed"])
+          assert result.status=="RPC_DECLARED_PROSPECTIVE_ONLY"
+          assert result.slot==manifest["context_slot"]
+          assert list(result.account_sha256)==manifest["account_sha256"]
+          assert result.effective_input_raw==manifest["effective_input_raw_at_collection"]
+          assert result.effective_output_raw==manifest["effective_output_raw_at_collection"]
+          assert result.declared_trade_fee_rate==manifest["trade_fee_rate_at_collection"]
+          assert result.declared_creator_fee_rate==manifest["creator_fee_rate_at_collection"]
+          assert result.operational_authorized is False
+          dest=first_root/"prospective-slot-471856996"
+          dest.mkdir(parents=True,exist_ok=True)
+          (dest/"request.raw.json").write_bytes(req)
+          (dest/"response.raw.json").write_bytes(rsp)
+          (dest/"manifest.json").write_bytes(original_manifest_bytes)
+          print("PRESERVED_PROSPECTIVE response_sha256="+manifest["response_sha256"])
+          print("PRESERVED_PROSPECTIVE effective_input_raw="+str(result.effective_input_raw))
+          print("PRESERVED_PROSPECTIVE effective_output_raw="+str(result.effective_output_raw))
+          print("PRESERVED_PROSPECTIVE trade_fee_rate="+str(result.declared_trade_fee_rate))
+          print("PRESERVED_PROSPECTIVE creator_fee_rate="+str(result.declared_creator_fee_rate))
+          print("PRESERVED_PROSPECTIVE no_new_rpc_queries=True")
+          print("PRESERVED_PROSPECTIVE historical_swap_prestate_verified=False")
+          PY
+      - name: Commit to Draft branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence/mainnet/2026-11-20/prospective-slot-471856996/
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: preserve first real prospective CPMM four-account snapshot"
+          git push origin HEAD:codex/smr-cpmm-prospective-account-witness

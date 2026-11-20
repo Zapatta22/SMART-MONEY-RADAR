@@ -74,6 +74,7 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--expected-sha256")
     paper = subparsers.add_parser("paper-replay", help="simula entradas em observações locais")
     paper.add_argument("scenario", type=Path)
+    paper.add_argument("--as-of", help="limita o replay de arquivo à disponibilidade até este instante")
     paper.add_argument("--archive", type=Path, help="lê swaps concluídos de um banco SQLite local")
     paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
     return parser
@@ -119,12 +120,19 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 
 def _paper_replay(args: argparse.Namespace) -> None:
-    from datetime import datetime
+    from datetime import datetime, timezone
     from decimal import Decimal, InvalidOperation
 
     from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, replay_paper
 
     scenario = json.loads(args.scenario.read_text(encoding="utf-8"), parse_float=Decimal)
+    if args.as_of is not None and args.archive is None:
+        raise ValueError("--as-of exige --archive")
+    as_of = datetime.fromisoformat(args.as_of) if args.as_of is not None else None
+    if as_of is not None:
+        if as_of.utcoffset() is None:
+            raise ValueError("--as-of exige horário com fuso")
+        as_of = as_of.astimezone(timezone.utc)
 
     def decimal(value):
         if isinstance(value, bool):
@@ -155,10 +163,17 @@ def _paper_replay(args: argparse.Namespace) -> None:
                 rows = store.list_swap_replay_archive(**scope)
             finally:
                 store.close()
+            if as_of is not None:
+                rows = [row for row in rows if datetime.fromisoformat(row["available_at"]) <= as_of]
             ticks, skipped = ticks_from_swap_archive(
                 rows, quote_mint=scope["quote_mint"], min_confidence=decimal(market["min_confidence"]),
             )
-            archive_report = {**scope, "ticks": len(ticks), "skipped_operation_ids": skipped}
+            canonical_rows = json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
+            archive_report = {
+                **scope, "ticks": len(ticks), "skipped_operation_ids": skipped,
+                "as_of": as_of.isoformat() if as_of is not None else None,
+                "receipts_sha256": hashlib.sha256(canonical_rows).hexdigest(),
+            }
     except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
         raise ValueError("arquivo de cenário ou dados do paper-replay inválidos") from exc
     modes = ("immediate", "confirmed") if args.mode == "both" else (args.mode,)

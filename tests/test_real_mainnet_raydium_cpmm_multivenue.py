@@ -158,6 +158,16 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
                 self.assertEqual(report["archive"]["ticks"], 1)
                 self.assertEqual(report["immediate"]["fills"], [])
                 self.assertIsNone(report["immediate"]["pending_side"])
+                before_capture = StringIO()
+                with redirect_stdout(before_capture):
+                    main([
+                        "paper-replay", str(path), "--archive", str(store.database_path),
+                        "--as-of", archived["occurred_at"],
+                    ])
+                early = json.loads(before_capture.getvalue())
+                self.assertEqual(early["archive"]["ticks"], 0)
+                self.assertNotEqual(early["archive"]["receipts_sha256"],
+                                    report["archive"]["receipts_sha256"])
                 audit = store.get_swap_reconciliation_attempts(wallet, signature)
                 self.assertEqual(len(audit), 2)
                 self.assertEqual(audit[0]["status"], "MATCHED")

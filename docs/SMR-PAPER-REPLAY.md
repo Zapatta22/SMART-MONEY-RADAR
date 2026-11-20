@@ -62,7 +62,9 @@ consome JSON local e opera exclusivamente sobre caixa simulado.
 prospectivo gravado pelo pipeline CPMM em vez da lista manual de ticks.
 O cenário fornece a mesma configuração de simulação e uma seção `market`
 com `wallet`, `program`, `base_mint`, `quote_mint` e `min_confidence`.
-O banco é aberto em modo somente leitura para o replay.
+O banco é aberto em modo somente leitura para o replay. Use `--as-of` com
+um instante ISO 8601 e fuso para reproduzir apenas o que estava disponível
+até aquele momento. O relatório registra o SHA-256 dos recibos selecionados.
 
 O pipeline arquiva os valores do primeiro processamento concluído de cada
 operação, com o horário original de mercado e o horário local de publicação

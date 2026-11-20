@@ -164,7 +164,23 @@ class CpmmRecoveryRunner:
                 finally:
                     if baseline_task is not None:
                         try:
-                            # A result can only describe its originating session.\n                            # The RPC task is bounded even if the WS already failed.\n                            if baseline_task.done():\n                                requested,available,response,error=await baseline_task\n                            else:\n                                baseline_task.cancel()\n                                try:\n                                    await baseline_task\n                                except (asyncio.CancelledError, asyncio.TimeoutError):\n                                    pass\n                                report["baseline_error"]="cancelled_after_ws_end"\n                                continue_result=False\n                                requested=available=response=error=None\n                            if requested is None:\n                                raise ValueError("baseline_cancelled_after_ws_end")\n                            if baseline_scope!=scope or not connection_healthy or not session.active:\n                                report["baseline_error"]="stale_session_result"\n                                raise ValueError("baseline_stale_session")\n                            if available>self.now() or self.clock()>=deadline:\n                                report["baseline_error"]="response_after_cutoff"\n                                raise ValueError("baseline_after_cutoff")
+                            # A completed RPC belongs only to its originating WS session.
+                            if baseline_task.done():
+                                requested,available,response,error=await baseline_task
+                            else:
+                                baseline_task.cancel()
+                                try:
+                                    await baseline_task
+                                except (asyncio.CancelledError, asyncio.TimeoutError):
+                                    pass
+                                report["baseline_error"]="cancelled_after_ws_end"
+                                raise ValueError("baseline_cancelled_after_ws_end")
+                            if baseline_scope!=scope or not connection_healthy or not session.active:
+                                report["baseline_error"]="stale_session_result"
+                                raise ValueError("baseline_stale_session")
+                            if available>self.now() or self.clock()>=deadline:
+                                report["baseline_error"]="response_after_cutoff"
+                                raise ValueError("baseline_after_cutoff")
                             report["baseline_requested_at"]=requested.isoformat()
                             report["baseline_available_at"]=available.isoformat()
                             report["baseline_rpc_error"]=error

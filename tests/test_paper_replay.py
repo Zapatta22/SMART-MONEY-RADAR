@@ -1,6 +1,7 @@
 import json
 import unittest
 from contextlib import redirect_stdout
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from io import StringIO
@@ -10,6 +11,7 @@ from unittest.mock import patch
 
 from smart_money_radar.cli import main
 from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, replay_paper
+from smart_money_radar.domain.paper_quote_archive import ticks_from_quote_archive
 from smart_money_radar.domain.paper_swap_archive import ticks_from_swap_archive
 
 
@@ -125,6 +127,43 @@ class PaperReplayTests(unittest.TestCase):
         self.assertEqual(confirmed.fills[0].price, 12)
         self.assertEqual(immediate.fills[0].decision_at, ticks[0].at)
         self.assertEqual(confirmed.fills[0].decision_at, ticks[2].at)
+
+    def test_quote_replay_only_fills_on_a_later_observation_and_uses_bid_ask(self):
+        def quote(second, bid, ask, *, size="50"):
+            at = (self.start + timedelta(seconds=second)).isoformat()
+            return {"quote_id": f"id-{second}", "available_at": at, "market_at": at,
+                    "bid": str(bid), "ask": str(ask), "volume": "90",
+                    "bid_size": size, "ask_size": "50"}
+
+        quotes = [quote(0, 9, 10), quote(2, 10, 11), quote(3, 10, 12),
+                  quote(5, 12, 13), quote(6, 13, 14, size="1"), quote(7, 14, 15)]
+        signals = [self.tick(1, 100, 1, "BUY"), self.tick(4, 100, 1, "SELL")]
+        ticks, _ = ticks_from_quote_archive(quotes, signals, signal_ttl_seconds=10)
+        config = replace(self.config, stop_loss=Decimal("0.30"))
+        result = replay_paper(ticks, config=config, mode="immediate")
+        buy, sell = result.fills
+        self.assertEqual((buy.price, buy.quote_id), (Decimal(12), "id-3"))
+        self.assertEqual((sell.price, sell.quote_id), (Decimal(14), "id-7"))
+        self.assertEqual(buy.decision_at, ticks[1].at)
+        self.assertEqual(sell.decision_at, ticks[3].at)
+        quotes[2]["ask_size"] = "1"
+        shallow, _ = ticks_from_quote_archive(quotes, signals, signal_ttl_seconds=10)
+        result = replay_paper(shallow, config=config, mode="immediate")
+        self.assertEqual(result.fills, ())
+        self.assertEqual(result.decisions[-1].reason, "insufficient_ask_size")
+
+    def test_quote_replay_skips_expired_signals_and_does_not_confirm_conflicts(self):
+        at = (self.start + timedelta(seconds=10)).isoformat()
+        quote = {"quote_id": "quote", "available_at": at, "market_at": at,
+                 "bid": "10", "ask": "11", "volume": "90", "bid_size": "50", "ask_size": "50"}
+        ticks, _ = ticks_from_quote_archive([quote], [self.tick(0, 10, 1, "BUY")], signal_ttl_seconds=3)
+        self.assertEqual(ticks[0].signal, "NONE")
+        signals = [self.tick(8, 10, 1, "BUY"), self.tick(9, 11, 1, "SELL")]
+        ticks, _ = ticks_from_quote_archive([quote], signals, signal_ttl_seconds=3)
+        self.assertEqual(ticks[0].signal, "NONE")
+        self.assertFalse(ticks[0].entry_allowed)
+        with self.assertRaisesRegex(ValueError, "ordem temporal"):
+            ticks_from_quote_archive([quote, quote], signals, signal_ttl_seconds=3)
 
     def test_cli_runs_both_modes_without_network(self):
         scenario = {"config": {"initial_cash": "1000", "max_entry_cash": "100", "max_exposure": "0.1"},

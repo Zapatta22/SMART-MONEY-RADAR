@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
 import unittest
@@ -149,7 +149,7 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
                 path = Path(directory) / "scenario.json"
                 path.write_text(json.dumps({
                     "config": {"initial_cash": "1000", "max_entry_cash": "100", "max_exposure": "0.1"},
-                    "market": {**market, "min_confidence": "0.6"},
+                    "market": {**market, "min_confidence": "0.6", "signal_ttl_seconds": 30},
                 }))
                 stdout = StringIO()
                 with redirect_stdout(stdout):
@@ -168,6 +168,28 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
                 self.assertEqual(early["archive"]["ticks"], 0)
                 self.assertNotEqual(early["archive"]["receipts_sha256"],
                                     report["archive"]["receipts_sha256"])
+
+                quotes = Path(directory) / "quotes.json"
+                available = datetime.fromisoformat(archived["available_at"])
+                entries = []
+                for offset in (1, 2):
+                    at = (available + timedelta(seconds=offset)).isoformat()
+                    entries.append({
+                        "quote_id": f"quote-{offset}", "market_at": at, "available_at": at,
+                        "bid": 10.1, "ask": 10.2, "bid_size": "3", "ask_size": "3", "volume": 100,
+                    })
+                quote_market = {key: market[key] for key in ("base_mint", "quote_mint", "program")}
+                quotes.write_text(json.dumps({**quote_market, "source": "fixture-source", "quotes": entries}))
+                quote_output = StringIO()
+                with redirect_stdout(quote_output):
+                    main([
+                        "paper-replay", str(path), "--archive", str(store.database_path),
+                        "--quotes", str(quotes), "--as-of", entries[0]["available_at"],
+                    ])
+                quote_report = json.loads(quote_output.getvalue())["archive"]
+                self.assertEqual(quote_report["quote_archive"]["quotes"], 1)
+                self.assertEqual(quote_report["quote_archive"]["source"], "fixture-source")
+                self.assertEqual(len(quote_report["quote_archive"]["sha256"]), 64)
                 audit = store.get_swap_reconciliation_attempts(wallet, signature)
                 self.assertEqual(len(audit), 2)
                 self.assertEqual(audit[0]["status"], "MATCHED")

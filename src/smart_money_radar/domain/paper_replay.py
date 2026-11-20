@@ -20,6 +20,11 @@ class ReplayTick:
     entry_allowed: bool = False
     halted: bool = False
     market_at: datetime | None = None
+    bid: Decimal | None = None
+    ask: Decimal | None = None
+    bid_size: Decimal | None = None
+    ask_size: Decimal | None = None
+    quote_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.at.utcoffset() is None:
@@ -36,6 +41,17 @@ class ReplayTick:
         if (self.signal not in {"BUY", "SELL", "NONE"}
                 or type(self.entry_allowed) is not bool or type(self.halted) is not bool):
             raise ValueError("sinal ou filtro de entrada inválido")
+
+        for value in (self.bid, self.ask):
+            if value is not None and (not value.is_finite() or value <= 0):
+                raise ValueError("cotação inválida")
+        for value in (self.bid_size, self.ask_size):
+            if value is not None and (not value.is_finite() or value < 0):
+                raise ValueError("profundidade inválida")
+        if (self.bid is None) != (self.ask is None) or (
+            self.bid is not None and self.ask is not None and self.bid > self.ask
+        ):
+            raise ValueError("bid/ask incoerentes")
 
 
 @dataclass(frozen=True)
@@ -76,6 +92,7 @@ class PaperFill:
     quantity: Decimal
     fee: Decimal
     reason: str
+    quote_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -140,14 +157,18 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
         if prior is not None and tick.at <= prior:
             raise ValueError("observações devem estar em ordem estritamente crescente")
         prior = tick.at
-        sell_price = tick.price * (ONE - slippage)
+        sell_price = (tick.bid or tick.price) * (ONE - slippage)
 
         market_at = tick.market_at or tick.at
         cancel_entry = pending is not None and pending.side == "BUY" and (
             tick.halted or not tick.entry_allowed or tick.signal == "SELL"
         )
         if pending is not None and (cancel_entry or (
-            market_at > pending.signal.at and (pending.side == "BUY" or tick.volume > 0)
+            market_at > pending.signal.at and (
+                pending.side == "BUY" or (
+                    tick.volume > 0 and (tick.bid_size is None or tick.bid_size >= quantity)
+                )
+            )
         )):
             if pending.side == "SELL":
                 fee = quantity * sell_price * fee_rate
@@ -155,24 +176,28 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
                 cash += proceeds
                 realized_pnl += proceeds - entry_cost
                 fills.append(PaperFill("SELL", pending.signal.at, tick.at, sell_price,
-                                       quantity, fee, pending.reason))
+                                       quantity, fee, pending.reason, tick.quote_id))
                 quantity = ZERO
                 opened_at = None
             else:
-                buy_price = tick.price * (ONE + slippage)
+                buy_price = (tick.ask or tick.price) * (ONE + slippage)
+                entry_budget = min(config.max_entry_cash, cash * config.max_exposure)
+                notional = entry_budget / (ONE + fee_rate)
+                buy_quantity = notional / buy_price
                 rejection = _entry_rejection(tick, pending, buy_price, config)
+                if rejection is None and tick.ask_size is not None and buy_quantity > tick.ask_size:
+                    rejection = "insufficient_ask_size"
                 if rejection is not None:
                     rejected_entries += 1
                     decisions.append(PaperDecision(tick.at, "reject", rejection))
                 else:
-                    entry_cost = min(config.max_entry_cash, cash * config.max_exposure)
-                    notional = entry_cost / (ONE + fee_rate)
+                    entry_cost = entry_budget
                     fee = entry_cost - notional
-                    quantity = notional / buy_price
+                    quantity = buy_quantity
                     cash -= entry_cost
                     opened_at = tick.at
                     fills.append(PaperFill("BUY", pending.signal.at, tick.at, buy_price,
-                                           quantity, fee, pending.reason))
+                                           quantity, fee, pending.reason, tick.quote_id))
             pending = None
 
         liquidation = quantity * sell_price * (ONE - fee_rate)
@@ -240,6 +265,7 @@ def _entry_rejection(
     if not tick.entry_allowed or tick.signal == "SELL" or tick.volume <= 0:
         return "entry_conditions_at_fill"
     maximum = config.max_entry_deviation_bps
-    if maximum is not None and (price - order.signal.price) * BPS > maximum * order.signal.price:
+    reference = order.signal.ask or order.signal.price
+    if maximum is not None and (price - reference) * BPS > maximum * reference:
         return "entry_price_deviation"
     return None

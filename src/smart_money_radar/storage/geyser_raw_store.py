@@ -344,6 +344,30 @@ class SQLiteGeyserRawStore:
         _text(source_id, "source_id")
         with self._connection() as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
+            # Also recover a kill between registering the stream and creating
+            # its session metadata: both operations were previously separate.
+            orphaned = connection.execute(
+                """SELECT s.stream_id FROM geyser_frame_streams AS s
+                   LEFT JOIN geyser_capture_sessions AS c
+                   ON c.source_id = s.source_id AND c.stream_id = s.stream_id
+                   WHERE s.source_id = ? AND c.stream_id IS NULL
+                   ORDER BY s.stream_id""",
+                (source_id,),
+            ).fetchall()
+            for (stream_id,) in orphaned:
+                now = datetime.now(timezone.utc).isoformat()
+                count = connection.execute(
+                    """SELECT COUNT(*) FROM geyser_wire_frames
+                       WHERE source_id = ? AND stream_id = ?""",
+                    (source_id, stream_id),
+                ).fetchone()[0]
+                connection.execute(
+                    """INSERT INTO geyser_capture_sessions
+                       (source_id, stream_id, started_at, finished_at,
+                        outcome, frame_count)
+                       VALUES (?, ?, ?, ?, 'process_interrupted_unknown', ?)""",
+                    (source_id, stream_id, now, now, count),
+                )
             rows = connection.execute(
                 """SELECT stream_id FROM geyser_capture_sessions
                    WHERE source_id = ? AND finished_at IS NULL
@@ -362,7 +386,7 @@ class SQLiteGeyserRawStore:
                        WHERE source_id = ? AND stream_id = ? AND finished_at IS NULL""",
                     (datetime.now(timezone.utc).isoformat(), count, source_id, stream_id),
                 )
-            return [stream_id for (stream_id,) in rows]
+            return [stream_id for (stream_id,) in orphaned] + [stream_id for (stream_id,) in rows]
 
     def get_capture_session(self, source_id: str, stream_id: str) -> dict | None:
         """Return audit metadata if the archive records how its stream ended."""

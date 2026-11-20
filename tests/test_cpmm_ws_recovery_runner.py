@@ -73,7 +73,8 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.recovery=BoundedCpmmRecovery(self.db,source_id="test-solana-ws",
                                           accounts=ADDRESS,policy=self.policy)
     async def asyncTearDown(self):
-        self.recovery.finalize("test_end")
+        if self.recovery.current is not None and self.recovery.current.active:
+            self.recovery.finalize("test_end")
         self.db.close()
         self.tmp.cleanup()
     def runner(self,connector,rpc):

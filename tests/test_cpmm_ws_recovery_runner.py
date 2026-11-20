@@ -631,7 +631,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(first["recovery_snapshot_confirmed"])
         self.assertFalse(result["stable_baseline_observed"])
         self.assertFalse(result["recovery_live_proven"])
-        self.assertTrue(result["live_real_reconnection_observed"])
+        self.assertFalse(result["live_real_reconnection_observed"])
         self.assertEqual(result["observed_notifications"],0)
         self.assertEqual(result["coverage"],"UNKNOWN")
         self.assertFalse(result["financial_execution_authorized"])

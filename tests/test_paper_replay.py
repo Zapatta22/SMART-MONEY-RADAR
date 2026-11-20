@@ -126,6 +126,9 @@ class PaperReplayTests(unittest.TestCase):
         self.assertEqual(immediate.fills[0].price, 11)
         self.assertEqual(confirmed.fills[0].price, 12)
         self.assertEqual(immediate.fills[0].decision_at, ticks[0].at)
+        self.assertEqual(immediate.average_decision_to_market_seconds, Decimal(3))
+        self.assertEqual(immediate.average_market_to_availability_seconds, Decimal(1))
+        self.assertEqual(immediate.average_fill_delay_seconds, Decimal(4))
         self.assertEqual(confirmed.fills[0].decision_at, ticks[2].at)
 
     def test_quote_replay_only_fills_on_a_later_observation_and_uses_bid_ask(self):

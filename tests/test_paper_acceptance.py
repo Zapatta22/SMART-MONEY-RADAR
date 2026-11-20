@@ -87,6 +87,8 @@ class PaperAcceptanceTests(unittest.TestCase):
             self.assertEqual(full, run())
             comparison = full["comparison"]
             self.assertEqual(comparison["closed_trades"], {"immediate": 1, "confirmed": 1})
+            self.assertEqual(comparison["closed_trade_coverage"], "both_modes")
+            self.assertEqual(before["comparison"]["closed_trade_coverage"], "neither_mode")
             self.assertEqual(comparison["scenario_sha256"], hashlib.sha256(scenario.read_bytes()).hexdigest())
             self.assertEqual(full["archive"]["quote_archive"]["quotes"], 5)
             self.assertEqual(before["archive"]["quote_archive"]["quotes"], 3)
@@ -106,6 +108,8 @@ class PaperAcceptanceTests(unittest.TestCase):
                     expected_proceeds = Decimal(100) / (1 + fee_rate) / expected_ask * 13 * (1 - fee_rate)
                     self.assertEqual(Decimal(result["final_equity"]), Decimal(900) + expected_proceeds)
                     self.assertEqual(Decimal(result["average_fill_delay_seconds"]), 1)
+                    self.assertEqual(Decimal(result["average_decision_to_market_seconds"]), 1)
+                    self.assertEqual(Decimal(result["average_market_to_availability_seconds"]), 0)
                     self.assertGreater(Decimal(result["total_fees"]), 0)
                     self.assertGreater(Decimal(result["max_drawdown"]), 0)
             self.assertLess(Decimal(comparison["equity_delta"]), 0)

@@ -135,3 +135,10 @@ Configure `smr watch CARTEIRA --reference-mint MINT_DE_COTACAO` antes de
 coletar os sinais CPMM para essa avaliação. Use o mint selecionado também
 em `market.quote_mint`. O arquivo prospectivo conserva a classificação
 publicada, portanto a seleção precisa estar configurada desde a coleta.
+
+O campo `closed_trade_coverage` informa se nenhuma, uma ou ambas as estratégias
+concluíram operações. Mesmo quando ambas têm saídas, a contagem é cobertura
+do cenário e a qualidade da amostra precisa de avaliação separada. O relatório
+também separa o atraso médio entre decisão e evento de mercado e o atraso
+médio entre evento e disponibilidade. O primeiro é simulado. O segundo
+reflete os horários registrados na entrada e, em fixtures, também é sintético.

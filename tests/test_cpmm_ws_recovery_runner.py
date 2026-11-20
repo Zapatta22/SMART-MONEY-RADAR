@@ -292,5 +292,48 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reopened.integrity_check(),["ok"])
         self.db=reopened
 
+
+    async def test_rpc_failure_is_classified_as_baseline_failure(self):
+        unrecognized='{"jsonrpc":"2.0","method":"syntheticUnknown"}'
+        conn=FakeConnector([[ack(1),ack(2),ack(3),ack(4),
+                             unrecognized,ConnectionClosedError()],
+                            [ack(1),ConnectionClosedError()]])
+        result=await self.runner(conn,FakeRPC(fail=True)).run()
+        self.assertEqual(result["gaps"][0]["failure"],"BASELINE_FAILED")
+        self.assertEqual(result["connections"][0]["baseline_status"],"UNKNOWN")
+        self.assertFalse(result["connections"][0].get("baseline_verified_as_snapshot",False))
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
+    async def test_rpc_return_after_global_deadline_is_rejected(self):
+        class SilentAfterAcks(FakeSocket):
+            async def recv(self):
+                if self.events:
+                    return await super().recv()
+                raise asyncio.TimeoutError()
+        class C:
+            def __call__(self):
+                return SilentAfterAcks([ack(1),ack(2),ack(3),ack(4)])
+        tick=[0]
+        def clock():
+            tick[0]+=1
+            return tick[0]
+        class RPC:
+            async def __call__(self,request):
+                return NOW,NOW,b'{"result":{"context":{"slot":99},"value":[]}}',None
+        r=CpmmRecoveryRunner(self.recovery,ws_connect=C(),rpc_fetch=RPC(),
+            snapshot_identity={"endpoint":"https://example.invalid",
+            "original_swap_slot":1,"authority":"unknown",
+            "input_mint":"unknown","output_mint":"unknown",
+            "input_token_program":"unknown","output_token_program":"unknown"},
+            duration_seconds=15,sleep=lambda _:asyncio.sleep(0),
+            clock=clock,now=lambda:NOW)
+        result=await r.run()
+        first=result["connections"][0]
+        self.assertEqual(first["baseline_rejection"],"global_deadline_elapsed")
+        self.assertEqual(first["baseline_status"],"UNKNOWN")
+        self.assertEqual(first["journal"]["frame_count"],6)
+        self.assertEqual(result["coverage"],"UNKNOWN")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
 if __name__=="__main__":
     unittest.main()

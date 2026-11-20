@@ -5,7 +5,7 @@ frames before processing them. Baseline RPC executes in a separate task while
 WebSocket notifications remain actively received/archived. No Geyser claim.
 """
 from __future__ import annotations
-import asyncio,base64,json,time,uuid
+import asyncio,base64,json,time,uuid,os
 from datetime import datetime,timezone
 from hashlib import sha256
 from pathlib import Path
@@ -30,6 +30,8 @@ WS_ENDPOINT="wss://api.mainnet-beta.solana.com/"
 RPC_ENDPOINT="https://api.mainnet-beta.solana.com"
 MAX_SECONDS=75
 MAX_FRAMES=80
+# Network capture must be explicitly enabled by the bounded GitHub workflow.
+LIVE_CAPTURE_OPT_IN=os.environ.get("SMR_LIVE_CAPTURE_OPT_IN")=="READ_ONLY_BOUNDED_CM27"
 STOP_AFTER_FIRST_VALID_NOTIFICATION=True
 ACCOUNTS=(
  "CqvMZmWDvEufa5rzkubidyR4zMDqDPoLjAtsW6wGsPMu",
@@ -58,6 +60,8 @@ def rpc_once(request_raw:bytes):
 
 async def run():
     """Use existing recovery controller for the complete bounded live capture."""
+    if not LIVE_CAPTURE_OPT_IN:
+        raise RuntimeError("network capture requires explicit read-only CM27 opt-in")
     import websockets
     OUT.mkdir(parents=True,exist_ok=True)
     previous=json.loads((ROOT/"first-proof.manifest.json").read_bytes())
@@ -71,7 +75,11 @@ async def run():
     a=matches[0].accounts
     if (a.pool_state,a.amm_config,a.input_vault,a.output_vault)!=ACCOUNTS:
         raise ValueError("scope differs from original CPMM fixture")
-    store=SQLiteGeyserRawStore(OUT/"geyser-raw.sqlite")
+    # Fresh evidence workspace; never silently merge data from another run.
+    existing=OUT/"geyser-raw.sqlite"
+    if existing.exists():
+        raise RuntimeError("existing live journal: preserve it before a new run")
+    store=SQLiteGeyserRawStore(existing)
     recovery=BoundedCpmmRecovery(store,source_id="solana-ws-public-mainnet",
                                   accounts=ACCOUNTS,policy=POLICY)
     identity={"endpoint":RPC_ENDPOINT,"original_swap_slot":previous["slot_observed"],

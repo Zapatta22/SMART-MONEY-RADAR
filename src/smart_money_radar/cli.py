@@ -108,6 +108,14 @@ def _parser() -> argparse.ArgumentParser:
     watch_live.add_argument("--source-id", required=True, help="identificador estável do endpoint e cluster")
     watch_live.add_argument("--page-size", type=int, default=100)
     watch_live.add_argument("--max-pages", type=int, default=10)
+    watch_live.add_argument(
+        "--duration-seconds", type=float,
+        help="executa captura limitada e imprime métricas de observação",
+    )
+    watch_live.add_argument(
+        "--metrics-json", type=Path,
+        help="salva um manifesto local sem credenciais (exige --duration-seconds)",
+    )
     return parser
 
 
@@ -164,11 +172,22 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(json.dumps(asdict(result), ensure_ascii=False))
             return
         if args.command == "launch-live":
+            import math
+            from datetime import datetime, timezone
             from smart_money_radar.services.launch_live_backfill import FinalizedLaunchBackfill
             from smart_money_radar.services.launch_live_monitor import LaunchLiveMonitor
+            from smart_money_radar.services.launch_live_report import save_launch_live_report
+            if args.duration_seconds is not None and (
+                not math.isfinite(args.duration_seconds)
+                or not 1 <= args.duration_seconds <= 900
+            ):
+                raise ValueError("--duration-seconds precisa estar entre 1 e 900")
+            if args.metrics_json is not None and args.duration_seconds is None:
+                raise ValueError("--metrics-json exige --duration-seconds")
             settings = HeliusSettings.from_environment()
             source = HeliusDataSource(settings)
             store = SQLiteEventStore(settings.database_path)
+            started_at = datetime.now(timezone.utc)
             try:
                 async def watch_launches():
                     stop_event = asyncio.Event()
@@ -180,8 +199,32 @@ def main(argv: Sequence[str] | None = None) -> None:
                         ),
                         args.addresses,
                     )
-                    await monitor.run(stop_event)
-                asyncio.run(watch_launches())
+                    if args.duration_seconds is not None:
+                        try:
+                            await asyncio.wait_for(
+                                monitor.run(stop_event), timeout=args.duration_seconds,
+                            )
+                        except asyncio.TimeoutError:
+                            stop_event.set()
+                    else:
+                        await monitor.run(stop_event)
+                    return monitor.metrics
+                metrics = asyncio.run(watch_launches())
+                ended_at = datetime.now(timezone.utc)
+                if args.metrics_json is not None:
+                    rpc_cursors = {
+                        address: store.get_cpmm_launch_rpc_cursor(
+                            f"{args.source_id}:{address}"
+                        ) for address in args.addresses
+                    }
+                    save_launch_live_report(
+                        args.metrics_json, source_id=args.source_id,
+                        cluster=settings.cluster, addresses=tuple(args.addresses),
+                        started_at=started_at, ended_at=ended_at,
+                        metrics=metrics, rpc_cursors=rpc_cursors,
+                        sqlite_integrity=store.integrity_check(),
+                    )
+                print(json.dumps(asdict(metrics), ensure_ascii=False))
             except KeyboardInterrupt:
                 pass
             finally:

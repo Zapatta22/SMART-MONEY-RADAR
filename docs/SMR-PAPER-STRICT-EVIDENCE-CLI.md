@@ -1,25 +1,33 @@
-# Replay protegido: integração inicial
+# Replay protegido
 
-Comando: `smr paper-replay scenario.json --strict-evidence evidence.json`.
+Execute `smr paper-replay scenario.json --strict-evidence evidence.json`.
+Para limitar a leitura à informação disponível até um instante, acrescente
+`--as-of INSTANTE_ISO8601_COM_FUSO`. Os dois modos usam a mesma janela.
+O cenário usa o formato do replay normal e exige um `quote_id` por tick.
 
-`scenario.json` mantém a configuração normal de paper replay. Cada tick precisa conter `quote_id` estável. O arquivo `evidence.json` contém:
+O arquivo de evidência contém `pool`, `risk_limits`, `risk_by_quote` e
+`evidence_by_quote`. Os limites de risco são `max_position_fraction`,
+`max_daily_loss_fraction`, `max_slippage_bps` e `min_liquidity_quote`.
+Cada tick elegível para entrada tem um `EntryRiskSnapshot` associado.
 
-```json
-{
-  "pool": "POOL_ID",
-  "risk_limits": {
-    "max_position_fraction": "0.20",
-    "max_daily_loss_fraction": "0.05",
-    "max_slippage_bps": "100",
-    "min_liquidity_quote": "1000"
-  },
-  "risk_by_quote": {},
-  "evidence_by_quote": {}
-}
-```
+Cada `evidence_by_quote[quote_id]` é uma lista com um único registro:
+`evidence_id`, `pool`, `observed_at`, `available_at`,
+`source="OBSERVED_MARKET_QUOTE"`, `is_observed_quote=true`,
+`raw_capture_base64` e `raw_capture_sha256`. Os bytes RAW contêm JSON
+com `quote_id`, `pool`, ambos os horários e valores de `price`, `volume`,
+`bid`, `ask`, `bid_size` e `ask_size`. Os campos opcionais ausentes
+da cotação podem ser explicitados como `null` no RAW. Entradas protegidas
+exigem ask e profundidade no preenchimento.
 
-Cada `risk_by_quote[quote_id]` precisa fornecer os campos de `EntryRiskSnapshot`; cada `evidence_by_quote[quote_id]` é uma lista de evidências com ID, pool, horários de observação e disponibilidade, `source="OBSERVED_MARKET_QUOTE"` e `is_observed_quote=true`.
+O replay confere o digest e compara os campos RAW com o tick antes de
+rodar os dois modos. Uma lacuna ou divergência dentro da janela encerra
+o replay. Os valores de risco são reavaliados no preenchimento com o
+orçamento comprometido, a profundidade do ask, patrimônio simulado,
+perda diária e desvio adverso desde a decisão. Resultados são simulados.
 
-**Atenção:** os dois mapas vazios no exemplo bloqueiam entradas. O comando apenas valida declarações fornecidas pelo operador; ainda não autentica criptograficamente as cotações nem seus saldos. Não é autorização de execução real.
-
-`--strict-evidence` com `--archive` é rejeitado até existir uma integração de evidências históricas auditadas. Os testes de ponta a ponta e CI desta interface permanecem pendentes.
+O SHA-256 prova consistência entre os dados apresentados. A identidade
+do provedor, os horários de captura e os saldos externos ainda dependem
+de cadeia de custódia verificável. O indicador `evidence_verified` do
+snapshot de risco é uma declaração do operador. A opção
+`--strict-evidence` com `--archive` continua indisponível até integrar
+as duas trilhas com proveniência validada.

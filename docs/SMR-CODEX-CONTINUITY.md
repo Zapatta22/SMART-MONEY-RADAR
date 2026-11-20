@@ -70,3 +70,38 @@ Não afirmar que testes passaram. Inspecionar workflows, executar suíte complet
 
 - Commit `b6a5934`: novos testes end-to-end do CLI protegido cobrem entrada imediata aceita com metadados válidos e bloqueio por `emergency_halt`. **Ainda não executados.**
 - Antes de usar em produção, revisar comportamento no instante do fill e autenticar origem/preço dos quotes. Não interpretar `evidence_verified` do operador como prova de origem.
+
+## Retomada e validação da PR #64
+
+A revisão começou na branch `feat/cpmm-reserve-estimator-audit`, commit
+`1ded0b5`, baseada em `codex/smr-paper-pool-scope@7599bcd` (PR #63).
+O workflow estrito passou no head remoto e a suíte local teve 725 testes.
+O workflow geral também passou no commit de código imediatamente anterior.
+[CI estrito](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44654045991) ·
+[CI geral](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44654024991)
+
+A branch `codex/smr-pr64-validation` reúne a revisão da PR #64. A análise
+binária confere o layout CPMM com código upstream fixado e uma captura
+mainnet finalizada. O replay protegido verifica o SHA-256 e os campos da
+cotação original, respeita o cutoff antes de processar os dados posteriores
+e reavalia a entrada no fill dos dois modos. A validação usa bytes de
+fixture e mantém como pendente a autenticação externa da origem e do
+relógio. O último commit revisado e os resultados da rodada constam na
+descrição da PR Draft.
+
+Duas frentes independentes partiram do head original da #64. A PR #65
+mostra checkpoints e pendências no painel local, com 727 testes locais.
+A PR #66 agrega evidências direcionais por carteira, pool e assinaturas
+distintas, com 728 testes locais. Ranking, concentração, alertas de
+lançamentos e uso ao vivo ainda precisam de implementação e validação.
+[Painel #65](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/65) ·
+[Smart Money #66](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/66)
+
+### Próxima etapa da cadeia crítica
+
+Integrar a captura de cotações com proveniência externa verificável ao
+replay protegido e comparar dados contemporâneos do mesmo pool CPMM.
+É necessário um intervalo com swaps finalizados, cotações bid/ask,
+profundidade e horários de disponibilidade. Os snapshots de reserva
+continuam classificados como estimativas. A validação prospectiva,
+os modos de execução real e a aceitação operacional seguem pendentes.

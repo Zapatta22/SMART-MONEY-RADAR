@@ -174,6 +174,9 @@ class CpmmRecoveryRunner:
                     if baseline_task is not None:
                         try:
                             # A completed RPC belongs only to its originating WS session.
+                            # Give an already-scheduled fake/fast RPC one event-loop turn.
+                            if not baseline_task.done():
+                                await asyncio.sleep(0)
                             if baseline_task.done():
                                 requested,available,response,error=await baseline_task
                             else:

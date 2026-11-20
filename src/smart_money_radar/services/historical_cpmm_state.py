@@ -1,6 +1,6 @@
 """Conservative reconstruction of a CPMM swap's vault balance deltas.
 
-Actual token pre/post balances are evidence for the individual transaction.
+Actual token pre/post balances are evidence at TRANSACTION BOUNDARIES,\nnot at the precise instruction boundary of the CPMM swap.
 They are NOT effective CPMM reserves: PoolState fee counters, AmmConfig,
 vault authority, competing writes and pre-swap availability remain unproved.
 """
@@ -48,12 +48,14 @@ class HistoricalCpmmState:
     pre_swap_ammconfig_verified: bool = False
     token_vault_authority_verified: bool = False
     economic_replay_eligible: bool = False
+    balance_scope: str = "TRANSACTION_PRE_POST_NOT_PRE_SWAP"
     status: Literal["PARTIAL_HISTORICAL_TX_ONLY"] = "PARTIAL_HISTORICAL_TX_ONLY"
     reasons: tuple[str, ...] = (
         "historical_poolstate_missing", "historical_ammconfig_missing",
         "effective_reserves_unknown", "cpmm_fees_unknown",
         "vault_authority_not_attested", "independent_rpc_finality_not_proven",
         "pre_decision_availability_not_proven",
+        "instruction_level_prestate_not_proven",
     )
 
 

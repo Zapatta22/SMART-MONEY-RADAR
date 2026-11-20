@@ -1,0 +1,38 @@
+name: SMR one-shot first CPMM account notification with contemporaneous baseline
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-first-live-notification
+    paths:
+      - .github/workflows/smr-first-cpmm-live-notification.yml
+
+permissions:
+  contents: read
+
+jobs:
+  one-shot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing SMR dependencies
+        run: python -m pip install -e .
+      - name: Capture four scoped CPMM accounts, one baseline RPC, conditional verification
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/capture_live_cpmm_ws_baseline.py
+      - name: Always preserve RPC, WebSocket and SQLite original RAW
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-first-cpmm-live-notification-attempt
+          path: /tmp/smr-cpmm-baseline-live/
+          retention-days: 7
+          if-no-files-found: error

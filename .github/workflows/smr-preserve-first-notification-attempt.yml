@@ -1,0 +1,120 @@
+name: SMR preserve first-notification attempt RAWs without replaying RPC
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-first-live-notification
+    paths:
+      - .github/workflows/smr-preserve-first-notification-attempt.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download already-observed session evidence without opening network sockets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download 44820468353 --name smr-first-cpmm-live-notification-attempt --dir /tmp/smr-cpmm-first
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check original raw hashes, baseline and SQLite before append-only archive
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          from datetime import datetime
+          from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+          from smart_money_radar.services.prospective_cpmm_account_snapshot import inspect_prospective_cpmm_response
+          from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+          src=Path("/tmp/smr-cpmm-first")
+          root=Path("data/evidence/mainnet/2026-11-20")
+          mbytes=(src/"manifest.json").read_bytes()
+          m=json.loads(mbytes)
+          assert m["subscriptions_requested"]==4
+          assert m["subscriptions_acknowledged"]==4
+          assert m["notifications_received"]==0
+          assert m["first_valid_notification_sha256"] is None
+          assert m["verification_rpc_attempts"]==0
+          assert m["baseline_rpc_attempts"]==1
+          assert m["baseline_status"]=="RPC_DECLARED_PROSPECTIVE_ONLY"
+          assert m["baseline_slot"]==471887787
+          assert m["coverage"]=="PARTIAL"
+          assert not m["race_window_closed"]
+          assert not m["delivery_continuity_attested"]
+          assert m["financial_execution_authorized"] is False
+          assert m["session_frames_stored"]==4
+          assert m["session_report"]["observations"]==[]
+          req=(src/"baseline.request.raw.json").read_bytes()
+          raw=(src/"baseline.response.raw.json").read_bytes()
+          assert hashlib.sha256(req).hexdigest()==m["baseline_request_sha256"]
+          assert hashlib.sha256(raw).hexdigest()==m["baseline_response_sha256"]
+          assert json.loads(req)["method"]=="getMultipleAccounts"
+          assert json.loads(req)["params"][0]==m["accounts"]
+          assert json.loads(raw)["result"]["context"]["slot"]==m["baseline_slot"]
+          initial=json.loads((root/"first-proof.manifest.json").read_bytes())
+          trans=(root/initial["raw_file"]).read_bytes()
+          swaps=decode_raydium_cpmm_swaps(json.loads(trans))
+          same=[a for a in swaps if a.accounts.pool_state==m["accounts"][0]]
+          assert len(same)==1
+          a=same[0].accounts
+          report=inspect_prospective_cpmm_response(
+              response_raw=raw,request_raw=req,source_id="solana-public-mainnet",
+              endpoint=m["endpoint_rpc"],observed_at=datetime.fromisoformat(m["baseline_requested_at"]),
+              available_at=datetime.fromisoformat(m["baseline_available_at"]),
+              pool=a.pool_state,amm_config=a.amm_config,
+              input_vault=a.input_vault,output_vault=a.output_vault,
+              input_mint=a.input_token_mint,output_mint=a.output_token_mint,
+              authority=a.authority,input_token_program=a.input_token_program,
+              output_token_program=a.output_token_program,
+              original_swap_slot=initial["slot_observed"])
+          assert report.status=="RPC_DECLARED_PROSPECTIVE_ONLY"
+          for i,addr in enumerate(m["accounts"],1):
+              req=json.loads((src/f"ws-request-{i}.raw.json").read_bytes())
+              assert req["params"][0]==addr and req["method"]=="accountSubscribe"
+          for i in range(4):
+              ack=json.loads((src/f"frame-{i:03d}.raw.json").read_bytes())
+              assert type(ack.get("result")) is int and type(ack.get("id")) is int
+          s=m["session_report"]
+          store=SQLiteGeyserRawStore(src/"geyser-raw.sqlite",read_only=True)
+          assert store.integrity_check()==["ok"]
+          proof=store.verify_wire_session(s["source_id"],s["session_id"],s["session_id"])
+          assert proof["verified_frames"]==4
+          assert proof["sha256"]==m["journal_report"]["sha256"]
+          store.close()
+          dest=root/"first-notification-attempt-slot-471887787"
+          if dest.exists():raise ValueError("immutable archive already exists")
+          dest.mkdir(parents=True)
+          for path in src.iterdir():
+              if path.is_file():
+                  (dest/path.name).write_bytes(path.read_bytes())
+          print("SMR_FIRST_ARCHIVE baseline_slot=471887787")
+          print("SMR_FIRST_ARCHIVE notifications_real=0")
+          print("SMR_FIRST_ARCHIVE verified_acks=4")
+          print("SMR_FIRST_ARCHIVE additional_rpc_attempts=0")
+          print("SMR_FIRST_ARCHIVE no_new_rpc_ws_connections=True")
+          PY
+      - name: Commit evidence exclusively on the working branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence/mainnet/2026-11-20/first-notification-attempt-slot-471887787/
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: archive one controlled CPMM WS attempt with 0 real notifications"
+          git push origin HEAD:codex/smr-cpmm-first-live-notification

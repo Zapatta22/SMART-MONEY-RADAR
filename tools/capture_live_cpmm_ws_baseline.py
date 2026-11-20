@@ -21,8 +21,9 @@ ROOT=Path("data/evidence/mainnet/2026-11-20")
 OUT=Path("/tmp/smr-cpmm-baseline-live")
 WS_ENDPOINT="wss://api.mainnet-beta.solana.com/"
 RPC_ENDPOINT="https://api.mainnet-beta.solana.com"
-MAX_SECONDS=40
+MAX_SECONDS=75
 MAX_FRAMES=80
+STOP_AFTER_FIRST_VALID_NOTIFICATION=True
 ACCOUNTS=(
  "CqvMZmWDvEufa5rzkubidyR4zMDqDPoLjAtsW6wGsPMu",
  "D4FPEruKEHrG5TenZ2mpDGEfu1iUvTiqBxvpU8HLBvC2",
@@ -90,7 +91,11 @@ async def run():
         "baseline_request_sha256":sha256(rpc_request).hexdigest(),
         "coverage":"UNKNOWN","race_window_closed":False,
         "global_ledger_order_verified":False,"delivery_continuity_attested":False,
-        "financial_execution_authorized":False,"error":None,"status":"UNKNOWN"}
+        "financial_execution_authorized":False,"error":None,"status":"UNKNOWN",
+        "first_valid_notification_sha256":None,
+        "first_valid_notification_slot":None,
+        "first_valid_notification_account":None,
+        "verification_rpc_attempts":0}
     outcome="ended"
     task=None
     try:
@@ -138,6 +143,12 @@ async def run():
                         notifications.append((observation,raw))
                         print("SMR_BASELINE_WS notification_account="+observation.account+
                               " slot="+str(observation.slot))
+                        if observation.status=="OBSERVED":
+                            result["first_valid_notification_sha256"]=observation.raw_sha256
+                            result["first_valid_notification_slot"]=observation.slot
+                            result["first_valid_notification_account"]=observation.account
+                            if STOP_AFTER_FIRST_VALID_NOTIFICATION:
+                                break
             outcome="completed_bounded"
             result["status"]="SESSION_COMPLETE_BOUND"
     except Exception as exc:
@@ -178,6 +189,38 @@ async def run():
                     result["audit_error"]=type(exc).__name__
         else:
             result["audit_reasons"]=["subscriptions_not_all_acknowledged"]
+        # A single additional RPC read is justified only by a new observed
+        # notification. The saved baseline is not a post-event verification.
+        if result["first_valid_notification_sha256"] is not None:
+            verify_request=json.dumps({"jsonrpc":"2.0","id":24,
+                "method":"getMultipleAccounts",
+                "params":[list(ACCOUNTS),{"encoding":"base64","commitment":"finalized"}]},
+                sort_keys=True,separators=(",",":")).encode()
+            (OUT/"verification.request.raw.json").write_bytes(verify_request)
+            result["verification_rpc_attempts"]=1
+            vr,va,raw,err=await asyncio.to_thread(rpc_once,verify_request)
+            result["verification_requested_at"]=vr.isoformat()
+            result["verification_available_at"]=va.isoformat()
+            result["verification_error"]=err
+            result["verification_request_sha256"]=sha256(verify_request).hexdigest()
+            if raw is not None:
+                (OUT/"verification.response.raw.json").write_bytes(raw)
+                result["verification_response_sha256"]=sha256(raw).hexdigest()
+                try:
+                    j=json.loads(raw)
+                    rs=j["result"]["context"]["slot"]
+                    if type(rs) is not int:raise ValueError("verification slot not int")
+                    result["verification_slot"]=rs
+                    nslot=result["first_valid_notification_slot"]
+                    result["verification_relationship"]=(
+                        "RPC_SLOT_BEFORE_NOTIFICATION" if rs<nslot
+                        else "RPC_SLOT_SAME_AS_NOTIFICATION" if rs==nslot
+                        else "RPC_SLOT_AFTER_NOTIFICATION")
+                    result["verification_not_independent_event_proof"]=True
+                except (ValueError,TypeError,KeyError,IndexError):
+                    result["verification_relationship"]="UNKNOWN"
+            else:
+                result["verification_relationship"]="UNKNOWN"
         result["session_frames_stored"]=session.finish(outcome)
         result["session_report"]=session.report()
         result["journal_integrity"]=store.integrity_check()

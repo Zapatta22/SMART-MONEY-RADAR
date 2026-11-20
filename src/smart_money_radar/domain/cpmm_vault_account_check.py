@@ -9,7 +9,6 @@ import json
 
 TOKEN_PROGRAMS = frozenset({
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-    "TokenzQdBNbLqP5VEhdkAS6EPFZcFzj4qJqz1w9J3pV",
 })
 
 

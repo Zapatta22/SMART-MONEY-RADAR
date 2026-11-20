@@ -1,0 +1,105 @@
+name: SMR preserve second prospective CPMM evidence offline
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-prospective-history
+    paths:
+      - .github/workflows/smr-preserve-second-cpmm.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exactly the second recorded artifact (no RPC)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download 44805881701 --name smr-cpmm-prospective-second --dir /tmp/smr-second-prospective
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Recheck request/response hashes, pool identity and availability
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          from datetime import datetime
+          from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+          from smart_money_radar.services.prospective_cpmm_account_snapshot import inspect_prospective_cpmm_response
+          source=Path("/tmp/smr-second-prospective")
+          m_bytes=(source/"manifest.json").read_bytes()
+          m=json.loads(m_bytes)
+          req=(source/"request.raw.json").read_bytes()
+          raw=(source/"response.raw.json").read_bytes()
+          assert m["requests_attempted"]==1 and m["status"]=="RPC_DECLARED_PROSPECTIVE_ONLY"
+          assert m["context_slot"]==471860762
+          assert m["historical_original_swap_state_verified"] is False
+          assert m["economic_execution_authorized"] is False
+          assert hashlib.sha256(req).hexdigest()==m["request_sha256"]
+          assert hashlib.sha256(raw).hexdigest()==m["response_sha256"]
+          root=Path("data/evidence/mainnet/2026-11-20")
+          first=json.loads((root/"first-proof.manifest.json").read_bytes())
+          tx=(root/first["raw_file"]).read_bytes()
+          assert hashlib.sha256(tx).hexdigest()==first["raw_sha256"]
+          swaps=decode_raydium_cpmm_swaps(json.loads(tx))
+          assert len(swaps)==1
+          a=swaps[0].accounts
+          probe=inspect_prospective_cpmm_response(
+              request_raw=req,response_raw=raw,
+              source_id="solana-public-mainnet-triton",endpoint=m["endpoint"],
+              observed_at=datetime.fromisoformat(m["observed_at"]),
+              available_at=datetime.fromisoformat(m["available_at"]),
+              pool=a.pool_state,amm_config=a.amm_config,
+              input_vault=a.input_vault,output_vault=a.output_vault,
+              input_mint=a.input_token_mint,output_mint=a.output_token_mint,
+              authority=a.authority,
+              input_token_program=a.input_token_program,
+              output_token_program=a.output_token_program,
+              original_swap_slot=first["slot_observed"])
+          assert probe.status=="RPC_DECLARED_PROSPECTIVE_ONLY"
+          assert probe.slot==m["context_slot"]
+          assert probe.response_sha256==m["response_sha256"]
+          assert probe.request_sha256==m["request_sha256"]
+          assert list(probe.account_sha256)==m["account_sha256"]
+          assert probe.effective_input_raw==m["effective_input_raw_at_collection"]
+          assert probe.effective_output_raw==m["effective_output_raw_at_collection"]
+          prev=json.loads((root/"prospective-slot-471856996/manifest.json").read_bytes())
+          assert m["context_slot"]>prev["context_slot"]
+          assert datetime.fromisoformat(m["available_at"])>datetime.fromisoformat(prev["available_at"])
+          assert m["original_pool"]==prev["original_pool"]
+          assert json.loads(req)==json.loads((root/"prospective-slot-471856996/request.raw.json").read_bytes())
+          dest=root/"prospective-slot-471860762"
+          dest.mkdir(parents=True,exist_ok=True)
+          (dest/"request.raw.json").write_bytes(req)
+          (dest/"response.raw.json").write_bytes(raw)
+          (dest/"manifest.json").write_bytes(m_bytes)
+          print("SMR_PRESERVE2 slot="+str(probe.slot))
+          print("SMR_PRESERVE2 raw_sha256="+m["response_sha256"])
+          print("SMR_PRESERVE2 effective_input_raw="+str(probe.effective_input_raw))
+          print("SMR_PRESERVE2 effective_output_raw="+str(probe.effective_output_raw))
+          print("SMR_PRESERVE2 no_rpc_queries=True")
+          PY
+      - name: Commit new historical evidence without editing previous snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence/mainnet/2026-11-20/prospective-slot-471860762/
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: preserve second real CPMM prospective snapshot at slot 471860762"
+          git push origin HEAD:codex/smr-cpmm-prospective-history

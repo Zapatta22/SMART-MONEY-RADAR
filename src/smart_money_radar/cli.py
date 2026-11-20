@@ -93,6 +93,7 @@ def _parser() -> argparse.ArgumentParser:
         "launch-scan", help="identifica inicializações CPMM em transações RPC arquivadas",
     )
     launch.add_argument("transactions", type=Path, nargs="+")
+    launch.add_argument("--journal", type=Path, help="arquiva evidências e deduplica pools no SQLite")
     return parser
 
 
@@ -132,7 +133,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(json.dumps(asdict(snapshot), default=str, ensure_ascii=False))
             return
         if args.command == "launch-scan":
-            _scan_cpmm_launches(args.transactions)
+            _scan_cpmm_launches(args.transactions, journal=args.journal)
             return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)
@@ -147,11 +148,21 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit(str(exc)) from None
 
 
-def _scan_cpmm_launches(paths: Sequence[Path]) -> None:
+def _scan_cpmm_launches(paths: Sequence[Path], *, journal: Path | None = None) -> None:
     from smart_money_radar.data_sources.raydium_cpmm_launch import (
         deduplicate_cpmm_pool_initializations,
         detect_cpmm_pool_initializations,
     )
+
+    if journal is not None:
+        payloads = [path.read_bytes() for path in paths]
+        store = SQLiteEventStore(journal)
+        try:
+            report = store.archive_cpmm_launches(payloads)
+        finally:
+            store.close()
+        print(json.dumps({"evidence_scope": "archived_rpc_payload", **report}, ensure_ascii=False))
+        return
 
     detections = []
     inputs = []

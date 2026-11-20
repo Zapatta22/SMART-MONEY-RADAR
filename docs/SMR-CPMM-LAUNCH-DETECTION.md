@@ -29,3 +29,9 @@ O teste confere os hashes, a identidade e os papéis decodificados.
 Este componente executa offline. Ingestão contínua, persistência,
 deduplicação durável e avaliação de liquidez e risco exigem integração
 posterior antes de alertas de lançamento.
+
+`smr launch-scan RESPONSE.json --journal launch.sqlite` arquiva o RAW e
+a identidade detectada na mesma transação SQLite. O comando retorna pools
+novos e registra identidades conflitantes sem emitir uma nova detecção
+para elas. Repetir a leitura após reiniciar o comando preserva a deduplicação.
+A trilha local ainda aguarda integração com ingestão contínua e alertas.

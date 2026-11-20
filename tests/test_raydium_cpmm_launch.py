@@ -1,9 +1,15 @@
 import hashlib
+import io
+import sqlite3
+from contextlib import redirect_stdout
+from tempfile import TemporaryDirectory
 import json
 import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from smart_money_radar.cli import main
+from smart_money_radar.storage.event_store import SQLiteEventStore
 from smart_money_radar.data_sources.geyser_proto_adapter import _base58_encode
 from smart_money_radar.data_sources.raydium_cpmm_launch import (
     INITIALIZE_DISCRIMINATOR,
@@ -77,6 +83,50 @@ class RaydiumCpmmLaunchTests(unittest.TestCase):
         init = transaction["result"]["transaction"]["message"]["instructions"][4]
         init["data"] = _base58_encode(hashlib.sha256(b"global:deposit").digest()[:8] + bytes(24), field="fixture")
         self.assertEqual(detect_cpmm_pool_initializations(transaction), ())
+
+    def test_launch_journal_deduplicates_after_reopen_and_retains_conflicts(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "launch.sqlite"
+            source = self.fixture / "response.json"
+
+            def scan(item):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    main(["launch-scan", str(item), "--journal", str(path)])
+                return json.loads(output.getvalue())
+
+            first, = scan(source)["initializations"]
+            self.assertEqual(scan(source)["initializations"], [])
+            alternate = self.raw()
+            alternate["result"]["transaction"]["signatures"][0] = "1" * 64
+            alternate_path = Path(directory) / "alternate.json"
+            alternate_path.write_text(json.dumps(alternate), encoding="utf-8")
+            conflicting = scan(alternate_path)
+            self.assertEqual(conflicting["initializations"], [])
+            self.assertEqual(conflicting["conflicted_pools"], [first["pool"]])
+            self.assertEqual(scan(source)["conflicted_pools"], [first["pool"]])
+            with sqlite3.connect(path) as connection:
+                saved = connection.execute("SELECT sha256, payload FROM cpmm_launch_raw").fetchall()
+                self.assertEqual(len(saved), 2)
+                self.assertTrue(all(hashlib.sha256(raw).hexdigest() == digest for digest, raw in saved))
+
+    def test_launch_journal_rolls_back_raw_when_evidence_insert_fails(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "launch.sqlite"
+            store = SQLiteEventStore(path)
+            self.addCleanup(store.close)
+            with sqlite3.connect(path) as connection:
+                connection.execute(
+                    """CREATE TRIGGER reject_launch BEFORE INSERT ON cpmm_launch_evidence
+                       BEGIN SELECT RAISE(ABORT, 'fixture error'); END"""
+                )
+            raw = (self.fixture / "response.json").read_bytes()
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "fixture error"):
+                store.archive_cpmm_launches([raw])
+            with sqlite3.connect(path) as connection:
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM cpmm_launch_raw").fetchone()[0], 0)
+                connection.execute("DROP TRIGGER reject_launch")
+            self.assertEqual(len(store.archive_cpmm_launches([raw])["initializations"]), 1)
 
     def test_replay_deduplicates_and_conflicting_pool_identities_are_withheld(self):
         observation, = detect_cpmm_pool_initializations(self.raw())

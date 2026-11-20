@@ -1,10 +1,11 @@
 """Armazenamento histórico SQLite, com deduplicação local de eventos."""
 
+import hashlib
 import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -288,6 +289,78 @@ class SQLiteEventStore:
                     """CREATE INDEX IF NOT EXISTS idx_swap_reconciliation_signature
                        ON swap_reconciliation_attempts(wallet_address, signature, attempted_at, id)"""
                 )
+
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS cpmm_launch_raw (
+                           sha256 TEXT PRIMARY KEY,
+                           payload BLOB NOT NULL,
+                           archived_at TEXT NOT NULL
+                       )"""
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS cpmm_launch_evidence (
+                           pool TEXT NOT NULL,
+                           identity TEXT NOT NULL,
+                           sha256 TEXT NOT NULL REFERENCES cpmm_launch_raw(sha256),
+                           PRIMARY KEY(pool, identity, sha256)
+                       )"""
+                )
+
+    def archive_cpmm_launches(self, payloads: list[bytes]) -> dict:
+        """Archive each detected identity and RAW envelope before reporting a pool."""
+        from smart_money_radar.data_sources.raydium_cpmm_launch import detect_cpmm_pool_initializations
+
+        if self.read_only:
+            raise ValueError("arquivo de lançamentos exige SQLite gravável")
+        inputs = []
+        candidates = {}
+        records = []
+        for raw in payloads:
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise ValueError("transação do Launch Radar precisa ser um objeto JSON")
+            digest = hashlib.sha256(raw).hexdigest()
+            found = detect_cpmm_pool_initializations(payload)
+            inputs.append({"sha256": digest, "matched_initializations": len(found)})
+            if not found:
+                continue
+            identities = []
+            for observation in found:
+                fields = asdict(observation)
+                identity = json.dumps(fields, sort_keys=True, separators=(",", ":"))
+                identities.append((observation.pool, identity, digest))
+                candidates.setdefault(observation.pool, fields)
+            records.append((digest, raw, identities))
+
+        new_pools = []
+        conflicts = []
+        with self._connection_scope() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            known = {
+                pool for pool in candidates if connection.execute(
+                    "SELECT 1 FROM cpmm_launch_evidence WHERE pool = ? LIMIT 1", (pool,)
+                ).fetchone()
+            }
+            archived_at = datetime.now(timezone.utc).isoformat()
+            for digest, raw, identities in records:
+                connection.execute(
+                    "INSERT OR IGNORE INTO cpmm_launch_raw VALUES (?, ?, ?)",
+                    (digest, raw, archived_at),
+                )
+                connection.executemany(
+                    "INSERT OR IGNORE INTO cpmm_launch_evidence VALUES (?, ?, ?)", identities,
+                )
+            for pool, observation in candidates.items():
+                count = connection.execute(
+                    "SELECT COUNT(DISTINCT identity) FROM cpmm_launch_evidence WHERE pool = ?", (pool,)
+                ).fetchone()[0]
+                if count > 1:
+                    conflicts.append(pool)
+                elif pool not in known:
+                    new_pools.append(observation)
+        return {
+            "inputs": inputs, "initializations": new_pools, "conflicted_pools": conflicts,
+        }
 
     def save_events(self, events: list[ActivityEvent]) -> int:
         """Grava eventos e retorna quantos registros novos foram inseridos."""

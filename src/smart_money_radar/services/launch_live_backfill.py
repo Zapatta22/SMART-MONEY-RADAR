@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -30,6 +31,9 @@ class LaunchBackfillResult:
     latest_signature: str | None
     first_run: bool
     coverage: str
+    finalized_signatures: tuple[str, ...] = ()
+    rpc_elapsed_seconds: float | None = None
+    persistence_seconds: float | None = None
 
 
 class LaunchBackfillGap(RuntimeError):
@@ -75,9 +79,12 @@ class FinalizedLaunchBackfill:
         cursor = self.store.get_cpmm_launch_rpc_cursor(source)
         checkpoint = cursor["signature"] if cursor is not None else None
         collected: list[dict[str, Any]] = []
+        seen_signatures: set[str] = set()
         previous_page_last = None
+        previous_slot: int | None = None
         found_checkpoint = False
         before = None
+        started_at = time.monotonic()
         for page_index in range(self.max_pages):
             if stop_event is not None and stop_event.is_set():
                 raise LaunchBackfillGap("coleta interrompida; cursor preservado")
@@ -96,11 +103,15 @@ class FinalizedLaunchBackfill:
                         or not item["signature"] or type(item.get("slot")) is not int
                         or item["slot"] < 0):
                     raise LaunchBackfillGap("identidade incompleta na página de assinaturas")
+                if item["signature"] in seen_signatures:
+                    raise LaunchBackfillGap("assinatura repetida em páginas de histórico")
+                if item.get("confirmationStatus") not in (None, "finalized"):
+                    raise LaunchBackfillGap("RPC não comprova finalização da assinatura")
+                if previous_slot is not None and item["slot"] > previous_slot:
+                    raise LaunchBackfillGap("slots fora da ordem cronológica da resposta RPC")
+                seen_signatures.add(item["signature"])
+                previous_slot = item["slot"]
                 signatures.append(item["signature"])
-            if len(signatures) != len(set(signatures)):
-                raise LaunchBackfillGap("assinaturas duplicadas na mesma página")
-            if previous_page_last is not None and signatures[0] == previous_page_last:
-                raise LaunchBackfillGap("paginação RPC sobreposta")
             if checkpoint is not None and checkpoint in signatures:
                 found_checkpoint = True
                 collected.extend(page[:signatures.index(checkpoint)])
@@ -118,7 +129,10 @@ class FinalizedLaunchBackfill:
         if checkpoint is not None and not found_checkpoint:
             raise LaunchBackfillGap("checkpoint não comprovado no backfill")
         if not collected:
-            return LaunchBackfillResult(address, 0, checkpoint, cursor is None, "UNKNOWN")
+            return LaunchBackfillResult(
+                address, 0, checkpoint, cursor is None, "UNKNOWN",
+                rpc_elapsed_seconds=max(0.0, time.monotonic() - started_at),
+            )
 
         # Fetch every transaction BEFORE any checkpoint update. The archive
         # operation is atomic, including when a transaction fails on-chain.
@@ -140,11 +154,20 @@ class FinalizedLaunchBackfill:
             ).encode("utf-8"))
 
         start_sequence = cursor["last_sequence"] + 1 if cursor is not None else 0
+        rpc_elapsed_seconds = max(0.0, time.monotonic() - started_at)
         # An existing cursor and an RPC signature are updated in one transaction.
+        persist_started = time.monotonic()
         self.store.archive_cpmm_launch_rpc_batch(
             raws, source_id=source, first_sequence=start_sequence,
             expected_signature=checkpoint,
             latest_signature=collected[0]["signature"],
         )
-        return LaunchBackfillResult(address, len(raws), collected[0]["signature"],
-                                    cursor is None, "UNKNOWN")
+        persistence_seconds = max(0.0, time.monotonic() - persist_started)
+        # Signatures are certified only according to the RPC response received;
+        # the caller must not promote provider assertions to external proof.
+        return LaunchBackfillResult(
+            address, len(raws), collected[0]["signature"], cursor is None, "UNKNOWN",
+            finalized_signatures=tuple(item["signature"] for item in reversed(collected)),
+            rpc_elapsed_seconds=rpc_elapsed_seconds,
+            persistence_seconds=persistence_seconds,
+        )

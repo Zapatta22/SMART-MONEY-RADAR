@@ -11,7 +11,9 @@ from smart_money_radar.domain.paper_entry_risk_policy import (
     EntryRiskLimits, EntryRiskSnapshot, evaluate_entry_risk,
 )
 
-from smart_money_radar.domain.paper_evidence_gate import gate_paper_evidence, verify_paper_quote_tick
+from smart_money_radar.domain.paper_evidence_gate import (
+    PinnedPaperQuoteManifest, gate_paper_evidence, verify_paper_quote_tick,
+)
 from smart_money_radar.domain.paper_replay import (
     BPS, PaperConfig, PaperEntryCandidate, ReplayTick, replay_paper, compare_paper_reports,
 )
@@ -135,7 +137,8 @@ def replay_with_required_risk(ticks: list[ReplayTick], evidence_by_quote: dict,
                               *, config: PaperConfig, expected_pool: str,
                               risk_limits: EntryRiskLimits,
                               risk_by_quote: dict,
-                              as_of: datetime | None = None):
+                              as_of: datetime | None = None,
+                              quote_manifest: PinnedPaperQuoteManifest | None = None):
     """Strict paper entry point: observed evidence and risk are mandatory.
 
     Do not use this function as a live trading authorization. Caller-supplied
@@ -177,7 +180,7 @@ def replay_with_required_risk(ticks: list[ReplayTick], evidence_by_quote: dict,
             if risk.available_at > tick.at:
                 raise ValueError("snapshot de risco indisponível no instante da observação")
         try:
-            verify_paper_quote_tick(tick, records, expected_pool)
+            verify_paper_quote_tick(tick, records, expected_pool, manifest=quote_manifest)
         except ValueError as exc:
             raise ValueError(f"evidência inválida no histórico protegido: {exc}") from exc
         selected.append(tick)

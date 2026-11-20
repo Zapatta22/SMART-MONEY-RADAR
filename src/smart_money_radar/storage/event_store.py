@@ -321,6 +321,14 @@ class SQLiteEventStore:
                            PRIMARY KEY(source_id, sequence)
                        )"""
                 )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS cpmm_launch_rpc_cursor (
+                           source_id TEXT PRIMARY KEY,
+                           signature TEXT NOT NULL,
+                           last_sequence INTEGER NOT NULL CHECK(last_sequence >= 0),
+                           updated_at TEXT NOT NULL
+                       )"""
+                )
 
     def archive_cpmm_launches(
         self, payloads: list[bytes], *,
@@ -368,11 +376,24 @@ class SQLiteEventStore:
                 candidates.setdefault(observation.pool, fields)
             records.append((digest, raw, identities))
 
+        with self._connection_scope() as connection:
+            with connection:
+                connection.execute("BEGIN IMMEDIATE")
+                return self._archive_cpmm_launches_prepared(
+                    connection, inputs, frames, candidates, records,
+                    source_id=source_id, first_sequence=first_sequence,
+                )
+
+    def _archive_cpmm_launches_prepared(
+        self, connection: sqlite3.Connection, inputs: list, frames: list,
+        candidates: dict, records: list, *,
+        source_id: str | None, first_sequence: int | None,
+    ) -> dict:
+        """Persist prepared evidence in a caller-owned SQLite transaction."""
         new_pools = []
         conflicts = []
         stream_report = None
-        with self._connection_scope() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        if True:
             new_deliveries = []
             replayed_count = 0
             if source_id is not None:
@@ -453,6 +474,86 @@ class SQLiteEventStore:
         }
         if stream_report is not None:
             report["stream_cursor"] = stream_report
+        return report
+
+    def get_cpmm_launch_rpc_cursor(self, source_id: str) -> dict | None:
+        """Fetch durable RPC cursor without altering state."""
+        if not isinstance(source_id, str) or not source_id.strip():
+            raise ValueError("source_id obrigatório")
+        with self._connection_scope() as connection:
+            row = connection.execute(
+                "SELECT signature, last_sequence FROM cpmm_launch_rpc_cursor "
+                "WHERE source_id = ?", (source_id,),
+            ).fetchone()
+        return None if row is None else {"signature": row[0], "last_sequence": row[1]}
+
+    def archive_cpmm_launch_rpc_batch(
+        self, payloads: list[bytes], *, source_id: str, first_sequence: int,
+        expected_signature: str | None, latest_signature: str,
+    ) -> dict:
+        """Archive all raw transactions and move RPC signature cursor atomically."""
+        from smart_money_radar.data_sources.raydium_cpmm_launch import detect_cpmm_pool_initializations
+
+        if self.read_only:
+            raise ValueError("arquivo de lançamentos exige SQLite gravável")
+        if (not isinstance(source_id, str) or not source_id.strip()
+                or len(source_id) > 256 or "\x00" in source_id
+                or not isinstance(latest_signature, str) or not latest_signature.strip()
+                or (expected_signature is not None and
+                    (not isinstance(expected_signature, str) or not expected_signature.strip()))):
+            raise ValueError("identidade RPC inválida")
+        if (type(first_sequence) is not int or first_sequence < 0
+                or not isinstance(payloads, list) or not payloads
+                or first_sequence + len(payloads) - 1 > 2**63 - 1):
+            raise ValueError("intervalo RPC inválido")
+        frames = []
+        inputs = []
+        candidates = {}
+        records = []
+        for raw in payloads:
+            if not isinstance(raw, bytes):
+                raise ValueError("RAW RPC deve conter bytes")
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise ValueError("transação RPC inválida")
+            digest = hashlib.sha256(raw).hexdigest()
+            found = detect_cpmm_pool_initializations(payload)
+            frames.append((digest, raw))
+            inputs.append({"sha256": digest, "matched_initializations": len(found)})
+            if not found:
+                continue
+            identities = []
+            for observation in found:
+                fields = asdict(observation)
+                identity = json.dumps(fields, sort_keys=True, separators=(",", ":"))
+                identities.append((observation.pool, identity, digest))
+                candidates.setdefault(observation.pool, fields)
+            records.append((digest, raw, identities))
+
+        with self._connection_scope() as connection:
+            with connection:
+                connection.execute("BEGIN IMMEDIATE")
+                previous = connection.execute(
+                    "SELECT signature, last_sequence FROM cpmm_launch_rpc_cursor "
+                    "WHERE source_id = ?", (source_id,),
+                ).fetchone()
+                if (previous[0] if previous else None) != expected_signature:
+                    raise ValueError("checkpoint RPC alterado durante a coleta")
+                if first_sequence != (previous[1] + 1 if previous else 0):
+                    raise ValueError("sequência RPC descontínua")
+                report = self._archive_cpmm_launches_prepared(
+                    connection, inputs, frames, candidates, records,
+                    source_id=source_id, first_sequence=first_sequence,
+                )
+                connection.execute(
+                    """INSERT INTO cpmm_launch_rpc_cursor VALUES (?, ?, ?, ?)
+                       ON CONFLICT(source_id) DO UPDATE SET
+                           signature=excluded.signature,
+                           last_sequence=excluded.last_sequence,
+                           updated_at=excluded.updated_at""",
+                    (source_id, latest_signature, first_sequence + len(payloads) - 1,
+                     datetime.now(timezone.utc).isoformat()),
+                )
         return report
 
     def save_events(self, events: list[ActivityEvent]) -> int:

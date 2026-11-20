@@ -227,7 +227,13 @@ def _paper_replay(args: argparse.Namespace) -> None:
         ticks = [ReplayTick(
             datetime.fromisoformat(row["at"]), decimal(row["price"]), decimal(row["volume"]),
             row.get("signal", "NONE"), row.get("entry_allowed", False),
-            row.get("halted", False), quote_id=row.get("quote_id"),
+            row.get("halted", False),
+            market_at=datetime.fromisoformat(row["market_at"]) if row.get("market_at") else None,
+            bid=decimal(row["bid"]) if row.get("bid") is not None else None,
+            ask=decimal(row["ask"]) if row.get("ask") is not None else None,
+            bid_size=decimal(row["bid_size"]) if row.get("bid_size") is not None else None,
+            ask_size=decimal(row["ask_size"]) if row.get("ask_size") is not None else None,
+            quote_id=row.get("quote_id"),
         ) for row in scenario["ticks"]]
         strict = replay_with_required_risk(
             ticks, raw["evidence_by_quote"], config=config, expected_pool=raw["pool"],

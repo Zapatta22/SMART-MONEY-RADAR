@@ -114,6 +114,9 @@ class CpmmRecoveryRunner:
                                 self.manifest["rpc_baseline_calls"]+=1
                                 baseline_task=asyncio.create_task(self.rpc_fetch(req))
                                 request_started_in_session=True
+                                # Let the baseline request enter its coroutine before
+                                # the next WS receive can immediately disconnect.
+                                await asyncio.sleep(0)
                             failure_phase="receive"
                             try:
                                 message=await asyncio.wait_for(ws.recv(),

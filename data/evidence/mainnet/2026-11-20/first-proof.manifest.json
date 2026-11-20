@@ -1,0 +1,43 @@
+{
+  "available_at": "2026-11-20T18:24:55.131940+00:00",
+  "collection_report_generated_at": "2026-11-20T18:24:55.132130+00:00",
+  "decoded_cpmm_swaps": [
+    {
+      "amm_config": "D4FPEruKEHrG5TenZ2mpDGEfu1iUvTiqBxvpU8HLBvC2",
+      "inner_instruction_index": null,
+      "input_mint": "7ymF66Z6VhgNiwadtVhjTtT6U7iQRpSxeiRrhfufhigh",
+      "input_vault": "C5S7w9bJ81oaksCpTrBUMX5Wn4RfSxbnnkCBwMuMaPdU",
+      "instruction_index": 3,
+      "output_mint": "So11111111111111111111111111111111111111112",
+      "output_vault": "8cGsmrpU5rkLszygFgaFfo8PaFBipm1zfqSLxTdytKmG",
+      "pool": "CqvMZmWDvEufa5rzkubidyR4zMDqDPoLjAtsW6wGsPMu",
+      "program_id": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C"
+    }
+  ],
+  "executable_quote_verified": false,
+  "financial_execution_authorized": false,
+  "historical_reserves_verified": false,
+  "independently_finalized": false,
+  "observed_at": "2026-11-20T18:24:54.797654+00:00",
+  "pool_identity_status": "INSTRUCTION_ACCOUNTS_DECODED_NOT_INDEPENDENTLY_VERIFIED",
+  "pool_state_verified": false,
+  "provider_authenticated": false,
+  "raw_file": "23n2r5iEcCJkPZ4G1vkTdBc8eUn3CgEWqtdxz4J4SQnEXnuiwJaP39kKK3NCHJPPsFAq8CiSjRLK5QA4JqUkzLLM.raw.json",
+  "raw_preserved": true,
+  "raw_sha256": "3325222e2c33f6735432f12065b348b4657ae9cfc2c1141061c7c78639724dad",
+  "requested_commitment": "finalized",
+  "requests_sent": 1,
+  "rpc_endpoint": "https://api.mainnet-beta.solana.com",
+  "rpc_reasons": [
+    "finalization_independent_attestation_missing",
+    "provider_independent_attestation_missing"
+  ],
+  "rpc_source": "solana-public-mainnet-triton",
+  "rpc_status": "RPC_CONSISTENT_UNATTESTED",
+  "signature_in_rpc": "23n2r5iEcCJkPZ4G1vkTdBc8eUn3CgEWqtdxz4J4SQnEXnuiwJaP39kKK3NCHJPPsFAq8CiSjRLK5QA4JqUkzLLM",
+  "signature_requested": "23n2r5iEcCJkPZ4G1vkTdBc8eUn3CgEWqtdxz4J4SQnEXnuiwJaP39kKK3NCHJPPsFAq8CiSjRLK5QA4JqUkzLLM",
+  "slot_expected_from_explorer": 471039497,
+  "slot_observed": 471039497,
+  "source_independence": "UNVERIFIED",
+  "vault_ownership_verified": false
+}

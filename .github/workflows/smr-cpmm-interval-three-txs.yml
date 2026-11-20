@@ -1,0 +1,110 @@
+name: SMR bounded three CPMM transaction reads
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-interval-transaction-audit
+    paths:
+      - .github/workflows/smr-cpmm-interval-three-txs.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify-transactions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch only three candidates with exact signature/slot/pool checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError,URLError
+          root=Path("data/evidence/mainnet/2026-11-20/cpmm-interval-471856996-471860762")
+          manifest=json.loads((root/"manifest.json").read_bytes())
+          listing=(root/"response.raw.json").read_bytes()
+          assert hashlib.sha256(listing).hexdigest()==manifest["response_sha256"]
+          candidates=manifest["candidate_preview"]
+          assert len(candidates)==3
+          assert len({x["signature"] for x in candidates})==3
+          out=Path("/tmp/smr-interval-transactions")
+          out.mkdir(parents=True,exist_ok=True)
+          results=[]
+          endpoint="https://api.mainnet-beta.solana.com"
+          for candidate in candidates:
+              sig,slot=candidate["signature"],candidate["slot"]
+              req=json.dumps({"jsonrpc":"2.0","id":1,"method":"getTransaction",
+                "params":[sig,{"encoding":"json","commitment":"finalized",
+                               "maxSupportedTransactionVersion":0}]},
+                sort_keys=True,separators=(",",":")).encode()
+              (out/(sig+".request.raw.json")).write_bytes(req)
+              item={"signature":sig,"listed_slot":slot,"pool":manifest["pool"],
+                    "endpoint":endpoint,"request_sha256":hashlib.sha256(req).hexdigest(),
+                    "request_attempts":1,"observed_at":None,"available_at":None,
+                    "response_sha256":None,"status":"UNKNOWN",
+                    "economic_execution_authorized":False,
+                    "transaction_index_verified":False,
+                    "intervening_events_complete":False}
+              try:
+                  request=Request(endpoint,data=req,headers={"Content-Type":"application/json"},method="POST")
+                  t0=datetime.now(timezone.utc)
+                  with urlopen(request,timeout=12) as resp:
+                      raw=resp.read(2_000_001)
+                  t1=datetime.now(timezone.utc)
+                  item["observed_at"]=t0.isoformat()
+                  item["available_at"]=t1.isoformat()
+                  if len(raw)>2_000_000:raise ValueError("response_size_limit")
+                  (out/(sig+".response.raw.json")).write_bytes(raw)
+                  item["response_sha256"]=hashlib.sha256(raw).hexdigest()
+                  body=json.loads(raw)
+                  tx=body.get("result") if isinstance(body,dict) else None
+                  if not isinstance(tx,dict):
+                      item["reason"]="transaction_unavailable_or_invalid"
+                  else:
+                      actual_sig=tx["transaction"]["signatures"][0]
+                      actual_slot=tx["slot"]
+                      item["observed_slot"]=actual_slot
+                      item["signature_matches"]=actual_sig==sig
+                      item["slot_matches"]=actual_slot==slot
+                      item["tx_succeeded"]=tx["meta"].get("err") is None
+                      msg=tx["transaction"]["message"]
+                      keys=list(msg["accountKeys"])
+                      loaded=tx["meta"].get("loadedAddresses") or {}
+                      keys.extend(loaded.get("writable",[]))
+                      keys.extend(loaded.get("readonly",[]))
+                      item["pool_in_account_keys"]=manifest["pool"] in keys
+                      item["status"]="RPC_CONSISTENT_UNATTESTED" if (
+                          item["signature_matches"] and item["slot_matches"]
+                          and item["pool_in_account_keys"] and item["tx_succeeded"]
+                      ) else "CONFLICT"
+              except (HTTPError,URLError,TimeoutError,OSError,TypeError,KeyError,
+                      IndexError,ValueError) as e:
+                  item["reason"]="rpc_or_parse_failure:"+type(e).__name__
+              results.append(item)
+              print("SMR_TX "+sig+" slot="+str(item.get("observed_slot"))+
+                    " status="+item["status"])
+          report={"schema":"smr.cpmm.interval-three-txs.v1",
+                  "listing_sha256":manifest["response_sha256"],
+                  "candidate_count":len(candidates),"requests_attempted":len(results),
+                  "results":results,"coverage":"PARTIAL",
+                  "transaction_order_proven":False,
+                  "independently_finalized":False,
+                  "economic_execution_authorized":False}
+          (out/"manifest.json").write_text(json.dumps(report,sort_keys=True,indent=2)+"\n")
+          print("SMR_TX coverage=PARTIAL")
+          print("SMR_TX requests_attempted="+str(len(results)))
+          PY
+      - name: Archive requests, replies and manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-cpmm-interval-three-txs
+          path: /tmp/smr-interval-transactions/
+          if-no-files-found: error
+          retention-days: 7

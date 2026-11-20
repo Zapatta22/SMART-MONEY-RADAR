@@ -52,7 +52,17 @@ class CpmmRecoveryRunner:
         deadline=self.clock()+self.duration_seconds
         source=self.recovery.source_id
         owner_id=str(uuid.uuid4())
-        # Recovery and exclusive ownership are a single SQLite transaction.
+        # Only a conclusively dead previous Linux process may be replaced.
+        # A live/ambiguous owner blocks all new capture and RAW recovery.
+        prior=self.recovery.store.get_capture_source_lease(source_id=source)
+        if prior is not None:
+            self.recovery.store.release_dead_capture_source_lease(
+                source_id=source,owner_id=prior["owner_id"])
+            self.manifest["recovered_dead_owner"]=True
+        else:
+            self.manifest["recovered_dead_owner"]=False
+        # Recovery and ownership are one SQLite transaction after stale-owner
+        # proof. No prior session identity is ever reused.
         self.manifest["recovered_incomplete_session_ids"] = (
             self.recovery.store.recover_incomplete_capture_sessions(
                 source_id=source,owner_id=owner_id))

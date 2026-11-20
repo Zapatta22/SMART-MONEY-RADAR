@@ -96,7 +96,7 @@ class HostileFinalizedHistoryTests(unittest.TestCase):
         initial = HistoryRPC(self.history, self.transactions)
         self.sync(initial)
         # Checkpoint A. Page 1 includes newer signatures E,D.
-        # Page 2 includes C,D,A; D is duplicated across pages and must block.
+        # Page 2 returns D again despite 'before=D'; the overlap must block.
         new = []
         for slot, prefix in ((33, "E"), (32, "D")):
             signature = prefix * 64
@@ -113,7 +113,7 @@ class HostileFinalizedHistoryTests(unittest.TestCase):
             ):
                 if before is None:
                     return new
-                return [self.history[0], new[-1]][:limit]
+                return [new[-1], self.history[0]][:limit]
 
         rpc = CrossPageRPC(self.history, self.transactions)
         with self.assertRaisesRegex(LaunchBackfillGap, "repetida"):

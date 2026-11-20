@@ -4,6 +4,11 @@ No change to the trading engine or its existing historical CLI. This wrapper
 is opt-in until archive evidence and end-to-end acceptance are validated.
 """
 from datetime import datetime, timezone
+from dataclasses import replace
+
+from smart_money_radar.domain.paper_entry_risk_policy import (
+    EntryRiskLimits, EntryRiskSnapshot, evaluate_entry_risk,
+)
 
 from smart_money_radar.domain.paper_evidence_gate import gate_paper_evidence
 from smart_money_radar.domain.paper_replay import (
@@ -14,7 +19,9 @@ from smart_money_radar.domain.paper_replay import (
 def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
                          *, config: PaperConfig, expected_pool: str,
                          require_observed_quote: bool = True,
-                         as_of: datetime | None = None):
+                         as_of: datetime | None = None,
+                         risk_limits: EntryRiskLimits | None = None,
+                         risk_by_quote: dict | None = None):
     """Run both entry modes on the identical fail-closed evidence-filtered ticks.
 
     Every replay observation must have evidence keyed by quote_id. Missing or
@@ -25,7 +32,12 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
         raise ValueError("ticks/evidências inválidos")
     if as_of is not None and (not isinstance(as_of, datetime) or as_of.utcoffset() is None):
         raise ValueError("as_of exige datetime com fuso")
+    if (risk_limits is None) != (risk_by_quote is None):
+        raise ValueError("limites e snapshots de risco devem ser fornecidos juntos")
+    if risk_by_quote is not None and not isinstance(risk_by_quote, dict):
+        raise ValueError("snapshots de risco inválidos")
     verified = []
+    rejected_risk_ticks = 0
     rejected_evidence_ticks = 0
     excluded_after_cutoff = 0
     previous = None
@@ -54,6 +66,16 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
             continue
         # Never let an unverified price affect fills, stop/take-profit,
         # valuation, confirmation or the execution of a pending sell.
+        if risk_limits is not None and tick.entry_allowed:
+            risk = risk_by_quote.get(tick.quote_id)
+            if not isinstance(risk, EntryRiskSnapshot):
+                rejected_risk_ticks += 1
+                tick = replace(tick, entry_allowed=False)
+            else:
+                reasons = evaluate_entry_risk(risk_limits, risk)
+                if reasons:
+                    rejected_risk_ticks += 1
+                    tick = replace(tick, entry_allowed=False)
         verified.append(tick)
     immediate = replay_paper(verified, config=config, mode="immediate")
     confirmed = replay_paper(verified, config=config, mode="confirmed")
@@ -61,6 +83,8 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
         "rejected_evidence_ticks": rejected_evidence_ticks,
         "excluded_after_cutoff": excluded_after_cutoff,
         "verified_ticks": len(verified),
+        "rejected_risk_ticks": rejected_risk_ticks,
+        "risk_policy": "REQUIRED" if risk_limits is not None else "NOT_CONFIGURED",
         "immediate": immediate,
         "confirmed": confirmed,
         "comparison": compare_paper_reports(immediate, confirmed),

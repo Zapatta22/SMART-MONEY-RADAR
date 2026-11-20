@@ -5,7 +5,7 @@ import sqlite3
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -14,6 +14,7 @@ from smart_money_radar.domain.models import (
     build_swap_operation_id,
 )
 from smart_money_radar.domain.normalization import NormalizedObservation
+from smart_money_radar.domain.swap_bundle_builder import SwapDomainBundle
 
 
 @dataclass(frozen=True)
@@ -238,6 +239,28 @@ class SQLiteEventStore:
                             ON DELETE CASCADE)"""
                 )
                 connection.execute(
+                    """CREATE TABLE IF NOT EXISTS swap_replay_archive (
+                        receipt_id INTEGER PRIMARY KEY,
+                        operation_id TEXT NOT NULL UNIQUE,
+                        wallet_address TEXT NOT NULL,
+                        program_id TEXT NOT NULL,
+                        input_mint TEXT NOT NULL,
+                        output_mint TEXT NOT NULL,
+                        input_amount TEXT NOT NULL,
+                        output_amount TEXT NOT NULL,
+                        side TEXT NOT NULL CHECK(side IN ('BUY','SELL','UNKNOWN')),
+                        confidence TEXT NOT NULL,
+                        occurred_at TEXT NOT NULL,
+                        available_at TEXT NOT NULL,
+                        FOREIGN KEY(operation_id) REFERENCES swap_observations(operation_id)
+                            ON DELETE CASCADE
+                    )"""
+                )
+                connection.execute(
+                    """CREATE INDEX IF NOT EXISTS idx_swap_replay_scope
+                       ON swap_replay_archive(wallet_address, program_id, receipt_id)"""
+                )
+                connection.execute(
                     """CREATE TABLE IF NOT EXISTS swap_reconciliation_attempts (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         attempt_id TEXT NOT NULL,
@@ -413,12 +436,15 @@ class SQLiteEventStore:
             (wallet_address, signature),
         )
 
-    def mark_processed(self, wallet_address: str, signature: str) -> None:
+    def mark_processed(
+        self, wallet_address: str, signature: str, *, replay_bundles: tuple[SwapDomainBundle, ...] = (),
+    ) -> None:
         """Marca a transação como concluída sem regredir o checkpoint por replay antigo."""
         if not wallet_address.strip() or not signature.strip():
             raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
         with self._connection_scope() as connection:
             with connection:
+                connection.execute("BEGIN IMMEDIATE")
                 parent = connection.execute(
                     """SELECT slot, observed_at FROM observed_transactions
                        WHERE wallet_address = ? AND signature = ?""",
@@ -426,6 +452,29 @@ class SQLiteEventStore:
                 ).fetchone()
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes de marcar como processada.")
+
+                if replay_bundles:
+                    available_at = datetime.now(timezone.utc).isoformat()
+                    receipts = []
+                    for item in replay_bundles:
+                        observation = item.observation
+                        if (observation.wallet_address, observation.signature) != (wallet_address, signature):
+                            raise ValueError("bundle de replay não pertence à transação processada")
+                        receipts.append((
+                            observation.operation_id, wallet_address, item.evidence.program_id,
+                            observation.input_mint, observation.output_mint,
+                            str(observation.input_amount), str(observation.output_amount),
+                            item.classification.side, str(item.classification.confidence),
+                            observation.observed_at.isoformat(), available_at,
+                        ))
+                    connection.executemany(
+                        """INSERT INTO swap_replay_archive
+                           (operation_id, wallet_address, program_id, input_mint, output_mint,
+                            input_amount, output_amount, side, confidence, occurred_at, available_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           ON CONFLICT(operation_id) DO NOTHING""",
+                        receipts,
+                    )
 
                 current = connection.execute(
                     """SELECT observed.slot, observed.observed_at
@@ -481,6 +530,7 @@ class SQLiteEventStore:
             raise ValueError("Esta versão do EventStore aceita swaps apenas da chain Solana.")
         with self._connection_scope() as connection:
             with connection:
+                connection.execute("BEGIN IMMEDIATE")
                 parent = connection.execute(
                     """SELECT 1 FROM observed_transactions
                        WHERE wallet_address = ? AND signature = ?""",
@@ -488,9 +538,11 @@ class SQLiteEventStore:
                 ).fetchone()
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes do swap.")
-                existed = connection.execute(
-                    "SELECT 1 FROM swap_observations WHERE operation_id = ?", (operation_id,)
-                ).fetchone() is not None
+                previous = connection.execute(
+                    "SELECT wallet_address FROM swap_observations WHERE operation_id = ?", (operation_id,)
+                ).fetchone()
+                if previous is not None and previous[0] != observation.wallet_address:
+                    raise ValueError("operation_id já está associado a outra carteira")
                 connection.execute(
                     """INSERT INTO swap_observations
                        (operation_id, chain, wallet_address, signature, input_mint, output_mint,
@@ -524,7 +576,28 @@ class SQLiteEventStore:
                      json.dumps(list(evidence.cpi_path), separators=(",", ":")),
                      json.dumps(list(evidence.evidence), separators=(",", ":"))),
                 )
-                return not existed
+                return previous is None
+
+    def list_swap_replay_archive(
+        self, *, wallet: str, program: str, base_mint: str, quote_mint: str,
+    ) -> list[dict]:
+        """Read first-seen swap evidence in durable arrival order."""
+        with self._connection_scope() as connection:
+            if connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'swap_replay_archive'"
+            ).fetchone() is None:
+                raise ValueError("banco sem arquivo prospectivo de swaps para paper replay")
+            cursor = connection.execute(
+                """SELECT operation_id, input_mint, input_amount, output_amount, side,
+                          confidence, occurred_at, available_at
+                   FROM swap_replay_archive
+                   WHERE wallet_address = ? AND program_id = ?
+                     AND ((input_mint = ? AND output_mint = ?) OR (input_mint = ? AND output_mint = ?))
+                   ORDER BY receipt_id""",
+                (wallet, program, base_mint, quote_mint, quote_mint, base_mint),
+            )
+            columns = tuple(item[0] for item in cursor.description)
+            return [dict(zip(columns, row)) for row in cursor]
 
     def get_swap_bundle(self, operation_id: str) -> dict | None:
         """Recupera contratos persistidos sem perder precisão decimal."""

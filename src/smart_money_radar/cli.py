@@ -74,6 +74,8 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--expected-sha256")
     paper = subparsers.add_parser("paper-replay", help="simula entradas em observações locais")
     paper.add_argument("scenario", type=Path)
+    paper.add_argument("--as-of", help="limita o replay de arquivo à disponibilidade até este instante")
+    paper.add_argument("--archive", type=Path, help="lê swaps concluídos de um banco SQLite local")
     paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
     return parser
 
@@ -118,12 +120,19 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 
 def _paper_replay(args: argparse.Namespace) -> None:
-    from datetime import datetime
+    from datetime import datetime, timezone
     from decimal import Decimal, InvalidOperation
 
     from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, replay_paper
 
     scenario = json.loads(args.scenario.read_text(encoding="utf-8"), parse_float=Decimal)
+    if args.as_of is not None and args.archive is None:
+        raise ValueError("--as-of exige --archive")
+    as_of = datetime.fromisoformat(args.as_of) if args.as_of is not None else None
+    if as_of is not None:
+        if as_of.utcoffset() is None:
+            raise ValueError("--as-of exige horário com fuso")
+        as_of = as_of.astimezone(timezone.utc)
 
     def decimal(value):
         if isinstance(value, bool):
@@ -132,20 +141,46 @@ def _paper_replay(args: argparse.Namespace) -> None:
 
     try:
         config = PaperConfig(**{key: decimal(value) for key, value in scenario["config"].items()})
-        ticks = [
-            ReplayTick(
-                datetime.fromisoformat(row["at"]), decimal(row["price"]), decimal(row["volume"]),
-                row.get("signal", "NONE"), row.get("entry_allowed", False), row.get("halted", False),
+        if args.archive is None:
+            ticks = [
+                ReplayTick(
+                    datetime.fromisoformat(row["at"]), decimal(row["price"]), decimal(row["volume"]),
+                    row.get("signal", "NONE"), row.get("entry_allowed", False), row.get("halted", False),
+                )
+                for row in scenario["ticks"]
+            ]
+            archive_report = None
+        else:
+            from smart_money_radar.domain.paper_swap_archive import ticks_from_swap_archive
+
+            market = scenario["market"]
+            scope = {key: market[key] for key in ("wallet", "program", "base_mint", "quote_mint")}
+            if (any(not isinstance(value, str) or not value.strip() for value in scope.values())
+                    or scope["base_mint"] == scope["quote_mint"]):
+                raise ValueError("mercado do replay inválido")
+            store = SQLiteEventStore(args.archive, read_only=True)
+            try:
+                rows = store.list_swap_replay_archive(**scope)
+            finally:
+                store.close()
+            if as_of is not None:
+                rows = [row for row in rows if datetime.fromisoformat(row["available_at"]) <= as_of]
+            ticks, skipped = ticks_from_swap_archive(
+                rows, quote_mint=scope["quote_mint"], min_confidence=decimal(market["min_confidence"]),
             )
-            for row in scenario["ticks"]
-        ]
+            canonical_rows = json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
+            archive_report = {
+                **scope, "ticks": len(ticks), "skipped_operation_ids": skipped,
+                "as_of": as_of.isoformat() if as_of is not None else None,
+                "receipts_sha256": hashlib.sha256(canonical_rows).hexdigest(),
+            }
     except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
-        raise ValueError("arquivo de cenário paper-replay inválido") from exc
+        raise ValueError("arquivo de cenário ou dados do paper-replay inválidos") from exc
     modes = ("immediate", "confirmed") if args.mode == "both" else (args.mode,)
-    print(json.dumps(
-        {mode: asdict(replay_paper(ticks, config=config, mode=mode)) for mode in modes},
-        default=str, ensure_ascii=False,
-    ))
+    report = {mode: asdict(replay_paper(ticks, config=config, mode=mode)) for mode in modes}
+    if archive_report is not None:
+        report["archive"] = archive_report
+    print(json.dumps(report, default=str, ensure_ascii=False))
 
 
 def _inspect_geyser_evidence(args: argparse.Namespace) -> None:

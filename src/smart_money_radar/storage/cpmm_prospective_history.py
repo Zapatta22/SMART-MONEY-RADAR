@@ -95,7 +95,7 @@ class SQLiteCpmmProspectiveHistory:
             return False
         with connection:
             connection.execute(
-                "INSERT INTO prospective_cpmm_captures VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO prospective_cpmm_captures VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (capture.capture_id,capture.observation.pool,capture.observation.slot,
                  capture.observation.source_id,capture.observation.endpoint,
                  capture.observation.observed_at.isoformat(),

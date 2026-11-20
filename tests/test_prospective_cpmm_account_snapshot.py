@@ -70,6 +70,7 @@ def fixture(amount_in=1000,amount_out=3000,fee_in=12,fee_out=17):
 
 def probe(payload=None,**overrides):
     args=dict(response_raw=json.dumps(fixture() if payload is None else payload).encode(),
+              request_raw=json.dumps({"jsonrpc":"2.0","id":1,"method":"getMultipleAccounts","params":[[POOL,CONFIG,INPUT,OUTPUT],{"encoding":"base64","commitment":"finalized"}]}).encode(),
               source_id="test-only",endpoint="https://example.invalid/rpc",
               observed_at=NOW,available_at=NOW+timedelta(milliseconds=5),
               pool=POOL,amm_config=CONFIG,input_vault=INPUT,output_vault=OUTPUT,
@@ -83,7 +84,7 @@ def probe(payload=None,**overrides):
 class ProspectCpmmTests(unittest.TestCase):
     def test_existing_pubkey_decoder_handles_zero_prefix(self):
         self.assertEqual(_pubkey(bytes(32)),"1"*32)
-        self.assertEqual(_pubkey(bytes([0])+bytes([5])*31),key(5) if False else _pubkey(bytes([0])+bytes([5])*31))
+        self.assertEqual(from58(_pubkey(bytes([0])+bytes([5])*31)),bytes([0])+bytes([5])*31)
 
     def test_valid_synthetic_snapshot_is_never_historical(self):
         q=probe()
@@ -102,10 +103,8 @@ class ProspectCpmmTests(unittest.TestCase):
 
     def test_other_pool_rejected(self):
         q=probe(pool=key(111))
-        self.assertEqual(q.status,"RPC_DECLARED_PROSPECTIVE_ONLY" if False else "RPC_DECLARED_PROSPECTIVE_ONLY")
-        # Pool account pubkey is supplied as address outside account data.
-        # Without an authenticated RPC request/envelope the caller's address
-        # cannot be independently proven from these four data entries.
+        self.assertEqual(q.status,"UNKNOWN")
+        self.assertIn("incomplete_or_conflicted_snapshot",q.reasons)
 
     def test_wrong_config_binary_address_rejected(self):
         x=fixture()

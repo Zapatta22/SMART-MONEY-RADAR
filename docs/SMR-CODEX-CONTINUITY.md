@@ -111,3 +111,27 @@ profundidade e horários de disponibilidade. Os snapshots de reserva
 continuam classificados como estimativas. A validação prospectiva e a aceitação operacional seguem pendentes.
 A execução financeira permanece desabilitada. A `main` segue em
 `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+
+### Primeira entrega offline do Launch Radar
+
+A branch `codex/smr-launch-radar-cpmm`, código `c388515`, parte da
+revisão #67. O comando `smr launch-scan` reconheceu a inicialização CPMM
+na captura finalizada do slot `471578450` e devolveu uma única ocorrência
+quando o mesmo arquivo foi passado duas vezes. Os 749 testes locais e
+o workflow geral passaram. [PR #68](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/68) ·
+[CI da #68](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44674612791)
+
+A branch local de integração `codex/smr-pr64-fronts-integration` em
+`74ddb28` combina código das PRs #65, #66, #67 e #68. A suíte combinada
+passou com 754 testes, compilação e `git diff --check`. As quatro PRs
+permanecem separadas para revisão. A próxima etapa offline de Launch Radar
+é persistir a identidade e o RAW de inicializações ao consumir o fluxo
+Solana, com deduplicação durável e recuperação testada. Detecção de liquidez
+e alertas operacionais permanecem pendentes.
+
+A revisão da #64 reaproveita o decoder e o estimador já existentes. O
+protótipo `codex/smr-cpmm-quote-model@6ce93e0` ficou isolado devido à
+sobreposição. A checagem pelo CLI da #67 também passou no snapshot público
+do slot `471602593`, SHA-256 `33ec5fdb0f79632a1d822667e11ce15e71a053f85714e60ddc073cac9ee84493`.
+Essas duas leituras verificam estruturas em slots distintos e ainda não
+formam uma série de cotações observadas.

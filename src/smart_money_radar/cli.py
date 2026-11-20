@@ -72,6 +72,9 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--stream", required=True)
     verify.add_argument("--domain", required=True)
     verify.add_argument("--expected-sha256")
+    paper = subparsers.add_parser("paper-replay", help="simula entradas em observações locais")
+    paper.add_argument("scenario", type=Path)
+    paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
     return parser
 
 
@@ -98,6 +101,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         if args.command == "geyser-verify":
             _verify_geyser_session(args)
             return
+        if args.command == "paper-replay":
+            _paper_replay(args)
+            return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)
         if args.command == "check":
@@ -109,6 +115,31 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
     except (OSError, SettingsError, RuntimeError, ValueError, sqlite3.Error) as exc:
         raise SystemExit(str(exc)) from None
+
+
+def _paper_replay(args: argparse.Namespace) -> None:
+    from datetime import datetime
+    from decimal import Decimal, InvalidOperation
+
+    from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, replay_paper
+
+    scenario = json.loads(args.scenario.read_text(encoding="utf-8"), parse_float=Decimal)
+    try:
+        config = PaperConfig(**{key: Decimal(value) for key, value in scenario["config"].items()})
+        ticks = [
+            ReplayTick(
+                datetime.fromisoformat(row["at"]), Decimal(row["price"]), Decimal(row["volume"]),
+                row.get("signal", "NONE"), row.get("entry_allowed", False),
+            )
+            for row in scenario["ticks"]
+        ]
+    except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
+        raise ValueError("arquivo de cenário paper-replay inválido") from exc
+    modes = ("immediate", "confirmed") if args.mode == "both" else (args.mode,)
+    print(json.dumps(
+        {mode: asdict(replay_paper(ticks, config=config, mode=mode)) for mode in modes},
+        default=str, ensure_ascii=False,
+    ))
 
 
 def _inspect_geyser_evidence(args: argparse.Namespace) -> None:

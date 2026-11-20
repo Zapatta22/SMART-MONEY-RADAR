@@ -286,7 +286,9 @@ class SQLiteGeyserRawStore:
                 ON geyser_wire_frames(source_id, stream_id, frame_id)
             """)
 
-            if current < 4:
+            if current < 4 or not connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = 'geyser_capture_sessions'"
+            ).fetchone():
                 connection.executescript("""
                     BEGIN IMMEDIATE;
                     CREATE TABLE IF NOT EXISTS geyser_capture_sessions (

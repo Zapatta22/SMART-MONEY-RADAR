@@ -28,6 +28,7 @@ class BoundedCpmmRecovery:
         self.source_id=source_id
         self.accounts=accounts
         self.policy=policy or WsResiliencePolicy()
+        self.interrupted_sessions=self.store.recover_interrupted_capture_sessions(self.source_id)
         self.sessions:list[PublicCpmmWsSession]=[]
         self.disconnects:list[DisconnectRecord]=[]
         self.reconnect_attempts=0
@@ -63,6 +64,7 @@ class BoundedCpmmRecovery:
         if not self.current.active:
             raise ValueError("transport not active")
         self.current.mark_disconnect()
+        self.store.append_capture_gap(self.source_id,self.current.session_id,record.failure)
         self.current.finish(record.failure)
         self.disconnects.append(record)
         self.coverage="UNKNOWN"
@@ -99,6 +101,7 @@ class BoundedCpmmRecovery:
             "account_stream_continuous":False,
             "economic_execution_authorized":False,
             "reconnect_attempts":self.reconnect_attempts,
+            "interrupted_sessions_recovered":list(self.interrupted_sessions),
             "session_ids":[s.session_id for s in self.sessions],
             "session_reports":[s.report() for s in self.sessions],
             "disconnections":[asdict(d) for d in self.disconnects],

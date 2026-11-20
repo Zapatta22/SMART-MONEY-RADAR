@@ -1,0 +1,86 @@
+name: SMR permanently preserve three interval transaction attempts
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-interval-transaction-audit
+    paths:
+      - .github/workflows/smr-preserve-interval-transactions.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore exact previous results (no new RPC queries)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download 44809872091 --name smr-cpmm-interval-three-txs --dir /tmp/smr-cpmm-three-txs
+      - name: Verify three RAW attempts and preserve original files without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          base=Path("data/evidence/mainnet/2026-11-20/cpmm-interval-471856996-471860762")
+          artifact=Path("/tmp/smr-cpmm-three-txs")
+          mbytes=(artifact/"manifest.json").read_bytes()
+          manifest=json.loads(mbytes)
+          original=json.loads((base/"manifest.json").read_bytes())
+          assert manifest["requests_attempted"]==3
+          assert manifest["candidate_count"]==3
+          assert manifest["coverage"]=="PARTIAL"
+          assert manifest["economic_execution_authorized"] is False
+          assert manifest["listing_sha256"]==original["response_sha256"]
+          assert {x["signature"] for x in manifest["results"]}=={x["signature"] for x in original["candidate_preview"]}
+          verified=0
+          for item in manifest["results"]:
+              sig=item["signature"]
+              req=(artifact/(sig+".request.raw.json")).read_bytes()
+              assert hashlib.sha256(req).hexdigest()==item["request_sha256"]
+              q=json.loads(req)
+              assert q["method"]=="getTransaction" and q["params"][0]==sig
+              assert q["params"][1]["commitment"]=="finalized"
+              rspfile=artifact/(sig+".response.raw.json")
+              if item["response_sha256"] is not None:
+                  raw=rspfile.read_bytes()
+                  assert hashlib.sha256(raw).hexdigest()==item["response_sha256"]
+                  result=json.loads(raw).get("result")
+                  if item["status"]=="RPC_CONSISTENT_UNATTESTED":
+                      assert isinstance(result,dict)
+                      assert result["slot"]==item["listed_slot"]
+                      assert result["transaction"]["signatures"][0]==sig
+                      assert result["meta"]["err"] is None
+                      verified+=1
+              else:
+                  assert item["status"]=="UNKNOWN"
+          assert verified==2
+          dest=base/"transactions"
+          dest.mkdir(parents=True,exist_ok=True)
+          for entry in artifact.iterdir():
+              if entry.is_file():
+                  (dest/entry.name).write_bytes(entry.read_bytes())
+          print("SMR_TX_ARCHIVED matched_txs="+str(verified))
+          print("SMR_TX_ARCHIVED unverified_txs=1")
+          print("SMR_TX_ARCHIVED no_new_rpc_calls=True")
+          PY
+      - name: Commit only the additional interval artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence/mainnet/2026-11-20/cpmm-interval-471856996-471860762/transactions/
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: archive two real CPMM transactions and one unresolved query"
+          git push origin HEAD:codex/smr-cpmm-interval-transaction-audit

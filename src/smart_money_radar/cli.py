@@ -82,6 +82,7 @@ def _parser() -> argparse.ArgumentParser:
     paper.add_argument("--quotes", type=Path, help="arquivo de cotações bid/ask independente")
     paper.add_argument("--archive", type=Path, help="lê swaps concluídos de um banco SQLite local")
     paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
+    paper.add_argument("--strict-evidence", type=Path, help="JSON de evidências e risco para replay protegido local")
     return parser
 
 
@@ -132,6 +133,8 @@ def _paper_replay(args: argparse.Namespace) -> None:
 
     scenario_bytes = args.scenario.read_bytes()
     scenario = json.loads(scenario_bytes, parse_float=Decimal)
+    if args.strict_evidence is not None and args.archive is not None:
+        raise ValueError("--strict-evidence ainda não suporta --archive")
     if args.archive is None and (args.as_of is not None or args.quotes is not None):
         raise ValueError("--as-of e --quotes exigem --archive")
     as_of = datetime.fromisoformat(args.as_of) if args.as_of is not None else None
@@ -211,11 +214,42 @@ def _paper_replay(args: argparse.Namespace) -> None:
     except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
         raise ValueError("arquivo de cenário ou dados do paper-replay inválidos") from exc
     modes = ("immediate", "confirmed") if args.mode == "both" else (args.mode,)
-    results = {mode: replay_paper(ticks, config=config, mode=mode) for mode in modes}
+    strict_metadata = None
+    if args.strict_evidence is not None:
+        from smart_money_radar.domain.paper_entry_risk_policy import EntryRiskLimits, EntryRiskSnapshot
+        from smart_money_radar.domain.paper_evidence_replay import replay_with_required_risk
+        raw = json.loads(args.strict_evidence.read_text(encoding="utf-8"), parse_float=Decimal)
+        limits = EntryRiskLimits(**{k: decimal(v) for k, v in raw["risk_limits"].items()})
+        snapshots = {qid: EntryRiskSnapshot(**{
+            k: v if k in ("emergency_halt", "evidence_verified") else decimal(v)
+            for k, v in values.items()
+        }) for qid, values in raw["risk_by_quote"].items()}
+        ticks = [ReplayTick(
+            datetime.fromisoformat(row["at"]), decimal(row["price"]), decimal(row["volume"]),
+            row.get("signal", "NONE"), row.get("entry_allowed", False),
+            row.get("halted", False),
+            market_at=datetime.fromisoformat(row["market_at"]) if row.get("market_at") else None,
+            bid=decimal(row["bid"]) if row.get("bid") is not None else None,
+            ask=decimal(row["ask"]) if row.get("ask") is not None else None,
+            bid_size=decimal(row["bid_size"]) if row.get("bid_size") is not None else None,
+            ask_size=decimal(row["ask_size"]) if row.get("ask_size") is not None else None,
+            quote_id=row.get("quote_id"),
+        ) for row in scenario["ticks"]]
+        strict = replay_with_required_risk(
+            ticks, raw["evidence_by_quote"], config=config, expected_pool=raw["pool"],
+            risk_limits=limits, risk_by_quote=snapshots,
+        )
+        results = {mode: strict[mode] for mode in modes}
+        strict_metadata = {k: v for k, v in strict.items()
+                           if k not in ("immediate", "confirmed", "comparison")}
+    else:
+        results = {mode: replay_paper(ticks, config=config, mode=mode) for mode in modes}
     report = {mode: asdict(result) for mode, result in results.items()}
     if args.mode == "both":
         report["comparison"] = compare_paper_reports(results["immediate"], results["confirmed"])
         report["comparison"]["scenario_sha256"] = hashlib.sha256(scenario_bytes).hexdigest()
+    if strict_metadata is not None:
+        report["strict_evidence"] = strict_metadata
     if archive_report is not None:
         report["archive"] = archive_report
     print(json.dumps(report, default=str, ensure_ascii=False))

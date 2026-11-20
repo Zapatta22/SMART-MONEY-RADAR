@@ -564,5 +564,45 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.db.integrity_check(),["ok"])
         session.active=False
 
+
+    async def test_runner_reclaims_verified_dead_owner_automatically(self):
+        import subprocess
+        db_path=Path(self.tmp.name)/"journal.sqlite"
+        proc=subprocess.Popen(["python","-c","import time; time.sleep(0.05)"])
+        try:
+            ticks=self.db.local_process_start_ticks(proc.pid)
+            self.db.acquire_capture_source_lease(
+                source_id="test-solana-ws",owner_id="dead-previous")
+            with sqlite3.connect(db_path) as con:
+                con.execute(
+                    "UPDATE geyser_capture_source_leases SET pid=?, pid_start_ticks=?",
+                    (proc.pid,ticks),
+                )
+            old=self.recovery.new_connection()
+            old._record(b"old-process-raw","synthetic")
+            old_id=old.session_id
+        finally:
+            proc.wait(timeout=3)
+        self.db.close()
+        restarted=SQLiteGeyserRawStore(db_path)
+        recovery=BoundedCpmmRecovery(restarted,source_id="test-solana-ws",
+            accounts=ADDRESS,policy=self.policy)
+        new_runner=CpmmRecoveryRunner(recovery,
+            ws_connect=FakeConnector([[ack(1),ConnectionClosedError()]]),
+            rpc_fetch=FakeRPC(),snapshot_identity=self.runner(None,None).snapshot_identity,
+            duration_seconds=15,sleep=lambda _:asyncio.sleep(0))
+        report=await new_runner.run()
+        self.assertTrue(report["recovered_dead_owner"])
+        self.assertIn(old_id,report["recovered_incomplete_session_ids"])
+        self.assertNotEqual(report["connections"][0]["session_id"],old_id)
+        self.assertEqual(restarted.get_capture_session(
+            "test-solana-ws",old_id)["outcome"],"process_interrupted_unknown")
+        self.assertEqual(list(restarted.iter_wire_frames(
+            "test-solana-ws",old_id,old_id)),[(0,b"old-process-raw")])
+        self.assertEqual(report["coverage"],"UNKNOWN")
+        self.assertEqual(restarted.integrity_check(),["ok"])
+        old.active=False
+        self.db=restarted
+
 if __name__=="__main__":
     unittest.main()

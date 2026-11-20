@@ -1,0 +1,44 @@
+{
+  "available_at": "2026-11-20T20:15:35.954849+00:00",
+  "candidate_count": 3,
+  "candidate_preview": [
+    {
+      "err": null,
+      "signature": "4WuWPyiaKxgTLxBpQvauqJAzbCgyk7gZjjn7vDdVSYeWuNuM8UkeVR1aN6536MA6yg5RGNehgneX65AsDJJSrjET",
+      "slot": 471860536
+    },
+    {
+      "err": null,
+      "signature": "Y8ZGmqJCsCS4tWP181bQoxUB2HUr5k5gGJ3VnQxjCcnUk8xd7QWbjxNUXsJSgQ417drRHXTJPSNfDh15VGoN17W",
+      "slot": 471860518
+    },
+    {
+      "err": null,
+      "signature": "3JSyzXZWsNBxqkqRt4Gbri2B3ZuanWq1z8f8Vgbi6zCNoCKys1xT325UHN9Wrkd4oeJkiSuXdTBWfmqZjsW66Bz4",
+      "slot": 471857488
+    }
+  ],
+  "descending_slots_valid": true,
+  "end_slot": 471860762,
+  "endpoint": "https://api.mainnet-beta.solana.com",
+  "execution_authorized": false,
+  "interval_complete": false,
+  "items_returned": 1000,
+  "max_returned_slot": 471866732,
+  "min_returned_slot": 471619227,
+  "observed_at": "2026-11-20T20:15:30.097982+00:00",
+  "page_count": 1,
+  "page_full": true,
+  "pagination_exhausted": false,
+  "pool": "CqvMZmWDvEufa5rzkubidyR4zMDqDPoLjAtsW6wGsPMu",
+  "provider_authenticated": false,
+  "reason": "single_page_no_continuity_proof",
+  "request_attempts": 1,
+  "request_sha256": "51022b42e55b1aa26d64f0434b64a6b9266f6f1a178b6757d7c6bfea20d7aad3",
+  "requested_commitment": "finalized",
+  "response_sha256": "bbb2060ca28209bc8413461860d9cb39ea54453be3c949b2a5abe0b513c2cb3c",
+  "schema": "smr.cpmm-interval-signature-discovery.v1",
+  "start_slot": 471856996,
+  "status": "PARTIAL",
+  "transaction_order_verified": false
+}

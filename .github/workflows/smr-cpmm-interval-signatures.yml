@@ -1,0 +1,114 @@
+name: SMR bounded CPMM interval signature discovery
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-interval-transaction-audit
+    paths:
+      - .github/workflows/smr-cpmm-interval-signatures.yml
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Query pool signatures once for interval (no transactions sent)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError,URLError
+          root=Path("data/evidence/mainnet/2026-11-20")
+          a=json.loads((root/"prospective-slot-471856996/manifest.json").read_bytes())
+          b=json.loads((root/"prospective-slot-471860762/manifest.json").read_bytes())
+          assert a["original_pool"]==b["original_pool"]
+          pool=a["original_pool"]
+          low,high=a["context_slot"],b["context_slot"]
+          assert low==471856996 and high==471860762
+          endpoint="https://api.mainnet-beta.solana.com"
+          out=Path("/tmp/smr-cpmm-interval-signatures")
+          out.mkdir(parents=True,exist_ok=True)
+          payload={"jsonrpc":"2.0","id":1,"method":"getSignaturesForAddress",
+                   "params":[pool,{"limit":1000,"commitment":"finalized"}]}
+          request_raw=json.dumps(payload,separators=(",",":"),sort_keys=True).encode()
+          (out/"request.raw.json").write_bytes(request_raw)
+          m={"schema":"smr.cpmm-interval-signature-discovery.v1",
+             "pool":pool,"start_slot":low,"end_slot":high,
+             "endpoint":endpoint,"requested_commitment":"finalized",
+             "request_sha256":hashlib.sha256(request_raw).hexdigest(),
+             "request_attempts":1,"page_count":0,"pagination_exhausted":False,
+             "interval_complete":False,"provider_authenticated":False,
+             "transaction_order_verified":False,"execution_authorized":False,
+             "status":"UNKNOWN","reason":"not_collected",
+             "observed_at":None,"available_at":None}
+          try:
+              request=Request(endpoint,data=request_raw,
+                              headers={"Content-Type":"application/json"},method="POST")
+              t0=datetime.now(timezone.utc)
+              with urlopen(request,timeout=15) as response:
+                  raw=response.read(2_000_001)
+              t1=datetime.now(timezone.utc)
+              m["observed_at"]=t0.isoformat()
+              m["available_at"]=t1.isoformat()
+              if len(raw)>2_000_000:raise ValueError("response_above_limit")
+              (out/"response.raw.json").write_bytes(raw)
+              m["response_sha256"]=hashlib.sha256(raw).hexdigest()
+              body=json.loads(raw)
+              rows=body.get("result") if isinstance(body,dict) else None
+              if not isinstance(rows,list):
+                  m["reason"]="rpc_error_or_invalid_result"
+              else:
+                  m["page_count"]=1
+                  # A descending single page is NOT full coverage even if
+                  # its end happens to be below the interval boundary.
+                  within=[]
+                  order_valid=True
+                  previous=None
+                  for item in rows:
+                      slot=item.get("slot") if isinstance(item,dict) else None
+                      signature=item.get("signature") if isinstance(item,dict) else None
+                      if type(slot) is not int or not isinstance(signature,str) or not signature:
+                          order_valid=False
+                          continue
+                      if previous is not None and slot>previous:
+                          order_valid=False
+                      previous=slot
+                      if low<slot<=high:within.append({"signature":signature,"slot":slot,
+                                                      "err":item.get("err")})
+                  m.update({"status":"PARTIAL" if order_valid else "UNKNOWN",
+                      "reason":"single_page_no_continuity_proof",
+                      "items_returned":len(rows),"candidate_count":len(within),
+                      "min_returned_slot":min((i["slot"] for i in rows if type(i.get("slot")) is int),default=None),
+                      "max_returned_slot":max((i["slot"] for i in rows if type(i.get("slot")) is int),default=None),
+                      "descending_slots_valid":order_valid,
+                      "candidate_preview":within[:20],
+                      "page_full":len(rows)==1000})
+          except (HTTPError,URLError,TimeoutError,OSError,ValueError,TypeError) as exc:
+              m["status"]="UNKNOWN"
+              m["reason"]="rpc_unavailable_or_invalid:"+type(exc).__name__
+          (out/"manifest.json").write_text(json.dumps(m,sort_keys=True,indent=2)+"\n")
+          for key in ("status","reason","items_returned","candidate_count",
+                      "min_returned_slot","max_returned_slot","page_full",
+                      "interval_complete","execution_authorized"):
+              print("SMR_INTERVAL "+key+"="+str(m.get(key,"UNKNOWN")))
+          print("SMR_INTERVAL request_attempts=1")
+          PY
+      - name: Preserve RAW of bounded signature query
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-cpmm-interval-signatures
+          path: /tmp/smr-cpmm-interval-signatures/
+          retention-days: 7
+          if-no-files-found: error

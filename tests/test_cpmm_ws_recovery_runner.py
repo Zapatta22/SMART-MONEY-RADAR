@@ -182,6 +182,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(result["connections"][0]["session_id"],original_id)
         self.assertEqual(result["coverage"],"UNKNOWN")
         self.assertEqual(reopened.integrity_check(),["ok"])
+        old.active=False  # process memory is gone after simulated crash
         self.db=reopened
 
     async def test_rpc_failure_never_promotes_baseline(self):
@@ -231,6 +232,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(reopened.iter_wire_frames(
             "test-solana-ws",sid,sid)),[(0,b"immutable")])
         self.assertEqual(reopened.integrity_check(),["ok"])
+        old.active=False  # process memory is gone after simulated crash
         self.db=reopened
 
 if __name__=="__main__":

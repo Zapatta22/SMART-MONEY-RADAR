@@ -56,6 +56,7 @@ Os percentuais medem três marcos binários de aceitação por módulo, de peso 
 | `2c5e456` (#60) | 668 testes aprovados. Fixture CPMM pseudonimizada, revisão sem alterar o primeiro sinal, rota incompleta excluída e execução somente com evento posterior à decisão. |
 | `5c5bc5f` (#61) | 670 testes aprovados. Cotações separadas dos swaps, bid/ask, profundidade, validade dos sinais e cutoff comum. |
 | `477c7ee` (#62) | 673 testes aprovados. Aceitação de SQLite a CLI com ambos os modos, caixa e taxas conferidos, cutoff causal, reprodutibilidade, referência de cotação na coleta, cobertura de operações fechadas e distinção entre atraso simulado e disponibilidade do dado. |
+| `7599bcd` (#63) | 673 testes aprovados. Replay delimitado por pool CPMM e rejeição de cotações cuja rota entra em outro pool. |
 
 Validação operacional pendente. Permanecem pendentes a captura de eventos Yellowstone, recuperação ponta a ponta com provider, carga em volume representativo e implantação.
 
@@ -63,7 +64,7 @@ Validação operacional pendente. Permanecem pendentes a captura de eventos Yell
 
 Validar as PRs #50–#58 com um endpoint Yellowstone autorizado e um getEpochSchedule arquivado da mesma rede. Capturar transações, contas, slots, metadados e blocos completos da mesma sessão. Exercitar um swap DAMM v2, preferencialmente com referral, e registrar a cobertura real dos estados adjacentes exigidos pelos verificadores de taxa.
 
-O módulo em foco é Simulação. A aceitação offline da PR #62 compara ambos os modos em um cenário reproduzível. Para concluir a validação com dados reais é necessário coletar recibos CPMM concluídos e cotações independentes bid/ask do mesmo mercado e intervalo, com profundidade e horários de evento e disponibilidade. A série ainda não está disponível. Comparar custos, drawdown, latência observada na captura e latência simulada de fill, rejeições e operações concluídas, com cutoff e hashes registrados. O modo padrão com preço aproximado por swap continua disponível para pesquisa.
+O módulo em foco é Simulação. A aceitação offline da PR #62 compara ambos os modos em um cenário reproduzível. Para concluir a validação com dados reais é necessário coletar recibos CPMM concluídos e cotações independentes bid/ask do mesmo mercado e intervalo, com profundidade e horários de evento e disponibilidade. A série ainda não está disponível. No teste de viabilidade SOL/USDC, o RPC público respondeu com assinaturas finalizadas do pool CPMM `47hq28mcL7q5GhBg7epyGF2dnuJd4MKFt8QhT7CzYUp4`. As duas consultas públicas de cotação Raydium escolheram outros pools. Essas respostas foram descartadas da comparação, pois apenas coincidiam no par de mints. Comparar custos, drawdown, latência observada na captura e latência simulada de fill, rejeições e operações concluídas, com cutoff e hashes registrados. O modo padrão com preço aproximado por swap continua disponível para pesquisa.
 
 Depois de concluir Simulação, iniciar Launch Radar pela detecção offline de inicialização de pools CPMM em fixtures auditadas. Aceitação inicial: identidade estável de pool, mints, programa, slot e assinatura; deduplicação por replay; fixtures positivas e negativas para inicialização versus swap ou depósito. Usar a base de evidência Solana existente e manter fora do alerta os eventos incompletos.
 
@@ -96,6 +97,7 @@ A trilha CPMM pode avançar em paralelo com a revisão das PRs #40 e #42, seguid
 | [#60](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/60) | `codex/smr-point-in-time-paper-replay` | `2c5e456` | `6ea04de` (#59) |
 | [#61](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/61) | `codex/smr-paper-quote-replay` | `5c5bc5f` | `2c5e456` (#60) |
 | [#62](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/62) | `codex/smr-paper-acceptance` | `477c7ee` | `5c5bc5f` (#61) |
+| [#63](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/63) | `codex/smr-paper-pool-scope` | `7599bcd` | `477c7ee` (#62) |
 
 Use o SHA exibido no resumo do GitHub Actions para vincular a validação ao commit. Inicie a retomada pela tarefa prioritária acima.
 

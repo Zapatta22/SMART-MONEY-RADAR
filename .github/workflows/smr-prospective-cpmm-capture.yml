@@ -1,0 +1,36 @@
+name: SMR one-shot prospective CPMM snapshot (read-only)
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-prospective-account-witness
+    paths:
+      - tools/capture_prospective_cpmm.py
+      - .github/workflows/smr-prospective-cpmm-capture.yml
+
+permissions:
+  contents: read
+
+jobs:
+  prospective-cpmm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Capture one four-account snapshot on same response slot
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python tools/capture_prospective_cpmm.py
+      - name: Preserve raw request, response, hash manifest, or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-prospective-cpmm-one-shot
+          path: /tmp/smr-prospective-cpmm/
+          if-no-files-found: error
+          retention-days: 7

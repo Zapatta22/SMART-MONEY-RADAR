@@ -305,6 +305,22 @@ class SQLiteGeyserRawStore:
                     COMMIT;
                 """)
 
+            # A legacy v3 fixture can have v5 metadata but no v4 capture table.
+            # Recreate the missing table before applying the new lease schema.
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS geyser_capture_sessions (
+                    source_id TEXT NOT NULL,
+                    stream_id TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    outcome TEXT,
+                    frame_count INTEGER CHECK(frame_count IS NULL OR frame_count >= 0),
+                    PRIMARY KEY(source_id, stream_id),
+                    FOREIGN KEY(source_id, stream_id)
+                        REFERENCES geyser_frame_streams(source_id, stream_id)
+                )
+            """)
+
             if current < 5:
                 connection.executescript("""
                     BEGIN IMMEDIATE;

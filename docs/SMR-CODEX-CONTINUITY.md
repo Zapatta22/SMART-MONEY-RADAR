@@ -94,3 +94,14 @@ Não afirmar que testes passaram. Inspecionar workflows, executar suíte complet
 - Detalhamento: `docs/SMR-MARKET-EVIDENCE.md`. Limitações honestas: RPC e relógio não autenticados externamente, distribuição real dos holders/Token-2022 e capacidade de retirada de liquidez não auditadas na rede; volume real e replay histórico ainda não validados. Solana Live real/Helius pendente, sem credenciais neste ambiente.
 - **Próximo bloqueio técnico desbloqueado**: conector offline entre os recibos arquivados e o `market_volume_audit` com identidade de pool/fonte e first-publication, seguido de replays imediatos vs confirmados no mesmo cutoff. Não habilitar executor financeiro, não contratar Helius e não fazer merge em `main`.
 - Percentual global ainda **não mensurável** até haver pesos e critérios de aceitação fim-a-fim.
+
+
+### Comando Mestre 11 — replay point-in-time SQLite (2026-11-20)
+
+- Estado inspecionado: PR #87 Draft em `a9e825df87b2ea10715100617fa89708fc87c761`, base #84; `main` imutável `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Documento de mercado na PR #87 consultado.
+- Zero agentes Codex independentes; duas frentes isoladas: PR #88 (`codex/smr-sqlite-point-in-time-bridge`) e PR #89 (`codex/smr-replay-modes-tests`). Integração PR #90 em `codex/smr-sqlite-replay-integration`, base #87. Nenhum merge na main.
+- Frente A: `services/sqlite_market_history.py` reutiliza `SQLiteEventStore.list_wallet_signal_receipts` e `integrity_check`; scoping carteira/programa/pool/mints, dedup e filtragem de `available_at <= cutoff`. `services/historical_opportunity_replay.py` reconstrói `HistoricalOpportunityFrame` no mesmo cutoff, preservando lacunas e classificação UNKNOWN, sem simular liquidez/volume/finalidade inexistentes na tabela.
+- Frente B: `services/replay_mode_comparator.py` chama o motor `paper_replay.replay_paper` existente para os modos imediato e confirmado com mesmos ticks elegíveis e `PaperConfig` (fee/slippage/exposição). Testes de falta de quote, bloqueio de segurança, cutoff futuro, ordenação e determinismo. **Comparação exploratória** com quotes fornecidos pelo chamador, não prova de market quote observada.
+- CI integrada **791 testes, zero falhas e compileall**, SHA de código `f6dfa66b10f7feef803d600e57f4b2c2309494e7`: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44776739674. Testes SQLite com `read_only=True` após reinício e `mark_processed` idempotente passaram. Não somar suítes de branches.
+- Runbook `docs/SMR-SQLITE-HISTORICAL-REPLAY.md`. `swap_replay_archive` não atesta slot, finalized, fonte RPC RAW nem quote econômico; estes campos e PnL permanecem UNKNOWN. Helius real pendente; sem gastos ou operações reais.
+- **Próximo trabalho desbloqueado:** integrar prova RAW signature/slot/tempo aos recibos imutáveis e quote observado com `replay_with_required_risk` já existente; comparar modos sem inventar preço/resultado. Progresso global não mensurável.

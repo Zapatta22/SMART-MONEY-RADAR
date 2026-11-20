@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sqlite3
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -16,12 +15,12 @@ from smart_money_radar.storage.event_store import SQLiteEventStore
 
 
 class SolanaLaunchRPC(Protocol):
-    async def get_signatures_for_address_async(
+    async def get_finalized_signatures_for_address_async(
         self, wallet_address: str, *, limit: int = 100,
-        before: str | None = None, until: str | None = None,
+        before: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
-    async def get_transaction_async(self, signature: str) -> dict[str, Any] | None: ...
+    async def get_finalized_transaction_async(self, signature: str) -> dict[str, Any] | None: ...
 
 
 @dataclass(frozen=True)
@@ -82,7 +81,7 @@ class FinalizedLaunchBackfill:
         for page_index in range(self.max_pages):
             if stop_event is not None and stop_event.is_set():
                 raise LaunchBackfillGap("coleta interrompida; cursor preservado")
-            page = await self.rpc.get_signatures_for_address_async(
+            page = await self.rpc.get_finalized_signatures_for_address_async(
                 address, limit=self.page_size, before=before,
             )
             if not isinstance(page, list) or len(page) > self.page_size:
@@ -128,7 +127,7 @@ class FinalizedLaunchBackfill:
             if stop_event is not None and stop_event.is_set():
                 raise LaunchBackfillGap("coleta interrompida; cursor preservado")
             sig = entry["signature"]
-            transaction = await self.rpc.get_transaction_async(sig)
+            transaction = await self.rpc.get_finalized_transaction_async(sig)
             if transaction is None or not isinstance(transaction, dict):
                 raise LaunchBackfillGap("transação indisponível; cursor preservado")
             signatures = transaction.get("transaction", {}).get("signatures")

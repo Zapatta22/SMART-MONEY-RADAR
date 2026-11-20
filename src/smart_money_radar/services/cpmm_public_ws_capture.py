@@ -165,6 +165,11 @@ class PublicCpmmWsSession:
         self.status="UNKNOWN"
         self.reconnects+=1
         self.subscription_accounts.clear()
+        self.seen.clear()
+        self.last_slot.clear()
+        # A reconnect is a new observation domain. Never compare
+        # post-reconnect slots to the prior transport as if uninterrupted.
+
 
     def report(self)->dict:
         return {"source_id":self.source_id,"session_id":self.session_id,

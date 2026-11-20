@@ -4152,3 +4152,8 @@ Concluir a revisão da reconciliação econômica DAMM v2 e de suas dependência
 
 ### Próxima etapa
 Aprofundar a revisão do contrato transacional end-to-end: garantir que associação swap/EvtSwap2, transfer inventory, balance deltas e snapshots históricos compartilhem a mesma assinatura/slot/ordem. Depois concluir a auditoria do recovery/backfill e dos módulos restantes da PR #23. Não fazer merge sem autorização explícita.
+
+
+## Atualização de engenharia — Comando Mestre 27 (2026-11-20)
+
+O registro histórico acima não representa sozinho a versão atual do código. O progresso recente está consolidado em `docs/SMR-CODEX-CONTINUITY.md` e `docs/SMR-COMMAND-27-WS-PERSISTENT-RECOVERY.md`. PR #111 Draft, sem merge na `main`: recuperação WebSocket persistente endurecida contra RPC tardio, isolamento de sessão, reinício e journal SQLite; **1.039 testes aprovados, zero falhas** na CI do código `3134dff8d4c24e0f10909230c38e10c2a715ac69` (https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44836443939). Provas apenas offline nesta etapa. **Reconexão real NÃO demonstrada**; último baseline real conhecido no slot 471887787, zero notificações live. Cobertura `UNKNOWN`, sem autorização para negociar. Pendentes testes de regressão/incompletude do RPC neste runner, crash-injection e validação live curta. `main` preservada.

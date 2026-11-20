@@ -82,3 +82,15 @@ Não afirmar que testes passaram. Inspecionar workflows, executar suíte complet
 - Contrato do motor e limitações no documento `docs/SMR-OPPORTUNITY-CLASSIFICATION.md`.
 - Solana Live real com Helius: **PENDENTE**, sem credenciais configuradas ou coleta real. Não contratar serviço nem operar fundos reais.
 - Próximo módulo crítico: fornecer evidências temporalmente consistentes e autenticadas de segurança de token, liquidez/volume e controle conjunto de carteiras; conectar ao Launch Radar em pipeline offline sem look-ahead e testar dois modos no paper replay. A estimativa de conclusão global ainda é **não mensurável** sem pesos e gates aceitos.
+
+
+### Comando Mestre 10 — evidências de segurança/liquidez e volume (2026-11-20)
+
+- Estado inicial confirmado: PR #84 Draft, head `aeafa87d16e883e16a1a53abfcec40d391a1362c`, base #80; `main` preservada em `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Frentes isoladas, **0 agentes Codex independentes**: PR #85 para segurança de tokens e liquidez usando `validate_snapshot` CPMM; PR #86 para auditoria de volume por assinatura, tempos e SHA. Integração conjunta Draft **PR #87** em `codex/smr-market-evidence-integration`, base #84.
+- Arquivos: `services/market_safety_liquidity.py`, `services/market_volume_audit.py`, `services/market_opportunity_bridge.py` e testes respectivos. Cada evidência carrega ID/fonte/slot/tempos/RAW/SHA, valida presença, hash, escopo e informação disponível antes do instante de classificação. Direitos mint/freeze, concentração e risco de retirada podem bloquear. Volume deduplicado por assinatura; contradições e concentração são risco explícito.
+- Adaptador reconcilia os resultados conservadores com `OpportunityEvidence`, eliminando as flags de liquidez/volume/segurança pré-aprovadas do chamador. Ele não atesta de maneira independente RPC ou risco de tokens. `operational_authorized=False` permanece em ambos os modos. Regressões contra fonte divergente e ausência de provas.
+- **CI validado**: commit de código `2295f583d15001a21e7275c39e006aaa32f240cc`, **777 testes aprovados, zero falhas, compileall**: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44775208257. Houve testes isolados nas PRs #85/#86, mas totais não devem ser somados. As integrações não estão na `main`.
+- Detalhamento: `docs/SMR-MARKET-EVIDENCE.md`. Limitações honestas: RPC e relógio não autenticados externamente, distribuição real dos holders/Token-2022 e capacidade de retirada de liquidez não auditadas na rede; volume real e replay histórico ainda não validados. Solana Live real/Helius pendente, sem credenciais neste ambiente.
+- **Próximo bloqueio técnico desbloqueado**: conector offline entre os recibos arquivados e o `market_volume_audit` com identidade de pool/fonte e first-publication, seguido de replays imediatos vs confirmados no mesmo cutoff. Não habilitar executor financeiro, não contratar Helius e não fazer merge em `main`.
+- Percentual global ainda **não mensurável** até haver pesos e critérios de aceitação fim-a-fim.

@@ -70,3 +70,15 @@ Não afirmar que testes passaram. Inspecionar workflows, executar suíte complet
 
 - Commit `b6a5934`: novos testes end-to-end do CLI protegido cobrem entrada imediata aceita com metadados válidos e bloqueio por `emergency_halt`. **Ainda não executados.**
 - Antes de usar em produção, revisar comportamento no instante do fill e autenticar origem/preço dos quotes. Não interpretar `evidence_verified` do operador como prova de origem.
+
+
+### Comando Mestre 9 — motor de oportunidades (2026-11-20)
+
+- Retomada verificada: PR #80 Draft em `8aaa7f2f168aee47957b87d9f88324596bb6511f`, base #66; PR #81 Draft em `f78c46b587f7edc49237a0ff8e7db52d45549161`, base #79; `main` preservada `5060bc65ddf181a4736fdb662c44c3fec0dd7259`.
+- Criadas duas frentes isoladas no GitHub, sem agentes Codex independentes: PR #82 classificador explicável; PR #83 testes adversariais. Integração provisória em PR #84, branch `codex/smr-opportunity-classifier-integration`, base `codex/smr-wallet-consensus` (PR #80). **Não realizar merge na main**.
+- Implementado `src/smart_money_radar/services/opportunity_classifier.py`: contratos `OpportunityEvidence` e `OpportunityClassification`, score heurístico discriminado, classificação `REJECTED/UNKNOWN/WATCH/PRIORITY` e ranking determinístico priorizando a classe antes do score. Bloqueios obrigatórios, manipulação, conflitos de sinais, cobertura/proveniência desconhecidas e liquidez/volume não positivos ficam fail-closed.
+- Modos `immediate` e `confirmed` modelados somente como sinal informacional para simulação. `operational_authorized=False` em todas as saídas. As flags `VERIFIED` do chamador **não equivalem a autenticação independente**. Consenso da PR #80 segue `independence_verified=False`, portanto produção real do classificador permanece `UNKNOWN` até auditoria de controle conjunto de carteiras.
+- Testes integrados: **749 aprovados, zero falhas e compileall** no código `4f55650cbdd9e116ee6a342f3edf9ba75304a700` (https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44773372107). Regressões cobrem risco alto com score alto, dados UNKNOWN, liquidez/volume zero, sinais MIXED, independência Sybil, determinismo, deduplicação e limites dos modos.
+- Contrato do motor e limitações no documento `docs/SMR-OPPORTUNITY-CLASSIFICATION.md`.
+- Solana Live real com Helius: **PENDENTE**, sem credenciais configuradas ou coleta real. Não contratar serviço nem operar fundos reais.
+- Próximo módulo crítico: fornecer evidências temporalmente consistentes e autenticadas de segurança de token, liquidez/volume e controle conjunto de carteiras; conectar ao Launch Radar em pipeline offline sem look-ahead e testar dois modos no paper replay. A estimativa de conclusão global ainda é **não mensurável** sem pesos e gates aceitos.

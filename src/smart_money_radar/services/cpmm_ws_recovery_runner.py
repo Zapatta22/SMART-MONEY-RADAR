@@ -187,7 +187,9 @@ class CpmmRecoveryRunner:
                             # Bounded drain: late RPC bytes still belong to this
                             # journal, not to the next WebSocket session.
                             requested,available,response,error=await asyncio.wait_for(
-                                baseline_task,timeout=max(0.01,min(11.,deadline-self.clock())))
+                                baseline_task,timeout=max(0.01,min(
+                                    0.25 if failure_record is not None else 11.,
+                                    deadline-self.clock())))
                             report["baseline_requested_at"]=requested.isoformat()
                             report["baseline_available_at"]=available.isoformat()
                             report["baseline_rpc_error"]=error

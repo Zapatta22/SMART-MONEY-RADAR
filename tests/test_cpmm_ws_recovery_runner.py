@@ -417,5 +417,111 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         session.finish("interrupted_unknown")
         self.assertEqual(self.db.integrity_check(),["ok"])
 
+
+    async def test_two_concurrent_runners_same_source_fail_closed(self):
+        first_started=asyncio.Event()
+        allow_finish=asyncio.Event()
+        class BlockedSocket(FakeSocket):
+            async def recv(self):
+                if self.events:
+                    return await super().recv()
+                first_started.set()
+                await allow_finish.wait()
+                raise ConnectionClosedError("intentional fake stop")
+        class FirstConnector:
+            def __call__(self):
+                return BlockedSocket([ack(1),ack(2),ack(3),ack(4)])
+        first=self.runner(FirstConnector(),FakeRPC())
+        first_task=asyncio.create_task(first.run())
+        try:
+            await asyncio.wait_for(first_started.wait(),timeout=3)
+            contender_store=SQLiteGeyserRawStore(Path(self.tmp.name)/"journal.sqlite")
+            contender=BoundedCpmmRecovery(contender_store,source_id="test-solana-ws",
+                                          accounts=ADDRESS,policy=self.policy)
+            second=CpmmRecoveryRunner(contender,ws_connect=FakeConnector([[
+                ack(1),ack(2),ack(3),ack(4)]]),rpc_fetch=FakeRPC(),
+                snapshot_identity=first.snapshot_identity,duration_seconds=15,
+                sleep=lambda _:asyncio.sleep(0))
+            try:
+                with self.assertRaisesRegex(ValueError,"source leased"):
+                    await second.run()
+                self.assertEqual(len(contender.sessions),0)
+                active=self.db.get_capture_session(
+                    "test-solana-ws",self.recovery.current.session_id)
+                self.assertIsNone(active["finished_at"])
+                self.assertEqual(self.db.integrity_check(),["ok"])
+            finally:
+                contender_store.close()
+        finally:
+            allow_finish.set()
+            await asyncio.wait_for(first_task,timeout=3)
+        self.assertEqual(self.db.integrity_check(),["ok"])
+        self.assertEqual(first.manifest["coverage"],"UNKNOWN")
+        self.assertIsNotNone(self.db.get_capture_session(
+            "test-solana-ws",self.recovery.current.session_id)["finished_at"])
+
+    async def test_persistent_lease_after_crash_requires_explicit_recovery(self):
+        owner="synthetic-dead-owner"
+        self.db.recover_incomplete_capture_sessions(
+            source_id="test-solana-ws",owner_id=owner)
+        old=self.recovery.new_connection()
+        old._record(b"durable-after-kill","synthetic")
+        sid=old.session_id
+        db_path=Path(self.tmp.name)/"journal.sqlite"
+        self.db.close()
+        restarted=SQLiteGeyserRawStore(db_path)
+        with self.assertRaisesRegex(ValueError,"source leased"):
+            restarted.recover_incomplete_capture_sessions(
+                source_id="test-solana-ws",owner_id="another-owner")
+        self.assertIsNone(restarted.get_capture_session(
+            "test-solana-ws",sid)["finished_at"])
+        self.assertEqual(list(restarted.iter_wire_frames(
+            "test-solana-ws",sid,sid)),[(0,b"durable-after-kill")])
+        # Explicit verified dead-owner recovery is outside this command;
+        # test only that incorrect ownership cannot take over.
+        with self.assertRaises(ValueError):
+            restarted.release_capture_source_lease(
+                source_id="test-solana-ws",owner_id="another-owner")
+        restarted.release_capture_source_lease(
+            source_id="test-solana-ws",owner_id=owner)
+        self.assertEqual(restarted.recover_incomplete_capture_sessions(
+            source_id="test-solana-ws"),[sid])
+        self.assertEqual(restarted.get_capture_session(
+            "test-solana-ws",sid)["outcome"],"process_interrupted_unknown")
+        self.assertEqual(restarted.integrity_check(),["ok"])
+        old.active=False
+        self.db=restarted
+
+    async def test_recovery_claim_and_incomplete_session_close_are_atomic(self):
+        old=self.recovery.new_connection()
+        sid=old.session_id
+        old._record(b"captured","synthetic")
+        db_path=Path(self.tmp.name)/"journal.sqlite"
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("""CREATE TRIGGER deny_recovery
+                BEFORE UPDATE ON geyser_capture_sessions BEGIN
+                SELECT RAISE(ABORT,'synthetic recovery interruption');
+                END""")
+        with self.assertRaises(sqlite3.DatabaseError):
+            self.db.recover_incomplete_capture_sessions(
+                source_id="test-solana-ws",owner_id="failed-owner")
+        with sqlite3.connect(db_path) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM geyser_capture_source_leases"
+            ).fetchone()[0],0)
+            self.assertIsNone(conn.execute(
+                "SELECT finished_at FROM geyser_capture_sessions WHERE stream_id=?",
+                (sid,)).fetchone()[0])
+            conn.execute("DROP TRIGGER deny_recovery")
+        recovered=self.db.recover_incomplete_capture_sessions(
+            source_id="test-solana-ws",owner_id="working-owner")
+        self.assertEqual(recovered,[sid])
+        self.assertEqual(self.db.get_capture_session(
+            "test-solana-ws",sid)["frame_count"],1)
+        self.db.release_capture_source_lease(
+            source_id="test-solana-ws",owner_id="working-owner")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+        old.active=False
+
 if __name__=="__main__":
     unittest.main()

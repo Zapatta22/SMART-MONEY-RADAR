@@ -106,6 +106,17 @@ def replay_with_required_risk(ticks: list[ReplayTick], evidence_by_quote: dict,
         raise ValueError("política de risco obrigatória")
     if not isinstance(risk_by_quote, dict):
         raise ValueError("snapshots de risco obrigatórios")
+    # Reject gaps rather than stitching a pending order across missing ticks.
+    if not isinstance(ticks, list) or not isinstance(evidence_by_quote, dict):
+        raise ValueError("histórico protegido inválido")
+    for tick in ticks:
+        if not isinstance(tick, ReplayTick) or not tick.quote_id:
+            raise ValueError("tick sem identidade de cotação")
+        records = evidence_by_quote.get(tick.quote_id)
+        if not isinstance(records, list) or not records:
+            raise ValueError("lacuna de evidência no histórico protegido")
+        if tick.entry_allowed and not isinstance(risk_by_quote.get(tick.quote_id), EntryRiskSnapshot):
+            raise ValueError("lacuna de risco no histórico protegido")
     return replay_with_evidence(
         ticks, evidence_by_quote, config=config, expected_pool=expected_pool,
         require_observed_quote=True, as_of=as_of,

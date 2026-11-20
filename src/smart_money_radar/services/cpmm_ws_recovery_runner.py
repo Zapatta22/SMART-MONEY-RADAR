@@ -226,6 +226,21 @@ class CpmmRecoveryRunner:
                                 if self.clock()>=deadline:
                                     report["baseline_rejection"]="global_deadline_elapsed"
                                     raise ValueError("rpc_baseline_global_deadline")
+                                try:
+                                    body=json.loads(response)
+                                    candidate_slot=body["result"]["context"]["slot"]
+                                except (ValueError,TypeError,KeyError,IndexError):
+                                    candidate_slot=None
+                                if type(candidate_slot) is int:
+                                    reference_slot=self.snapshot_identity["original_swap_slot"]
+                                    prior_slots=[item["baseline_slot"]
+                                        for item in self.manifest["connections"][:-1]
+                                        if item.get("baseline_verified_as_snapshot") is True
+                                        and type(item.get("baseline_slot")) is int]
+                                    if (candidate_slot<reference_slot or
+                                        prior_slots and candidate_slot<max(prior_slots)):
+                                        report["baseline_rejection"]="regressive_rpc_slot"
+                                        raise ValueError("rpc_baseline_regressive_slot")
                                 audit=inspect_contemporaneous_baseline(
                                     session=session,request_raw=req,response_raw=response,
                                     requested_at=requested,available_at=available,

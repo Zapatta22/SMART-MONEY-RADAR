@@ -147,9 +147,11 @@ def classify_opportunity(
         reasons.add("historical_coverage_incomplete")
     if evidence.token_safety != "VERIFIED":
         reasons.add("token_safety_unverified")
-    if not evidence.liquidity_verified or evidence.liquidity_quote is None:
+    if (not evidence.liquidity_verified or evidence.liquidity_quote is None
+            or evidence.liquidity_quote <= 0):
         reasons.add("liquidity_unknown")
-    if not evidence.volume_verified or evidence.volume_quote is None:
+    if (not evidence.volume_verified or evidence.volume_quote is None
+            or evidence.volume_quote <= 0):
         reasons.add("volume_unknown")
     if evidence.price_confirmation is not True:
         reasons.add("price_not_confirmed")
@@ -157,14 +159,14 @@ def classify_opportunity(
         reasons.add("volume_not_confirmed")
     if evidence.mandatory_blocks or evidence.manipulation_flags or evidence.source_status == "CONFLICTED" or evidence.token_safety == "CONFLICTED" or evidence.history_coverage == "GAP":
         verdict: Verdict = "REJECTED"
+    elif consensus.direction == "MIXED" or consensus.direction == "SELL":
+        verdict = "REJECTED"
     elif any(r in reasons for r in (
         "wallet_independence_unknown", "source_provenance_unverified",
         "historical_coverage_incomplete", "token_safety_unverified",
         "liquidity_unknown", "volume_unknown", "insufficient_independent_observations",
     )):
         verdict = "UNKNOWN"
-    elif consensus.direction == "MIXED" or consensus.direction == "SELL":
-        verdict = "REJECTED"
     elif score >= 70:
         verdict = "PRIORITY"
     else:

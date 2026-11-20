@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from smart_money_radar.domain.paper_evidence_replay import replay_with_evidence
+from smart_money_radar.domain.paper_evidence_replay import replay_with_evidence, replay_with_required_risk
 from smart_money_radar.domain.paper_entry_risk_policy import EntryRiskLimits, EntryRiskSnapshot
 from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick
 
@@ -114,6 +114,38 @@ class EvidenceReplayTests(unittest.TestCase):
                                  Decimal("100"), Decimal("1000"))
         result = self.replay(records, risk_limits=limits, risk_by_quote={})
         self.assertEqual(result["rejected_risk_ticks"], 4)
+        self.assertFalse(result["immediate"].fills)
+        self.assertFalse(result["confirmed"].fills)
+
+    def test_strict_entry_point_requires_risk_configuration(self):
+        ticks = [self.tick(0, "BUY"), self.tick(1)]
+        records = {f"q{i}": self.evidence(i) for i in range(2)}
+        with self.assertRaisesRegex(ValueError, "política de risco obrigatória"):
+            replay_with_required_risk(
+                ticks, records, config=self.config, expected_pool="pool-a",
+                risk_limits=None, risk_by_quote={},
+            )
+        limits = EntryRiskLimits(Decimal("0.2"), Decimal("0.05"),
+                                 Decimal("100"), Decimal("1000"))
+        with self.assertRaisesRegex(ValueError, "snapshots de risco obrigatórios"):
+            replay_with_required_risk(
+                ticks, records, config=self.config, expected_pool="pool-a",
+                risk_limits=limits, risk_by_quote=None,
+            )
+
+    def test_strict_entry_point_requires_observed_quote(self):
+        ticks = [self.tick(0, "BUY"), self.tick(1)]
+        records = {f"q{i}": self.evidence(i, source="MODEL_ESTIMATE_NOT_OBSERVED")
+                   for i in range(2)}
+        limits = EntryRiskLimits(Decimal("0.2"), Decimal("0.05"),
+                                 Decimal("100"), Decimal("1000"))
+        risk = EntryRiskSnapshot(Decimal("1000"), Decimal("100"), Decimal("0"),
+                                 Decimal("20"), Decimal("2000"), False, True)
+        result = replay_with_required_risk(
+            ticks, records, config=self.config, expected_pool="pool-a",
+            risk_limits=limits, risk_by_quote={"q0": risk, "q1": risk},
+        )
+        self.assertEqual(result["verified_ticks"], 0)
         self.assertFalse(result["immediate"].fills)
         self.assertFalse(result["confirmed"].fills)
 

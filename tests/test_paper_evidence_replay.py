@@ -81,6 +81,18 @@ class EvidenceReplayTests(unittest.TestCase):
                          self.config.initial_cash - Decimal("100")
                          + result["immediate"].open_quantity * Decimal("10.1"))
 
+    def test_as_of_cutoff_preserves_only_available_history(self):
+        records = {f"q{i}": self.evidence(i) for i in range(4)}
+        result = self.replay(records, as_of=self.start + timedelta(minutes=1))
+        self.assertEqual(result["verified_ticks"], 2)
+        self.assertEqual(result["excluded_after_cutoff"], 2)
+        self.assertEqual(result["immediate"].fills[0].filled_at,
+                         self.start + timedelta(minutes=1))
+
+    def test_as_of_rejects_naive_datetime(self):
+        with self.assertRaisesRegex(ValueError, "as_of"):
+            self.replay({}, as_of=datetime(2026, 11, 19))
+
     def test_model_mode_explicitly_non_executable(self):
         records = {f"q{i}": self.evidence(i, source="MODEL_ESTIMATE_NOT_OBSERVED")
                    for i in range(4)}

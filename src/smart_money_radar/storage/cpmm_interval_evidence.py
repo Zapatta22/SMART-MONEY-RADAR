@@ -46,7 +46,13 @@ CREATE TABLE IF NOT EXISTS cpmm_interval_audit_checkpoints (
 """
 
 
-def _unsupported_json(value):\n    raise TypeError('non-JSON evidence type: '+type(value).__name__)\n\n\ndef _json(o):\n    return json.dumps(o,sort_keys=True,separators=(",",":"),allow_nan=False,\n                      default=lambda x: x.isoformat() if isinstance(x,datetime) else _unsupported_json(x))
+def _unsupported_json(value):
+    raise TypeError('non-JSON evidence type: '+type(value).__name__)
+
+
+def _json(o):
+    return json.dumps(o,sort_keys=True,separators=(",",":"),allow_nan=False,
+                      default=lambda x: x.isoformat() if isinstance(x,datetime) else _unsupported_json(x))
 
 
 def init_interval_schema(db:sqlite3.Connection)->None:

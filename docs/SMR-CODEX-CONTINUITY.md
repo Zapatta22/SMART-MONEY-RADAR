@@ -153,3 +153,15 @@ Radar é conectar o journal ao consumidor Solana, com cursor próprio e
 replay retomável. A próxima validação da Simulação depende de uma série
 contemporânea, auditável, com cotações de origem verificável e swaps
 finalizados do mesmo pool. Nenhuma PR foi mesclada.
+
+
+### Auditoria de retomada — 2026-11-20, sessão GitHub
+
+- A PR #64 permanece Draft em `feat/cpmm-reserve-estimator-audit@1ded0b58aad4b361938aff658d0e4f2c8048f8e8`, com base `codex/smr-paper-pool-scope` (PR #63). O CI estrito do head foi aprovado: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44654045991.
+- A correção da cadeia crítica já foi desenvolvida na PR #67, `codex/smr-pr64-validation@53af336f115901dd29fb35759ce189973eb66802`. CI geral, CI estrito e benchmark estão aprovados nesse SHA: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44674972597, https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44674972494, https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44674972617. Isso comprova o CI que foi executado, não autentica fonte externa das cotações.
+- Revisão do código da #67: `verify_paper_quote_tick` confronta SHA-256 e valores RAW, porém RAW e hash são fornecidos pelo mesmo bundle; continuam ausentes a origem externa autenticada e o relógio confiável. `_fill_risk_rejection` reavalia notional, liquidez, slippage e perda no fill nos dois modos; atenção especial a regressões de estados e eventos históricos.
+- Frentes independentes: painel #65, Smart Money #66, detecção offline de launch #68 e journal persistente #69. A PR #69 declarou 751 testes locais e o CI geral passou no SHA `493e7b459befdf23a7441a6e4c8297fe0ed55e23`: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44674879174.
+- O registro anterior cita integração local `codex/smr-pr64-fronts-integration@e4fa4b6`, mas essa branch não apareceu na lista remota consultada. Portanto os 756 testes reportados são evidência declarada de ambiente local, **não** uma validação de branch de integração acessível no remoto. Não afirmar cadeia integrada nem iniciar merge.
+- **Próxima ação bloqueante de simulação:** captar série contemporânea e independente de cotação bid/ask, profundidade, horário de observação e disponibilidade, mais swaps finalizados do mesmo pool CPMM; estabelecer origem, hashes externos e política de confiança; reproduzir comparação e taxas em fixtures públicas. Não promover `MODEL_ESTIMATE_NOT_OBSERVED` a quote executável.
+- **Próxima ação independente de Launch Radar:** conectar consumidor Solana ao journal persistente com cursor e replay retomável, idempotência, conflitos, backfill e testes de interrupção; branch isolada derivada da #69, sem alterar `main`.
+- Esta atualização é **documental**, não executou nova suíte local e não equivale a aprovação de integração. Nenhuma negociação real autorizada, nenhum merge.

@@ -136,8 +136,13 @@ class LaunchLiveMonitorTests(unittest.TestCase):
     def test_periodic_rpc_recovery_when_socket_is_silent(self):
         store = Backfill([1, 0])
         class QuietSocket(Socket):
+            def __init__(self, frames):
+                super().__init__(frames)
+                self.receives = 0
+
             async def recv(self):
-                if self.sent:
+                self.receives += 1
+                if self.receives > 1:
                     await asyncio.sleep(3600)
                 return await super().recv()
         conn = Connector(QuietSocket([self.ack()]))

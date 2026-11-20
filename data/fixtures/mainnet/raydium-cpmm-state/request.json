@@ -1,0 +1,1 @@
+{"jsonrpc": "2.0", "id": 3, "method": "getMultipleAccounts", "params": [["47hq28mcL7q5GhBg7epyGF2dnuJd4MKFt8QhT7CzYUp4", "BgxH5ifebqHDuiADWKhLjXGP5hWZeZLoCdmeWJLkRqLP", "9tAoQUNB1wKnBSUyc6ukg2pWbeofZJVHxur2UaRBZNZc", "BArWLNarRzS7N1GCwBjNgVnC4866c8oJNRqhb5axf6y4"], {"encoding": "base64", "commitment": "finalized"}]}

@@ -1,8 +1,8 @@
 """Deterministic single-market paper trading on chronological observations."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, localcontext
 from typing import Literal
 
@@ -144,6 +144,19 @@ def compare_paper_reports(immediate: PaperReport, confirmed: PaperReport) -> dic
 
 
 @dataclass(frozen=True)
+class PaperEntryCandidate:
+    """Actual entry cost and state immediately before a simulated fill."""
+
+    tick: ReplayTick
+    decision_tick: ReplayTick
+    price: Decimal
+    budget: Decimal
+    equity: Decimal
+    day_start_equity: Decimal
+    daily_realized_pnl: Decimal
+
+
+@dataclass(frozen=True)
 class _Order:
     side: Literal["BUY", "SELL"]
     signal: ReplayTick
@@ -153,16 +166,20 @@ class _Order:
 def replay_paper(
     ticks: Iterable[ReplayTick], *, config: PaperConfig,
     mode: Literal["immediate", "confirmed"],
+    entry_guard: Callable[[PaperEntryCandidate], str | None] | None = None,
 ) -> PaperReport:
     """Replay both modes with execution at a strictly later market observation."""
     if mode not in {"immediate", "confirmed"}:
         raise ValueError("modo de entrada inválido")
     with localcontext() as context:
         context.prec = 40
-        return _replay(ticks, config, mode)
+        return _replay(ticks, config, mode, entry_guard)
 
 
-def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> PaperReport:
+def _replay(
+    ticks: Iterable[ReplayTick], config: PaperConfig, mode: str,
+    entry_guard: Callable[[PaperEntryCandidate], str | None] | None,
+) -> PaperReport:
     fee_rate = config.fee_bps / BPS
     slippage = config.slippage_bps / BPS
     cash = equity = peak = config.initial_cash
@@ -176,11 +193,18 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
     rejected_entries = 0
     decisions: list[PaperDecision] = []
     realized_pnl = ZERO
+    current_day: date | None = None
+    day_start_equity = config.initial_cash
+    day_start_realized_pnl = ZERO
 
     for tick in ticks:
         if prior is not None and tick.at <= prior:
             raise ValueError("observações devem estar em ordem estritamente crescente")
         prior = tick.at
+        if tick.at.date() != current_day:
+            current_day = tick.at.date()
+            day_start_equity = equity
+            day_start_realized_pnl = realized_pnl
         sell_price = (tick.bid or tick.price) * (ONE - slippage)
 
         market_at = tick.market_at or tick.at
@@ -211,6 +235,11 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
                 rejection = _entry_rejection(tick, pending, buy_price, config)
                 if rejection is None and tick.ask_size is not None and buy_quantity > tick.ask_size:
                     rejection = "insufficient_ask_size"
+                if rejection is None and entry_guard is not None:
+                    rejection = entry_guard(PaperEntryCandidate(
+                        tick, pending.signal, buy_price, entry_budget, cash, day_start_equity,
+                        realized_pnl - day_start_realized_pnl,
+                    ))
                 if rejection is not None:
                     rejected_entries += 1
                     decisions.append(PaperDecision(tick.at, "reject", rejection))

@@ -78,11 +78,17 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--expected-sha256")
     paper = subparsers.add_parser("paper-replay", help="simula entradas em observações locais")
     paper.add_argument("scenario", type=Path)
-    paper.add_argument("--as-of", help="limita o replay de arquivo à disponibilidade até este instante")
+    paper.add_argument("--as-of", help="limita o replay de arquivo ou protegido à disponibilidade até este instante")
     paper.add_argument("--quotes", type=Path, help="arquivo de cotações bid/ask independente")
     paper.add_argument("--archive", type=Path, help="lê swaps concluídos de um banco SQLite local")
     paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
     paper.add_argument("--strict-evidence", type=Path, help="JSON de evidências e risco para replay protegido local")
+    snapshot = subparsers.add_parser("cpmm-snapshot-audit", help="confere uma captura local do pool CPMM")
+    snapshot.add_argument("request", type=Path)
+    snapshot.add_argument("response", type=Path)
+    snapshot.add_argument("--pool", required=True)
+    snapshot.add_argument("--slot", type=int, required=True)
+    snapshot.add_argument("--block-time", type=int, required=True)
     return parser
 
 
@@ -112,6 +118,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         if args.command == "paper-replay":
             _paper_replay(args)
             return
+        if args.command == "cpmm-snapshot-audit":
+            from smart_money_radar.domain.cpmm_pool_config_envelope import validate_finalized_cpmm_snapshot
+
+            snapshot = validate_finalized_cpmm_snapshot(
+                raw_request=args.request.read_bytes(), raw_response=args.response.read_bytes(),
+                expected_pool=args.pool, expected_slot=args.slot, block_time=args.block_time,
+            )
+            print(json.dumps(asdict(snapshot), default=str, ensure_ascii=False))
+            return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)
         if args.command == "check":
@@ -135,8 +150,10 @@ def _paper_replay(args: argparse.Namespace) -> None:
     scenario = json.loads(scenario_bytes, parse_float=Decimal)
     if args.strict_evidence is not None and args.archive is not None:
         raise ValueError("--strict-evidence ainda não suporta --archive")
-    if args.archive is None and (args.as_of is not None or args.quotes is not None):
-        raise ValueError("--as-of e --quotes exigem --archive")
+    if args.archive is None and args.quotes is not None:
+        raise ValueError("--quotes exige --archive")
+    if args.as_of is not None and args.archive is None and args.strict_evidence is None:
+        raise ValueError("--as-of exige --archive ou --strict-evidence")
     as_of = datetime.fromisoformat(args.as_of) if args.as_of is not None else None
     if as_of is not None:
         if as_of.utcoffset() is None:
@@ -148,16 +165,28 @@ def _paper_replay(args: argparse.Namespace) -> None:
             raise ValueError("valor decimal não pode ser booleano")
         return Decimal(value)
 
+    excluded_strict_ticks = 0
     try:
         config = PaperConfig(**{key: decimal(value) for key, value in scenario["config"].items()})
         if args.archive is None:
-            ticks = [
-                ReplayTick(
-                    datetime.fromisoformat(row["at"]), decimal(row["price"]), decimal(row["volume"]),
+            ticks = []
+            for row in scenario["ticks"]:
+                observed_at = datetime.fromisoformat(row["at"])
+                if observed_at.utcoffset() is None:
+                    raise ValueError("observação exige horário com fuso")
+                if as_of is not None and observed_at > as_of:
+                    excluded_strict_ticks += 1
+                    continue
+                ticks.append(ReplayTick(
+                    observed_at, decimal(row["price"]), decimal(row["volume"]),
                     row.get("signal", "NONE"), row.get("entry_allowed", False), row.get("halted", False),
-                )
-                for row in scenario["ticks"]
-            ]
+                    market_at=datetime.fromisoformat(row["market_at"]) if row.get("market_at") else None,
+                    bid=decimal(row["bid"]) if row.get("bid") is not None else None,
+                    ask=decimal(row["ask"]) if row.get("ask") is not None else None,
+                    bid_size=decimal(row["bid_size"]) if row.get("bid_size") is not None else None,
+                    ask_size=decimal(row["ask_size"]) if row.get("ask_size") is not None else None,
+                    quote_id=row.get("quote_id"),
+                ))
             archive_report = None
         else:
             from smart_money_radar.domain.paper_swap_archive import ticks_from_swap_archive
@@ -218,27 +247,31 @@ def _paper_replay(args: argparse.Namespace) -> None:
     if args.strict_evidence is not None:
         from smart_money_radar.domain.paper_entry_risk_policy import EntryRiskLimits, EntryRiskSnapshot
         from smart_money_radar.domain.paper_evidence_replay import replay_with_required_risk
-        raw = json.loads(args.strict_evidence.read_text(encoding="utf-8"), parse_float=Decimal)
-        limits = EntryRiskLimits(**{k: decimal(v) for k, v in raw["risk_limits"].items()})
-        snapshots = {qid: EntryRiskSnapshot(**{
-            k: v if k in ("emergency_halt", "evidence_verified") else decimal(v)
-            for k, v in values.items()
-        }) for qid, values in raw["risk_by_quote"].items()}
-        ticks = [ReplayTick(
-            datetime.fromisoformat(row["at"]), decimal(row["price"]), decimal(row["volume"]),
-            row.get("signal", "NONE"), row.get("entry_allowed", False),
-            row.get("halted", False),
-            market_at=datetime.fromisoformat(row["market_at"]) if row.get("market_at") else None,
-            bid=decimal(row["bid"]) if row.get("bid") is not None else None,
-            ask=decimal(row["ask"]) if row.get("ask") is not None else None,
-            bid_size=decimal(row["bid_size"]) if row.get("bid_size") is not None else None,
-            ask_size=decimal(row["ask_size"]) if row.get("ask_size") is not None else None,
-            quote_id=row.get("quote_id"),
-        ) for row in scenario["ticks"]]
-        strict = replay_with_required_risk(
-            ticks, raw["evidence_by_quote"], config=config, expected_pool=raw["pool"],
-            risk_limits=limits, risk_by_quote=snapshots,
-        )
+        raw = json.loads(args.strict_evidence.read_bytes(), parse_float=Decimal)
+        try:
+            limits = EntryRiskLimits(**{k: decimal(v) for k, v in raw["risk_limits"].items()})
+            covered_quote_ids = {tick.quote_id for tick in ticks}
+            snapshots = {}
+            for qid, values in raw["risk_by_quote"].items():
+                if qid not in covered_quote_ids:
+                    continue
+                numbers = {
+                    key: decimal(value) for key, value in values.items()
+                    if key not in ("emergency_halt", "evidence_verified", "available_at")
+                }
+                snapshots[qid] = EntryRiskSnapshot(
+                    **numbers, emergency_halt=values["emergency_halt"],
+                    evidence_verified=values["evidence_verified"],
+                    available_at=datetime.fromisoformat(values["available_at"])
+                    if "available_at" in values else None,
+                )
+            strict = replay_with_required_risk(
+                ticks, raw["evidence_by_quote"], config=config, expected_pool=raw["pool"],
+                risk_limits=limits, risk_by_quote=snapshots, as_of=as_of,
+            )
+        except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
+            raise ValueError("arquivo de evidência ou risco inválido no replay protegido") from exc
+        strict["excluded_after_cutoff"] += excluded_strict_ticks
         results = {mode: strict[mode] for mode in modes}
         strict_metadata = {k: v for k, v in strict.items()
                            if k not in ("immediate", "confirmed", "comparison")}

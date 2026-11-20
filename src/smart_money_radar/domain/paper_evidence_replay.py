@@ -168,8 +168,14 @@ def replay_with_required_risk(ticks: list[ReplayTick], evidence_by_quote: dict,
         records = evidence_by_quote.get(tick.quote_id)
         if not isinstance(records, list) or not records:
             raise ValueError("lacuna de evidência no histórico protegido")
-        if tick.entry_allowed and not isinstance(risk_by_quote.get(tick.quote_id), EntryRiskSnapshot):
-            raise ValueError("lacuna de risco no histórico protegido")
+        if tick.entry_allowed or tick.quote_id in risk_by_quote:
+            risk = risk_by_quote.get(tick.quote_id)
+            if not isinstance(risk, EntryRiskSnapshot):
+                raise ValueError("lacuna de risco no histórico protegido")
+            if risk.available_at is None:
+                raise ValueError("snapshot de risco sem horário de disponibilidade")
+            if risk.available_at > tick.at:
+                raise ValueError("snapshot de risco indisponível no instante da observação")
         try:
             verify_paper_quote_tick(tick, records, expected_pool)
         except ValueError as exc:

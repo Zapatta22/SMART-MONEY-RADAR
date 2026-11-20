@@ -4,6 +4,7 @@ This module never places orders. The same policy applies to immediate and
 confirmed entry modes. Caller-supplied evidence is not independently verified.
 """
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal
 
 
@@ -34,6 +35,7 @@ class EntryRiskSnapshot:
     verified_liquidity_quote: Decimal
     emergency_halt: bool
     evidence_verified: bool
+    available_at: datetime | None = None
 
     def __post_init__(self):
         values = (self.equity, self.proposed_notional, self.daily_realized_pnl,
@@ -42,6 +44,10 @@ class EntryRiskSnapshot:
                 or type(self.emergency_halt) is not bool
                 or type(self.evidence_verified) is not bool):
             raise ValueError("snapshot de risco inválido")
+        if self.available_at is not None:
+            if not isinstance(self.available_at, datetime) or self.available_at.utcoffset() is None:
+                raise ValueError("snapshot de risco exige horário de disponibilidade com fuso")
+            object.__setattr__(self, "available_at", self.available_at.astimezone(timezone.utc))
 
 
 def evaluate_entry_risk(limits: EntryRiskLimits, snapshot: EntryRiskSnapshot) -> tuple[str, ...]:

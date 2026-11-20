@@ -158,7 +158,7 @@ class EvidenceReplayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "evidência inválida"):
             replay_with_required_risk(
                 ticks, records, config=self.config, expected_pool="pool-a",
-                risk_limits=limits, risk_by_quote={"q0": risk, "q1": risk},
+                risk_limits=limits, risk_by_quote={tick.quote_id: replace(risk, available_at=tick.at) for tick in ticks},
             )
 
     def test_strict_rejects_invalid_middle_evidence_before_replay(self):
@@ -172,7 +172,7 @@ class EvidenceReplayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "evidência inválida"):
             replay_with_required_risk(
                 ticks, records, config=self.config, expected_pool="pool-a",
-                risk_limits=limits, risk_by_quote={f"q{i}": risk for i in range(4)},
+                risk_limits=limits, risk_by_quote={tick.quote_id: replace(risk, available_at=tick.at) for tick in ticks},
             )
 
     def test_strict_rejects_model_quote_before_replay(self):
@@ -186,7 +186,7 @@ class EvidenceReplayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "evidência inválida"):
             replay_with_required_risk(
                 ticks, records, config=self.config, expected_pool="pool-a",
-                risk_limits=limits, risk_by_quote={f"q{i}": risk for i in range(2)},
+                risk_limits=limits, risk_by_quote={tick.quote_id: replace(risk, available_at=tick.at) for tick in ticks},
             )
 
     def strict(self, ticks, *, snapshot=None, limits=None, as_of=None):
@@ -200,7 +200,8 @@ class EvidenceReplayTests(unittest.TestCase):
                    if as_of is None or tick.at <= as_of}
         return replay_with_required_risk(
             ticks, records, config=self.config, expected_pool="pool-a",
-            risk_limits=limits, risk_by_quote={key: snapshot for key in records}, as_of=as_of,
+            risk_limits=limits, risk_by_quote={tick.quote_id: replace(snapshot, available_at=tick.at)
+                                               for tick in ticks if tick.quote_id in records}, as_of=as_of,
         )
 
     def test_shared_actual_fill_risk_rejects_position_slippage_and_liquidity(self):
@@ -248,8 +249,8 @@ class EvidenceReplayTests(unittest.TestCase):
         limits = EntryRiskLimits(Decimal(".20"), Decimal(".05"), Decimal(100), Decimal(50))
         active = EntryRiskSnapshot(Decimal(1000), Decimal(1), Decimal(0),
                                    Decimal(0), Decimal(2000), False, True)
-        snapshots = {key: active for key in records}
-        snapshots["q3"] = replace(active, emergency_halt=True)
+        snapshots = {tick.quote_id: replace(active, available_at=tick.at) for tick in ticks}
+        snapshots["q3"] = replace(snapshots["q3"], emergency_halt=True)
         result = replay_with_required_risk(
             ticks, records, config=self.config, expected_pool="pool-a",
             risk_limits=limits, risk_by_quote=snapshots,
@@ -281,6 +282,31 @@ class EvidenceReplayTests(unittest.TestCase):
         self.assertEqual(result["excluded_after_cutoff"], 1)
         self.assertEqual(result["verified_ticks"], 2)
         self.assertEqual(len(result["immediate"].fills), 1)
+
+    def test_strict_risk_checks_availability_on_eligible_or_supplied_snapshots(self):
+        tick = self.tick(0, "BUY")
+        record = self.evidence(0, tick=tick)
+        limit = EntryRiskLimits(Decimal(".20"), Decimal(".05"), Decimal(100), Decimal(50))
+        risk = EntryRiskSnapshot(Decimal(1000), Decimal(1), Decimal(0),
+                                 Decimal(0), Decimal(2000), False, True)
+        for entry_allowed in (True, False):
+            for availability, reason in (
+                (None, "sem horário de disponibilidade"),
+                (self.tick(1).at, "indisponível no instante"),
+            ):
+                with self.subTest(entry_allowed=entry_allowed, availability=availability):
+                    with self.assertRaisesRegex(ValueError, reason):
+                        replay_with_required_risk(
+                            [replace(tick, entry_allowed=entry_allowed)], {"q0": record},
+                            config=self.config, expected_pool="pool-a", risk_limits=limit,
+                            risk_by_quote={"q0": replace(risk, available_at=availability)},
+                        )
+        # Non-eligible ticks without a supplied risk record remain valid market context.
+        result = replay_with_required_risk(
+            [replace(tick, entry_allowed=False)], {"q0": record},
+            config=self.config, expected_pool="pool-a", risk_limits=limit, risk_by_quote={},
+        )
+        self.assertEqual(result["verified_ticks"], 1)
 
     def test_model_mode_explicitly_non_executable(self):
         records = {f"q{i}": self.evidence(i, source="MODEL_ESTIMATE_NOT_OBSERVED")

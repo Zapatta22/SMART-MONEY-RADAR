@@ -1,0 +1,36 @@
+name: SMR second one-shot prospective CPMM snapshot
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-prospective-history
+    paths:
+      - .github/workflows/smr-second-prospective-cpmm.yml
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Exactly one bounded Solana public RPC read of the same four accounts
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/capture_prospective_cpmm.py
+      - name: Retain raw response and manifest even for unavailable or same-slot result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-cpmm-prospective-second
+          path: /tmp/smr-prospective-cpmm/
+          retention-days: 7
+          if-no-files-found: error

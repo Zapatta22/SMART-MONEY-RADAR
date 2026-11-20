@@ -334,6 +334,36 @@ class SQLiteGeyserRawStore:
                 raise ValueError("sessão de captura inexistente ou já finalizada")
             return frame_count
 
+    def recover_incomplete_capture_sessions(self, *, source_id: str) -> list[str]:
+        """Mark prior crashed capture attempts; never claim their ledger coverage.
+
+        This uses the existing capture metadata and a single SQLite transaction.
+        Open sessions belong to a previous process at runner startup. Their RAW
+        frames remain intact and their ordering domains are never reused.
+        """
+        _text(source_id, "source_id")
+        with self._connection() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """SELECT stream_id FROM geyser_capture_sessions
+                   WHERE source_id = ? AND finished_at IS NULL
+                   ORDER BY started_at, stream_id""",
+                (source_id,),
+            ).fetchall()
+            for (stream_id,) in rows:
+                count = connection.execute(
+                    """SELECT COUNT(*) FROM geyser_wire_frames
+                       WHERE source_id = ? AND stream_id = ?""",
+                    (source_id, stream_id),
+                ).fetchone()[0]
+                connection.execute(
+                    """UPDATE geyser_capture_sessions SET finished_at = ?,
+                       outcome = 'process_interrupted_unknown', frame_count = ?
+                       WHERE source_id = ? AND stream_id = ? AND finished_at IS NULL""",
+                    (datetime.now(timezone.utc).isoformat(), count, source_id, stream_id),
+                )
+            return [stream_id for (stream_id,) in rows]
+
     def get_capture_session(self, source_id: str, stream_id: str) -> dict | None:
         """Return audit metadata if the archive records how its stream ended."""
         with self._connection() as connection:

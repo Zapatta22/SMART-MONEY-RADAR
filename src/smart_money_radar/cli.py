@@ -75,6 +75,7 @@ def _parser() -> argparse.ArgumentParser:
     paper = subparsers.add_parser("paper-replay", help="simula entradas em observações locais")
     paper.add_argument("scenario", type=Path)
     paper.add_argument("--as-of", help="limita o replay de arquivo à disponibilidade até este instante")
+    paper.add_argument("--quotes", type=Path, help="arquivo de cotações bid/ask independente")
     paper.add_argument("--archive", type=Path, help="lê swaps concluídos de um banco SQLite local")
     paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
     return parser
@@ -126,8 +127,8 @@ def _paper_replay(args: argparse.Namespace) -> None:
     from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, replay_paper
 
     scenario = json.loads(args.scenario.read_text(encoding="utf-8"), parse_float=Decimal)
-    if args.as_of is not None and args.archive is None:
-        raise ValueError("--as-of exige --archive")
+    if args.archive is None and (args.as_of is not None or args.quotes is not None):
+        raise ValueError("--as-of e --quotes exigem --archive")
     as_of = datetime.fromisoformat(args.as_of) if args.as_of is not None else None
     if as_of is not None:
         if as_of.utcoffset() is None:
@@ -168,12 +169,36 @@ def _paper_replay(args: argparse.Namespace) -> None:
             ticks, skipped = ticks_from_swap_archive(
                 rows, quote_mint=scope["quote_mint"], min_confidence=decimal(market["min_confidence"]),
             )
+            quote_report = None
+            if args.quotes is not None:
+                from smart_money_radar.domain.paper_quote_archive import ticks_from_quote_archive
+
+                quote_archive = json.loads(args.quotes.read_text(encoding="utf-8"), parse_float=Decimal)
+                source = quote_archive["source"]
+                if (not isinstance(source, str) or not source.strip()
+                        or any(quote_archive[key] != scope[key]
+                               for key in ("program", "base_mint", "quote_mint"))):
+                    raise ValueError("fonte ou mercado das cotações não corresponde ao cenário")
+                ticks, selected_quotes = ticks_from_quote_archive(
+                    quote_archive["quotes"], ticks, signal_ttl_seconds=market["signal_ttl_seconds"],
+                    as_of=as_of,
+                )
+                canonical_quotes = json.dumps(
+                    selected_quotes, sort_keys=True, separators=(",", ":"), default=str,
+                ).encode()
+                quote_report = {
+                    "source": source, "quotes": len(selected_quotes),
+                    "sha256": hashlib.sha256(canonical_quotes).hexdigest(),
+                    "signal_ttl_seconds": market["signal_ttl_seconds"],
+                }
             canonical_rows = json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
             archive_report = {
                 **scope, "ticks": len(ticks), "skipped_operation_ids": skipped,
                 "as_of": as_of.isoformat() if as_of is not None else None,
                 "receipts_sha256": hashlib.sha256(canonical_rows).hexdigest(),
             }
+            if quote_report is not None:
+                archive_report["quote_archive"] = quote_report
     except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
         raise ValueError("arquivo de cenário ou dados do paper-replay inválidos") from exc
     modes = ("immediate", "confirmed") if args.mode == "both" else (args.mode,)

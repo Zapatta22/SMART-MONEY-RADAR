@@ -83,3 +83,27 @@ omitidas por horário inválido, repetido ou regressivo. O instante do sinal
 evento de mercado ocorreu estritamente depois da decisão correspondente.
 Esses dados ainda não representam cotações executáveis, liquidez geral do
 mercado ou todos os filtros de risco da operação.
+
+## Sinais arquivados com cotações independentes
+
+Use `--archive monitor.sqlite --quotes quotes.json` e acrescente à seção
+`market` do cenário `"signal_ttl_seconds": 30` (entre 1 e 86400).
+O arquivo de cotações contém uma `source` explícita, os mesmos identificadores
+`program`, `base_mint` e `quote_mint` do cenário e uma lista `quotes`.
+Cada linha tem `quote_id` único, `market_at` e `available_at` em ISO 8601 com
+fuso, `bid`, `ask`, `bid_size`, `ask_size` e `volume`. As duas séries de
+horários crescem estritamente. Os tamanhos estão em unidades do ativo base,
+o preço em moeda de cotação por unidade e o volume em moeda de cotação.
+
+O sinal do swap só é apresentado ao simulador na primeira cotação cujo
+evento de mercado aconteceu depois da chegada do sinal. Sinais vencidos
+são descartados. Sinais de compra e venda concorrentes bloqueiam entrada.
+O modo confirmado compara o preço médio bid/ask e o volume. O fill seguinte
+usa o ask para compra e o bid para venda, com slippage e taxa configurados.
+Uma entrada acima da profundidade informada é rejeitada, e uma saída
+aguarda profundidade suficiente. Cada fill indica a cotação usada.
+
+O relatório inclui fonte e SHA-256 da seleção de cotações. O cutoff
+`--as-of` limita swaps e cotações pelo momento de disponibilidade.
+Cotações e profundidade são fornecidas pelo arquivo e a execução continua
+simulada. O modelo opera com fills integrais.

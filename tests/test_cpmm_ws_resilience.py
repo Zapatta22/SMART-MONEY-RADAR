@@ -110,10 +110,14 @@ class ResilienceTests(unittest.TestCase):
 
     def test_raw_hash_conflict_in_same_sequence_is_rejected(self):
         self.s._record(b'{"a":1}',"solana_ws_jsonrpc")
-        with self.assertRaises((ValueError,RuntimeError)):
-            self.store.append_wire_frame(source_id="test-solana-ws",
+        receipt=self.store.append_wire_frame(source_id="test-solana-ws",
                 stream_id="conn1",ordering_domain_id="conn1",stream_sequence=0,
                 payload=b'{"a":2}',frame_kind="solana_ws_jsonrpc")
+        self.assertNotEqual(receipt.status,"accepted")
+        self.assertNotEqual(receipt.status,"duplicate")
+        self.assertEqual(
+            self.store.verify_wire_session("test-solana-ws","conn1","conn1")["verified_frames"],1)
+        self.assertEqual(self.store.get_wire_frame(receipt.frame_id),b'{"a":1}') if receipt.frame_id else None
 
     def test_sqlite_interruption_does_not_advance_frames(self):
         self.s._record(b'{"a":1}',"solana_ws_jsonrpc")

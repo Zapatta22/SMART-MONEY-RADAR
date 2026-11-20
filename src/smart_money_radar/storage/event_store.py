@@ -615,6 +615,29 @@ class SQLiteEventStore:
             columns = tuple(item[0] for item in cursor.description)
             return [dict(zip(columns, row)) for row in cursor]
 
+    def list_wallet_signal_receipts(
+        self, *, wallet: str, program: str, base_mint: str, quote_mint: str, pool: str,
+    ) -> list[dict]:
+        """Read scoped first-publication receipts with their transaction identity."""
+        with self._connection_scope() as connection:
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(swap_replay_archive)")}
+            if "pool_address" not in columns:
+                raise ValueError("arquivo de swaps sem proveniência de pool para sinais")
+            cursor = connection.execute(
+                """SELECT archive.operation_id, swap.signature, archive.input_mint, archive.output_mint,
+                          archive.side, archive.confidence, archive.occurred_at, archive.available_at
+                   FROM swap_replay_archive AS archive
+                   JOIN swap_observations AS swap ON swap.operation_id = archive.operation_id
+                                                 AND swap.wallet_address = archive.wallet_address
+                   WHERE archive.wallet_address = ? AND archive.program_id = ? AND archive.pool_address = ?
+                     AND ((archive.input_mint = ? AND archive.output_mint = ?)
+                       OR (archive.input_mint = ? AND archive.output_mint = ?))
+                   ORDER BY archive.receipt_id""",
+                (wallet, program, pool, base_mint, quote_mint, quote_mint, base_mint),
+            )
+            names = tuple(item[0] for item in cursor.description)
+            return [dict(zip(names, row)) for row in cursor]
+
     def get_swap_bundle(self, operation_id: str) -> dict | None:
         """Recupera contratos persistidos sem perder precisão decimal."""
         with self._connection_scope() as connection:

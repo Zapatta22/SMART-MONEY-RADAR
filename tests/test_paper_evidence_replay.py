@@ -149,6 +149,34 @@ class EvidenceReplayTests(unittest.TestCase):
         self.assertFalse(result["immediate"].fills)
         self.assertFalse(result["confirmed"].fills)
 
+    def test_strict_rejects_invalid_middle_evidence_before_replay(self):
+        ticks = [self.tick(i, "BUY" if i == 0 else "NONE") for i in range(4)]
+        records = {f"q{i}": self.evidence(i) for i in range(4)}
+        records["q1"] = self.evidence(1, available_minute=3)
+        limits = EntryRiskLimits(Decimal("0.2"), Decimal("0.05"),
+                                 Decimal("100"), Decimal("1000"))
+        risk = EntryRiskSnapshot(Decimal("1000"), Decimal("100"), Decimal("0"),
+                                 Decimal("20"), Decimal("2000"), False, True)
+        with self.assertRaisesRegex(ValueError, "evidência inválida"):
+            replay_with_required_risk(
+                ticks, records, config=self.config, expected_pool="pool-a",
+                risk_limits=limits, risk_by_quote={f"q{i}": risk for i in range(4)},
+            )
+
+    def test_strict_rejects_model_quote_before_replay(self):
+        ticks = [self.tick(i) for i in range(2)]
+        records = {f"q{i}": self.evidence(i) for i in range(2)}
+        records["q1"] = self.evidence(1, source="MODEL_ESTIMATE_NOT_OBSERVED")
+        limits = EntryRiskLimits(Decimal("0.2"), Decimal("0.05"),
+                                 Decimal("100"), Decimal("1000"))
+        risk = EntryRiskSnapshot(Decimal("1000"), Decimal("100"), Decimal("0"),
+                                 Decimal("20"), Decimal("2000"), False, True)
+        with self.assertRaisesRegex(ValueError, "evidência inválida"):
+            replay_with_required_risk(
+                ticks, records, config=self.config, expected_pool="pool-a",
+                risk_limits=limits, risk_by_quote={f"q{i}": risk for i in range(2)},
+            )
+
     def test_model_mode_explicitly_non_executable(self):
         records = {f"q{i}": self.evidence(i, source="MODEL_ESTIMATE_NOT_OBSERVED")
                    for i in range(4)}

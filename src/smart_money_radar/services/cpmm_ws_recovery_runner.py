@@ -52,7 +52,8 @@ class CpmmRecoveryRunner:
         source=self.recovery.source_id
         # A previous process may have died with an open journal session.
         # Close its metadata as incomplete, never reuse that ordering domain.
-        self.recovery.store.recover_incomplete_capture_sessions(source_id=source)
+        self.manifest["recovered_incomplete_session_ids"] = (
+            self.recovery.store.recover_incomplete_capture_sessions(source_id=source))
         prev_failure=None
         failure_phase="connect"
         try:
@@ -85,7 +86,7 @@ class CpmmRecoveryRunner:
                 report["rpc_baseline_response_raw"]=None
                 connection_healthy=False
                 failure_phase="connect"
-                request_started_in_session=False
+                failure_record=None
                 try:
                     async with self.ws_connect() as ws:
                         failure_phase="subscribe"
@@ -111,9 +112,11 @@ class CpmmRecoveryRunner:
                                 report["baseline_request_sha256"]=sha256(req).hexdigest()
                                 report["rpc_baseline_request_raw"]=req.decode()
                                 report["baseline_attempts"]=1
+                                failure_phase="persist"
+                                session._record(req,"solana_rpc_baseline_request")
+                                failure_phase="baseline"
                                 self.manifest["rpc_baseline_calls"]+=1
                                 baseline_task=asyncio.create_task(self.rpc_fetch(req))
-                                request_started_in_session=True
                                 # Let the baseline request enter its coroutine before
                                 # the next WS receive can immediately disconnect.
                                 await asyncio.sleep(0)
@@ -172,18 +175,19 @@ class CpmmRecoveryRunner:
                     report["error"]={"type":err.error_type,"phase":err.phase,
                         "message":err.error_message,"classification":err.failure}
                     self.manifest["gaps"].append(err.__dict__)
-                    # Close the journal before opening a new transport.
-                    self.recovery.note_failure(err)
+                    # Keep the originating journal open just long enough to
+                    # archive a completed RPC result. Never validate on disconnect.
+                    failure_record=err
                     prev_failure=err
                 finally:
                     if baseline_task is not None:
                         # Never wait indefinitely for an RPC after WS disconnect.
                         # The result remains bound to this originating session.
-                        if not baseline_task.done():
-                            baseline_task.cancel()
                         try:
+                            # Bounded drain: late RPC bytes still belong to this
+                            # journal, not to the next WebSocket session.
                             requested,available,response,error=await asyncio.wait_for(
-                                baseline_task,timeout=0.1)
+                                baseline_task,timeout=max(0.01,min(11.,deadline-self.clock())))
                             report["baseline_requested_at"]=requested.isoformat()
                             report["baseline_available_at"]=available.isoformat()
                             report["baseline_rpc_error"]=error
@@ -193,13 +197,18 @@ class CpmmRecoveryRunner:
                                 # Persist the exact response while this session remains active.
                                 # A late response from an old or closed socket is not eligible.
                                 if session.active:
+                                    failure_phase="persist"
                                     session._record(response,"solana_rpc_baseline_response")
+                                    failure_phase="baseline"
                                 else:
                                     report["baseline_rejection"]="origin_session_closed"
                                 report["baseline_response_sha256"]=sha256(response).hexdigest()
                                 report["rpc_baseline_response_raw"]=response.decode()
                                 if not session.active:
                                     raise ValueError("baseline_origin_session_not_active")
+                                if failure_record is not None:
+                                    report["baseline_rejection"]="websocket_disconnected"
+                                    raise ValueError("baseline_ws_session_disconnected")
                                 if available>self.now():
                                     raise ValueError("rpc_baseline_after_cutoff")
                                 if error is not None:
@@ -226,13 +235,21 @@ class CpmmRecoveryRunner:
                             report["baseline_error"]="RPC_TIMEOUT"
                         except Exception as exc:
                             report["baseline_error"]=type(exc).__name__
+                            if failure_phase=="persist":
+                                report["persistence_error"]=type(exc).__name__
+                                self.manifest["stop_reason"]="persistence_failed_no_retry"
+                                connection_healthy=False
                         if report.get("baseline_error") or report.get("baseline_rpc_error"):
                             report["baseline_status"]="UNKNOWN"
                             report["baseline_verified_as_snapshot"]=False
                         if baseline_task.done() and baseline_task.cancelled():
                             report.setdefault("baseline_error","CancelledError")
-                    if session.active and connection_healthy:
+                    if failure_record is not None and session.active:
+                        self.recovery.note_failure(failure_record)
+                    elif session.active and connection_healthy:
                         session.finish("bounded_end")
+                    elif session.active:
+                        session.finish("interrupted_unknown")
                     report["journal"]=self.recovery.store.get_capture_session(source,scope)
                     report["journal_verified"]=None
                     try:
@@ -242,6 +259,8 @@ class CpmmRecoveryRunner:
                         report["journal_error"]="tainted_or_interrupted"
                     report["coverage"]="UNKNOWN"
                     report["notification_signatures_attested"]=False
+                if self.manifest["stop_reason"]=="persistence_failed_no_retry":
+                    break
                 if connection_healthy:
                     self.manifest["stop_reason"]="bounded_session_end"
                     break

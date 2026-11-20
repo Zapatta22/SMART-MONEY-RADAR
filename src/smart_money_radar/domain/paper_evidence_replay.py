@@ -1,18 +1,19 @@
 """Evidence-gated wrapper around both existing SMR paper entry modes.
 
-No change to the trading engine or its existing historical CLI. This wrapper
-is opt-in until archive evidence and end-to-end acceptance are validated.
+The strict wrapper checks the actual order and account state at simulated fill.
+Legacy exploratory replay retains its input-filtering behavior.
 """
 from datetime import datetime, timezone
 from dataclasses import replace
+from decimal import Decimal
 
 from smart_money_radar.domain.paper_entry_risk_policy import (
     EntryRiskLimits, EntryRiskSnapshot, evaluate_entry_risk,
 )
 
-from smart_money_radar.domain.paper_evidence_gate import gate_paper_evidence
+from smart_money_radar.domain.paper_evidence_gate import gate_paper_evidence, verify_paper_quote_tick
 from smart_money_radar.domain.paper_replay import (
-    PaperConfig, ReplayTick, replay_paper, compare_paper_reports,
+    BPS, PaperConfig, PaperEntryCandidate, ReplayTick, replay_paper, compare_paper_reports,
 )
 
 
@@ -21,7 +22,8 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
                          require_observed_quote: bool = True,
                          as_of: datetime | None = None,
                          risk_limits: EntryRiskLimits | None = None,
-                         risk_by_quote: dict | None = None):
+                         risk_by_quote: dict | None = None,
+                         _require_fill_risk: bool = False):
     """Run both entry modes on the identical fail-closed evidence-filtered ticks.
 
     Every replay observation must have evidence keyed by quote_id. Missing or
@@ -66,8 +68,10 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
             continue
         # Never let an unverified price affect fills, stop/take-profit,
         # valuation, confirmation or the execution of a pending sell.
+        risk = risk_by_quote.get(tick.quote_id) if risk_by_quote is not None else None
+        if _require_fill_risk and isinstance(risk, EntryRiskSnapshot) and risk.emergency_halt:
+            tick = replace(tick, halted=True)
         if risk_limits is not None and tick.entry_allowed:
-            risk = risk_by_quote.get(tick.quote_id)
             if not isinstance(risk, EntryRiskSnapshot):
                 rejected_risk_ticks += 1
                 tick = replace(tick, entry_allowed=False)
@@ -77,8 +81,17 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
                     rejected_risk_ticks += 1
                     tick = replace(tick, entry_allowed=False)
         verified.append(tick)
-    immediate = replay_paper(verified, config=config, mode="immediate")
-    confirmed = replay_paper(verified, config=config, mode="confirmed")
+    def guard(candidate: PaperEntryCandidate) -> str | None:
+        if risk_limits is None or risk_by_quote is None:
+            return "risk_snapshot_missing_at_fill"
+        risk = risk_by_quote.get(candidate.tick.quote_id)
+        if not isinstance(risk, EntryRiskSnapshot):
+            return "risk_snapshot_missing_at_fill"
+        return _fill_risk_rejection(candidate, risk_limits, risk)
+
+    entry_guard = guard if _require_fill_risk else None
+    immediate = replay_paper(verified, config=config, mode="immediate", entry_guard=entry_guard)
+    confirmed = replay_paper(verified, config=config, mode="confirmed", entry_guard=entry_guard)
     return {
         "rejected_evidence_ticks": rejected_evidence_ticks,
         "excluded_after_cutoff": excluded_after_cutoff,
@@ -90,6 +103,32 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
         "comparison": compare_paper_reports(immediate, confirmed),
         "evidence_policy": "OBSERVED_ONLY" if require_observed_quote else "MODEL_ALLOWED_PAPER_ONLY",
     }
+
+
+def _fill_risk_rejection(
+    candidate: PaperEntryCandidate, limits: EntryRiskLimits, risk: EntryRiskSnapshot,
+) -> str | None:
+    equity = min(risk.equity, candidate.equity)
+    daily_pnl = min(risk.daily_realized_pnl, candidate.daily_realized_pnl)
+    decision_price = candidate.decision_tick.ask or candidate.decision_tick.price
+    adverse_bps = max(Decimal(0), (candidate.price - decision_price) * BPS / decision_price)
+    if candidate.tick.ask is None or candidate.tick.ask_size is None:
+        return "quote_depth_missing"
+    liquidity = min(risk.verified_liquidity_quote, candidate.tick.ask_size * candidate.tick.ask)
+    current = replace(
+        risk, equity=equity, proposed_notional=candidate.budget, daily_realized_pnl=daily_pnl,
+        estimated_slippage_bps=max(risk.estimated_slippage_bps, adverse_bps),
+        verified_liquidity_quote=liquidity,
+    )
+    reasons = evaluate_entry_risk(limits, current)
+    if reasons:
+        return reasons[0]
+    loss_base = min(equity, candidate.day_start_equity)
+    if daily_pnl <= -loss_base * limits.max_daily_loss_fraction:
+        return "daily_loss_limit"
+    if liquidity < candidate.budget:
+        return "insufficient_order_liquidity"
+    return None
 
 
 def replay_with_required_risk(ticks: list[ReplayTick], evidence_by_quote: dict,
@@ -106,35 +145,40 @@ def replay_with_required_risk(ticks: list[ReplayTick], evidence_by_quote: dict,
         raise ValueError("política de risco obrigatória")
     if not isinstance(risk_by_quote, dict):
         raise ValueError("snapshots de risco obrigatórios")
-    # Reject gaps rather than stitching a pending order across missing ticks.
     if not isinstance(ticks, list) or not isinstance(evidence_by_quote, dict):
         raise ValueError("histórico protegido inválido")
+    if as_of is not None and (not isinstance(as_of, datetime) or as_of.utcoffset() is None):
+        raise ValueError("as_of exige datetime com fuso")
+    selected = []
+    seen_quotes = set()
+    previous_at = None
     for tick in ticks:
-        if not isinstance(tick, ReplayTick) or not tick.quote_id:
+        if not isinstance(tick, ReplayTick):
+            raise ValueError("tick inválido")
+        if as_of is not None and tick.at > as_of:
+            continue
+        if not tick.quote_id:
             raise ValueError("tick sem identidade de cotação")
+        if previous_at is not None and tick.at <= previous_at:
+            raise ValueError("histórico protegido fora de ordem")
+        if tick.quote_id in seen_quotes:
+            raise ValueError("cotação duplicada no histórico protegido")
+        seen_quotes.add(tick.quote_id)
+        previous_at = tick.at
         records = evidence_by_quote.get(tick.quote_id)
         if not isinstance(records, list) or not records:
             raise ValueError("lacuna de evidência no histórico protegido")
         if tick.entry_allowed and not isinstance(risk_by_quote.get(tick.quote_id), EntryRiskSnapshot):
             raise ValueError("lacuna de risco no histórico protegido")
-    # Preflight every observation: an invalid record must not be silently
-    # discarded while a pending order later fills at another price.
-    previous_at = None
-    for tick in ticks:
-        if previous_at is not None and tick.at <= previous_at:
-            raise ValueError("histórico protegido fora de ordem")
-        previous_at = tick.at
-        stamp = tick.at.astimezone(timezone.utc).isoformat()
         try:
-            gate_paper_evidence(
-                signal_at=stamp, decision_at=stamp,
-                evidence=evidence_by_quote[tick.quote_id],
-                expected_pool=expected_pool, require_observed_quote=True,
-            )
+            verify_paper_quote_tick(tick, records, expected_pool)
         except ValueError as exc:
-            raise ValueError("evidência inválida no histórico protegido") from exc
-    return replay_with_evidence(
-        ticks, evidence_by_quote, config=config, expected_pool=expected_pool,
-        require_observed_quote=True, as_of=as_of,
-        risk_limits=risk_limits, risk_by_quote=risk_by_quote,
+            raise ValueError(f"evidência inválida no histórico protegido: {exc}") from exc
+        selected.append(tick)
+    result = replay_with_evidence(
+        selected, evidence_by_quote, config=config, expected_pool=expected_pool,
+        require_observed_quote=True, risk_limits=risk_limits, risk_by_quote=risk_by_quote,
+        _require_fill_risk=True,
     )
+    result["excluded_after_cutoff"] = len(ticks) - len(selected)
+    return result

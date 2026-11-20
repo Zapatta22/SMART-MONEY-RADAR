@@ -1,4 +1,8 @@
+import base64
+import hashlib
+import json
 import unittest
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -16,24 +20,34 @@ class EvidenceReplayTests(unittest.TestCase):
         )
 
     def tick(self, minute, signal="NONE"):
+        price = Decimal("10") + Decimal(minute) / 10
         return ReplayTick(
             at=self.start + timedelta(minutes=minute),
             market_at=self.start + timedelta(minutes=minute),
-            price=Decimal("10") + Decimal(minute) / 10,
+            price=price,
             volume=Decimal(100 + minute * 10),
+            bid=price, ask=price, ask_size=Decimal(200),
             signal=signal, entry_allowed=True, quote_id=f"q{minute}",
         )
 
     def evidence(self, minute, *, source="OBSERVED_MARKET_QUOTE",
-                 available_minute=None):
+                 available_minute=None, tick=None):
+        tick = self.tick(minute) if tick is None else tick
+        observed = (tick.market_at or tick.at).isoformat()
+        available = (tick.at if available_minute is None else self.tick(available_minute).at).isoformat()
+        raw = json.dumps({
+            "quote_id": tick.quote_id, "pool": "pool-a",
+            "observed_at": observed, "available_at": available,
+            "price": str(tick.price), "volume": str(tick.volume),
+            **{name: str(value) if (value := getattr(tick, name)) is not None else None
+               for name in ("bid", "ask", "bid_size", "ask_size")},
+        }).encode()
         return [{
             "evidence_id": f"e{minute}", "pool": "pool-a",
-            "observed_at": (self.start + timedelta(minutes=minute)).isoformat(),
-            "available_at": (self.start + timedelta(
-                minutes=minute if available_minute is None else available_minute
-            )).isoformat(),
-            "source": source,
-            "is_observed_quote": source == "OBSERVED_MARKET_QUOTE",
+            "observed_at": observed, "available_at": available,
+            "source": source, "is_observed_quote": source == "OBSERVED_MARKET_QUOTE",
+            "raw_capture_base64": base64.b64encode(raw).decode(),
+            "raw_capture_sha256": hashlib.sha256(raw).hexdigest(),
         }]
 
     def replay(self, evidence, **kwargs):
@@ -174,6 +188,71 @@ class EvidenceReplayTests(unittest.TestCase):
                 ticks, records, config=self.config, expected_pool="pool-a",
                 risk_limits=limits, risk_by_quote={f"q{i}": risk for i in range(2)},
             )
+
+    def strict(self, ticks, *, snapshot=None, limits=None, as_of=None):
+        snapshot = snapshot or EntryRiskSnapshot(
+            Decimal("1000"), Decimal("1"), Decimal("0"),
+            Decimal("0"), Decimal("2000"), False, True,
+        )
+        limits = limits or EntryRiskLimits(Decimal("0.2"), Decimal("0.02"),
+                                           Decimal("100"), Decimal("50"))
+        records = {tick.quote_id: self.evidence(i, tick=tick) for i, tick in enumerate(ticks)
+                   if as_of is None or tick.at <= as_of}
+        return replay_with_required_risk(
+            ticks, records, config=self.config, expected_pool="pool-a",
+            risk_limits=limits, risk_by_quote={key: snapshot for key in records}, as_of=as_of,
+        )
+
+    def test_shared_actual_fill_risk_rejects_position_slippage_and_liquidity(self):
+        ticks = [self.tick(0, "BUY"), self.tick(1), self.tick(2)]
+        for limits, reason in (
+            (EntryRiskLimits(Decimal(".05"), Decimal(".05"), Decimal(200), Decimal(50)),
+             "position_limit"),
+            (EntryRiskLimits(Decimal(".20"), Decimal(".05"), Decimal(50), Decimal(50)),
+             "slippage_limit"),
+        ):
+            result = self.strict(ticks, limits=limits)
+            for mode in ("immediate", "confirmed"):
+                self.assertFalse(result[mode].fills)
+                self.assertEqual(result[mode].decisions[-1].reason, reason)
+        snapshot = EntryRiskSnapshot(Decimal(1000), Decimal(1), Decimal(0),
+                                     Decimal(0), Decimal(75), False, True)
+        result = self.strict(ticks, snapshot=snapshot)
+        for mode in ("immediate", "confirmed"):
+            self.assertFalse(result[mode].fills)
+            self.assertEqual(result[mode].decisions[-1].reason, "insufficient_order_liquidity")
+
+    def test_strict_fill_rejects_missing_bid_ask_or_depth(self):
+        ticks = [self.tick(0, "BUY"), replace(self.tick(1), ask_size=None),
+                 replace(self.tick(2), ask_size=None)]
+        result = self.strict(ticks)
+        for mode in ("immediate", "confirmed"):
+            self.assertFalse(result[mode].fills)
+            self.assertEqual(result[mode].decisions[-1].reason, "quote_depth_missing")
+
+    def test_daily_loss_uses_actual_closed_pnl_and_resets_at_utc_midnight(self):
+        ticks = [self.tick(0, "BUY"), self.tick(1), self.tick(2),
+                 replace(self.tick(3, "SELL"), price=Decimal(8), bid=Decimal(8), ask=Decimal(8)),
+                 replace(self.tick(4), price=Decimal(8), bid=Decimal(8), ask=Decimal(8)),
+                 self.tick(5, "BUY"), self.tick(6), self.tick(7)]
+        result = self.strict(ticks)
+        for mode in ("immediate", "confirmed"):
+            self.assertEqual([fill.side for fill in result[mode].fills], ["BUY", "SELL"])
+            self.assertEqual(result[mode].decisions[-1].reason, "daily_loss_limit")
+        next_day = ticks[:5] + [
+            replace(tick, at=tick.at + timedelta(days=1), market_at=tick.market_at + timedelta(days=1))
+            for tick in ticks[5:]
+        ]
+        result = self.strict(next_day)
+        for mode in ("immediate", "confirmed"):
+            self.assertEqual([fill.side for fill in result[mode].fills], ["BUY", "SELL", "BUY"])
+
+    def test_strict_cutoff_ignores_missing_future_records(self):
+        ticks = [self.tick(0, "BUY"), self.tick(1), self.tick(2)]
+        result = self.strict(ticks, as_of=ticks[1].at)
+        self.assertEqual(result["excluded_after_cutoff"], 1)
+        self.assertEqual(result["verified_ticks"], 2)
+        self.assertEqual(len(result["immediate"].fills), 1)
 
     def test_model_mode_explicitly_non_executable(self):
         records = {f"q{i}": self.evidence(i, source="MODEL_ESTIMATE_NOT_OBSERVED")

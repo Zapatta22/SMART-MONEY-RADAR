@@ -63,6 +63,24 @@ class EvidenceReplayTests(unittest.TestCase):
         self.assertFalse(result["immediate"].fills)
         self.assertFalse(result["confirmed"].fills)
 
+    def test_unverified_future_price_cannot_fill_pending_buy(self):
+        records = {"q0": self.evidence(0), "q2": self.evidence(2),
+                   "q3": self.evidence(3)}
+        result = self.replay(records)
+        fills = result["immediate"].fills
+        self.assertTrue(fills)
+        self.assertEqual(fills[0].filled_at, self.start + timedelta(minutes=2))
+        self.assertEqual(result["rejected_evidence_ticks"], 1)
+
+    def test_unverified_price_cannot_trigger_exit_or_valuation(self):
+        records = {"q0": self.evidence(0), "q1": self.evidence(1)}
+        result = self.replay(records)
+        self.assertEqual(result["verified_ticks"], 2)
+        self.assertEqual(result["rejected_evidence_ticks"], 2)
+        self.assertEqual(result["immediate"].final_equity,
+                         self.config.initial_cash - Decimal("100")
+                         + result["immediate"].open_quantity * Decimal("10.1"))
+
     def test_model_mode_explicitly_non_executable(self):
         records = {f"q{i}": self.evidence(i, source="MODEL_ESTIMATE_NOT_OBSERVED")
                    for i in range(4)}

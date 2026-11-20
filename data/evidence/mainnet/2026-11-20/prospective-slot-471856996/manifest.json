@@ -1,0 +1,37 @@
+{
+  "account_sha256": [
+    "01a89cd7b4114fe4aa870b83fcb930a511ab9472b69d488af572a0d5b47933f1",
+    "be8d13d1a6def925af32187937fde9ef21d2d7ca5efb1c6e1fd6611b3f12cfe1",
+    "108f350ce93f977ecee0cef0f310210b928c20f9e1f8cad9b543af9323f0432d",
+    "70fcc7bb6b6d9ddbf7379d2900014c40c20e43c086ff25002d55dbbd2d2ff4ed"
+  ],
+  "available_at": "2026-11-20T19:37:10.344983+00:00",
+  "context_slot": 471856996,
+  "creator_fee_rate_at_collection": 500,
+  "economic_execution_authorized": false,
+  "effective_input_raw_at_collection": 76473066869631,
+  "effective_output_raw_at_collection": 257014075604,
+  "endpoint": "https://api.mainnet-beta.solana.com",
+  "historical_original_swap_state_verified": false,
+  "input_vault_raw_at_collection": 76503529653334,
+  "observed_at": "2026-11-20T19:37:10.132099+00:00",
+  "original_pool": "CqvMZmWDvEufa5rzkubidyR4zMDqDPoLjAtsW6wGsPMu",
+  "original_signature": "23n2r5iEcCJkPZ4G1vkTdBc8eUn3CgEWqtdxz4J4SQnEXnuiwJaP39kKK3NCHJPPsFAq8CiSjRLK5QA4JqUkzLLM",
+  "original_slot": 471039497,
+  "output_vault_raw_at_collection": 257443240033,
+  "pre_swap_instruction_order_proven": false,
+  "provider_authenticated": false,
+  "purpose": "BASELINE_AFTER_ORIGINAL_SWAP_NOT_HISTORICAL",
+  "reasons": [
+    "instruction_level_order_not_attested",
+    "provider_independent_attestation_missing",
+    "snapshot_after_original_swap_not_historical"
+  ],
+  "request_sha256": "2ee9db161ff7928efee3e21ac4ac93d63daeec3cab22838a94c582b1a10ed718",
+  "requested_commitment": "finalized",
+  "requests_attempted": 1,
+  "response_sha256": "2645d85a94cdd728f7485929b59fbdd475a1d200cb403c8f4a893e50a8f44562",
+  "schema": "smr.prospective-cpmm.v1",
+  "status": "RPC_DECLARED_PROSPECTIVE_ONLY",
+  "trade_fee_rate_at_collection": 2500
+}

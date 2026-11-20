@@ -144,7 +144,7 @@ class RealCpmmSwapEventTests(unittest.TestCase):
             logs=x["result"]["meta"]["logMessages"]
             event=bytearray(self.event_raw)
             off=8+32+6*8+1+64
-            event[off:off+8]=(49318695).to_bytes(8,"little")
+            event[off:off+8]=(49318694+1000000).to_bytes(8,"little")
             logs[logs.index("Program data: "+self.event_encoded)]="Program data: "+base64.b64encode(event).decode()
         with self.assertRaisesRegex(ValueError,"econômica"):
             self.modified(bad)

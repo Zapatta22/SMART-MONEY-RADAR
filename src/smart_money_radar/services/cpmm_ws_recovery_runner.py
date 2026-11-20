@@ -25,10 +25,13 @@ class CpmmRecoveryRunner:
     def __init__(self, recovery:BoundedCpmmRecovery, *,
                  ws_connect, rpc_fetch, snapshot_identity:dict,
                  duration_seconds:float=75., max_frames:int=80,
-                 sleep=asyncio.sleep, clock=time.monotonic,
+                 sleep=asyncio.sleep, clock=time.monotonic, rpc_timeout_seconds:float=12.,
                  now=lambda:datetime.now(timezone.utc)):
         if not 1<=duration_seconds<=600 or not 4<=max_frames<=1000:
             raise ValueError("bounded session required")
+        if not 0 < rpc_timeout_seconds <= 120:
+            raise ValueError("bounded RPC timeout required")
+        self.rpc_timeout_seconds=rpc_timeout_seconds
         self.recovery=recovery
         self.ws_connect=ws_connect
         self.rpc_fetch=rpc_fetch
@@ -76,6 +79,8 @@ class CpmmRecoveryRunner:
                 self.manifest["connections"].append(report)
                 raw_notifications=[]
                 baseline_task=None
+                baseline_scope=None
+                baseline_cutoff=None
                 report["websocket_requests"]=[]
                 report["wire_raw_frames_sha256"]=[]
                 report["rpc_baseline_request_raw"]=None
@@ -108,7 +113,11 @@ class CpmmRecoveryRunner:
                                 report["rpc_baseline_request_raw"]=req.decode()
                                 report["baseline_attempts"]=1
                                 self.manifest["rpc_baseline_calls"]+=1
-                                baseline_task=asyncio.create_task(self.rpc_fetch(req))
+                                baseline_scope=scope
+                                baseline_cutoff=self.now()
+                                baseline_task=asyncio.create_task(
+                                    asyncio.wait_for(self.rpc_fetch(req), timeout=
+                                        min(self.rpc_timeout_seconds, max(.01, deadline-self.clock()))))
                             failure_phase="receive"
                             try:
                                 message=await asyncio.wait_for(ws.recv(),
@@ -164,7 +173,26 @@ class CpmmRecoveryRunner:
                 finally:
                     if baseline_task is not None:
                         try:
-                            requested,available,response,error=await baseline_task
+                            # A completed RPC belongs only to its originating WS session.
+                            # Give an already-scheduled fake/fast RPC one event-loop turn.
+                            if not baseline_task.done():
+                                await asyncio.sleep(0)
+                            if baseline_task.done():
+                                requested,available,response,error=await baseline_task
+                            else:
+                                baseline_task.cancel()
+                                try:
+                                    await baseline_task
+                                except (asyncio.CancelledError, asyncio.TimeoutError):
+                                    pass
+                                report["baseline_error"]="cancelled_after_ws_end"
+                                raise ValueError("baseline_cancelled_after_ws_end")
+                            if baseline_scope!=scope or not connection_healthy or not session.active:
+                                report["baseline_error"]="stale_session_result"
+                                raise ValueError("baseline_stale_session")
+                            if available>self.now() or self.clock()>=deadline:
+                                report["baseline_error"]="response_after_cutoff"
+                                raise ValueError("baseline_after_cutoff")
                             report["baseline_requested_at"]=requested.isoformat()
                             report["baseline_available_at"]=available.isoformat()
                             report["baseline_rpc_error"]=error

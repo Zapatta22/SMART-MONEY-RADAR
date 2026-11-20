@@ -93,7 +93,7 @@ class SQLiteGeyserRawStore:
     recorded, including conflicting deliveries.
     """
 
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
 
     def __init__(self, database_path: Path | str, *, read_only: bool = False) -> None:
         self.database_path = str(database_path)
@@ -104,7 +104,7 @@ class SQLiteGeyserRawStore:
                 raise ValueError("a leitura do journal exige um arquivo SQLite")
             with self._connection() as connection:
                 row = connection.execute("SELECT MAX(version) FROM geyser_schema_migrations").fetchone()
-                if row[0] not in (3, self.SCHEMA_VERSION):
+                if row[0] not in (3, 4, self.SCHEMA_VERSION):
                     raise ValueError("schema SQLite incompatível com a leitura do journal Yellowstone")
         elif self.database_path == ":memory:":
             self._memory_connection = sqlite3.connect(":memory:")
@@ -286,7 +286,9 @@ class SQLiteGeyserRawStore:
                 ON geyser_wire_frames(source_id, stream_id, frame_id)
             """)
 
-            if current < 4:
+            if current < 4 or not connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = 'geyser_capture_sessions'"
+            ).fetchone():
                 connection.executescript("""
                     BEGIN IMMEDIATE;
                     CREATE TABLE IF NOT EXISTS geyser_capture_sessions (
@@ -302,6 +304,23 @@ class SQLiteGeyserRawStore:
                     );
                     INSERT OR IGNORE INTO geyser_schema_migrations(version, applied_at)
                         VALUES (4, CURRENT_TIMESTAMP);
+                    COMMIT;
+                """)
+
+            if current < 5:
+                connection.executescript("""
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE IF NOT EXISTS geyser_capture_unknown_gaps (
+                        source_id TEXT NOT NULL,
+                        stream_id TEXT NOT NULL,
+                        reason TEXT NOT NULL,
+                        recorded_at TEXT NOT NULL,
+                        PRIMARY KEY(source_id, stream_id, reason),
+                        FOREIGN KEY(source_id, stream_id)
+                            REFERENCES geyser_capture_sessions(source_id, stream_id)
+                    );
+                    INSERT OR IGNORE INTO geyser_schema_migrations(version, applied_at)
+                        VALUES (5, CURRENT_TIMESTAMP);
                     COMMIT;
                 """)
 
@@ -333,6 +352,67 @@ class SQLiteGeyserRawStore:
             if result.rowcount != 1:
                 raise ValueError("sessão de captura inexistente ou já finalizada")
             return frame_count
+
+    def recover_interrupted_capture_sessions(self, source_id: str) -> list[str]:
+        """Close stale attempts on startup; keep their RAW and gaps untouched.
+
+        This is intentionally independent of the in-memory recovery controller:
+        a process killed without a finally block leaves finished_at NULL.
+        """
+        source_id = _text(source_id, "source_id")
+        with self._connection() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """SELECT stream_id FROM geyser_capture_sessions
+                   WHERE source_id = ? AND finished_at IS NULL
+                   ORDER BY started_at, stream_id""", (source_id,),
+            ).fetchall()
+            for (stream_id,) in rows:
+                count = connection.execute(
+                    """SELECT COUNT(*) FROM geyser_wire_frames
+                       WHERE source_id = ? AND stream_id = ?""",
+                    (source_id, stream_id),
+                ).fetchone()[0]
+                connection.execute(
+                    """UPDATE geyser_capture_sessions
+                       SET finished_at = ?, outcome = 'process_interrupted',
+                           frame_count = ?
+                       WHERE source_id = ? AND stream_id = ?
+                           AND finished_at IS NULL""",
+                    (datetime.now(timezone.utc).isoformat(), count, source_id, stream_id),
+                )
+            for (stream_id,) in rows:
+                connection.execute(
+                    """INSERT OR IGNORE INTO geyser_capture_unknown_gaps
+                       (source_id, stream_id, reason, recorded_at)
+                       VALUES (?, ?, 'process_interrupted', ?)""",
+                    (source_id, stream_id, datetime.now(timezone.utc).isoformat()),
+                )
+            return [stream_id for (stream_id,) in rows]
+
+    def append_capture_gap(self, source_id: str, stream_id: str, reason: str) -> None:
+        """Persist UNKNOWN coverage without inventing a sequence or slot."""
+        source_id = _text(source_id, "source_id")
+        stream_id = _text(stream_id, "stream_id")
+        reason = _text(reason, "gap reason")
+        with self._connection() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """INSERT OR IGNORE INTO geyser_capture_unknown_gaps
+                   (source_id, stream_id, reason, recorded_at)
+                   VALUES (?, ?, ?, ?)""",
+                (source_id, stream_id, reason, datetime.now(timezone.utc).isoformat()),
+            )
+
+    def list_capture_gaps(self, source_id: str, stream_id: str) -> list[dict]:
+        with self._connection() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """SELECT reason, recorded_at FROM geyser_capture_unknown_gaps
+                   WHERE source_id = ? AND stream_id = ? ORDER BY reason""",
+                (source_id, stream_id),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def get_capture_session(self, source_id: str, stream_id: str) -> dict | None:
         """Return audit metadata if the archive records how its stream ended."""

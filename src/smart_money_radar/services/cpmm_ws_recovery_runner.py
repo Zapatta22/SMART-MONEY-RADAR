@@ -52,21 +52,13 @@ class CpmmRecoveryRunner:
         deadline=self.clock()+self.duration_seconds
         source=self.recovery.source_id
         owner_id=str(uuid.uuid4())
-        # A persistent lease prevents concurrent writers and unsafe recovery.
-        self.recovery.store.acquire_capture_source_lease(
-            source_id=source,owner_id=owner_id)
+        # Recovery and exclusive ownership are a single SQLite transaction.
+        self.manifest["recovered_incomplete_session_ids"] = (
+            self.recovery.store.recover_incomplete_capture_sessions(
+                source_id=source,owner_id=owner_id))
         prev_failure=None
         failure_phase="connect"
         try:
-            # Recovery happens under this runner's ownership. The store
-            # refuses recovery while leased, so explicitly prove ownership
-            # and release temporarily before recovering in one-writer scope.
-            self.recovery.store.release_capture_source_lease(
-                source_id=source,owner_id=owner_id)
-            self.manifest["recovered_incomplete_session_ids"] = (
-                self.recovery.store.recover_incomplete_capture_sessions(source_id=source))
-            self.recovery.store.acquire_capture_source_lease(
-                source_id=source,owner_id=owner_id)
             while self.clock()<deadline and len(self.manifest["connections"])<=self.recovery.policy.max_reconnects:
                 if prev_failure is not None:
                     if not self.recovery.can_retry():

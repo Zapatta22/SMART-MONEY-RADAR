@@ -34,6 +34,7 @@ class ProspectiveCpmmSnapshot:
     observed_at: datetime
     available_at: datetime
     response_sha256: str
+    request_sha256: str
     account_sha256: tuple[str,...]
     input_vault_raw: int | None
     output_vault_raw: int | None
@@ -49,7 +50,7 @@ class ProspectiveCpmmSnapshot:
 
 
 def inspect_prospective_cpmm_response(
-    *, response_raw: bytes, source_id: str, endpoint: str,
+    *, response_raw: bytes, request_raw: bytes, source_id: str, endpoint: str,
     observed_at: datetime, available_at: datetime,
     pool: str, amm_config: str, input_vault: str,
     output_vault: str, input_mint: str, output_mint: str,
@@ -72,6 +73,9 @@ def inspect_prospective_cpmm_response(
     if not isinstance(response_raw,bytes) or not response_raw:
         raise ValueError("resposta RAW ausente")
     digest=sha256(response_raw).hexdigest()
+    if not isinstance(request_raw,bytes) or not request_raw:
+        raise ValueError("RAW da requisição obrigatório")
+    request_hash=sha256(request_raw).hexdigest()
     source=source_id
     observed=observed_at.astimezone(timezone.utc)
     available=available_at.astimezone(timezone.utc)
@@ -82,6 +86,15 @@ def inspect_prospective_cpmm_response(
     input_raw=output_raw=effective_in=effective_out=None
     trade=creator=None
     try:
+        request=json.loads(request_raw)
+        params=request["params"]
+        if (not isinstance(request,dict) or request.get("method")!="getMultipleAccounts"
+            or not isinstance(params,list) or len(params)!=2
+            or params[0]!=[pool,amm_config,input_vault,output_vault]
+            or not isinstance(params[1],dict)
+            or params[1].get("encoding")!="base64"
+            or params[1].get("commitment")!="finalized"):
+            raise ValueError("requisição e escopo CPMM incompatíveis")
         payload=json.loads(response_raw)
         if not isinstance(payload,dict) or "error" in payload:
             raise ValueError("RPC inválido ou com erro")
@@ -158,6 +171,7 @@ def inspect_prospective_cpmm_response(
         status=status,reasons=tuple(sorted(reasons)),source_id=source,
         endpoint=endpoint,pool=pool,amm_config=amm_config,slot=slot,
         observed_at=observed,available_at=available,response_sha256=digest,
+        request_sha256=request_hash,
         account_sha256=account_hashes,input_vault_raw=input_raw,
         output_vault_raw=output_raw,effective_input_raw=effective_in,
         effective_output_raw=effective_out,declared_trade_fee_rate=trade,

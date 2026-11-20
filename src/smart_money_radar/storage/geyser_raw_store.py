@@ -382,7 +382,8 @@ class SQLiteGeyserRawStore:
                 raise ValueError("sessão de captura inexistente ou já finalizada")
             return frame_count
 
-    def recover_incomplete_capture_sessions(self, *, source_id: str) -> list[str]:
+    def recover_incomplete_capture_sessions(self, *, source_id: str,
+                                            owner_id: str | None = None) -> list[str]:
         """Mark prior crashed capture attempts; never claim their ledger coverage.
 
         This uses the existing capture metadata and a single SQLite transaction.
@@ -397,6 +398,13 @@ class SQLiteGeyserRawStore:
                 (source_id,),
             ).fetchone():
                 raise ValueError("cannot recover incomplete sessions while source leased")
+            if owner_id is not None:
+                _text(owner_id, "owner_id")
+                connection.execute(
+                    """INSERT INTO geyser_capture_source_leases
+                       (source_id, owner_id, acquired_at) VALUES (?, ?, ?)""",
+                    (source_id, owner_id, datetime.now(timezone.utc).isoformat()),
+                )
             # Also recover a kill between registering the stream and creating
             # its session metadata: both operations were previously separate.
             orphaned = connection.execute(

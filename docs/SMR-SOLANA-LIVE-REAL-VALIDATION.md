@@ -44,6 +44,7 @@ smr launch-live PUBLIC_SOLANA_ADDRESS \
   --source-id helius-mainnet-test-v1 \
   --duration-seconds 120 \
   --page-size 100 --max-pages 10 \
+  --min-reconcile-interval-seconds 1 \
   --metrics-json "$HOME/smr-live-validation.json"
 unset HELIUS_API_KEY
 ```
@@ -106,3 +107,15 @@ automaticamente. Em qualquer lacuna, **não declarar cobertura completa**.
 
 **Nunca habilitar ordens reais** com base apenas neste manifesto ou nos testes
 determinísticos.
+
+
+## Limite de custo RPC e deduplicação
+
+O CLI limita a **uma tentativa de reconciliação por endereço a cada segundo**
+por padrão (`--min-reconcile-interval-seconds 1`, ajustável entre 0 e 60).
+Notificações intermediárias ficam marcadas como pendentes, e a reconciliação
+periódica/reconexão continua obrigatória. `coalesced_notifications` mede a
+quantidade de mensagens agrupadas; **não é contador de eventos recuperados**.
+Aumentar o intervalo reduz requisições mas aumenta atraso e risco de o RPC
+não oferecer uma janela histórica suficiente. Quando uma assinatura é perdida
+por limite de páginas, o algoritmo interrompe sem mover o checkpoint.

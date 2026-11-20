@@ -619,5 +619,46 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
                 await module.run()
         self.assertEqual(self.db.integrity_check(),["ok"])
 
+
+    async def test_cm28_four_acks_without_valid_baseline_never_certify_live(self):
+        connector=FakeConnector([[ack(1),ack(2),ack(3),ack(4),
+                                  ConnectionClosedError("connection ended")],
+                                 [ack(1),ConnectionClosedError()]])
+        result=await self.runner(connector,FakeRPC()).run()
+        first=result["connections"][0]
+        self.assertTrue(first["four_subscriptions_confirmed"])
+        self.assertFalse(first["baseline_snapshot_confirmed"])
+        self.assertFalse(first["recovery_snapshot_confirmed"])
+        self.assertFalse(result["stable_baseline_observed"])
+        self.assertFalse(result["recovery_live_proven"])
+        self.assertTrue(result["live_real_reconnection_observed"])
+        self.assertEqual(result["observed_notifications"],0)
+        self.assertEqual(result["coverage"],"UNKNOWN")
+        self.assertFalse(result["financial_execution_authorized"])
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
+    async def test_cm28_partial_acks_do_not_claim_four_subscriptions(self):
+        connector=FakeConnector([[ack(1),ack(2),
+                                  ConnectionClosedError("partial subscription")],
+                                 [ack(1),ConnectionClosedError()]])
+        result=await self.runner(connector,FakeRPC()).run()
+        self.assertFalse(result["connections"][0]["four_subscriptions_confirmed"])
+        self.assertFalse(result["stable_baseline_observed"])
+        self.assertFalse(result["recovery_live_proven"])
+        self.assertEqual(result["rpc_baseline_calls"],0)
+        self.assertEqual(result["coverage"],"UNKNOWN")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
+    async def test_cm28_rpc_failure_cannot_certify_baseline(self):
+        connector=FakeConnector([[ack(1),ack(2),ack(3),ack(4),
+                                  ConnectionClosedError("closed")],
+                                 [ack(1),ConnectionClosedError()]])
+        result=await self.runner(connector,FakeRPC(fail=True)).run()
+        self.assertFalse(result["connections"][0]["baseline_snapshot_confirmed"])
+        self.assertFalse(result["recovery_live_proven"])
+        self.assertFalse(result["stable_baseline_observed"])
+        self.assertEqual(result["coverage"],"UNKNOWN")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
 if __name__=="__main__":
     unittest.main()

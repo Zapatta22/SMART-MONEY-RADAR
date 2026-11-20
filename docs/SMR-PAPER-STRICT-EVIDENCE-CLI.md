@@ -8,7 +8,9 @@ O cenário usa o formato do replay normal e exige um `quote_id` por tick.
 O arquivo de evidência contém `pool`, `risk_limits`, `risk_by_quote` e
 `evidence_by_quote`. Os limites de risco são `max_position_fraction`,
 `max_daily_loss_fraction`, `max_slippage_bps` e `min_liquidity_quote`.
-Cada tick elegível para entrada tem um `EntryRiskSnapshot` associado.
+Cada tick elegível para entrada tem um `EntryRiskSnapshot` associado. O
+snapshot precisa declarar `available_at` com fuso e só pode ser usado em
+ticks no mesmo instante ou posteriores à sua disponibilidade.
 
 Cada `evidence_by_quote[quote_id]` é uma lista com um único registro:
 `evidence_id`, `pool`, `observed_at`, `available_at`,

@@ -87,7 +87,7 @@ class StrictPaperCliTests(unittest.TestCase):
                 "equity": "1000", "proposed_notional": "100",
                 "daily_realized_pnl": "0", "estimated_slippage_bps": "10",
                 "verified_liquidity_quote": "2000",
-                "emergency_halt": False, "evidence_verified": True,
+                "emergency_halt": False, "evidence_verified": True, "available_at": at,
             }
         report = self.run_cli()
         self.assertEqual(report["strict_evidence"]["verified_ticks"], 2)
@@ -119,7 +119,7 @@ class StrictPaperCliTests(unittest.TestCase):
                 "equity": "1000", "proposed_notional": "100",
                 "daily_realized_pnl": "0", "estimated_slippage_bps": "10",
                 "verified_liquidity_quote": "2000",
-                "emergency_halt": True, "evidence_verified": True,
+                "emergency_halt": True, "evidence_verified": True, "available_at": at,
             }
         report = self.run_cli()
         self.assertEqual(report["strict_evidence"]["rejected_risk_ticks"], 2)

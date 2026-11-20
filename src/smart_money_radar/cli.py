@@ -236,10 +236,20 @@ def _paper_replay(args: argparse.Namespace) -> None:
         try:
             limits = EntryRiskLimits(**{k: decimal(v) for k, v in raw["risk_limits"].items()})
             covered_quote_ids = {tick.quote_id for tick in ticks}
-            snapshots = {qid: EntryRiskSnapshot(**{
-                k: v if k in ("emergency_halt", "evidence_verified") else decimal(v)
-                for k, v in values.items()
-            }) for qid, values in raw["risk_by_quote"].items() if qid in covered_quote_ids}
+            snapshots = {}
+            for qid, values in raw["risk_by_quote"].items():
+                if qid not in covered_quote_ids:
+                    continue
+                numbers = {
+                    key: decimal(value) for key, value in values.items()
+                    if key not in ("emergency_halt", "evidence_verified", "available_at")
+                }
+                snapshots[qid] = EntryRiskSnapshot(
+                    **numbers, emergency_halt=values["emergency_halt"],
+                    evidence_verified=values["evidence_verified"],
+                    available_at=datetime.fromisoformat(values["available_at"])
+                    if "available_at" in values else None,
+                )
             strict = replay_with_required_risk(
                 ticks, raw["evidence_by_quote"], config=config, expected_pool=raw["pool"],
                 risk_limits=limits, risk_by_quote=snapshots, as_of=as_of,

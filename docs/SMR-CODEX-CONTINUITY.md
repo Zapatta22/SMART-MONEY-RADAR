@@ -123,3 +123,17 @@ A execução financeira permanece desabilitada. A `main` segue em
 - Estado: **persistência de cursor offline validada em CI; consumidor online e reconciliação de lacunas remotas pendentes**.
 - Próxima tarefa independente: criar/adaptar consumidor Solana de leitura para alimentar lotes RAW, armazenar origem estável e fazer backfill e reconexão fail-closed; testar atrasos e eventos perdidos. Em paralelo, a simulação continua bloqueada até cotações com proveniência externa e swaps contemporâneos do mesmo pool.
 - Negociação real desabilitada; nenhum merge ou contratação autorizados. Não inventar percentual global sem critérios de aceite.
+
+
+### Distribuição econômica e marco Solana Launch Backfill — 2026-11-20
+
+Duas frentes de execução foram representadas em branches isoladas, sem ativação de agentes Codex separados:
+1. **Código** `codex/smr-launch-live-backfill`: `src/smart_money_radar/services/launch_live_backfill.py` e cursor RPC em `src/smart_money_radar/storage/event_store.py`, baseados na PR #70.
+2. **Testes de segurança** `codex/smr-launch-live-safety-tests`: `tests/test_launch_live_safety.py` sem alterar a implementação.
+3. A branch temporária `codex/smr-launch-live-integration` combina as duas frentes e acrescenta métodos Helius somente leitura com commitment `finalized` e comando `smr launch-backfill` protegido por `SMR_ALLOW_NETWORK` e `HELIUS_API_KEY`.
+
+**Validação real**: GitHub Actions `SMR tests`, head de código `e62266c2165c936863aa7acdc71872bc0b810ecb`, **762 testes aprovados, zero falhas, compileall aprovado**: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44759245353. Os seis testes independentes de backfill, interrupção e rollback passaram. Os 756 testes anteriores também foram preservados.
+
+**Limitações bloqueantes**: a implementação cobre apenas endereços Solana expressamente monitorados e fornece recuperação por RPC e persistência, mas **não executou sessões reais prolongadas de rede**, não oferece cobertura global de todos os launches, nem valida independentemente origem do provedor, relógio e finalização além da declaração RPC. Ainda falta integração WebSocket para atualização reativa, avaliação de lacunas entre assinaturas, captura confiável de RAW da resposta HTTP e testes de falha real/latência. `source_id` e sequência são locais ao consumidor. A primeira varredura é um baseline `UNKNOWN`; nunca declarar cobertura completa.
+
+**Próximo módulo prioritário**: WebSocket de notificação com reconexão e backfill obrigatório após restabelecer conexão, mantendo origem estável e bloqueio fail-closed. Em paralelo independente, auditoria de proveniência de RPC e fixtures reais finalizadas. Não mesclar `main`, contratar serviços nem habilitar negociações.

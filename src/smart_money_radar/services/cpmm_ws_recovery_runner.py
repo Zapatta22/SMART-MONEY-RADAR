@@ -50,6 +50,9 @@ class CpmmRecoveryRunner:
     async def run(self)->dict:
         deadline=self.clock()+self.duration_seconds
         source=self.recovery.source_id
+        # A previous process may have died with an open journal session.
+        # Close its metadata as incomplete, never reuse that ordering domain.
+        self.recovery.store.recover_incomplete_capture_sessions(source_id=source)
         prev_failure=None
         failure_phase="connect"
         try:
@@ -82,6 +85,7 @@ class CpmmRecoveryRunner:
                 report["rpc_baseline_response_raw"]=None
                 connection_healthy=False
                 failure_phase="connect"
+                request_started_in_session=False
                 try:
                     async with self.ws_connect() as ws:
                         failure_phase="subscribe"
@@ -109,6 +113,7 @@ class CpmmRecoveryRunner:
                                 report["baseline_attempts"]=1
                                 self.manifest["rpc_baseline_calls"]+=1
                                 baseline_task=asyncio.create_task(self.rpc_fetch(req))
+                                request_started_in_session=True
                             failure_phase="receive"
                             try:
                                 message=await asyncio.wait_for(ws.recv(),
@@ -145,6 +150,12 @@ class CpmmRecoveryRunner:
                                     raw_notifications.append((observation,raw))
                                     report["notifications"]+=1
                             failure_phase="receive"
+                            if baseline_task and baseline_task.done():
+                                try:
+                                    if not baseline_task.cancelled():
+                                        baseline_task.result()  # fail fast on RPC exception
+                                except Exception as exc:
+                                    raise RuntimeError("rpc_baseline_failed") from exc
                             if report["notifications"] and baseline_task and baseline_task.done():
                                 break
                         connection_healthy=True
@@ -163,14 +174,31 @@ class CpmmRecoveryRunner:
                     prev_failure=err
                 finally:
                     if baseline_task is not None:
+                        # Never wait indefinitely for an RPC after WS disconnect.
+                        # The result remains bound to this originating session.
+                        if not baseline_task.done():
+                            baseline_task.cancel()
                         try:
-                            requested,available,response,error=await baseline_task
+                            requested,available,response,error=await asyncio.wait_for(
+                                baseline_task,timeout=0.1)
                             report["baseline_requested_at"]=requested.isoformat()
                             report["baseline_available_at"]=available.isoformat()
                             report["baseline_rpc_error"]=error
                             if response is not None:
+                                if not isinstance(response,bytes):
+                                    raise ValueError("rpc_response_not_bytes")
+                                # Persist the exact response while this session remains active.
+                                # A late response from an old or closed socket is not eligible.
+                                if session.active:
+                                    session._record(response,"solana_rpc_baseline_response")
+                                else:
+                                    report["baseline_rejection"]="origin_session_closed"
                                 report["baseline_response_sha256"]=sha256(response).hexdigest()
                                 report["rpc_baseline_response_raw"]=response.decode()
+                                if not session.active:
+                                    raise ValueError("baseline_origin_session_not_active")
+                                if available>self.now():
+                                    raise ValueError("rpc_baseline_after_cutoff")
                                 audit=inspect_contemporaneous_baseline(
                                     session=session,request_raw=req,response_raw=response,
                                     requested_at=requested,available_at=available,
@@ -188,10 +216,13 @@ class CpmmRecoveryRunner:
                                 report["notification_relationships"]=[
                                     a.relationship for a in audit.account_observations]
                         except asyncio.CancelledError:
-                            baseline_task.cancel()
-                            raise
+                            report["baseline_error"]="CancelledError"
+                        except asyncio.TimeoutError:
+                            report["baseline_error"]="RPC_TIMEOUT"
                         except Exception as exc:
                             report["baseline_error"]=type(exc).__name__
+                        if report.get("baseline_error") or report.get("baseline_rpc_error"):
+                            report["baseline_status"]="UNKNOWN"
                     if session.active and connection_healthy:
                         session.finish("bounded_end")
                     report["journal"]=self.recovery.store.get_capture_session(source,scope)

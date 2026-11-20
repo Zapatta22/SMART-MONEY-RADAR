@@ -160,6 +160,25 @@ class OpportunityClassifierSafetyTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     classify_opportunity(evidence(**changed), wallet_consensus(independent=True))
 
+    def test_contradiction_is_rejected_even_when_independence_is_unknown(self):
+        record = classify_opportunity(
+            evidence(wallet_independence_verified=False),
+            wallet_consensus(direction="MIXED", independent=False),
+        )
+        self.assertEqual(record.verdict, "REJECTED")
+        self.assertIn("contradictory_wallet_signals", record.reasons)
+        self.assertEqual(dict(record.modes)["immediate"], "BLOCKED")
+
+    def test_zero_liquidity_and_volume_are_unknown_not_safe(self):
+        for change in ({"liquidity_quote": Decimal(0)},
+                       {"volume_quote": Decimal(0)}):
+            with self.subTest(change=change):
+                record = classify_opportunity(
+                    evidence(**change), wallet_consensus(independent=True),
+                )
+                self.assertEqual(record.verdict, "UNKNOWN")
+                self.assertEqual(dict(record.modes)["immediate"], "BLOCKED")
+
     def test_scope_and_liquidity_immutability(self):
         source = evidence()
         report = classify_opportunity(source, wallet_consensus(independent=True))

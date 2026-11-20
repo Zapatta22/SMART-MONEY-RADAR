@@ -109,6 +109,10 @@ def _parser() -> argparse.ArgumentParser:
     watch_live.add_argument("--page-size", type=int, default=100)
     watch_live.add_argument("--max-pages", type=int, default=10)
     watch_live.add_argument(
+        "--min-reconcile-interval-seconds", type=float, default=1.0,
+        help="agrega notificações em rajadas antes de consultar o RPC (padrão 1s)",
+    )
+    watch_live.add_argument(
         "--duration-seconds", type=float,
         help="executa captura limitada e imprime métricas de observação",
     )
@@ -198,6 +202,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                             page_size=args.page_size, max_pages=args.max_pages,
                         ),
                         args.addresses,
+                        minimum_reconcile_interval_seconds=args.min_reconcile_interval_seconds,
                     )
                     if args.duration_seconds is not None:
                         try:

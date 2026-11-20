@@ -211,7 +211,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
                              ConnectionClosedError()]])
         report=await self.runner(conn,SlowRPC()).run()
         self.assertEqual(len(report["connections"]),2)
-        self.assertEqual(report["connections"][0]["baseline_error"],"CancelledError")
+        self.assertEqual(report["connections"][0]["baseline_error"],"RPC_TIMEOUT")
         self.assertEqual(report["connections"][0]["baseline_status"],"UNKNOWN")
         self.assertNotEqual(report["connections"][0]["session_id"],
                             report["connections"][1]["session_id"])

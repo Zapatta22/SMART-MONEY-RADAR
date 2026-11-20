@@ -106,6 +106,17 @@ async def run():
         manifest["keepalive_timeout_seconds"]=POLICY.ping_timeout_seconds
         manifest["journal_integrity"]=store.integrity_check()
         manifest["journal_sessions"]=recovery.report()
+        # A live connection may be stable but not prove reconnection. Never
+        # promote raw WebSocket observations to network history coverage.
+        manifest["live_verification_category"]=(
+            "D_REAL_NOTIFICATION" if manifest["observed_notifications"]>0
+            else "B_NATURAL_DISCONNECTION_RECOVERED"
+            if manifest["recovery_live_proven"]
+            else "A_STABLE_SUBSCRIPTIONS_BASELINE"
+            if manifest["stable_baseline_observed"]
+            else "C_UNVALIDATED_OR_RECOVERY_FAILURE")
+        manifest["coverage"]="UNKNOWN"
+        manifest["financial_execution_authorized"]=False
         manifest["financial_execution_authorized"]=False
         (OUT/"manifest.json").write_text(json.dumps(manifest,sort_keys=True,
                                         indent=2,default=str)+"\n")

@@ -85,6 +85,11 @@ def compare_rpc_records(
             values.append(None)
             core_hashes.append(None)
             continue
+        if not isinstance(envelope,dict):
+            conflicts.add("source_json_invalid")
+            values.append(None)
+            core_hashes.append(None)
+            continue
         if "error" in envelope:
             reasons.add("source_rpc_error")
             values.append(None)

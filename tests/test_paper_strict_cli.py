@@ -68,6 +68,42 @@ class StrictPaperCliTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "lacuna de risco"):
             self.run_cli()
 
+    def test_valid_strict_evidence_and_risk_allow_immediate_fill(self):
+        for i, at in enumerate(("2026-11-19T00:00:00+00:00",
+                                "2026-11-19T00:01:00+00:00")):
+            self.payload["evidence_by_quote"][f"q{i}"] = [{
+                "evidence_id": f"e{i}", "pool": "pool-a",
+                "observed_at": at, "available_at": at,
+                "source": "OBSERVED_MARKET_QUOTE", "is_observed_quote": True,
+            }]
+            self.payload["risk_by_quote"][f"q{i}"] = {
+                "equity": "1000", "proposed_notional": "100",
+                "daily_realized_pnl": "0", "estimated_slippage_bps": "10",
+                "verified_liquidity_quote": "2000",
+                "emergency_halt": False, "evidence_verified": True,
+            }
+        report = self.run_cli()
+        self.assertEqual(report["strict_evidence"]["verified_ticks"], 2)
+        self.assertEqual(report["strict_evidence"]["rejected_risk_ticks"], 0)
+        self.assertEqual(report["immediate"]["fills"][0]["side"], "BUY")
+
+    def test_emergency_halt_blocks_immediate_fill(self):
+        for i, at in enumerate(("2026-11-19T00:00:00+00:00",
+                                "2026-11-19T00:01:00+00:00")):
+            self.payload["evidence_by_quote"][f"q{i}"] = [{
+                "evidence_id": f"e{i}", "pool": "pool-a",
+                "observed_at": at, "available_at": at,
+                "source": "OBSERVED_MARKET_QUOTE", "is_observed_quote": True,
+            }]
+            self.payload["risk_by_quote"][f"q{i}"] = {
+                "equity": "1000", "proposed_notional": "100",
+                "daily_realized_pnl": "0", "estimated_slippage_bps": "10",
+                "verified_liquidity_quote": "2000",
+                "emergency_halt": True, "evidence_verified": True,
+            }
+        report = self.run_cli()
+        self.assertEqual(report["strict_evidence"]["rejected_risk_ticks"], 2)
+        self.assertEqual(report["immediate"]["fills"], [])
     def test_archive_with_strict_mode_rejected(self):
         self.evidence.write_text(json.dumps(self.payload), encoding="utf-8")
         with self.assertRaisesRegex(SystemExit, "ainda não suporta"):

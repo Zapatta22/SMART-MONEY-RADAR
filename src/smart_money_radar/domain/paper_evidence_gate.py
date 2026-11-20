@@ -5,8 +5,11 @@ Independent of RPC decoding. Does not convert model estimates to observed quotes
 import base64
 import hashlib
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from types import MappingProxyType
 
 from smart_money_radar.domain.paper_replay import ReplayTick
 
@@ -69,9 +72,57 @@ def _unique_json_fields(pairs: list[tuple[str, object]]) -> dict:
     result = {}
     for name, value in pairs:
         if name in result:
-            raise ValueError("campo duplicado no JSON RAW da cotação")
+            raise ValueError("campo duplicado no JSON da evidência")
         result[name] = value
     return result
+
+
+_MANIFEST_SCHEMA = "smr-paper-quote-manifest-v1"
+
+
+def _is_sha256(value: object) -> bool:
+    return (isinstance(value, str) and len(value) == 64
+            and all(char in "0123456789abcdef" for char in value))
+
+
+@dataclass(frozen=True)
+class PinnedPaperQuoteManifest:
+    """Manifest of quote receipts matched to a separately supplied digest."""
+
+    pool: str
+    quote_digests: Mapping[str, str]
+    sha256: str
+
+
+def load_pinned_paper_quote_manifest(
+    raw: bytes, *, expected_sha256: str,
+) -> PinnedPaperQuoteManifest:
+    """Validate the exact manifest bytes against a digest from a trusted channel.
+
+    The pin confirms agreement with those bytes. How the digest was obtained
+    and whether the source or capture clock are trustworthy remain external
+    to this verification.
+    """
+    if not _is_sha256(expected_sha256):
+        raise ValueError("SHA-256 fixado do manifesto inválido")
+    if not isinstance(raw, bytes):
+        raise ValueError("manifesto de cotações precisa de bytes RAW")
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != expected_sha256:
+        raise ValueError("SHA-256 do manifesto diverge do valor fixado")
+    try:
+        manifest = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_json_fields)
+    except (ValueError, RecursionError) as exc:
+        raise ValueError("JSON do manifesto de cotações inválido") from exc
+    if not isinstance(manifest, dict) or manifest.get("schema") != _MANIFEST_SCHEMA:
+        raise ValueError("schema do manifesto de cotações inválido")
+    pool, quotes = manifest.get("pool"), manifest.get("quotes")
+    if not isinstance(pool, str) or not pool.strip():
+        raise ValueError("pool obrigatório no manifesto de cotações")
+    if (not isinstance(quotes, dict) or not quotes
+            or any(not quote_id.strip() or not _is_sha256(sha) for quote_id, sha in quotes.items())):
+        raise ValueError("identidades ou hashes inválidos no manifesto de cotações")
+    return PinnedPaperQuoteManifest(pool, MappingProxyType(quotes), digest)
 
 
 def _quote_decimal(value: object) -> Decimal | None:
@@ -90,6 +141,7 @@ def _quote_decimal(value: object) -> Decimal | None:
 
 def verify_paper_quote_tick(
     tick: ReplayTick, evidence: list[dict], expected_pool: str,
+    *, manifest: PinnedPaperQuoteManifest | None = None,
 ) -> str:
     """Bind an observed quote to its archived bytes and the simulator inputs.
 
@@ -109,9 +161,7 @@ def verify_paper_quote_tick(
     record = records[0]
     encoded = record.get("raw_capture_base64")
     expected_digest = record.get("raw_capture_sha256")
-    if (not isinstance(encoded, str) or not encoded
-            or not isinstance(expected_digest, str) or len(expected_digest) != 64
-            or any(char not in "0123456789abcdef" for char in expected_digest)):
+    if not isinstance(encoded, str) or not encoded or not _is_sha256(expected_digest):
         raise ValueError("captura RAW e SHA-256 da cotação são obrigatórios")
     try:
         raw = base64.b64decode(encoded, validate=True)
@@ -120,6 +170,14 @@ def verify_paper_quote_tick(
     digest = hashlib.sha256(raw).hexdigest()
     if digest != expected_digest:
         raise ValueError("SHA-256 divergente da cotação RAW")
+    if manifest is not None:
+        if not isinstance(manifest, PinnedPaperQuoteManifest) or manifest.pool != expected_pool:
+            raise ValueError("manifesto de cotações fora do pool selecionado")
+        pinned_digest = manifest.quote_digests.get(tick.quote_id)
+        if pinned_digest is None:
+            raise ValueError("cotação ausente do manifesto fixado")
+        if digest != pinned_digest:
+            raise ValueError("SHA-256 da cotação RAW diverge do manifesto fixado")
     try:
         quote = json.loads(raw.decode("utf-8"), parse_float=Decimal, object_pairs_hook=_unique_json_fields)
     except (ValueError, RecursionError) as exc:

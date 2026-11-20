@@ -21,7 +21,7 @@ ALPHABET="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 def from58(s):
     n=0
     for c in s:n=n*58+ALPHABET.index(c)
-    return b"\\x00"*(len(s)-len(s.lstrip("1")))+n.to_bytes((n.bit_length()+7)//8,"big")
+    return bytes([0])*(len(s)-len(s.lstrip("1")))+n.to_bytes((n.bit_length()+7)//8,"big")
 
 def key(i):
     return _pubkey(bytes([i])*32)

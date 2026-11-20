@@ -16,6 +16,7 @@ class SnapshotTests(unittest.TestCase):
             "raw_sha256": hashlib.sha256(self.RAW).hexdigest(),
             "reserve_in": "1000", "reserve_out": "2000", "fee_bps": "30",
             "input_mint": "SOL", "output_mint": "USDC",
+            "input_decimals": 9, "output_decimals": 6,
         }
 
     def test_valid_snapshot_yields_non_observed_estimate(self):
@@ -32,7 +33,8 @@ class SnapshotTests(unittest.TestCase):
         for changes in ({"commitment": "processed"}, {"slot": True},
                         {"reserve_in": "NaN"}, {"fee_bps": 10000},
                         {"available_at": "2026-11-19T19:59:00-04:00"},
-                        {"input_mint": "USDC"}):
+                        {"input_mint": "USDC"}, {"input_decimals": True},
+                        {"output_decimals": -1}, {"input_decimals": 19}):
             with self.subTest(changes=changes):
                 with self.assertRaises(ValueError):
                     validate_snapshot({**self.record(), **changes}, self.RAW)

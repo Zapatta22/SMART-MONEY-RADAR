@@ -1,0 +1,39 @@
+name: SMR second-source public RPC corroboration (one read)
+
+on:
+  push:
+    branches:
+      - codex/smr-second-source-historical-state
+    paths:
+      - tools/second_source_solana_proof.py
+      - .github/workflows/smr-second-source-proof.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout controlled draft branch
+        uses: actions/checkout@v4
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: One finalized getTransaction from distinct public endpoint
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/second_source_solana_proof.py
+      - name: Preserve second-source response or explicit failure manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-solana-second-source
+          path: /tmp/smr-second-source-proof/
+          retention-days: 7
+          if-no-files-found: error

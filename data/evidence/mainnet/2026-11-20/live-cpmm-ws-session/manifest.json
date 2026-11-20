@@ -1,0 +1,56 @@
+{
+  "accounts": [
+    "CqvMZmWDvEufa5rzkubidyR4zMDqDPoLjAtsW6wGsPMu",
+    "D4FPEruKEHrG5TenZ2mpDGEfu1iUvTiqBxvpU8HLBvC2",
+    "C5S7w9bJ81oaksCpTrBUMX5Wn4RfSxbnnkCBwMuMaPdU",
+    "8cGsmrpU5rkLszygFgaFfo8PaFBipm1zfqSLxTdytKmG"
+  ],
+  "attempted_connections": 1,
+  "baseline_validated": false,
+  "coverage": "UNKNOWN",
+  "duration_seconds": 35.052246,
+  "economic_execution_authorized": false,
+  "ended_at": "2026-11-20T20:57:59.709004+00:00",
+  "endpoint": "wss://api.mainnet-beta.solana.com/",
+  "error": null,
+  "frames_stored": 4,
+  "global_order_verified": false,
+  "journal_frame_report": {
+    "first_sequence": 0,
+    "last_sequence": 3,
+    "ordering_domain_id": "solana-accountsubscribe-4a3e664e-1cb5-48bf-9ea7-df250f351387",
+    "sha256": "64b860b699db97132b34ae93a5137e15aa13c99d543afdd945d70e7ef2963e6d",
+    "source_id": "solana-ws-public-mainnet",
+    "stream_id": "solana-accountsubscribe-4a3e664e-1cb5-48bf-9ea7-df250f351387",
+    "verified_frames": 4
+  },
+  "journal_integrity": [
+    "ok"
+  ],
+  "max_duration_seconds": 35,
+  "notifications_received": 0,
+  "provider_independently_authenticated": false,
+  "received_raw_frames": 4,
+  "requests_prepared": 4,
+  "session": {
+    "account_write_order_verified": false,
+    "baseline_validated": false,
+    "coverage": "UNKNOWN",
+    "economic_execution_authorized": false,
+    "finalized_independently_attested": false,
+    "frames_archived": 4,
+    "gaps": [
+      "subscription_start_without_verified_baseline"
+    ],
+    "notifications_received": 0,
+    "observations": [],
+    "reconnects": 0,
+    "session_id": "solana-accountsubscribe-4a3e664e-1cb5-48bf-9ea7-df250f351387",
+    "signature_proven": false,
+    "source_id": "solana-ws-public-mainnet",
+    "subscriptions_bound": 4
+  },
+  "started_at": "2026-11-20T20:57:24.656758+00:00",
+  "status": "NO_NOTIFICATIONS_OBSERVED",
+  "subscriptions_acknowledged": 4
+}

@@ -236,5 +236,61 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         old.active=False  # process memory is gone after simulated crash
         self.db=reopened
 
+
+    async def test_late_rpc_bytes_are_journaled_but_never_promoted(self):
+        rpc_raw=b'{"jsonrpc":"2.0","result":{"context":{"slot":5},"value":[]}}'
+        class LateRPC:
+            async def __call__(self,request):
+                await asyncio.sleep(0)
+                return NOW,NOW,rpc_raw,None
+        conn=FakeConnector([[ack(1),ack(2),ack(3),ack(4),
+                             ConnectionClosedError("socket gone")],
+                            [ack(1),ConnectionClosedError()]])
+        report=await self.runner(conn,LateRPC()).run()
+        first=report["connections"][0]
+        self.assertEqual(first["baseline_rejection"],"websocket_disconnected")
+        self.assertEqual(first["baseline_status"],"UNKNOWN")
+        self.assertFalse(first.get("baseline_verified_as_snapshot",False))
+        sid=first["session_id"]
+        raw=[payload for _,payload in self.db.iter_wire_frames(
+            "test-solana-ws",sid,sid)]
+        self.assertEqual(len(raw),6)  # Four ACKs, original request and late response.
+        self.assertEqual(raw[-1],rpc_raw)
+        self.assertEqual(first["journal"]["frame_count"],6)
+        self.assertEqual(first["coverage"],"UNKNOWN")
+        self.assertEqual(report["coverage"],"UNKNOWN")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
+    async def test_interrupted_rpc_timeout_keeps_coverage_unknown(self):
+        class HangingRPC:
+            async def __call__(self,request):
+                await asyncio.sleep(3600)
+        conn=FakeConnector([[ack(1),ack(2),ack(3),ack(4),
+                             ConnectionClosedError("socket gone")],
+                            [ack(1),ConnectionClosedError()]])
+        report=await self.runner(conn,HangingRPC()).run()
+        first=report["connections"][0]
+        self.assertEqual(first["baseline_error"],"RPC_TIMEOUT")
+        self.assertEqual(first["baseline_status"],"UNKNOWN")
+        self.assertEqual(first["journal"]["frame_count"],5)
+        self.assertEqual(report["coverage"],"UNKNOWN")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
+    async def test_orphaned_stream_before_session_registration_recovered(self):
+        sid="crashed-before-start"
+        self.db.register_frame_stream("test-solana-ws",sid,sid,0)
+        self.db.close()
+        reopened=SQLiteGeyserRawStore(Path(self.tmp.name)/"journal.sqlite")
+        self.assertEqual(reopened.recover_incomplete_capture_sessions(
+            source_id="test-solana-ws"),[sid])
+        metadata=reopened.get_capture_session("test-solana-ws",sid)
+        self.assertEqual(metadata["outcome"],"process_interrupted_unknown")
+        self.assertEqual(metadata["frame_count"],0)
+        self.assertIsNotNone(metadata["finished_at"])
+        self.assertEqual(reopened.recover_incomplete_capture_sessions(
+            source_id="test-solana-ws"),[])
+        self.assertEqual(reopened.integrity_check(),["ok"])
+        self.db=reopened
+
 if __name__=="__main__":
     unittest.main()

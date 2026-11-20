@@ -72,10 +72,16 @@ class RealCpmmHistoryTests(unittest.TestCase):
         self.assertEqual(x.vault_input_delta_raw,316403005899)
         self.assertEqual(x.vault_output_delta_raw,-1051096327)
         self.assertEqual(len(x.fee_counter_deltas_raw),6)
-        self.assertEqual(x.fee_counter_deltas_raw[0]+x.fee_counter_deltas_raw[2]
-                         +x.fee_counter_deltas_raw[4],220724326)
-        self.assertEqual(x.fee_counter_deltas_raw[1]+x.fee_counter_deltas_raw[3]
-                         +x.fee_counter_deltas_raw[5],1640411)
+        # Fee-counter deltas must equal gross-vault minus effective-reserve
+        # deltas. Token0 / token1 order can differ from input/output direction.
+        a,b=self.capture(0).observation,self.capture(1).observation
+        input_fee_change=(b.input_vault_raw-b.effective_input_raw) - (a.input_vault_raw-a.effective_input_raw)
+        output_fee_change=(b.output_vault_raw-b.effective_output_raw) - (a.output_vault_raw-a.effective_output_raw)
+        sums=(sum(x.fee_counter_deltas_raw[i] for i in (0,2,4)),
+              sum(x.fee_counter_deltas_raw[i] for i in (1,3,5)))
+        self.assertCountEqual(sums,(input_fee_change,output_fee_change))
+        self.assertEqual(input_fee_change,220724326)
+        self.assertEqual(output_fee_change,1640411)
 
     def test_two_real_snapshots_do_not_prove_event_continuity(self):
         x=self.compare()

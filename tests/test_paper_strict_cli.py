@@ -51,11 +51,8 @@ class StrictPaperCliTests(unittest.TestCase):
         return json.loads(out.getvalue())
 
     def test_missing_evidence_does_not_fill_either_mode(self):
-        report = self.run_cli()
-        self.assertEqual(report["strict_evidence"]["verified_ticks"], 0)
-        self.assertEqual(report["strict_evidence"]["rejected_evidence_ticks"], 2)
-        self.assertEqual(report["immediate"]["fills"], [])
-        self.assertEqual(report["confirmed"]["fills"], [])
+        with self.assertRaisesRegex(SystemExit, "lacuna de evidência"):
+            self.run_cli()
 
     def test_missing_risk_blocks_verified_buy(self):
         start = "2026-11-19T00:00:00+00:00"
@@ -68,10 +65,8 @@ class StrictPaperCliTests(unittest.TestCase):
                     "observed_at": next_at, "available_at": next_at,
                     "source": "OBSERVED_MARKET_QUOTE", "is_observed_quote": True}],
         }
-        report = self.run_cli()
-        self.assertEqual(report["strict_evidence"]["rejected_risk_ticks"], 2)
-        self.assertEqual(report["immediate"]["fills"], [])
-        self.assertEqual(report["confirmed"]["fills"], [])
+        with self.assertRaisesRegex(SystemExit, "lacuna de risco"):
+            self.run_cli()
 
     def test_archive_with_strict_mode_rejected(self):
         self.evidence.write_text(json.dumps(self.payload), encoding="utf-8")

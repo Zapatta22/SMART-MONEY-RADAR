@@ -68,6 +68,10 @@ def classify_with_market_evidence(
         source_status = "UNKNOWN"
     if market.source_id and swaps and any(s.source_id != market.source_id for s in swaps):
         source_status = "CONFLICTED"
+    if (market.source_id is not None and market.source_id != base.source_id):
+        source_status = "CONFLICTED"
+    if market.slot is None and safety is not None and liquidity is not None:
+        source_status = "CONFLICTED"
 
     danger = set(base.mandatory_blocks)
     danger.update(market.mandatory_blocks)

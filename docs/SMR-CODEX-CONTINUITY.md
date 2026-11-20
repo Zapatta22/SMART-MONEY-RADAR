@@ -7,7 +7,7 @@ Atualizado em 2026-11-20 (UTC). **Este documento é um ponto de partida, não su
 - Repositório: `Zapatta22/SMART-MONEY-RADAR`.
 - PR de trabalho: **#64**, Draft, branch `feat/cpmm-reserve-estimator-audit`.
 - Base conhecida da PR #64: `codex/smr-paper-pool-scope` (PR #63).
-- Último commit desta sequência: `7c7445f9ac2155653d85e62fb9e3bdcf8ecf7c8b`.
+- Último commit de código desta sequência: `39ce9f8c061570e0190f7889105adf2fe964ebc9`.
 - **Não presumir que a PR, a branch, o SHA ou o CI permanecem iguais. Consultar o estado atual antes de editar.**
 
 ## O que foi acrescentado nesta sequência
@@ -51,3 +51,9 @@ Não afirmar que testes passaram. Inspecionar workflows, executar suíte complet
 ## Instrução de retomada
 
 > Leia este registro, o Registro Mestre do SMR e o registro de pendências CPMM. Compare com o estado atual das PRs e do GitHub Actions. Não presuma que commits recentes estão testados. Faça uma auditoria técnica do código novo, priorize correções de segurança e execute testes. Trabalhe em branch/PR, sem merge e sem operações financeiras reais. Atualize este registro ao final de cada etapa com SHA, evidência e próxima tarefa.
+
+## Atualização posterior — 2026-11-20
+
+- Commit `39ce9f8`: CLI strict replay agora preserva `market_at`, `bid`, `ask`, `bid_size` e `ask_size` do cenário, antes descartados na reconstrução de ticks.
+- Tentativa de clone/testes em ambiente separado falhou por DNS (`Could not resolve host: github.com`). **Não representa falha dos testes de código e não valida a suíte.**
+- Próxima ação: executar CI real e testes ponta a ponta do CLI, conferir `quote_id`/identidade de preço e risco de execução sobre dados declarativos não autenticados.

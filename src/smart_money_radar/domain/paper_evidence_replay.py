@@ -117,6 +117,22 @@ def replay_with_required_risk(ticks: list[ReplayTick], evidence_by_quote: dict,
             raise ValueError("lacuna de evidência no histórico protegido")
         if tick.entry_allowed and not isinstance(risk_by_quote.get(tick.quote_id), EntryRiskSnapshot):
             raise ValueError("lacuna de risco no histórico protegido")
+    # Preflight every observation: an invalid record must not be silently
+    # discarded while a pending order later fills at another price.
+    previous_at = None
+    for tick in ticks:
+        if previous_at is not None and tick.at <= previous_at:
+            raise ValueError("histórico protegido fora de ordem")
+        previous_at = tick.at
+        stamp = tick.at.astimezone(timezone.utc).isoformat()
+        try:
+            gate_paper_evidence(
+                signal_at=stamp, decision_at=stamp,
+                evidence=evidence_by_quote[tick.quote_id],
+                expected_pool=expected_pool, require_observed_quote=True,
+            )
+        except ValueError as exc:
+            raise ValueError("evidência inválida no histórico protegido") from exc
     return replay_with_evidence(
         ticks, evidence_by_quote, config=config, expected_pool=expected_pool,
         require_observed_quote=True, as_of=as_of,

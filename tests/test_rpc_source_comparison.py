@@ -104,6 +104,13 @@ class RpcSourceComparisonTests(unittest.TestCase):
                                           commitment_requested="confirmed"))
         self.assertEqual(x.status,"UNKNOWN")
 
+    def test_invalid_rpc_json_root_fails_closed(self):
+        raw=b'[]'
+        s=self.source("rpc-b","operator-b",raw)
+        x=self.compare(second=s)
+        self.assertEqual(x.status,"CONFLICTED")
+        self.assertIn("source_json_invalid",x.reasons)
+
     def test_same_inputs_reproduce_identical_comparison(self):
         self.assertEqual(self.compare(),self.compare())
 

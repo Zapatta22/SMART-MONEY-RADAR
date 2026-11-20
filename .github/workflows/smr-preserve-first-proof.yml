@@ -1,0 +1,80 @@
+name: SMR preserve first mainnet RAW proof
+
+on:
+  push:
+    branches:
+      - codex/smr-first-solana-proof
+    paths:
+      - .github/workflows/smr-preserve-first-proof.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  preserve-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout isolated Draft branch
+        uses: actions/checkout@v4
+      - name: Download exact prior single-request capture (no new RPC calls)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download 44792506494 --name smr-first-solana-proof --dir /tmp/smr-downloaded-proof
+      - name: Verify original RAW and copy without reserializing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, shutil
+          from pathlib import Path
+          root = Path("/tmp/smr-downloaded-proof")
+          manifest_bytes = (root / "first-proof.manifest.json").read_bytes()
+          manifest = json.loads(manifest_bytes)
+          assert manifest["requests_sent"] == 1
+          assert manifest["rpc_status"] == "RPC_CONSISTENT_UNATTESTED"
+          assert manifest["independently_finalized"] is False
+          assert manifest["financial_execution_authorized"] is False
+          raw_name = manifest["raw_file"]
+          assert raw_name == manifest["signature_requested"] + ".raw.json"
+          raw = (root / raw_name).read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == manifest["raw_sha256"]
+          payload = json.loads(raw)["result"]
+          assert payload["transaction"]["signatures"][0] == manifest["signature_requested"]
+          assert payload["slot"] == manifest["slot_observed"] == 471039497
+          assert payload["meta"]["err"] is None
+          swap = manifest["decoded_cpmm_swaps"][0]
+          keys = payload["transaction"]["message"]["accountKeys"]
+          ix = payload["transaction"]["message"]["instructions"][swap["instruction_index"]]
+          accounts = [keys[i] for i in ix["accounts"]]
+          assert keys[ix["programIdIndex"]] == swap["program_id"]
+          assert accounts[3] == swap["pool"]
+          assert accounts[6] == swap["input_vault"]
+          assert accounts[7] == swap["output_vault"]
+          assert accounts[10] == swap["input_mint"]
+          assert accounts[11] == swap["output_mint"]
+          dst = Path("data/evidence/mainnet/2026-11-20")
+          dst.mkdir(parents=True, exist_ok=True)
+          # Preserve the exact bytes received by getTransaction.
+          (dst / raw_name).write_bytes(raw)
+          (dst / "first-proof.manifest.json").write_bytes(manifest_bytes)
+          print("PROOF_PERSIST raw_sha256=" + manifest["raw_sha256"])
+          print("PROOF_PERSIST pool=" + swap["pool"])
+          print("PROOF_PERSIST historical_reserves_verified=False")
+          print("PROOF_PERSIST no_new_rpc_queries=True")
+          PY
+      - name: Commit evidence to isolated branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence/mainnet/2026-11-20/
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: retain exact first real Solana mainnet RAW and manifest"
+          git push origin HEAD:codex/smr-first-solana-proof

@@ -35,6 +35,10 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PUBLIC_ADDRESS",
         help="um ou mais endereços públicos Solana",
     )
+    watch_parser.add_argument(
+        "--reference-mint", action="append", default=[],
+        help="mint de cotação para classificar swaps arquivados; repetível",
+    )
     evidence = subparsers.add_parser(
         "geyser-evidence", help="inspeciona uma transação no journal Yellowstone local"
     )
@@ -114,7 +118,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(f"Resposta RPC Helius confirmada: Solana {result.get('solana-core', 'versão desconhecida')}.")
             return
         if args.command == "watch":
-            _run_monitor(settings, source, args.addresses)
+            _run_monitor(settings, source, args.addresses, reference_mints=args.reference_mint)
             return
     except (OSError, SettingsError, RuntimeError, ValueError, sqlite3.Error) as exc:
         raise SystemExit(str(exc)) from None
@@ -124,9 +128,10 @@ def _paper_replay(args: argparse.Namespace) -> None:
     from datetime import datetime, timezone
     from decimal import Decimal, InvalidOperation
 
-    from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, replay_paper
+    from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, compare_paper_reports, replay_paper
 
-    scenario = json.loads(args.scenario.read_text(encoding="utf-8"), parse_float=Decimal)
+    scenario_bytes = args.scenario.read_bytes()
+    scenario = json.loads(scenario_bytes, parse_float=Decimal)
     if args.archive is None and (args.as_of is not None or args.quotes is not None):
         raise ValueError("--as-of e --quotes exigem --archive")
     as_of = datetime.fromisoformat(args.as_of) if args.as_of is not None else None
@@ -202,7 +207,11 @@ def _paper_replay(args: argparse.Namespace) -> None:
     except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
         raise ValueError("arquivo de cenário ou dados do paper-replay inválidos") from exc
     modes = ("immediate", "confirmed") if args.mode == "both" else (args.mode,)
-    report = {mode: asdict(replay_paper(ticks, config=config, mode=mode)) for mode in modes}
+    results = {mode: replay_paper(ticks, config=config, mode=mode) for mode in modes}
+    report = {mode: asdict(result) for mode, result in results.items()}
+    if args.mode == "both":
+        report["comparison"] = compare_paper_reports(results["immediate"], results["confirmed"])
+        report["comparison"]["scenario_sha256"] = hashlib.sha256(scenario_bytes).hexdigest()
     if archive_report is not None:
         report["archive"] = archive_report
     print(json.dumps(report, default=str, ensure_ascii=False))
@@ -359,10 +368,16 @@ def _run_monitor(
     settings: HeliusSettings,
     source: HeliusDataSource,
     addresses: list[str],
+    *,
+    reference_mints: Sequence[str] = (),
 ) -> None:
+    from smart_money_radar.data_sources.solana_token_transfer_decoder import _decode_base58
+
+    if any(len(mint) > 44 or len(_decode_base58(mint)) != 32 for mint in reference_mints):
+        raise ValueError("mint de cotação inválido: esperado endereço Solana em Base58")
     wallets = [Wallet(address=address) for address in addresses]
     event_store = SQLiteEventStore(settings.database_path)
-    monitor = WalletMonitor(settings, source, event_store)
+    monitor = WalletMonitor(settings, source, event_store, reference_mints=tuple(dict.fromkeys(reference_mints)))
     stop_event = asyncio.Event()
     loop = asyncio.new_event_loop()
     for signal_name in (signal.SIGINT, signal.SIGTERM):

@@ -24,6 +24,25 @@ class FailingMonitorStub:
 
 
 class CliLifecycleTests(unittest.TestCase):
+    def test_watch_forwards_reference_mint_to_persisted_swap_monitor(self) -> None:
+        settings = HeliusSettings(api_key="simulated-key")
+        mint = "So11111111111111111111111111111111111111112"
+        with (
+            patch.object(cli.HeliusSettings, "from_environment", return_value=settings),
+            patch.object(cli, "HeliusDataSource"),
+            patch.object(cli, "SQLiteEventStore", return_value=StoreSpy()),
+            patch.object(cli, "WalletMonitor", return_value=MonitorStub()) as monitor,
+        ):
+            cli.main(["watch", "public-wallet", "--reference-mint", mint, "--reference-mint", mint])
+        self.assertEqual(monitor.call_args.kwargs["reference_mints"], (mint,))
+
+    def test_invalid_reference_mint_is_rejected_before_opening_database(self) -> None:
+        settings = HeliusSettings(api_key="simulated-key")
+        with patch.object(cli, "SQLiteEventStore") as store:
+            with self.assertRaisesRegex(ValueError, "mint de cotação inválido"):
+                cli._run_monitor(settings, object(), ["public-wallet"], reference_mints=["short"])
+        store.assert_not_called()
+
     def test_monitor_closes_event_store_when_run_finishes(self) -> None:
         store = StoreSpy()
         settings = HeliusSettings(api_key="simulated-key")

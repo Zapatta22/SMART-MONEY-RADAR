@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, localcontext
 from typing import Literal
 
@@ -93,6 +93,7 @@ class PaperFill:
     fee: Decimal
     reason: str
     quote_id: str | None = None
+    market_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,29 @@ class PaperReport:
     realized_pnl: Decimal
     total_fees: Decimal
     average_fill_delay_seconds: Decimal | None
+    average_decision_to_market_seconds: Decimal | None
+    average_market_to_availability_seconds: Decimal | None
+
+
+def compare_paper_reports(immediate: PaperReport, confirmed: PaperReport) -> dict:
+    """Compare mode outcomes on the shared replay inputs."""
+    closed_trades = {
+        "immediate": sum(fill.side == "SELL" for fill in immediate.fills),
+        "confirmed": sum(fill.side == "SELL" for fill in confirmed.fills),
+    }
+    modes_with_closed_trades = sum(count > 0 for count in closed_trades.values())
+    with localcontext() as context:
+        context.prec = 40
+        return {
+            "basis": "confirmed_minus_immediate",
+            "closed_trade_coverage": ("neither_mode", "one_mode", "both_modes")[modes_with_closed_trades],
+            "equity_delta": confirmed.final_equity - immediate.final_equity,
+            "realized_pnl_delta": confirmed.realized_pnl - immediate.realized_pnl,
+            "fee_delta": confirmed.total_fees - immediate.total_fees,
+            "drawdown_delta": confirmed.max_drawdown - immediate.max_drawdown,
+            "rejected_entry_delta": confirmed.rejected_entries - immediate.rejected_entries,
+            "closed_trades": closed_trades,
+        }
 
 
 @dataclass(frozen=True)
@@ -176,7 +200,7 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
                 cash += proceeds
                 realized_pnl += proceeds - entry_cost
                 fills.append(PaperFill("SELL", pending.signal.at, tick.at, sell_price,
-                                       quantity, fee, pending.reason, tick.quote_id))
+                                       quantity, fee, pending.reason, tick.quote_id, market_at))
                 quantity = ZERO
                 opened_at = None
             else:
@@ -197,7 +221,7 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
                     cash -= entry_cost
                     opened_at = tick.at
                     fills.append(PaperFill("BUY", pending.signal.at, tick.at, buy_price,
-                                           quantity, fee, pending.reason, tick.quote_id))
+                                           quantity, fee, pending.reason, tick.quote_id, market_at))
             pending = None
 
         liquidation = quantity * sell_price * (ONE - fee_rate)
@@ -244,17 +268,25 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
                 confirmation = tick
                 decisions.append(PaperDecision(tick.at, "await_confirmation", "buy_signal"))
 
-    delay = ZERO
+    market_delay = availability_delay = ZERO
     for fill in fills:
-        elapsed = fill.filled_at - fill.decision_at
-        delay += Decimal(elapsed.days * 86400 + elapsed.seconds)
-        delay += Decimal(elapsed.microseconds) / Decimal(1_000_000)
+        market_at = fill.market_at or fill.filled_at
+        market_delay += _seconds(market_at - fill.decision_at)
+        availability_delay += _seconds(fill.filled_at - market_at)
+
     return PaperReport(
         tuple(fills), cash, quantity, equity, drawdown, opened_at,
         pending.side if pending is not None else None, rejected_entries,
         confirmation is not None, tuple(decisions), realized_pnl,
-        sum((fill.fee for fill in fills), ZERO), delay / len(fills) if fills else None,
+        sum((fill.fee for fill in fills), ZERO),
+        (market_delay + availability_delay) / len(fills) if fills else None,
+        market_delay / len(fills) if fills else None,
+        availability_delay / len(fills) if fills else None,
     )
+
+
+def _seconds(value: timedelta) -> Decimal:
+    return Decimal(value.days * 86400 + value.seconds) + Decimal(value.microseconds) / Decimal(1_000_000)
 
 
 def _entry_rejection(

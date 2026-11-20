@@ -223,12 +223,40 @@ class EvidenceReplayTests(unittest.TestCase):
             self.assertEqual(result[mode].decisions[-1].reason, "insufficient_order_liquidity")
 
     def test_strict_fill_rejects_missing_bid_ask_or_depth(self):
-        ticks = [self.tick(0, "BUY"), replace(self.tick(1), ask_size=None),
-                 replace(self.tick(2), ask_size=None)]
-        result = self.strict(ticks)
+        for missing in ({"ask_size": None}, {"bid": None, "ask": None}):
+            with self.subTest(fields=missing):
+                ticks = [self.tick(0, "BUY"), replace(self.tick(1), **missing),
+                         replace(self.tick(2), **missing)]
+                result = self.strict(ticks)
+                for mode in ("immediate", "confirmed"):
+                    self.assertFalse(result[mode].fills)
+                    self.assertEqual(result[mode].decisions[-1].reason, "quote_depth_missing")
+
+    def test_strict_fill_uses_actual_depth_not_declared_liquidity(self):
+        ticks = [self.tick(0, "BUY"), replace(self.tick(1), ask_size=Decimal(11)),
+                 replace(self.tick(2), ask_size=Decimal(11))]
+        limits = EntryRiskLimits(Decimal(".20"), Decimal(".05"), Decimal(100), Decimal(200))
+        result = self.strict(ticks, limits=limits)
         for mode in ("immediate", "confirmed"):
             self.assertFalse(result[mode].fills)
-            self.assertEqual(result[mode].decisions[-1].reason, "quote_depth_missing")
+            self.assertEqual(result[mode].decisions[-1].reason, "liquidity_limit")
+
+    def test_strict_uses_supplied_emergency_halt_for_open_position(self):
+        ticks = [self.tick(0, "BUY"), self.tick(1), self.tick(2),
+                 replace(self.tick(3), entry_allowed=False), self.tick(4)]
+        records = {tick.quote_id: self.evidence(i, tick=tick) for i, tick in enumerate(ticks)}
+        limits = EntryRiskLimits(Decimal(".20"), Decimal(".05"), Decimal(100), Decimal(50))
+        active = EntryRiskSnapshot(Decimal(1000), Decimal(1), Decimal(0),
+                                   Decimal(0), Decimal(2000), False, True)
+        snapshots = {key: active for key in records}
+        snapshots["q3"] = replace(active, emergency_halt=True)
+        result = replay_with_required_risk(
+            ticks, records, config=self.config, expected_pool="pool-a",
+            risk_limits=limits, risk_by_quote=snapshots,
+        )
+        for mode in ("immediate", "confirmed"):
+            self.assertEqual([fill.side for fill in result[mode].fills], ["BUY", "SELL"])
+            self.assertEqual(result[mode].fills[-1].reason, "kill_switch")
 
     def test_daily_loss_uses_actual_closed_pnl_and_resets_at_utc_midnight(self):
         ticks = [self.tick(0, "BUY"), self.tick(1), self.tick(2),

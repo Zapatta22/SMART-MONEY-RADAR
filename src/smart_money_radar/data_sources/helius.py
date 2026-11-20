@@ -69,6 +69,52 @@ class HeliusDataSource:
             raise HeliusRpcError("Helius RPC não incluiu o campo result.")
         return response_payload["result"]
 
+    def get_finalized_transaction(self, signature: str) -> JsonObject | None:
+        """Return only finalized Solana transaction data for launch discovery."""
+        if not isinstance(signature, str) or not signature.strip():
+            raise ValueError("assinatura Solana obrigatória")
+        result = self.call(
+            "getTransaction",
+            [signature, {
+                "commitment": "finalized", "encoding": "jsonParsed",
+                "maxSupportedTransactionVersion": 0,
+            }],
+        )
+        if result is not None and not isinstance(result, dict):
+            raise HeliusRpcError("getTransaction finalizada retornou formato inválido.")
+        return result
+
+    def get_finalized_signatures_for_address(
+        self, wallet_address: str, *, limit: int = 100,
+        before: str | None = None,
+    ) -> list[JsonObject]:
+        """Fetch a bounded finalized-only signature page, newest first."""
+        if not isinstance(wallet_address, str) or not wallet_address.strip():
+            raise ValueError("endereço público Solana obrigatório")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limite inválido")
+        options: dict[str, Any] = {"limit": limit, "commitment": "finalized"}
+        if before is not None:
+            if not isinstance(before, str) or not before.strip():
+                raise ValueError("cursor antes inválido")
+            options["before"] = before
+        result = self.call("getSignaturesForAddress", [wallet_address, options])
+        if not isinstance(result, list) or any(not isinstance(item, dict) for item in result):
+            raise HeliusRpcError("getSignaturesForAddress finalizada retornou formato inválido.")
+        return result
+
+    async def get_finalized_signatures_for_address_async(
+        self, wallet_address: str, *, limit: int = 100,
+        before: str | None = None,
+    ) -> list[JsonObject]:
+        return await asyncio.to_thread(
+            self.get_finalized_signatures_for_address, wallet_address,
+            limit=limit, before=before,
+        )
+
+    async def get_finalized_transaction_async(self, signature: str) -> JsonObject | None:
+        return await asyncio.to_thread(self.get_finalized_transaction, signature)
+
     def get_version(self) -> JsonObject:
         """Confirma resposta real do endpoint RPC, sem exibir a API key."""
         result = self.call("getVersion", [])

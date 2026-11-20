@@ -26,3 +26,17 @@ Branches de PRs em Draft não estão incorporadas à main.
 - No primeiro CI houve uma falha real de fixture de silêncio, corrigida sem alterar código de produção. CI **aprovado** no SHA `70697064780f7a738b5e02f439dcb64d9c988097`: **769 testes**, `compileall`, zero falhas: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44761362086.
 - Não foram executadas sessões externas WebSocket/RPC, e os números de latência são ainda apenas instrumentação interna; **cobertura UNKNOWN**. O monitor não garante todos os lançamentos da rede: monitora apenas endereços explicitamente informados. Perda permanente de histórico fora da janela de backfill exige intervenção; sem avanço silencioso do cursor.
 - **Próximo marco bloqueante**: teste de ponta a ponta autorizado com fonte RPC/WebSocket real, registro de horários de disponibilidade, taxa de reconexão, divergência do provedor, eventos skipped/reorg e política de limitação de recursos. Nunca usar a presença de um evento confirmed como prova de finalized.
+
+
+## Revisão de aceite — PR #79 (2026-11-20)
+
+| Módulo | Critério | Implementação | Testes | Integração | Bloqueador |
+| --- | --- | --- | --- | --- | --- |
+| Telemetria Solana Live | Medir hints confirmed vs assinatura em finalized, contadores de 429 e duplicatas, p50/p95/p99 somente com >=20 observações | Código preparado | 786 testes aprovados no SHA `4dc388f` | PR #79 Draft | Sem amostras reais, sem horário do validador e sem atestado independente |
+| Limitação RPC | Evitar uma consulta por mensagem em rajadas sem encobrir lacunas | Configuração padrão de 1s por endereço | Teste de rajada aprovado | PR #79 Draft | Benchmarks e quotas do provedor real pendentes |
+| Registro de validação | JSON local seguro/atômico, sem chave, com cursores e checagem SQLite | CLI com duração limitada | Testes de proteção de credenciais aprovados | PR #79 Draft | Falta executar com RPC/WebSocket real autorizado |
+
+Validação CI geral: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44764651003.
+Validação operacional **PENDENTE**. Eventos reais coletados nesta sessão: 0;
+latência p95 real: não medida; cobertura: UNKNOWN.
+Procedimento: `docs/SMR-SOLANA-LIVE-REAL-VALIDATION.md`.

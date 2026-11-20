@@ -148,3 +148,17 @@ Duas frentes de execução foram representadas em branches isoladas, sem ativaç
 - Matriz de módulos e critérios de aceite em `docs/SMR-LAUNCH-LIVE-ACCEPTANCE.md`. Ausência de critérios globais ponderados: percentual de progresso ainda não mensurável.
 - **Não houve uso de rede RPC/WebSocket real, credenciais ou serviços pagos nesta sessão.** A capacidade de monitorar endereços com mock/fixtures não prova cobertura em tempo real nem origem autenticada. Continuidade Solana Live é **PARCIAL**, aguardando validação com provedor autorizado, reconciliação de reorgs, paginação hostil/429 e medição real de latência. Não habilitar operações financeiras.
 - Próxima tarefa: prova de integração com fonte real e diagnósticos de cobertura e proveniência, antes de classificar o monitor como operacionalmente concluído. Não fazer merge em main.
+
+
+### Comando Mestre 7 — preparação de validação Solana real (2026-11-20)
+
+- Inspecionado o estado efetivo da PR #76 `codex/smr-launch-websocket-integration@6b57762656702fccd165a0db660dcaea6514583d`, sem merge; 769 testes anteriores confirmados.
+- Ambiente atual sem `HELIUS_API_KEY` nem `SMR_ALLOW_NETWORK` configurados. **NENHUMA CONSULTA A RPC/WS REAL NESTA SESSÃO**. Não usar dados das fixtures como observações reais.
+- Duas frentes isoladas e coordenadas diretamente pelo GitHub, **0 agentes Codex independentes**: PR #77 implementação de métricas e reforços de backfill, PR #78 testes adversariais independentes. Integração Draft na PR #79, branch `codex/smr-real-validation-integration`.
+- Alterações: correspondência assinatura hint (confirmed)→RPC finalized, cronômetros monotônicos e percentis somente com >=20 amostras; contadores 429, duplicatas, hints pendentes e coalescing; barreiras contra páginas RPC duplicadas/fora de ordem ou status não finalizados; relatório JSON atômico sem credenciais e sessão controlada `smr launch-live --duration-seconds N --metrics-json caminho.json`.
+- RPC de alto volume: padrão CLI de `--min-reconcile-interval-seconds 1`; notificações agregadas não são classificadas como finalizadas, e qualquer lacuna não recuperável mantém cobertura `UNKNOWN`.
+- **Código validado** no commit `4dc388f05da670a114b8b031f34c5737e9e5bb47`: GitHub Actions geral, **786 testes aprovados, zero falhas, compileall aprovado** https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44764651003. Workflow estrito também aprovado: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44764668309. Comandos reais de captura não foram executados.
+- Procedimento reproduzível: `docs/SMR-SOLANA-LIVE-REAL-VALIDATION.md`; matriz de aceite: `docs/SMR-LAUNCH-LIVE-ACCEPTANCE.md`.
+- Métricas de rede real: eventos=0 coletados nesta sessão; latência p95=**não medida**; lacunas externas=**não avaliadas**; proveniência externa=**não atestada**. Não confundir zero eventos observados com inexistência de eventos na Solana.
+- **Próxima ação bloqueante**: ambiente sob controle do operador com autorização explícita e credenciais adequadas, captura limitada de um endereço público e comparação de WebSocket com backfill finalized. Testar desconexões, 429 reais, custo, reinício, slots e integridade. Após isso decidir se escala para o programa CPMM inteiro.
+- Estado: Solana Live **parcial**, operacionalmente não aprovado. Continuar sem ativar trading, sem contratar serviços e sem merge na `main`. Progresso global sem percentuais ponderados de aceitação; **não mensurável**.

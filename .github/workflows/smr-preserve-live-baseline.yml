@@ -1,0 +1,129 @@
+name: SMR preserve live four-account contemporaneous baseline offline
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-live-baseline
+    paths:
+      - .github/workflows/smr-preserve-live-baseline.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download immutable observation artifact, no new RPC or WS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download 44818816642 --name smr-live-cpmm-ws-baseline --dir /tmp/smr-baseline-pinned
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate RAW and SQLite journal before copying
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          from datetime import datetime, timezone
+          from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+          from smart_money_radar.services.prospective_cpmm_account_snapshot import inspect_prospective_cpmm_response
+          from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+
+          p=Path("/tmp/smr-baseline-pinned")
+          root=Path("data/evidence/mainnet/2026-11-20")
+          m=json.loads((p/"manifest.json").read_bytes())
+          assert m["subscriptions_acknowledged"]==4
+          assert m["notifications_received"]==0
+          assert m["baseline_rpc_attempts"]==1
+          assert m["baseline_status"]=="RPC_DECLARED_PROSPECTIVE_ONLY"
+          assert m["baseline_slot"]==471884671
+          assert m["coverage"]=="PARTIAL" and not m["race_window_closed"]
+          assert m["financial_execution_authorized"] is False
+          assert not m["global_ledger_order_verified"]
+          assert m["session_frames_stored"]==4
+          assert m["journal_integrity"]==["ok"]
+          assert m["session_report"]["observations"]==[]
+          assert m["session_report"]["coverage"]=="UNKNOWN"
+
+          req=(p/"baseline.request.raw.json").read_bytes()
+          rsp=(p/"baseline.response.raw.json").read_bytes()
+          assert hashlib.sha256(req).hexdigest()==m["baseline_request_sha256"]
+          assert hashlib.sha256(rsp).hexdigest()==m["baseline_response_sha256"]
+          q=json.loads(req)
+          assert q["method"]=="getMultipleAccounts" and q["params"][0]==m["accounts"]
+          assert q["params"][1]["commitment"]=="finalized"
+          j=json.loads(rsp)
+          assert j["result"]["context"]["slot"]==471884671
+          assert len(j["result"]["value"])==4
+          for i in range(1,5):
+              w=json.loads((p/f"ws-request-{i}.raw.json").read_bytes())
+              assert w["method"]=="accountSubscribe" and w["params"][0]==m["accounts"][i-1]
+              assert w["params"][1]["commitment"]=="finalized"
+          for i in range(4):
+              v=(p/f"frame-{i:03d}.raw.json").read_bytes()
+              frame=json.loads(v)
+              assert type(frame.get("id")) is int and type(frame.get("result")) is int
+
+          first=json.loads((root/"first-proof.manifest.json").read_bytes())
+          original=(root/first["raw_file"]).read_bytes()
+          assert hashlib.sha256(original).hexdigest()==first["raw_sha256"]
+          ix=[x for x in decode_raydium_cpmm_swaps(json.loads(original))
+              if x.accounts.pool_state==m["accounts"][0]]
+          assert len(ix)==1
+          a=ix[0].accounts
+          validated=inspect_prospective_cpmm_response(
+              request_raw=req,response_raw=rsp,source_id="solana-public-mainnet",
+              endpoint=m["endpoint_rpc"],
+              observed_at=datetime.fromisoformat(m["baseline_requested_at"]),
+              available_at=datetime.fromisoformat(m["baseline_available_at"]),
+              pool=a.pool_state,amm_config=a.amm_config,
+              input_vault=a.input_vault,output_vault=a.output_vault,
+              input_mint=a.input_token_mint,output_mint=a.output_token_mint,
+              authority=a.authority,input_token_program=a.input_token_program,
+              output_token_program=a.output_token_program,
+              original_swap_slot=first["slot_observed"])
+          assert validated.status=="RPC_DECLARED_PROSPECTIVE_ONLY"
+          assert validated.slot==m["baseline_slot"]
+
+          s=m["session_report"]
+          db=SQLiteGeyserRawStore(p/"geyser-raw.sqlite",read_only=True)
+          assert db.integrity_check()==["ok"]
+          proof=db.verify_wire_session(s["source_id"],s["session_id"],s["session_id"])
+          assert proof["verified_frames"]==4
+          assert proof["sha256"]==m["journal_report"]["sha256"]
+          db.close()
+
+          out=root/"live-cpmm-baseline-slot-471884671"
+          if out.exists():raise ValueError("archive location already exists")
+          out.mkdir(parents=True)
+          for item in p.iterdir():
+              if item.is_file():(out/item.name).write_bytes(item.read_bytes())
+          print("SMR_BASELINE_ARCHIVE slot=471884671")
+          print("SMR_BASELINE_ARCHIVE notifications=0")
+          print("SMR_BASELINE_ARCHIVE frames=4")
+          print("SMR_BASELINE_ARCHIVE snapshot_validated=True")
+          print("SMR_BASELINE_ARCHIVE no_new_network_calls=True")
+          PY
+      - name: Commit preserved evidence only to Draft branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence/mainnet/2026-11-20/live-cpmm-baseline-slot-471884671/
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: archive real CPMM baseline slot 471884671 alongside four WebSocket ACKs"
+          git push origin HEAD:codex/smr-cpmm-live-baseline

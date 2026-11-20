@@ -18,7 +18,7 @@ import base64
 import json
 
 from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
-from smart_money_radar.data_sources.raydium_cpmm_decoder import RAYDIUM_CPMM_PROGRAM_ID
+from smart_money_radar.data_sources.raydium_cpmm_decoder import RAYDIUM_CPMM_PROGRAM_ID, RaydiumCpmmSwapBaseInput
 from smart_money_radar.services.historical_cpmm_state import reconstruct_tx_vaults
 
 _EVENT_DISCRIMINATOR = sha256(b"event:SwapEvent").digest()[:8]
@@ -32,7 +32,7 @@ def _base58(raw: bytes) -> str:
     while value:
         value,rem=divmod(value,58)
         encoded=_ALPHABET[rem]+encoded
-    return "1"*(len(raw)-len(raw.lstrip(b"\\x00")))+encoded
+    return "1"*(len(raw)-len(raw.lstrip(bytes([0]))))+encoded
 
 
 @dataclass(frozen=True)
@@ -175,7 +175,7 @@ def reconcile_observed_swap_event(
            s.accounts.input_token_mint==ev.input_mint==state.input_vault.mint and
            s.accounts.output_token_mint==ev.output_mint==state.output_vault.mint and
            s.instruction_index==target["instruction_index"] and
-           s.instruction.kind=="SWAP_BASE_INPUT"]
+           isinstance(s.instruction,RaydiumCpmmSwapBaseInput)]
     if len(match)!=1 or not ev.base_input:
         raise ValueError("SwapEvent não coincide com instrução CPMM")
     if (ev.input_transfer_fee_raw!=0 or ev.output_transfer_fee_raw!=0

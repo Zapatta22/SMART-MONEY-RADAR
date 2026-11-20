@@ -116,3 +116,14 @@ Não afirmar que testes passaram. Inspecionar workflows, executar suíte complet
 - GitHub Actions comprovado no SHA de código `e4a2e1b20159473e74c8fe092323bc39d949bfb6`: **809 testes aprovados, zero falhas e compileall**, https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44779992846. Não somar totais das branches.
 - Especificação em `docs/SMR-RAW-QUOTES-REPLAY.md`. Solana Live real e Helius permanecem pendentes. Métricas PnL/ROI/drawdown confiáveis continuam indisponíveis. Progresso global não mensurável.
 - Próxima tarefa crítica: ligação verificável de RAW original/finalized e cotação com origem autenticada, slot, pool, `quote_id`, first-publication e preflight estrito `replay_with_required_risk` já existente; comparar modos só depois de evidências suficientes.
+
+
+### Comando Mestre 13 — cadeia de evidências e replay econômico estrito (2026-11-20)
+
+- PR #93 conferida Draft, head `6919173a0a29ea010492d933f42efce560eb13e6`; `main` verificada sem mudanças no commit `5060bc65ddf181a4736fdb662c44c3fec0dd7259`. Continuidade anterior lida.
+- Duas frentes em branches isoladas e **0 agentes Codex independentes**: PR #94 `codex/smr-evidence-chain-authentication` cria `services/evidence_chain.py` e testes para cadeia receipt RAW → assinatura/slot/pool/source → cotação/quote_id → cutoff, sem presumir autenticação. PR #95 `codex/smr-strict-economic-replay` cria `services/strict_economic_replay.py`, com gates de preço, quote_id, pool, duplicações, classification/risk/temporality e negação de PnL quando houver evidência não comprovada.
+- Integração conjunta em **PR #96 Draft**, branch `codex/smr-evidence-economic-integration`, base PR #93; **CI integrada 827 testes aprovados, zero falhas e compileall** no commit `14fc06024669729fcd9c4a1358e84276c5338f03`, https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44784616016.
+- A frente #95 isolada apresentou erro de importação `ModuleNotFoundError: ...evidence_chain` (CI isolada **não** aprovada): dependência entre contratos ficou resolvida na integração e os 827 testes integrados passaram. Não somar testes de branches distintas.
+- Estado conservador: mesmo `LOCALLY_LINKED_UNATTESTED` deixa `provider_authenticated=False`, `finalized_attested=False`, `executable_price_verified=False`; até existir fonte externa adequada, `strict_economic_replay` resulta `BLOCKED`, não calcula PnL/drawdown com preços inventados, não autoriza operações.
+- Próximo desbloqueio: fonte independente imutável de RAW/finalized, prova de quote vinculada a slot/pool/quote_id/time available, avaliação econômica de preço executável com taxas/slippage e integração com replay protegido preexistente. Sem rede Helius autorizada, Solana Live real permanece pendente. `main` não foi alterada; nada pago ou negociado.
+- Progresso global não mensurável sem critérios e pesos de aceitação acordados.

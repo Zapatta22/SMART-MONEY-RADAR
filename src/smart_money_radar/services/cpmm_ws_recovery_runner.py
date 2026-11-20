@@ -296,7 +296,9 @@ class CpmmRecoveryRunner:
                         and failure_record is None)
                     report["transport_reconnected_after_natural_disconnect"]=(
                         len(self.manifest["connections"])>1
-                        and prev_failure is not None)
+                        and report["previous_session_id"] is not None
+                        and report["four_subscriptions_confirmed"]
+                        and failure_record is None)
                     report["recovery_snapshot_confirmed"]=(
                         report["transport_reconnected_after_natural_disconnect"]
                         and report["four_subscriptions_confirmed"]
@@ -340,7 +342,8 @@ class CpmmRecoveryRunner:
                 and item["baseline_snapshot_confirmed"]
                 for item in self.manifest["connections"])
             self.manifest["live_real_reconnection_observed"]=any(
-                item["transport_reconnected_after_natural_disconnect"]
+                item["previous_session_id"] is not None
+                and item["four_subscriptions_confirmed"]
                 for item in self.manifest["connections"])
             # These values never change source/ledger coverage:
             # a reconnect still leaves a potentially unfilled gap.

@@ -138,6 +138,10 @@ class RealMainnetCpmmMultiVenueFixtureTests(unittest.TestCase):
                 }
                 archived, = store.list_swap_replay_archive(**market)
                 self.assertEqual(archived["operation_id"], operation_id)
+                pool = next(item.split(":", 1)[1] for item in bundle["evidence"].evidence
+                            if item.startswith("pool_state:"))
+                self.assertEqual(store.list_swap_replay_archive(**market, pool=pool), [archived])
+                self.assertEqual(store.list_swap_replay_archive(**market, pool="outro-pool"), [])
                 self.assertGreater(datetime.fromisoformat(archived["available_at"]),
                                    datetime.fromisoformat(archived["occurred_at"]))
                 process_raydium_cpmm_observation(

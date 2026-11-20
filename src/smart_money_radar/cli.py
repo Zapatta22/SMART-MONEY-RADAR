@@ -94,6 +94,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     launch.add_argument("transactions", type=Path, nargs="+")
     launch.add_argument("--journal", type=Path, help="arquiva evidências e deduplica pools no SQLite")
+    live = subparsers.add_parser(
+        "launch-backfill", help="recupera inicializações CPMM finalizadas de um endereço monitorado",
+    )
+    live.add_argument("address", help="endereço público explicitamente monitorado")
+    live.add_argument("--source-id", required=True, help="identificador estável do endpoint e cluster")
+    live.add_argument("--page-size", type=int, default=100)
+    live.add_argument("--max-pages", type=int, default=10)
     return parser
 
 
@@ -134,6 +141,20 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
         if args.command == "launch-scan":
             _scan_cpmm_launches(args.transactions, journal=args.journal)
+            return
+        if args.command == "launch-backfill":
+            from smart_money_radar.services.launch_live_backfill import FinalizedLaunchBackfill
+            settings = HeliusSettings.from_environment()
+            source = HeliusDataSource(settings)
+            store = SQLiteEventStore(settings.database_path)
+            try:
+                result = asyncio.run(FinalizedLaunchBackfill(
+                    source, store, source_id=args.source_id,
+                    page_size=args.page_size, max_pages=args.max_pages,
+                ).synchronize(args.address))
+            finally:
+                store.close()
+            print(json.dumps(asdict(result), ensure_ascii=False))
             return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)

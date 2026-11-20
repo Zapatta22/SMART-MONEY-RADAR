@@ -287,3 +287,11 @@ Não afirmar que testes passaram. Inspecionar workflows, executar suíte complet
 - **STATUS: integração ainda NÃO validada.** CI de SHA `80229c1bee2216a22688333b2f3b2b7631254d1c`: https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44835198738 (in_progress na consulta). Execuções intermediárias falharam; não reportar 1.033 testes aprovados sem evidência da CI.
 - **Bloqueios prioritários:** conferir falhas da CI e corrigir; cobrir interrupções em pontos de gravação e reinício em backoff; garantir RPC que ignora cancelamento não possa bloquear o runner; preservar resposta RPC RAW também para resultados tardios; verificar escopo da migração e lock SQLite; eliminar erros de compatibilidade de leitura em testes antigos. Um teste sintético não prova recuperação live.
 - Cobertura continua **UNKNOWN**, `main` preservada, live reconnect NÃO demonstrado e execução financeira bloqueada. Próxima ação: corrigir os bloqueios e obter workflow verde antes de nova captura real.
+
+
+### Comando Mestre 27 — marco CI confirmado (2026-11-20)
+
+- **PR #112 Draft**: https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/112, base #111. Suite integrada **1.033 testes aprovados, zero falhas** e compilação no commit `35ceef59c8b514eef158cef19a6b384a4f012468`, GitHub Actions https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44835391965.
+- Corrigidos na rodada: escape de quebras de linha no runner (`SyntaxError`), recriação da tabela de captura após migração v3 legada, teardown de sessão interrompida, e chance de processamento de RPC já concluído antes do encerramento. CI anterior apresentava falhas intermediárias que não devem ser usadas como resultado final.
+- Cenários de 3 testes novos: RAW/sessão e lacuna em restart de SQLite, desconexão sem sequência fictícia, e RPC atrasado sem promoção. Entretanto os oito cenários detalhados no Comando 27 **não estão totalmente cobertos**; teste com RPC que suprime cancelamento, crash em cada ponto e preservação RAW de resposta tardia ainda exigem fechamento. O marco verde demonstra regressão básica, não robustez completa.
+- **Progresso do módulo 27 (estimativa por critérios, não medição da suíte): 65%.** Cobertura de ledger UNKNOWN; nenhuma reconexão Solana live observada, `main` inalterada, chaves e operações financeiras ausentes.

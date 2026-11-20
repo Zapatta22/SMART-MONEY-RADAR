@@ -35,6 +35,10 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PUBLIC_ADDRESS",
         help="um ou mais endereços públicos Solana",
     )
+    watch_parser.add_argument(
+        "--reference-mint", action="append", default=[],
+        help="mint de cotação para classificar swaps arquivados; repetível",
+    )
     evidence = subparsers.add_parser(
         "geyser-evidence", help="inspeciona uma transação no journal Yellowstone local"
     )
@@ -114,7 +118,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(f"Resposta RPC Helius confirmada: Solana {result.get('solana-core', 'versão desconhecida')}.")
             return
         if args.command == "watch":
-            _run_monitor(settings, source, args.addresses)
+            _run_monitor(settings, source, args.addresses, reference_mints=args.reference_mint)
             return
     except (OSError, SettingsError, RuntimeError, ValueError, sqlite3.Error) as exc:
         raise SystemExit(str(exc)) from None
@@ -364,10 +368,16 @@ def _run_monitor(
     settings: HeliusSettings,
     source: HeliusDataSource,
     addresses: list[str],
+    *,
+    reference_mints: Sequence[str] = (),
 ) -> None:
+    from smart_money_radar.data_sources.solana_token_transfer_decoder import _decode_base58
+
+    if any(len(mint) > 44 or len(_decode_base58(mint)) != 32 for mint in reference_mints):
+        raise ValueError("mint de cotação inválido: esperado endereço Solana em Base58")
     wallets = [Wallet(address=address) for address in addresses]
     event_store = SQLiteEventStore(settings.database_path)
-    monitor = WalletMonitor(settings, source, event_store)
+    monitor = WalletMonitor(settings, source, event_store, reference_mints=tuple(dict.fromkeys(reference_mints)))
     stop_event = asyncio.Event()
     loop = asyncio.new_event_loop()
     for signal_name in (signal.SIGINT, signal.SIGTERM):

@@ -130,3 +130,8 @@ registrados. Preserve o cutoff e os hashes publicados. Um conjunto sem
 sinais elegíveis ou sem cotações posteriores permite validar o fluxo,
 mas não medir a qualidade da execução dos dois modos. O atraso do
 relatório é simulado.
+
+Configure `smr watch CARTEIRA --reference-mint MINT_DE_COTACAO` antes de
+coletar os sinais CPMM para essa avaliação. Use o mint selecionado também
+em `market.quote_mint`. O arquivo prospectivo conserva a classificação
+publicada, portanto a seleção precisa estar configurada desde a coleta.

@@ -142,6 +142,7 @@ class CpmmRecoveryRunner:
                                 acc=expected.get(req_id)
                                 sub=parsed.get("result")
                                 session._record(raw,"solana_ws_subscription_ack")
+                                failure_phase="subscribe"
                                 report["wire_raw_frames_sha256"].append(sha256(raw).hexdigest())
                                 report["frames"]+=1
                                 if acc is None or type(sub) is not int:
@@ -158,9 +159,14 @@ class CpmmRecoveryRunner:
                             failure_phase="receive"
                             if baseline_task and baseline_task.done():
                                 try:
-                                    if not baseline_task.cancelled():
-                                        baseline_task.result()  # fail fast on RPC exception
+                                    if baseline_task.cancelled():
+                                        raise RuntimeError("rpc_baseline_cancelled")
+                                    rpc_result=baseline_task.result()
+                                    if (not isinstance(rpc_result,tuple) or
+                                        len(rpc_result)!=4 or rpc_result[3] is not None):
+                                        raise RuntimeError("rpc_baseline_unavailable")
                                 except Exception as exc:
+                                    failure_phase="baseline"
                                     raise RuntimeError("rpc_baseline_failed") from exc
                             if report["notifications"] and baseline_task and baseline_task.done():
                                 break
@@ -175,6 +181,8 @@ class CpmmRecoveryRunner:
                     report["error"]={"type":err.error_type,"phase":err.phase,
                         "message":err.error_message,"classification":err.failure}
                     self.manifest["gaps"].append(err.__dict__)
+                    if err.failure=="PERSISTENCE_FAILED":
+                        self.manifest["all_raw_frames_in_sqlite"]=False
                     # Keep the originating journal open just long enough to
                     # archive a completed RPC result. Never validate on disconnect.
                     failure_record=err
@@ -215,6 +223,9 @@ class CpmmRecoveryRunner:
                                     raise ValueError("rpc_baseline_after_cutoff")
                                 if error is not None:
                                     raise ValueError("rpc_baseline_transport_error")
+                                if self.clock()>=deadline:
+                                    report["baseline_rejection"]="global_deadline_elapsed"
+                                    raise ValueError("rpc_baseline_global_deadline")
                                 audit=inspect_contemporaneous_baseline(
                                     session=session,request_raw=req,response_raw=response,
                                     requested_at=requested,available_at=available,
@@ -238,6 +249,7 @@ class CpmmRecoveryRunner:
                         except Exception as exc:
                             report["baseline_error"]=type(exc).__name__
                             if failure_phase=="persist":
+                                self.manifest["all_raw_frames_in_sqlite"]=False
                                 report["persistence_error"]=type(exc).__name__
                                 self.manifest["stop_reason"]="persistence_failed_no_retry"
                                 connection_healthy=False

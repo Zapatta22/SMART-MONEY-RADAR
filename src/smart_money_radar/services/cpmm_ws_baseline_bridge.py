@@ -130,7 +130,9 @@ def inspect_contemporaneous_baseline(
     for observation,raw in notifications:
         if not isinstance(observation,LiveRpcAccountObservation):
             raise TypeError("observation must be parsed by existing WS adapter")
-        if not isinstance(raw,bytes) or sha256(raw).hexdigest()!=observation.raw_sha256:
+        if not isinstance(raw,bytes):
+            raise TypeError("notification original RAW required")
+        if sha256(raw).hexdigest()!=observation.raw_sha256:
             raise ValueError("notification RAW integrity conflict")
         if observation.account not in accounts:
             raise ValueError("notification outside four-account scope")

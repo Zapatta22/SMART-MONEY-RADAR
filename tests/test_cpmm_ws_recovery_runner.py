@@ -1,6 +1,7 @@
 """Offline-only fake sockets/RPC: never claim they are Solana observations."""
 import asyncio
 import json
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime,timezone,timedelta
@@ -333,6 +334,87 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["baseline_status"],"UNKNOWN")
         self.assertEqual(first["journal"]["frame_count"],6)
         self.assertEqual(result["coverage"],"UNKNOWN")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
+
+    async def test_regressive_rpc_slot_never_promotes_baseline(self):
+        extra='{"jsonrpc":"2.0","method":"syntheticUnknown"}'
+        conn=FakeConnector([[ack(1),ack(2),ack(3),ack(4),extra]])
+        rpc=FakeRPC(response=b'{"result":{"context":{"slot":0},"value":[]}}')
+        base=self.runner(conn,rpc)
+        base.max_frames=5
+        report=await base.run()
+        first=report["connections"][0]
+        self.assertEqual(first["baseline_rejection"],"regressive_rpc_slot")
+        self.assertEqual(first["baseline_status"],"UNKNOWN")
+        self.assertFalse(first.get("baseline_verified_as_snapshot",False))
+        self.assertEqual(first["journal"]["frame_count"],7)
+        self.assertEqual(report["coverage"],"UNKNOWN")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
+    async def test_incomplete_rpc_baseline_remains_unknown(self):
+        extra='{"jsonrpc":"2.0","method":"syntheticUnknown"}'
+        conn=FakeConnector([[ack(1),ack(2),ack(3),ack(4),extra]])
+        rpc=FakeRPC(response=b'{"result":{"context":{"slot":5},"value":[]}}')
+        base=self.runner(conn,rpc)
+        base.max_frames=5
+        report=await base.run()
+        first=report["connections"][0]
+        self.assertFalse(first.get("baseline_verified_as_snapshot",False))
+        self.assertEqual(first["coverage"],"UNKNOWN")
+        self.assertEqual(first["journal"]["frame_count"],7)
+        self.assertEqual(report["coverage"],"UNKNOWN")
+        self.assertEqual(self.db.integrity_check(),["ok"])
+
+    async def test_raw_checkpoint_transaction_rolls_back_on_fault(self):
+        session=self.recovery.new_connection()
+        db_path=Path(self.tmp.name)/"journal.sqlite"
+        with sqlite3.connect(db_path) as connection:
+            connection.execute("""CREATE TRIGGER synthetic_abort_checkpoint
+                BEFORE UPDATE ON geyser_frame_streams BEGIN
+                SELECT RAISE(ABORT, 'synthetic checkpoint failure');
+                END""")
+        try:
+            with self.assertRaises(sqlite3.DatabaseError):
+                session._record(b"synthetic-raw","test_raw")
+        finally:
+            with sqlite3.connect(db_path) as connection:
+                count=connection.execute(
+                    "SELECT COUNT(*) FROM geyser_wire_frames WHERE stream_id=?",
+                    (session.session_id,)).fetchone()[0]
+                seq=connection.execute(
+                    "SELECT contiguous_sequence,last_seen_sequence FROM geyser_frame_streams WHERE stream_id=?",
+                    (session.session_id,)).fetchone()
+                self.assertEqual(count,0)
+                self.assertEqual(seq,(-1,-1))
+                connection.execute("DROP TRIGGER synthetic_abort_checkpoint")
+        session._record(b"synthetic-raw","test_raw")
+        session.finish("bounded_end")
+        self.db.close()
+        reopened=SQLiteGeyserRawStore(db_path)
+        self.assertEqual(list(reopened.iter_wire_frames(
+            "test-solana-ws",session.session_id,session.session_id)),
+            [(0,b"synthetic-raw")])
+        self.assertEqual(reopened.integrity_check(),["ok"])
+        self.db=reopened
+
+    async def test_sha256_conflict_taints_replay_without_checkpoint_jump(self):
+        session=self.recovery.new_connection()
+        sid=session.session_id
+        session._record(b"original","synthetic")
+        same=self.db.append_wire_frame(source_id="test-solana-ws",stream_id=sid,
+            ordering_domain_id=sid,stream_sequence=0,
+            payload=b"original",frame_kind="synthetic")
+        self.assertEqual(same.status,"duplicate")
+        collision=self.db.append_wire_frame(source_id="test-solana-ws",
+            stream_id=sid,ordering_domain_id=sid,stream_sequence=0,
+            payload=b"altered",frame_kind="synthetic")
+        self.assertEqual(collision.status,"collision")
+        self.assertTrue(collision.tainted)
+        self.assertEqual(collision.contiguous_sequence,0)
+        with self.assertRaises(ValueError):
+            self.db.verify_wire_session("test-solana-ws",sid,sid)
+        session.finish("interrupted_unknown")
         self.assertEqual(self.db.integrity_check(),["ok"])
 
 if __name__=="__main__":

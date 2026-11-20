@@ -14,8 +14,8 @@ CONCLUÍDO sem evidências reproduzíveis e links de CI.
 | CPMM-02 | VALIDADO LOCALMENTE NO POOL DE REFERÊNCIA | Confirmar offsets, discriminadores, comprimentos e taxas de PoolState/AmmConfig contra código oficial versionado e contas mainnet finalizadas. Registrar hashes e fixtures. |
 | CPMM-03 | PARCIAL — SNAPSHOT LOCAL VALIDADO | Provar owner/program ID, pool, config, vaults, mints, autoridade, decimais e saldo efetivo no mesmo contexto de slot; documentar limitações de RPC. |
 | CPMM-04 | PENDENTE | Comparar estimativas com swaps reais finalizados no mesmo pool, com fee/rounding e eventual Token-2022 explicitados; reportar desvios. |
-| CPMM-05 | PARCIAL — TESTES NÃO EXECUTADOS | O adaptador filtra ticks sem evidência e aplica cutoff as-of; falta integrar CLI, validar no pipeline completo e executar CI. |
-| CPMM-06 | PENDENTE | Vincular criptograficamente a cotação (quote_id, preço bid/ask, pool, payload e timestamps) à evidência RAW; rótulos declarados pelo arquivo não bastam para autenticar quotes. |
+| CPMM-05 | CLI LOCAL VALIDADO NA #67 | CLI, cutoff por disponibilidade e risco no fill passaram no CI estrito. A integração com arquivo histórico ainda está pendente. |
+| CPMM-06 | VÍNCULO RAW TESTADO; ORIGEM PENDENTE | A #67 vincula quote_id, preço bid/ask, pool, payload e horários ao RAW por SHA-256. Autenticação externa do provedor e do relógio segue pendente. |
 | CPMM-07 | VALIDADO LOCALMENTE NO POOL DE REFERÊNCIA | Conferir em CI a regressão com a captura finalizada e manter testes sintéticos para bytes discriminadores, prefixos Base58 e flags. |
 
 ## Evidência da auditoria binária

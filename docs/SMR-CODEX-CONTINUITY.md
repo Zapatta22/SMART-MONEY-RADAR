@@ -86,8 +86,13 @@ mainnet finalizada. O replay protegido verifica o SHA-256 e os campos da
 cotação original, respeita o cutoff antes de processar os dados posteriores
 e reavalia a entrada no fill dos dois modos. A validação usa bytes de
 fixture e mantém como pendente a autenticação externa da origem e do
-relógio. O último commit revisado e os resultados da rodada constam na
-descrição da PR Draft.
+relógio. O commit de código validado é `072d0920f534d586ccec47c3c6010359ce89b712`.
+Passaram 743 testes locais, `compileall` e `git diff --check`. O comando
+`smr cpmm-snapshot-audit` também foi executado na captura do slot
+`471539976`. O workflow geral e o estrito passaram no mesmo commit.
+[PR #67](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/67) ·
+[CI geral](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44674207937) ·
+[CI estrito](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44674215591)
 
 Duas frentes independentes partiram do head original da #64. A PR #65
 mostra checkpoints e pendências no painel local, com 727 testes locais.
@@ -103,5 +108,6 @@ Integrar a captura de cotações com proveniência externa verificável ao
 replay protegido e comparar dados contemporâneos do mesmo pool CPMM.
 É necessário um intervalo com swaps finalizados, cotações bid/ask,
 profundidade e horários de disponibilidade. Os snapshots de reserva
-continuam classificados como estimativas. A validação prospectiva,
-os modos de execução real e a aceitação operacional seguem pendentes.
+continuam classificados como estimativas. A validação prospectiva e a aceitação operacional seguem pendentes.
+A execução financeira permanece desabilitada. A `main` segue em
+`5060bc65ddf181a4736fdb662c44c3fec0dd7259`.

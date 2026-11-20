@@ -67,9 +67,9 @@ class PublicCpmmWsSession:
     def start(self):
         if self.active:
             raise ValueError("sessão já iniciada")
-        self.store.start_capture_session(self.source_id,self.session_id)
         self.store.register_frame_stream(self.source_id,self.session_id,
                                          self.session_id,0)
+        self.store.start_capture_session(self.source_id,self.session_id)
         self.active=True
 
     def finish(self,outcome:str):

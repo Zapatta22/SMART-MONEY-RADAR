@@ -64,6 +64,26 @@ class MarketEvidenceBridgeTests(unittest.TestCase):
         self.assertFalse(result.classification.operational_authorized)
         self.assertFalse(result.safety.source_authenticated)
 
+    def test_market_source_conflict_is_never_assumed_safe(self):
+        from smart_money_radar.services.market_safety_liquidity import (
+            MarketSafetyFinding,
+        )
+        from unittest.mock import patch
+        finding=MarketSafetyFinding(
+            token_safety="VERIFIED", liquidity_quote=Decimal("1000"),
+            liquidity_verified=True, mandatory_blocks=(), reasons=(),
+            evidence_ids=("token",), observed_at=T, available_at=T,
+            slot=100, source_id="different-provider", source_authenticated=True,
+        )
+        with patch(
+            "smart_money_radar.services.market_opportunity_bridge.assess_token_liquidity",
+            return_value=finding,
+        ):
+            result=classify()
+        self.assertEqual(result.classification.verdict, "REJECTED")
+        self.assertIn("source_provenance_unverified", result.classification.reasons)
+        self.assertEqual(dict(result.classification.modes)["immediate"], "BLOCKED")
+
     def test_replay_is_deterministic_without_new_evidence(self):
         a=classify()
         b=classify()

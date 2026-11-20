@@ -42,7 +42,10 @@ class CpmmRecoveryRunner:
             "coverage":"UNKNOWN","financial_execution_authorized":False,
             "global_order_proven":False,"continuous_delivery_proven":False,
             "recovery_live_proven":False,"connections":[],"gaps":[],
-            "rpc_baseline_calls":0,"stop_reason":None}
+            "rpc_baseline_calls":0,"stop_reason":None,
+            "live_real_reconnection_observed":False,
+            "all_raw_frames_in_sqlite":True,
+            "backfill_or_continuity_proven":False}
 
     async def run(self)->dict:
         deadline=self.clock()+self.duration_seconds

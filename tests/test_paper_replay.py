@@ -17,9 +17,9 @@ class PaperReplayTests(unittest.TestCase):
         self.start = datetime(2026, 1, 1, tzinfo=timezone.utc)
         self.config = PaperConfig(Decimal(1000), Decimal(300), Decimal("0.10"))
 
-    def tick(self, offset, price, volume, signal="NONE", allowed=True):
+    def tick(self, offset, price, volume, signal="NONE", allowed=True, halted=False):
         return ReplayTick(self.start + timedelta(seconds=offset), Decimal(price),
-                          Decimal(volume), signal, allowed)
+                          Decimal(volume), signal, allowed, halted)
 
     def test_modes_fill_after_decision_and_compare_same_history(self):
         ticks = [self.tick(0, 10, 10, "BUY"), self.tick(1, 11, 11),
@@ -68,6 +68,18 @@ class PaperReplayTests(unittest.TestCase):
         self.assertEqual(sell.filled_at, ticks[4].at)
         self.assertGreater(buy.fee, 0)
         self.assertGreater(result.max_drawdown, 0)
+
+    def test_kill_switch_cancels_entry_and_schedules_exit(self):
+        blocked = [self.tick(0, 10, 10, "BUY"), self.tick(1, 11, 11, halted=True)]
+        for mode in ("immediate", "confirmed"):
+            results = replay_paper(blocked, config=self.config, mode=mode)
+            self.assertEqual(results.fills, ())
+            self.assertEqual(results.decisions[-1].reason, "kill_switch")
+        opened = [self.tick(0, 10, 10, "BUY"), self.tick(1, 10, 10),
+                  self.tick(2, 10, 10, halted=True), self.tick(3, 10, 10, halted=True)]
+        result = replay_paper(opened, config=self.config, mode="immediate")
+        self.assertEqual(result.fills[-1].reason, "kill_switch")
+        self.assertEqual(result.open_quantity, 0)
 
     def test_entry_price_ceiling_is_shared_and_records_rejections(self):
         config = PaperConfig(Decimal(1000), Decimal(100), Decimal(1),

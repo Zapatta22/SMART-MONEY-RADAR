@@ -39,7 +39,8 @@ O cenário fornece o sinal e o resultado dos filtros de entrada.
   um preço de execução acima do teto relativo ao preço da decisão.
 - O gasto de entrada inclui a taxa e respeita o menor valor entre o teto
   fixo e a fração configurada do caixa disponível. O replay comporta uma
-  posição comprada por execução.
+  posição comprada por execução. Uma observação com `halted: true` cancela
+  uma entrada pendente e agenda a liquidação se houver posição aberta.
 - Sinal de venda, stop ou take profit gera uma ordem de saída para a
   próxima observação com volume positivo. O stop e o take profit usam o
   valor líquido estimado de liquidação.

@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, localcontext
 from typing import Literal
 
@@ -18,15 +18,18 @@ class ReplayTick:
     volume: Decimal
     signal: Literal["BUY", "SELL", "NONE"] = "NONE"
     entry_allowed: bool = False
+    halted: bool = False
 
     def __post_init__(self) -> None:
         if self.at.utcoffset() is None:
             raise ValueError("observação exige horário com fuso")
+        object.__setattr__(self, "at", self.at.astimezone(timezone.utc))
         if not self.price.is_finite() or self.price <= 0:
             raise ValueError("preço da observação inválido")
         if not self.volume.is_finite() or self.volume < 0:
             raise ValueError("volume da observação inválido")
-        if self.signal not in {"BUY", "SELL", "NONE"} or type(self.entry_allowed) is not bool:
+        if (self.signal not in {"BUY", "SELL", "NONE"}
+                or type(self.entry_allowed) is not bool or type(self.halted) is not bool):
             raise ValueError("sinal ou filtro de entrada inválido")
 
 
@@ -169,7 +172,9 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
         if pending is not None:
             continue
         if quantity:
-            if tick.signal == "SELL":
+            if tick.halted:
+                pending = _Order("SELL", tick, "kill_switch")
+            elif tick.signal == "SELL":
                 pending = _Order("SELL", tick, "sell_signal")
             elif liquidation <= entry_cost * (ONE - config.stop_loss):
                 pending = _Order("SELL", tick, "stop_loss")
@@ -178,10 +183,10 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
             if pending is not None:
                 decisions.append(PaperDecision(tick.at, "schedule_sell", pending.reason))
             continue
-        if not tick.entry_allowed or tick.signal == "SELL" or tick.volume <= 0:
+        if tick.halted or not tick.entry_allowed or tick.signal == "SELL" or tick.volume <= 0:
             if confirmation is not None or tick.signal == "BUY":
                 rejected_entries += 1
-                decisions.append(PaperDecision(tick.at, "reject", "entry_conditions"))
+                decisions.append(PaperDecision(tick.at, "reject", "kill_switch" if tick.halted else "entry_conditions"))
             confirmation = None
             continue
         if confirmation is not None:
@@ -217,6 +222,8 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
 def _entry_rejection(
     tick: ReplayTick, order: _Order, price: Decimal, config: PaperConfig,
 ) -> str | None:
+    if tick.halted:
+        return "kill_switch"
     if not tick.entry_allowed or tick.signal == "SELL" or tick.volume <= 0:
         return "entry_conditions_at_fill"
     maximum = config.max_entry_deviation_bps

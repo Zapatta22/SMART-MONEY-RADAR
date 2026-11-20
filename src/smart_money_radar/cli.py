@@ -124,12 +124,18 @@ def _paper_replay(args: argparse.Namespace) -> None:
     from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, replay_paper
 
     scenario = json.loads(args.scenario.read_text(encoding="utf-8"), parse_float=Decimal)
+
+    def decimal(value):
+        if isinstance(value, bool):
+            raise ValueError("valor decimal não pode ser booleano")
+        return Decimal(value)
+
     try:
-        config = PaperConfig(**{key: Decimal(value) for key, value in scenario["config"].items()})
+        config = PaperConfig(**{key: decimal(value) for key, value in scenario["config"].items()})
         ticks = [
             ReplayTick(
-                datetime.fromisoformat(row["at"]), Decimal(row["price"]), Decimal(row["volume"]),
-                row.get("signal", "NONE"), row.get("entry_allowed", False),
+                datetime.fromisoformat(row["at"]), decimal(row["price"]), decimal(row["volume"]),
+                row.get("signal", "NONE"), row.get("entry_allowed", False), row.get("halted", False),
             )
             for row in scenario["ticks"]
         ]

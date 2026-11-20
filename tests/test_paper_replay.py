@@ -30,6 +30,9 @@ class PaperReplayTests(unittest.TestCase):
         self.assertEqual((buy.decision_at, buy.filled_at), (ticks[0].at, ticks[1].at))
         self.assertEqual((sell.decision_at, sell.filled_at), (ticks[2].at, ticks[3].at))
         self.assertTrue(all(fill.filled_at > fill.decision_at for fill in immediate.fills))
+        self.assertEqual(immediate.average_fill_delay_seconds, Decimal(1))
+        self.assertEqual(immediate.total_fees, 0)
+        self.assertEqual(immediate.realized_pnl.quantize(Decimal(".01")), Decimal("18.18"))
         self.assertEqual(immediate.final_equity.quantize(Decimal(".01")), Decimal("1018.18"))
         self.assertEqual(confirmed.fills, ())
         self.assertEqual(confirmed.rejected_entries, 1)
@@ -65,6 +68,21 @@ class PaperReplayTests(unittest.TestCase):
         self.assertEqual(sell.filled_at, ticks[4].at)
         self.assertGreater(buy.fee, 0)
         self.assertGreater(result.max_drawdown, 0)
+
+    def test_entry_price_ceiling_is_shared_and_records_rejections(self):
+        config = PaperConfig(Decimal(1000), Decimal(100), Decimal(1),
+                             max_entry_deviation_bps=Decimal(200))
+        entries = {
+            "immediate": [self.tick(0, 10, 10, "BUY"), self.tick(1, 11, 11)],
+            "confirmed": [self.tick(0, 10, 10, "BUY"), self.tick(1, 11, 11), self.tick(2, 12, 12)],
+        }
+        for mode, ticks in entries.items():
+            with self.subTest(mode=mode):
+                result = replay_paper(ticks, config=config, mode=mode)
+                self.assertEqual(result.fills, ())
+                self.assertEqual(result.rejected_entries, 1)
+                self.assertEqual(result.decisions[-1].reason, "entry_price_deviation")
+                self.assertEqual(result.cash, config.initial_cash)
 
     def test_end_of_history_has_no_fabricated_fill_and_rejects_duplicate_time(self):
         first = self.tick(0, 10, 1, "BUY")

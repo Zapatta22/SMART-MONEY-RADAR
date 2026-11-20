@@ -11,6 +11,7 @@ sobre as mesmas observações. Use `--mode` para executar só um deles.
     "max_exposure": "0.20",
     "fee_bps": "30",
     "slippage_bps": "20",
+    "max_entry_deviation_bps": "300",
     "stop_loss": "0.10",
     "take_profit": "0.20"
   },
@@ -33,7 +34,9 @@ O cenário fornece o sinal e o resultado dos filtros de entrada.
 - No modo confirmado, a observação seguinte precisa ter preço e volume
   maiores que os do sinal. Uma observação sem confirmação encerra a tentativa.
 - A entrada simulada usa a primeira observação posterior à decisão e exige
-  filtro aprovado, volume positivo e ausência de sinal de venda.
+  filtro aprovado, volume positivo e ausência de sinal de venda. Se
+  `max_entry_deviation_bps` for configurado, os dois modos também rejeitam
+  um preço de execução acima do teto relativo ao preço da decisão.
 - O gasto de entrada inclui a taxa e respeita o menor valor entre o teto
   fixo e a fração configurada do caixa disponível. O replay comporta uma
   posição comprada por execução.
@@ -42,6 +45,9 @@ O cenário fornece o sinal e o resultado dos filtros de entrada.
   valor líquido estimado de liquidação.
 - O relatório inclui horários de decisão e execução, fills, taxas, exposição
   em unidades do ativo, patrimônio líquido, drawdown e ordens pendentes.
+  O histórico de decisões registra ordens agendadas, confirmação e
+  rejeições. O resultado inclui P&L realizado, taxas totais e tempo médio
+  simulado entre a decisão e o fill.
   A última observação marca uma posição aberta a mercado.
 
 Estimativas usam taxa e slippage fixos. O volume funciona como confirmação

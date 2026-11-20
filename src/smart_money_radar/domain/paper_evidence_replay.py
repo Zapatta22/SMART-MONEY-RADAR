@@ -3,7 +3,7 @@
 No change to the trading engine or its existing historical CLI. This wrapper
 is opt-in until archive evidence and end-to-end acceptance are validated.
 """
-from datetime import timezone
+from datetime import datetime, timezone
 
 from smart_money_radar.domain.paper_evidence_gate import gate_paper_evidence
 from smart_money_radar.domain.paper_replay import (
@@ -13,7 +13,8 @@ from smart_money_radar.domain.paper_replay import (
 
 def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
                          *, config: PaperConfig, expected_pool: str,
-                         require_observed_quote: bool = True):
+                         require_observed_quote: bool = True,
+                         as_of: datetime | None = None):
     """Run both entry modes on the identical fail-closed evidence-filtered ticks.
 
     Every replay observation must have evidence keyed by quote_id. Missing or
@@ -22,8 +23,11 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
     """
     if not isinstance(ticks, list) or not isinstance(evidence_by_quote, dict):
         raise ValueError("ticks/evidências inválidos")
+    if as_of is not None and (not isinstance(as_of, datetime) or as_of.utcoffset() is None):
+        raise ValueError("as_of exige datetime com fuso")
     verified = []
     rejected_evidence_ticks = 0
+    excluded_after_cutoff = 0
     previous = None
     for tick in ticks:
         if not isinstance(tick, ReplayTick):
@@ -31,6 +35,9 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
         if previous is not None and tick.at <= previous:
             raise ValueError("ticks fora de ordem")
         previous = tick.at
+        if as_of is not None and tick.at > as_of:
+            excluded_after_cutoff += 1
+            continue
         records = evidence_by_quote.get(tick.quote_id) if tick.quote_id else None
         if not isinstance(records, list) or not records:
             rejected_evidence_ticks += 1
@@ -52,6 +59,7 @@ def replay_with_evidence(ticks: list[ReplayTick], evidence_by_quote: dict,
     confirmed = replay_paper(verified, config=config, mode="confirmed")
     return {
         "rejected_evidence_ticks": rejected_evidence_ticks,
+        "excluded_after_cutoff": excluded_after_cutoff,
         "verified_ticks": len(verified),
         "immediate": immediate,
         "confirmed": confirmed,

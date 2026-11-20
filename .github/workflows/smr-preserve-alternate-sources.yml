@@ -1,0 +1,94 @@
+name: SMR preserve second and third source audits (offline)
+
+on:
+  push:
+    branches:
+      - codex/smr-second-source-historical-state
+    paths:
+      - .github/workflows/smr-preserve-alternate-sources.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download already-finished RPC artifacts (no RPC calls)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download 44795018974 --name smr-solana-second-source --dir /tmp/smr-proof2
+          gh run download 44795352312 --name smr-solana-third-source --dir /tmp/smr-proof3
+      - name: Retain exact RAW / manifests and correct interpretive ambiguity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path("data/evidence/mainnet/2026-11-20")
+          second = Path("/tmp/smr-proof2")
+          third = Path("/tmp/smr-proof3")
+          m2bytes = (second / "second-source.manifest.json").read_bytes()
+          m2 = json.loads(m2bytes)
+          assert m2["requests_sent"] == 1
+          assert m2["status"] == "UNKNOWN"
+          assert m2["slot"] is None
+          assert m2["independent_finality_proven"] is False
+          raw_file = m2["raw_file"]
+          raw = (second / raw_file).read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == m2["raw_sha256"]
+          assert json.loads(raw).get("result") is None
+          assert m2["raw_sha256"] == "ca3db3fe00f86a9485058afc1daf2f0547027fc3262b67c570f89d0b4638c8c6"
+          m3bytes = (third / "third-source.manifest.json").read_bytes()
+          m3 = json.loads(m3bytes)
+          assert m3["requests_sent"] == 1
+          assert m3["status"] == "UNKNOWN"
+          assert "rpc_unavailable" in m3["reasons"]
+          assert m3["independent_provider_proven"] is False
+          assert m3.get("raw_file") is None
+          dest2 = root / "second-source"
+          dest3 = root / "third-source"
+          dest2.mkdir(parents=True,exist_ok=True)
+          dest3.mkdir(parents=True,exist_ok=True)
+          (dest2/raw_file).write_bytes(raw)
+          (dest2/"second-source.manifest.json").write_bytes(m2bytes)
+          (dest3/"third-source.manifest.json").write_bytes(m3bytes)
+          interpretation = {
+              "schema":"smr.second-source-interpretation.v1",
+              "second_endpoint":m2["endpoint"],
+              "status":"UNKNOWN",
+              "raw_sha256":m2["raw_sha256"],
+              "rpc_result_null":True,
+              "transaction_signature_verified_by_second_rpc":False,
+              "transaction_slot_verified_by_second_rpc":False,
+              "pool_vault_verified_by_second_rpc":False,
+              "independent_provider_proven":False,
+              "not_contradictory_slot":True,
+              "comment":"Original capture manifest has source_agreement_on_signature=true, populated from the requested signature even though result=null; it is NOT a verified second-source signature. Preserve original bytes unchanged."
+          }
+          (dest2/"interpretation.json").write_text(
+              json.dumps(interpretation,sort_keys=True,indent=2)+"\n")
+          print("ARCHIVED_SECOND sha256="+m2["raw_sha256"])
+          print("ARCHIVED_SECOND transaction_verified=False")
+          print("ARCHIVED_THIRD reason="+",".join(m3["reasons"]))
+          print("ARCHIVED_SECOND independent_finality_proven=False")
+          print("ARCHIVED_SECOND no_new_rpc_queries=True")
+          PY
+      - name: Commit only evidence files to isolated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence/mainnet/2026-11-20/second-source data/evidence/mainnet/2026-11-20/third-source
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: permanently retain second RPC null and third RPC failure"
+          git push origin HEAD:codex/smr-second-source-historical-state

@@ -1,0 +1,34 @@
+name: SMR fallback independent RPC query (one read)
+
+on:
+  push:
+    branches:
+      - codex/smr-second-source-historical-state
+    paths:
+      - tools/third_source_solana_proof.py
+      - .github/workflows/smr-third-source-proof.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: One read from public rpcnode fallback
+        env:
+          PYTHONPATH: src
+        run: python tools/third_source_solana_proof.py
+      - name: Store raw or explicit failure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-solana-third-source
+          path: /tmp/smr-third-source-proof/
+          retention-days: 7
+          if-no-files-found: error

@@ -1,0 +1,26 @@
+{
+  "comparison_status": "UNKNOWN",
+  "economic_execution_authorized": false,
+  "endpoint": "https://public-solana-mainnet.rpcnode.dev",
+  "historical_amm_config_verified": false,
+  "historical_reserves_verified": false,
+  "independent_finality_proven": false,
+  "independent_provider_proven": false,
+  "network_available_at": null,
+  "network_observed_at": null,
+  "pool_expected": "CqvMZmWDvEufa5rzkubidyR4zMDqDPoLjAtsW6wGsPMu",
+  "reasons": [
+    "rpc_unavailable",
+    "HTTPError"
+  ],
+  "report_time": "2026-11-20T18:42:55.745684+00:00",
+  "requested_commitment": "finalized",
+  "requests_sent": 1,
+  "schema": "smr.third-source-proof.v1",
+  "signature_requested": "23n2r5iEcCJkPZ4G1vkTdBc8eUn3CgEWqtdxz4J4SQnEXnuiwJaP39kKK3NCHJPPsFAq8CiSjRLK5QA4JqUkzLLM",
+  "slot_expected": 471039497,
+  "source_1": "https://api.mainnet-beta.solana.com",
+  "source_2": "https://solana-rpc.publicnode.com",
+  "source_id": "rpcnode-public-mainnet",
+  "status": "UNKNOWN"
+}

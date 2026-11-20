@@ -38,7 +38,7 @@ class BaselineBridgeTests(unittest.TestCase):
                   cutoff=NOW+timedelta(minutes=2),
                   endpoint="https://api.mainnet-beta.solana.com",
                   original_swap_slot=471039497,
-                  authority="GpdxrxqNs6WUhctRs8BdZpTbZ5AwtL4iCUdUPmMXeQMK",
+                  authority="GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL",
                   input_mint="7ymF66Z6VhgNiwadtVhjTtT6U7iQRpSxeiRrhfufhigh",
                   output_mint="So11111111111111111111111111111111111111112",
                   input_token_program=OWNER,output_token_program=OWNER,

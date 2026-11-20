@@ -135,3 +135,21 @@ sobreposição. A checagem pelo CLI da #67 também passou no snapshot público
 do slot `471602593`, SHA-256 `33ec5fdb0f79632a1d822667e11ce15e71a053f85714e60ddc073cac9ee84493`.
 Essas duas leituras verificam estruturas em slots distintos e ainda não
 formam uma série de cotações observadas.
+
+### Arquivo durável de lançamentos
+
+A PR #69, branch `codex/smr-launch-journal`, código `493e7b4`, acrescenta
+`launch-scan --journal`. A persistência preserva os bytes RAW, a relação
+com a identidade do pool e conflitos. Os testes forçaram falha de gravação,
+conferiram rollback e repetiram a varredura após reabrir o banco. Passaram
+751 testes na branch, e o CI geral foi aprovado.
+[PR #69](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/69) ·
+[CI geral](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44674879174)
+
+A integração local das cinco PRs desta rodada está em
+`codex/smr-pr64-fronts-integration@e4fa4b6` e passou com 756 testes,
+`compileall` e `git diff --check`. O próximo passo offline do Launch
+Radar é conectar o journal ao consumidor Solana, com cursor próprio e
+replay retomável. A próxima validação da Simulação depende de uma série
+contemporânea, auditável, com cotações de origem verificável e swaps
+finalizados do mesmo pool. Nenhuma PR foi mesclada.

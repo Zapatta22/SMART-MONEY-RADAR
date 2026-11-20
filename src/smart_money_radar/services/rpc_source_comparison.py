@@ -79,7 +79,7 @@ def compare_rpc_records(
             continue
         try:
             envelope=json.loads(source.raw)
-            result=envelope.get("result")
+            result=envelope.get("result") if isinstance(envelope,dict) else None
         except (ValueError,TypeError,UnicodeDecodeError):
             conflicts.add("source_json_invalid")
             values.append(None)

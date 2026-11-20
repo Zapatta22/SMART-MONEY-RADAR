@@ -7,6 +7,7 @@ This records gaps but never asserts complete historical coverage.
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
 from hashlib import sha256
 import json
 import sqlite3
@@ -45,8 +46,7 @@ CREATE TABLE IF NOT EXISTS cpmm_interval_audit_checkpoints (
 """
 
 
-def _json(o):
-    return json.dumps(o,sort_keys=True,separators=(",",":"),allow_nan=False)
+def _unsupported_json(value):\n    raise TypeError('non-JSON evidence type: '+type(value).__name__)\n\n\ndef _json(o):\n    return json.dumps(o,sort_keys=True,separators=(",",":"),allow_nan=False,\n                      default=lambda x: x.isoformat() if isinstance(x,datetime) else _unsupported_json(x))
 
 
 def init_interval_schema(db:sqlite3.Connection)->None:

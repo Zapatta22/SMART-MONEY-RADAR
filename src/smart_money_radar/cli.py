@@ -101,6 +101,13 @@ def _parser() -> argparse.ArgumentParser:
     live.add_argument("--source-id", required=True, help="identificador estável do endpoint e cluster")
     live.add_argument("--page-size", type=int, default=100)
     live.add_argument("--max-pages", type=int, default=10)
+    watch_live = subparsers.add_parser(
+        "launch-live", help="escuta notificações Solana e reconcilia via RPC finalized",
+    )
+    watch_live.add_argument("addresses", nargs="+", help="endereços públicos monitorados")
+    watch_live.add_argument("--source-id", required=True, help="identificador estável do endpoint e cluster")
+    watch_live.add_argument("--page-size", type=int, default=100)
+    watch_live.add_argument("--max-pages", type=int, default=10)
     return parser
 
 
@@ -155,6 +162,30 @@ def main(argv: Sequence[str] | None = None) -> None:
             finally:
                 store.close()
             print(json.dumps(asdict(result), ensure_ascii=False))
+            return
+        if args.command == "launch-live":
+            from smart_money_radar.services.launch_live_backfill import FinalizedLaunchBackfill
+            from smart_money_radar.services.launch_live_monitor import LaunchLiveMonitor
+            settings = HeliusSettings.from_environment()
+            source = HeliusDataSource(settings)
+            store = SQLiteEventStore(settings.database_path)
+            try:
+                async def watch_launches():
+                    stop_event = asyncio.Event()
+                    monitor = LaunchLiveMonitor(
+                        settings.websocket_url,
+                        FinalizedLaunchBackfill(
+                            source, store, source_id=args.source_id,
+                            page_size=args.page_size, max_pages=args.max_pages,
+                        ),
+                        args.addresses,
+                    )
+                    await monitor.run(stop_event)
+                asyncio.run(watch_launches())
+            except KeyboardInterrupt:
+                pass
+            finally:
+                store.close()
             return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)

@@ -1,0 +1,82 @@
+name: SMR preserve interval signature query RAW offline
+
+on:
+  push:
+    branches:
+      - codex/smr-cpmm-interval-transaction-audit
+    paths:
+      - .github/workflows/smr-preserve-interval-signatures.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download previously recorded one-page query (no new RPC)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download 44809684411 --name smr-cpmm-interval-signatures --dir /tmp/smr-interval-pinned
+      - name: Verify original RAW hash and interval identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          p=Path("/tmp/smr-interval-pinned")
+          r=Path("data/evidence/mainnet/2026-11-20")
+          mbytes=(p/"manifest.json").read_bytes()
+          m=json.loads(mbytes)
+          query=(p/"request.raw.json").read_bytes()
+          response=(p/"response.raw.json").read_bytes()
+          assert m["request_attempts"]==1 and m["page_count"]==1
+          assert m["status"]=="PARTIAL"
+          assert m["interval_complete"] is False
+          assert m["provider_authenticated"] is False
+          assert m["execution_authorized"] is False
+          assert m["items_returned"]==1000
+          assert m["candidate_count"]==3
+          assert m["start_slot"]==471856996 and m["end_slot"]==471860762
+          assert hashlib.sha256(query).hexdigest()==m["request_sha256"]
+          assert hashlib.sha256(response).hexdigest()==m["response_sha256"]
+          a=json.loads((r/"prospective-slot-471856996/manifest.json").read_bytes())
+          b=json.loads((r/"prospective-slot-471860762/manifest.json").read_bytes())
+          assert m["pool"]==a["original_pool"]==b["original_pool"]
+          assert [a["context_slot"],b["context_slot"]]==[m["start_slot"],m["end_slot"]]
+          j=json.loads(query)
+          assert j["method"]=="getSignaturesForAddress"
+          assert j["params"][0]==m["pool"]
+          items=json.loads(response)["result"]
+          assert len(items)==1000
+          candidates=[{"signature":x["signature"],"slot":x["slot"],"err":x.get("err")}
+                      for x in items if m["start_slot"]<x["slot"]<=m["end_slot"]]
+          assert candidates==m["candidate_preview"] and len(candidates)==3
+          dst=r/"cpmm-interval-471856996-471860762"
+          dst.mkdir(parents=True,exist_ok=True)
+          (dst/"request.raw.json").write_bytes(query)
+          (dst/"response.raw.json").write_bytes(response)
+          (dst/"manifest.json").write_bytes(mbytes)
+          print("SMR_INTERVAL_ARCHIVE three_candidate_signatures="+json.dumps(candidates))
+          print("SMR_INTERVAL_ARCHIVE sha256="+m["response_sha256"])
+          print("SMR_INTERVAL_ARCHIVE coverage=PARTIAL")
+          print("SMR_INTERVAL_ARCHIVE no_new_rpc=True")
+          PY
+      - name: Commit evidence without overwriting any previous captures
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/evidence/mainnet/2026-11-20/cpmm-interval-471856996-471860762/
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: archive bounded real CPMM signature discovery with explicit partial coverage"
+          git push origin HEAD:codex/smr-cpmm-interval-transaction-audit

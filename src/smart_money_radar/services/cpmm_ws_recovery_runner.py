@@ -199,6 +199,8 @@ class CpmmRecoveryRunner:
                                     raise ValueError("baseline_origin_session_not_active")
                                 if available>self.now():
                                     raise ValueError("rpc_baseline_after_cutoff")
+                                if error is not None:
+                                    raise ValueError("rpc_baseline_transport_error")
                                 audit=inspect_contemporaneous_baseline(
                                     session=session,request_raw=req,response_raw=response,
                                     requested_at=requested,available_at=available,
@@ -223,6 +225,9 @@ class CpmmRecoveryRunner:
                             report["baseline_error"]=type(exc).__name__
                         if report.get("baseline_error") or report.get("baseline_rpc_error"):
                             report["baseline_status"]="UNKNOWN"
+                            report["baseline_verified_as_snapshot"]=False
+                        if baseline_task.done() and baseline_task.cancelled():
+                            report.setdefault("baseline_error","CancelledError")
                     if session.active and connection_healthy:
                         session.finish("bounded_end")
                     report["journal"]=self.recovery.store.get_capture_session(source,scope)

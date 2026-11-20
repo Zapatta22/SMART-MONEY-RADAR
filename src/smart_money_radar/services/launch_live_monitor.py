@@ -38,6 +38,7 @@ class LaunchLiveMetrics:
     duplicate_notifications: int = 0
     unresolved_hints: int = 0
     rate_limit_errors: int = 0
+    coalesced_notifications: int = 0
     notification_to_finalized_p50_ms: float | None = None
     notification_to_finalized_p95_ms: float | None = None
     notification_to_finalized_p99_ms: float | None = None
@@ -78,6 +79,7 @@ class LaunchLiveMonitor:
         heartbeat_seconds: float = 30.0,
         jitter: Callable[[], float] = random.random,
         clock: Callable[[], float] = time.monotonic,
+        minimum_reconcile_interval_seconds: float = 0.0,
     ) -> None:
         if not isinstance(websocket_url, str) or not websocket_url.startswith("wss://"):
             raise ValueError("WebSocket TLS obrigatório")
@@ -87,6 +89,11 @@ class LaunchLiveMonitor:
         if (initial_backoff <= 0 or max_backoff < initial_backoff
                 or heartbeat_seconds <= 0):
             raise ValueError("limites de conexão inválidos")
+        if (not isinstance(minimum_reconcile_interval_seconds, (int, float))
+                or not math.isfinite(minimum_reconcile_interval_seconds)
+                or minimum_reconcile_interval_seconds < 0
+                or minimum_reconcile_interval_seconds > 60):
+            raise ValueError("intervalo de reconciliação inválido")
         self.websocket_url = websocket_url
         self.backfill = backfill
         self.addresses = tuple(addresses)
@@ -98,6 +105,9 @@ class LaunchLiveMonitor:
         self.heartbeat_seconds = heartbeat_seconds
         self.jitter = jitter
         self.clock = clock
+        self.minimum_reconcile_interval_seconds = float(minimum_reconcile_interval_seconds)
+        self._last_reconcile_started: dict[str, float] = {}
+        self.coalesced_notifications = 0
         self.sessions = self.reconnects = self.notifications = 0
         self.reconciliations = self.recovered_deliveries = 0
         self.incomplete_reconciliations = 0
@@ -126,6 +136,7 @@ class LaunchLiveMonitor:
             duplicate_notifications=self.duplicate_notifications,
             unresolved_hints=len(self._pending_hints),
             rate_limit_errors=self.rate_limit_errors,
+            coalesced_notifications=self.coalesced_notifications,
             notification_to_finalized_p50_ms=_percentile(self._finalized_latency_ms, 0.50),
             notification_to_finalized_p95_ms=_percentile(self._finalized_latency_ms, 0.95),
             notification_to_finalized_p99_ms=_percentile(self._finalized_latency_ms, 0.99),
@@ -137,6 +148,7 @@ class LaunchLiveMonitor:
 
     async def _reconcile(self, address: str, stop: asyncio.Event) -> None:
         start = self.clock()
+        self._last_reconcile_started[address] = start
         try:
             outcome = await self.backfill.synchronize(address, stop_event=stop)
         except Exception as exc:
@@ -230,6 +242,13 @@ class LaunchLiveMonitor:
                             "auditoria de cobertura obrigatória"
                         )
                     self._pending_hints[key] = self.clock()
+                # Coalesce bursts to avoid a costly RPC call per log. Every
+                # reconnect and watchdog tick still performs mandatory backfill.
+                last = self._last_reconcile_started.get(address)
+                if (last is not None and self.minimum_reconcile_interval_seconds > 0
+                        and self.clock() - last < self.minimum_reconcile_interval_seconds):
+                    self.coalesced_notifications += 1
+                    continue
                 # Never use a confirmed notification to populate finalized evidence.
                 await self._reconcile(address, stop)
 

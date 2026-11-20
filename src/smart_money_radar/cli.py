@@ -83,6 +83,12 @@ def _parser() -> argparse.ArgumentParser:
     paper.add_argument("--archive", type=Path, help="lê swaps concluídos de um banco SQLite local")
     paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
     paper.add_argument("--strict-evidence", type=Path, help="JSON de evidências e risco para replay protegido local")
+    snapshot = subparsers.add_parser("cpmm-snapshot-audit", help="confere uma captura local do pool CPMM")
+    snapshot.add_argument("request", type=Path)
+    snapshot.add_argument("response", type=Path)
+    snapshot.add_argument("--pool", required=True)
+    snapshot.add_argument("--slot", type=int, required=True)
+    snapshot.add_argument("--block-time", type=int, required=True)
     return parser
 
 
@@ -111,6 +117,15 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
         if args.command == "paper-replay":
             _paper_replay(args)
+            return
+        if args.command == "cpmm-snapshot-audit":
+            from smart_money_radar.domain.cpmm_pool_config_envelope import validate_finalized_cpmm_snapshot
+
+            snapshot = validate_finalized_cpmm_snapshot(
+                raw_request=args.request.read_bytes(), raw_response=args.response.read_bytes(),
+                expected_pool=args.pool, expected_slot=args.slot, block_time=args.block_time,
+            )
+            print(json.dumps(asdict(snapshot), default=str, ensure_ascii=False))
             return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)

@@ -214,9 +214,19 @@ def _resolve_launch_accounts(history, capture_id, original_raw, original_manifes
         return result
     try:
         from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
-        if capture_id is None:
-            if original_raw is None or original_manifest is None:
+        if original_raw is None and original_manifest is None:
+            if capture_id is None:
+                ids = history.candidate_capture_ids(pool=pool, cutoff=cutoff, limit=1)
+                if not ids:
+                    return result
+                capture_id = ids[0]
+            original = history.get_original(capture_id)
+            if original is None:
                 return result
+            original_raw, original_manifest = original
+        elif original_raw is None or original_manifest is None:
+            raise ValueError("incomplete original evidence")
+        if capture_id is None:
             capture = history.reconstruct_latest_for_pool(
                 pool=pool, cutoff=cutoff, original_transaction_raw=original_raw,
                 original_manifest=original_manifest)

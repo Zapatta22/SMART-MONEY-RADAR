@@ -71,6 +71,12 @@ class DashboardReadService:
                 raise ValueError("naive expiry")
             if heartbeat_at and expires_at and expires_at < heartbeat_at:
                 raise ValueError("expiry precedes heartbeat")
+            # An active lease without a complete time window cannot prove
+            # freshness. Reject future-dated heartbeats as clock conflicts.
+            if state == "ACTIVE" and (heartbeat_at is None or expires_at is None):
+                raise ValueError("active lease missing heartbeat or expiry")
+            if heartbeat_at and heartbeat_at > now:
+                raise ValueError("heartbeat is in the future")
         except (TypeError, ValueError):
             unsafe = True
             heartbeat_at = expires_at = None

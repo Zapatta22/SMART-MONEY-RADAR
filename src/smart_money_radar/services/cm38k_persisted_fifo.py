@@ -22,6 +22,19 @@ def _time(value):
 WSOL = "So11111111111111111111111111111111111111112"
 
 
+def network_fee_breakdown(tx):
+    """Solana meta.fee includes priority fee; never add priority again.
+    Explicit provider fields are not independent proof of the split.
+    """
+    total=tx["meta"].get("fee")
+    if type(total) is not int or total<0:
+        return {"total_lamports":None,"base_lamports":None,"priority_lamports":None,
+                "status":"NOT_COMPUTABLE"}
+    return {"total_lamports":total,"base_lamports":None,"priority_lamports":None,
+            "status":"TOTAL_OBSERVED_SPLIT_UNKNOWN",
+            "policy":"PRIORITY_INCLUDED_IN_TOTAL_NO_DOUBLE_COUNT"}
+
+
 def additional_network_cost(tx, wallet, quote):
     """Return proven incremental quote cost, or None. Never re-charge SPL/DEX fees."""
     meta = tx["meta"]
@@ -187,7 +200,7 @@ def _derive(conn, operation_id, cutoff, *, operation_only=False):
         fee_mint=quote if extra is not None else None, fee_amount=extra,
         independently_attested=False, history_complete=False)
     if operation_only:
-        return op, {"slot": d["slot"], "signature": d["signature"], "network_fee_lamports": tx["meta"].get("fee"), "additional_quote_cost":str(extra) if extra is not None else None}
+        return op, {"slot": d["slot"], "signature": d["signature"], "network_fee_lamports": tx["meta"].get("fee"), "network_fee_breakdown":network_fee_breakdown(tx), "additional_quote_cost":str(extra) if extra is not None else None}
     receipt = reconstruct_fifo((op,), wallet=d["wallet"], token=token,
                                quote_mint=quote, as_of=cutoff)
     receipt["reasons"] = sorted(set(receipt["reasons"]) | {"network_fee_quote_cost_unproven"})

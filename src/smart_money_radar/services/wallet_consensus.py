@@ -30,6 +30,8 @@ class WalletConsensusReport:
     independence_verified: bool
     actionable: bool
     reasons: tuple[str, ...]
+    dependency_groups: tuple[tuple[str, ...], ...] = ()
+    verified_independent_wallets: int = 0
 
 
 class WalletConsensusService:
@@ -90,8 +92,9 @@ class WalletConsensusService:
             reasons.append("conflicting_directions")
         if len(accepted) < min_wallets:
             reasons.append("insufficient_distinct_wallets")
-        # Shared transaction evidence is a dependency warning, not ownership proof.
-        if any(set(a[2]) & set(b[2]) for i,a in enumerate(accepted) for b in accepted[i+1:]):
+        # Connected components of shared transaction evidence, not ownership clusters.
+        groups = shared_evidence_groups([(w, sigs) for w, _, sigs in accepted])
+        if any(len(g)>1 for g in groups):
             reasons.append("shared_transaction_dependency")
         # One transaction can appear across wallets. Count the signature once.
         if len(signatures) < min_wallets:
@@ -107,4 +110,20 @@ class WalletConsensusService:
             independence_verified=False,
             actionable=False,
             reasons=tuple(reasons),
+            dependency_groups=groups,
+            verified_independent_wallets=0,
         )
+
+
+def shared_evidence_groups(members):
+    """Deterministic transitive evidence grouping; singleton is not independence."""
+    groups=[]
+    for wallet, signatures in sorted(members):
+        sigs=set(signatures)
+        matching=[i for i,(_,evidence) in enumerate(groups) if evidence & sigs]
+        wallets={wallet}
+        for i in reversed(matching):
+            old,ev=groups.pop(i)
+            wallets.update(old);sigs.update(ev)
+        groups.append((wallets,sigs))
+    return tuple(sorted(tuple(sorted(wallets)) for wallets,_ in groups))

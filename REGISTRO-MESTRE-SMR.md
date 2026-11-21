@@ -4430,3 +4430,8 @@ CI CM58 44904494451: 1339 aprovados, 2 ignorados. Ciclo configurado, reabertura 
 ## CM61 — marcações persistidas offline
 
 CM59 CI 44904659326: 1342 aprovados, 2 ignorados. CM61 acrescenta journal imutável de marcas locais, leitura por corte e TTL, vínculo ao FIFO causal e alerta de assinatura compartilhada no consenso. Marca local não é atestação independente; PnL/drawdown NOT_COMPUTABLE. Testes publicados, CI pendente. Financiamento, transferências, sincronização e custos históricos completos pendentes. CM39 bloqueado; retornar repositório a privado após validações.
+
+
+## CM62 — agrupamento por assinatura e custo de rede
+
+CM61 CI 44905171190: 1344 aprovados, 2 ignorados. CM62 adiciona grupos transitivos determinísticos por assinaturas compartilhadas no consenso, mantendo independência verificada em zero; discrimina total de taxa RPC sem duplicar prioridade, cuja decomposição permanece desconhecida. Testes publicados, CI pendente. Financiamento, transferências, sincronização, persistência de grupos e custo histórico completo pendentes. CM39 bloqueado. Retornar a privado após validações.

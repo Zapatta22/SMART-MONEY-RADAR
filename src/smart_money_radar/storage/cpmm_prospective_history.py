@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS prospective_cpmm_captures(
   integrity TEXT NOT NULL,
   UNIQUE(pool,slot,source_id,response_sha256)
 );
+CREATE TABLE IF NOT EXISTS prospective_cpmm_originals(
+  capture_id TEXT PRIMARY KEY REFERENCES prospective_cpmm_captures(capture_id),
+  transaction_raw BLOB NOT NULL,
+  manifest_json TEXT NOT NULL,
+  transaction_sha256 TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS prospective_cpmm_deltas(
   from_capture_id TEXT NOT NULL,
   to_capture_id TEXT NOT NULL,
@@ -205,3 +211,42 @@ class SQLiteCpmmProspectiveHistory:
         if capture is None or capture.observation.pool != pool:
             raise ValueError("selected capture identity conflict")
         return capture
+
+    def bind_original(self, capture_id: str, *, original_transaction_raw: bytes,
+                      original_manifest: dict, cutoff: datetime) -> bool:
+        """Persist validated original bytes, with immutable replay semantics."""
+        capture = self.reconstruct_capture(
+            capture_id, original_transaction_raw=original_transaction_raw,
+            original_manifest=original_manifest, cutoff=cutoff)
+        if capture is None:
+            raise ValueError("capture missing")
+        obj = json.loads(original_transaction_raw)
+        tx = obj.get("result", obj)
+        if (tx["slot"] != original_manifest["slot_observed"]
+                or tx["transaction"]["signatures"][0] != original_manifest["signature_requested"]):
+            raise ValueError("original transaction identity conflict")
+        payload = (original_transaction_raw,
+                   json.dumps(original_manifest, sort_keys=True, separators=(",", ":")),
+                   sha256(original_transaction_raw).hexdigest())
+        with self.connection:
+            self.connection.execute("INSERT OR IGNORE INTO prospective_cpmm_originals VALUES(?,?,?,?)",
+                                    (capture_id, *payload))
+            changed = self.connection.execute("SELECT changes()").fetchone()[0]
+            old = self.connection.execute(
+                "SELECT transaction_raw,manifest_json,transaction_sha256 FROM prospective_cpmm_originals WHERE capture_id=?",
+                (capture_id,)).fetchone()
+            if old != payload:
+                raise ValueError("immutable original evidence conflict")
+        return bool(changed)
+
+    def get_original(self, capture_id: str):
+        row = self.connection.execute(
+            "SELECT transaction_raw,manifest_json,transaction_sha256 FROM prospective_cpmm_originals WHERE capture_id=?",
+            (capture_id,)).fetchone()
+        if row is None:
+            return None
+        raw, manifest, digest = row
+        decoded = json.loads(manifest)
+        if sha256(raw).hexdigest() != digest or decoded.get("raw_sha256") != digest:
+            raise ValueError("original evidence hash conflict")
+        return raw, decoded

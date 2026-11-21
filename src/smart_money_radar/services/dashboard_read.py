@@ -56,4 +56,17 @@ class DashboardReadService:
             "storage": self._json_value(storage),
             "reconciliation": self._json_value(report),
             "recent_events": events,
+            # Separate radar channels are observational until independently
+            # attested evidence is supplied. Database events do not prove
+            # launch detection or Smart Money signal completeness.
+            "radars": {
+                name: {
+                    "name": name, "status": "UNKNOWN",
+                    "evidence_coverage": "UNKNOWN",
+                    "operational_authorized": False,
+                    "paper_modes": {
+                        "immediate": "BLOCKED", "confirmed": "BLOCKED",
+                    },
+                } for name in ("launch", "smart_money")
+            },
         }

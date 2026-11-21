@@ -191,3 +191,17 @@ class SQLiteCpmmProspectiveHistory:
             "ORDER BY available_at DESC, slot DESC, capture_id ASC LIMIT ?",
             (pool, point, limit)).fetchall()
         return tuple(row[0] for row in rows)
+
+    def reconstruct_latest_for_pool(self, *, pool: str, cutoff: datetime,
+                                    original_transaction_raw: bytes,
+                                    original_manifest: dict):
+        """Select the latest causal candidate; never bypass a conflicting head."""
+        ids = self.candidate_capture_ids(pool=pool, cutoff=cutoff, limit=1)
+        if not ids:
+            return None
+        capture = self.reconstruct_capture(
+            ids[0], original_transaction_raw=original_transaction_raw,
+            original_manifest=original_manifest, cutoff=cutoff)
+        if capture is None or capture.observation.pool != pool:
+            raise ValueError("selected capture identity conflict")
+        return capture

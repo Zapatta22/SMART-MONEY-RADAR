@@ -17,15 +17,24 @@ def verify(workspace):
     if report.get("sqlite_integrity") != ["ok"]:
         issues.append("reported SQLite integrity not ok")
     supervisor = report.get("supervisor", {})
+    if not isinstance(supervisor, dict):
+        issues.append("invalid supervisor report structure")
+        supervisor = {}
     if supervisor.get("lease") != "STOPPED":
         issues.append("supervisor did not stop cleanly")
     if supervisor.get("live_authorized") is not False or supervisor.get("execution_enabled") is not False:
         issues.append("unexpected financial or live authorization")
     tasks = supervisor.get("radars", {})
+    if not isinstance(tasks, dict):
+        issues.append("invalid radar report structure")
+        tasks = {}
     if set(tasks) != {"launch", "smart_money"}:
         issues.append("missing independent radar progress")
     else:
         for name, task in tasks.items():
+            if not isinstance(task, dict):
+                issues.append(f"{name} invalid radar state structure")
+                task = {}
             if type(task.get("cycles")) is not int or task["cycles"] < 1:
                 issues.append(f"{name} has no completed offline cycles")
             if task.get("status") != "READY" or type(task.get("failures")) is not int or task["failures"] != 0:

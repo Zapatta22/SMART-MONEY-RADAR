@@ -224,5 +224,33 @@ class RealCpmmHistoryTests(unittest.TestCase):
             db.close()
 
 
+
+    def test_cm69_launch_receipt_links_local_reserves_only(self):
+        from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
+        from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+        a = self.capture(0)
+        acc = next(x.accounts for x in decode_raydium_cpmm_swaps(json.loads(self.old))
+                   if x.accounts.pool_state == a.observation.pool)
+        with tempfile.TemporaryDirectory() as d:
+            db = SQLiteCpmmProspectiveHistory(Path(d) / "evidence.sqlite")
+            db.append_capture(a, manifest_raw=self.bundles[0][0])
+            args = dict(pool=a.observation.pool, token_mint=acc.input_token_mint,
+                        quote_mint=acc.output_token_mint, at=CUTOFF, strategy="immediate",
+                        cpmm_history=db, capture_id=a.capture_id,
+                        original_transaction_raw=self.old, original_manifest=self.old_manifest)
+            receipt = launch_metric_receipts(**args)
+            archive = receipt["economic_qualification"]["account_archive"]
+            self.assertEqual(archive["status"], "LOCAL_PROSPECTIVE_BYTES_LINKED")
+            self.assertEqual(archive["quote_reserve_raw"], str(a.observation.effective_output_raw))
+            self.assertFalse(receipt["operational_authorized"])
+            self.assertFalse(archive["historical_pre_swap_proven"])
+            self.assertEqual(receipt["economic_qualification"]["quality"], "UNKNOWN")
+            self.assertEqual(receipt, launch_metric_receipts(**args))
+            args["quote_mint"] = "wrong"
+            bad = launch_metric_receipts(**args)
+            self.assertIn("cpmm_account_archive_conflict", bad["safety_blocks"])
+            db.close()
+
+
 if __name__=="__main__":
     unittest.main()

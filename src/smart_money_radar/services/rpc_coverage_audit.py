@@ -31,11 +31,12 @@ def assess_rpc_coverage(store:SQLiteEventStore,*,radar:str,start:datetime,end:da
         if exists:
             # Bounded snapshot includes all requested coordinates, including
             # an inconsistent index; filter times ONLY after integrity check.
-            filters="WHERE radar=?"+(" AND source_id=?" if False else "")
             rows=conn.execute(
                 "SELECT evidence_id,radar,signature,available_at,metadata,metadata_sha,raw "
-                "FROM cm38_rpc_observations WHERE radar=? ORDER BY available_at,evidence_id LIMIT ?",
-                (radar,limit+1)).fetchall()
+                "FROM cm38_rpc_observations WHERE radar=? "
+                "AND available_at>=? AND available_at<? "
+                "ORDER BY available_at,evidence_id LIMIT ?",
+                (radar,left.isoformat(),right.isoformat(),limit+1)).fetchall()
             truncated=len(rows)>limit
             for eid,index_radar,index_sig,index_at,meta_text,digest,raw in rows[:limit]:
                 try:

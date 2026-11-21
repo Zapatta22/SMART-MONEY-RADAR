@@ -137,6 +137,24 @@ class CM36Tests(unittest.TestCase):
             self.assertEqual(radar["offline_supervisor"]["cycles"], 0)
             self.assertFalse(radar["operational_authorized"])
 
+    def test_dashboard_malformed_supervisor_tasks_fail_closed(self):
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        for tasks in (None, [], {"launch": None},
+                      {"launch": {"status": "READY", "cycles": True}},
+                      {"launch": {"status": "READY", "cycles": -1}}):
+            with self.subTest(tasks=tasks), patch(
+                "smart_money_radar.services.dashboard_read.read_supervisor_status",
+                return_value={"status": "ACTIVE", "radars": tasks,
+                              "live_authorized": False, "execution_enabled": False},
+            ):
+                data = DashboardReadService(reader).get_overview()
+                for radar in data["radars"].values():
+                    self.assertEqual(radar["offline_supervisor"]["cycles"], 0)
+                    self.assertEqual(radar["offline_supervisor"]["task_status"], "UNKNOWN")
+                    self.assertFalse(radar["operational_authorized"])
+                    self.assertEqual(radar["evidence_coverage"], "UNKNOWN")
+
     def test_corrupt_lease_fails_closed(self):
         a=self.runner();a.acquire()
         with sqlite3.connect(self.db) as c:c.execute("UPDATE cm36_supervisor_lease SET generation=99")

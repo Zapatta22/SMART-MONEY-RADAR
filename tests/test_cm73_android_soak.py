@@ -126,7 +126,7 @@ class AndroidSoakTests(unittest.TestCase):
         report_path.write_text(json.dumps(report))
         rejected = verify_soak(workspace)
         self.assertFalse(rejected["accepted_offline"])
-        self.assertIn("persisted cycles disagree with final report", rejected["issues"])
+        self.assertIn("launch persisted cycles disagree with final report", rejected["issues"])
 
     def test_offline_evidence_gate_rejects_journal_report_disagreement(self):
         process = self.start(2.0)

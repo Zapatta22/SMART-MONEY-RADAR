@@ -2,6 +2,9 @@
 
 import asyncio
 import json
+from dataclasses import dataclass
+from datetime import datetime,timezone
+from urllib.parse import urlparse
 from itertools import count
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -12,6 +15,16 @@ from smart_money_radar.domain.models import ActivityEvent
 from smart_money_radar.settings import HeliusSettings
 
 JsonObject = dict[str, Any]
+
+
+@dataclass(frozen=True)
+class TransactionRpcCapture:
+    result: JsonObject | None
+    raw: bytes
+    observed_at: datetime
+    available_at: datetime
+    endpoint_host: str
+    commitment: str
 
 
 class HeliusRpcError(RuntimeError):
@@ -32,6 +45,9 @@ class HeliusDataSource:
         self._request_ids = count(1)
 
     def call(self, method: str, params: list[Any]) -> Any:
+        return self._call_with_raw(method,params)[0]
+
+    def _call_with_raw(self, method: str, params: list[Any]):
         payload = {
             "jsonrpc": "2.0",
             "id": next(self._request_ids),
@@ -44,11 +60,14 @@ class HeliusDataSource:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
+        observed=datetime.now(timezone.utc)
         try:
             with self._opener(
                 request, timeout=self.settings.request_timeout_seconds
             ) as response:
-                response_payload = json.loads(response.read().decode("utf-8"))
+                raw=response.read()
+                available=datetime.now(timezone.utc)
+                response_payload = json.loads(raw.decode("utf-8"))
         except HTTPError as exc:
             raise HeliusRpcError(f"Helius RPC respondeu com HTTP {exc.code}.") from None
         except (URLError, TimeoutError, OSError) as exc:
@@ -67,7 +86,64 @@ class HeliusDataSource:
             raise HeliusRpcError(f"Helius RPC retornou erro{suffix}.")
         if "result" not in response_payload:
             raise HeliusRpcError("Helius RPC não incluiu o campo result.")
-        return response_payload["result"]
+        return response_payload["result"],raw,observed,available
+
+    def capture_transaction(self,signature,*,commitment):
+        if commitment not in ("confirmed","finalized"): raise ValueError("invalid commitment")
+        result,raw,observed,available=self._call_with_raw("getTransaction",[signature,{"commitment":commitment,"encoding":"jsonParsed","maxSupportedTransactionVersion":0}])
+        if result is not None and not isinstance(result,dict): raise HeliusRpcError("getTransaction inválida")
+        host=urlparse(self.settings.http_url).hostname
+        if not host: raise HeliusRpcError("RPC host ausente")
+        return TransactionRpcCapture(result,raw,observed,available,host,commitment)
+
+    async def capture_transaction_async(self,signature,*,commitment):
+        return await asyncio.to_thread(self.capture_transaction,signature,commitment=commitment)
+
+    def get_finalized_transaction(self, signature: str) -> JsonObject | None:
+        """Return only finalized Solana transaction data for launch discovery."""
+        if not isinstance(signature, str) or not signature.strip():
+            raise ValueError("assinatura Solana obrigatória")
+        result = self.call(
+            "getTransaction",
+            [signature, {
+                "commitment": "finalized", "encoding": "jsonParsed",
+                "maxSupportedTransactionVersion": 0,
+            }],
+        )
+        if result is not None and not isinstance(result, dict):
+            raise HeliusRpcError("getTransaction finalizada retornou formato inválido.")
+        return result
+
+    def get_finalized_signatures_for_address(
+        self, wallet_address: str, *, limit: int = 100,
+        before: str | None = None,
+    ) -> list[JsonObject]:
+        """Fetch a bounded finalized-only signature page, newest first."""
+        if not isinstance(wallet_address, str) or not wallet_address.strip():
+            raise ValueError("endereço público Solana obrigatório")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limite inválido")
+        options: dict[str, Any] = {"limit": limit, "commitment": "finalized"}
+        if before is not None:
+            if not isinstance(before, str) or not before.strip():
+                raise ValueError("cursor antes inválido")
+            options["before"] = before
+        result = self.call("getSignaturesForAddress", [wallet_address, options])
+        if not isinstance(result, list) or any(not isinstance(item, dict) for item in result):
+            raise HeliusRpcError("getSignaturesForAddress finalizada retornou formato inválido.")
+        return result
+
+    async def get_finalized_signatures_for_address_async(
+        self, wallet_address: str, *, limit: int = 100,
+        before: str | None = None,
+    ) -> list[JsonObject]:
+        return await asyncio.to_thread(
+            self.get_finalized_signatures_for_address, wallet_address,
+            limit=limit, before=before,
+        )
+
+    async def get_finalized_transaction_async(self, signature: str) -> JsonObject | None:
+        return await asyncio.to_thread(self.get_finalized_transaction, signature)
 
     def get_version(self) -> JsonObject:
         """Confirma resposta real do endpoint RPC, sem exibir a API key."""

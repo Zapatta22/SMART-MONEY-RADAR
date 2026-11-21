@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
+from smart_money_radar.storage.collector_authority import collector_write, bind_projection
 import uuid
 
 
@@ -135,6 +136,9 @@ class SQLiteGeyserRecoveryStore:
                     COMMIT;
                 """)
 
+    def bind_collector(self, authority):
+        return bind_projection(self,authority)
+
     @contextmanager
     def _connect(self):
         connection = sqlite3.connect(self.database_path, timeout=30.0)
@@ -183,7 +187,7 @@ class SQLiteGeyserRecoveryStore:
             cursor_end = _text(cursor_end, "cursor_end")
         job_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        with self._connect() as connection, connection:
+        with self._connect() as connection, collector_write(connection,getattr(self,"_collector_authority",None)):
             connection.execute("""
                 INSERT INTO geyser_backfill_jobs
                 (job_id,source_id,start_slot,end_slot,provider,adapter_version,
@@ -197,7 +201,7 @@ class SQLiteGeyserRecoveryStore:
     def start_backfill_job(self, job_id: str) -> dict:
         job_id = _text(job_id, "job_id")
         now = datetime.now(timezone.utc).isoformat()
-        with self._connect() as connection, connection:
+        with self._connect() as connection, collector_write(connection,getattr(self,"_collector_authority",None)):
             row = connection.execute(
                 "SELECT status,cursor_current FROM geyser_backfill_jobs WHERE job_id=?",
                 (job_id,),
@@ -243,7 +247,7 @@ class SQLiteGeyserRecoveryStore:
             updates["coverage_status"] = _coverage(coverage_status)
         if coverage_evidence is not None:
             updates["coverage_evidence_json"] = _json_object(coverage_evidence,"coverage_evidence")
-        with self._connect() as connection, connection:
+        with self._connect() as connection, collector_write(connection,getattr(self,"_collector_authority",None)):
             row = connection.execute(
                 "SELECT status,requested_count,received_count,normalized_count,rejected_count "
                 "FROM geyser_backfill_jobs WHERE job_id=?", (job_id,)
@@ -280,7 +284,7 @@ class SQLiteGeyserRecoveryStore:
         if error is not None:
             error = _text(error,"error")
         now = datetime.now(timezone.utc).isoformat()
-        with self._connect() as connection, connection:
+        with self._connect() as connection, collector_write(connection,getattr(self,"_collector_authority",None)):
             row = connection.execute(
                 "SELECT status,retry_count,query_semantics FROM geyser_backfill_jobs WHERE job_id=?",
                 (job_id,),
@@ -315,7 +319,7 @@ class SQLiteGeyserRecoveryStore:
         """Mark abandoned RUNNING jobs partial/failed without inventing coverage."""
         now = datetime.now(timezone.utc).isoformat()
         recovered = []
-        with self._connect() as connection, connection:
+        with self._connect() as connection, collector_write(connection,getattr(self,"_collector_authority",None)):
             rows = connection.execute("""
                 SELECT job_id,received_count
                 FROM geyser_backfill_jobs WHERE status='RUNNING' ORDER BY created_at,job_id
@@ -405,7 +409,7 @@ class SQLiteGeyserRecoveryStore:
         if coverage == "COMPLETE" and (continuity_interrupted or skipped_unsequenced_count):
             raise ValueError("input COMPLETE exige continuidade não interrompida e zero evento sem sequência")
         now = datetime.now(timezone.utc).isoformat()
-        with self._connect() as connection, connection:
+        with self._connect() as connection, collector_write(connection,getattr(self,"_collector_authority",None)):
             prior = connection.execute("""
                 SELECT generation,last_delivery_id FROM geyser_projection_checkpoints
                 WHERE projection_name=? AND projection_version=? AND source_id=?

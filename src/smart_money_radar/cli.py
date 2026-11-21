@@ -83,6 +83,30 @@ def _parser() -> argparse.ArgumentParser:
     paper.add_argument("--archive", type=Path, help="lê swaps concluídos de um banco SQLite local")
     paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
     paper.add_argument("--strict-evidence", type=Path, help="JSON de evidências e risco para replay protegido local")
+    launch = subparsers.add_parser(
+        "launch-scan", help="identifica inicializações CPMM em transações RPC arquivadas",
+    )
+    launch.add_argument("transactions", type=Path, nargs="+")
+    launch.add_argument("--journal", type=Path, help="arquiva evidências e deduplica pools no SQLite")
+    live = subparsers.add_parser(
+        "launch-backfill", help="recupera inicializações CPMM finalizadas de um endereço monitorado",
+    )
+    live.add_argument("address", help="endereço público explicitamente monitorado")
+    live.add_argument("--source-id", required=True, help="identificador estável do endpoint e cluster")
+    live.add_argument("--page-size", type=int, default=100)
+    live.add_argument("--max-pages", type=int, default=10)
+    watch_live = subparsers.add_parser(
+        "launch-live", help="escuta notificações Solana e reconcilia via RPC finalized",
+    )
+    watch_live.add_argument("addresses", nargs="+", help="endereços públicos monitorados")
+    watch_live.add_argument("--source-id", required=True, help="identificador estável do endpoint e cluster")
+    watch_live.add_argument("--page-size", type=int, default=100)
+    watch_live.add_argument("--max-pages", type=int, default=10)
+    supervisor = subparsers.add_parser("supervisor-offline", help="coordena arquivos locais sem RPC nem execução financeira")
+    supervisor.add_argument("database", type=Path)
+    supervisor.add_argument("--cycles", type=int, default=1)
+    supervisor.add_argument("--reference-mint", action="append", default=[])
+    supervisor.add_argument("--interval", type=float, default=5.0)
     return parser
 
 
@@ -97,6 +121,26 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
+        if args.command == "supervisor-offline":
+            from threading import Event
+            from smart_money_radar.services.persistent_supervisor import PersistentSupervisor, SupervisorPolicy
+            from smart_money_radar.services.wallet_discovery import WalletDiscoveryPolicy
+            store=SQLiteEventStore(args.database)
+            try:
+                runner=PersistentSupervisor(store,policy=SupervisorPolicy(interval_seconds=args.interval,
+                    lease_seconds=max(30.0,args.interval*3),max_backoff_seconds=max(60.0,args.interval)),
+                    discovery_policy=WalletDiscoveryPolicy(quote_mints=tuple(args.reference_mint)))
+                stop=Event()
+                previous={}
+                try:
+                    for name in (signal.SIGINT,signal.SIGTERM):
+                        previous[name]=signal.signal(name,lambda *_:stop.set())
+                    runner.run(stop,max_cycles=args.cycles)
+                finally:
+                    for name,handler in previous.items():signal.signal(name,handler)
+            finally:
+                store.close()
+            return
         if args.command == "geyser-evidence":
             _inspect_geyser_evidence(args)
             return
@@ -112,6 +156,47 @@ def main(argv: Sequence[str] | None = None) -> None:
         if args.command == "paper-replay":
             _paper_replay(args)
             return
+        if args.command == "launch-scan":
+            _scan_cpmm_launches(args.transactions, journal=args.journal)
+            return
+        if args.command == "launch-backfill":
+            from smart_money_radar.services.launch_live_backfill import FinalizedLaunchBackfill
+            settings = HeliusSettings.from_environment()
+            source = HeliusDataSource(settings)
+            store = SQLiteEventStore(settings.database_path)
+            try:
+                result = asyncio.run(FinalizedLaunchBackfill(
+                    source, store, source_id=args.source_id,
+                    page_size=args.page_size, max_pages=args.max_pages,
+                ).synchronize(args.address))
+            finally:
+                store.close()
+            print(json.dumps(asdict(result), ensure_ascii=False))
+            return
+        if args.command == "launch-live":
+            from smart_money_radar.services.launch_live_backfill import FinalizedLaunchBackfill
+            from smart_money_radar.services.launch_live_monitor import LaunchLiveMonitor
+            settings = HeliusSettings.from_environment()
+            source = HeliusDataSource(settings)
+            store = SQLiteEventStore(settings.database_path)
+            try:
+                async def watch_launches():
+                    stop_event = asyncio.Event()
+                    monitor = LaunchLiveMonitor(
+                        settings.websocket_url,
+                        FinalizedLaunchBackfill(
+                            source, store, source_id=args.source_id,
+                            page_size=args.page_size, max_pages=args.max_pages,
+                        ),
+                        args.addresses,
+                    )
+                    await monitor.run(stop_event)
+                asyncio.run(watch_launches())
+            except KeyboardInterrupt:
+                pass
+            finally:
+                store.close()
+            return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)
         if args.command == "check":
@@ -123,6 +208,43 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
     except (OSError, SettingsError, RuntimeError, ValueError, sqlite3.Error) as exc:
         raise SystemExit(str(exc)) from None
+
+
+def _scan_cpmm_launches(paths: Sequence[Path], *, journal: Path | None = None) -> None:
+    from smart_money_radar.data_sources.raydium_cpmm_launch import (
+        deduplicate_cpmm_pool_initializations,
+        detect_cpmm_pool_initializations,
+    )
+
+    if journal is not None:
+        payloads = [path.read_bytes() for path in paths]
+        store = SQLiteEventStore(journal)
+        try:
+            report = store.archive_cpmm_launches(payloads)
+        finally:
+            store.close()
+        print(json.dumps({"evidence_scope": "archived_rpc_payload", **report}, ensure_ascii=False))
+        return
+
+    detections = []
+    inputs = []
+    for path in paths:
+        raw = path.read_bytes()
+        payload = json.loads(raw)
+        if not isinstance(payload, dict):
+            raise ValueError("transação do Launch Radar precisa ser um objeto JSON")
+        found = detect_cpmm_pool_initializations(payload)
+        detections.extend(found)
+        inputs.append({
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "matched_initializations": len(found),
+        })
+    print(json.dumps({
+        "evidence_scope": "archived_rpc_payload",
+        "inputs": inputs,
+        "initializations": [asdict(item) for item in deduplicate_cpmm_pool_initializations(detections)],
+    }, ensure_ascii=False))
+
 
 
 def _paper_replay(args: argparse.Namespace) -> None:

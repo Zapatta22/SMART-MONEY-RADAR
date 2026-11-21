@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import os
 from pathlib import Path
 import sqlite3
 
@@ -85,6 +86,9 @@ class RawIngestResult:
     conflict_id: int | None = None
 
 
+from smart_money_radar.storage.collector_authority import collector_write, verify_collector_authority
+
+
 class SQLiteGeyserRawStore:
     """Persist immutable event content separately from every transport delivery.
 
@@ -93,7 +97,7 @@ class SQLiteGeyserRawStore:
     recorded, including conflicting deliveries.
     """
 
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
 
     def __init__(self, database_path: Path | str, *, read_only: bool = False) -> None:
         self.database_path = str(database_path)
@@ -104,7 +108,7 @@ class SQLiteGeyserRawStore:
                 raise ValueError("a leitura do journal exige um arquivo SQLite")
             with self._connection() as connection:
                 row = connection.execute("SELECT MAX(version) FROM geyser_schema_migrations").fetchone()
-                if row[0] not in (3, self.SCHEMA_VERSION):
+                if row[0] not in (3, 4, self.SCHEMA_VERSION):
                     raise ValueError("schema SQLite incompatível com a leitura do journal Yellowstone")
         elif self.database_path == ":memory:":
             self._memory_connection = sqlite3.connect(":memory:")
@@ -114,6 +118,25 @@ class SQLiteGeyserRawStore:
             path.parent.mkdir(parents=True, exist_ok=True)
             with self._connection() as connection:
                 self._initialize(connection)
+
+    def bind_collector(self, authority):
+        """Capture an immutable generation on the same SQLite file."""
+        from smart_money_radar.storage.collector_authority import CollectorAuthority, AuthorityLost
+        if not isinstance(authority, CollectorAuthority) or self._read_only:
+            raise ValueError("writable store and collector authority required")
+        if str(self.database_path)==":memory:" or not Path(self.database_path).samefile(authority.database_path):
+            raise AuthorityLost("collector database mismatch")
+        if getattr(self,"_collector_authority",None) is not None:
+            raise AuthorityLost("a bound collector handle cannot be rebound")
+        bound=object.__new__(type(self))
+        bound.__dict__=self.__dict__.copy()
+        bound._collector_authority=authority
+        return bound
+
+    def assert_collector_authority(self, radar=None):
+        with self._connection() as conn, conn:
+            conn.execute("BEGIN")
+            verify_collector_authority(conn,getattr(self,"_collector_authority",None),radar)
 
     def _connect(self) -> sqlite3.Connection:
         if self._read_only:
@@ -305,9 +328,197 @@ class SQLiteGeyserRawStore:
                     COMMIT;
                 """)
 
+            # A legacy v3 fixture can have v5 metadata but no v4 capture table.
+            # Recreate the missing table before applying the new lease schema.
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS geyser_capture_sessions (
+                    source_id TEXT NOT NULL,
+                    stream_id TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    outcome TEXT,
+                    frame_count INTEGER CHECK(frame_count IS NULL OR frame_count >= 0),
+                    PRIMARY KEY(source_id, stream_id),
+                    FOREIGN KEY(source_id, stream_id)
+                        REFERENCES geyser_frame_streams(source_id, stream_id)
+                )
+            """)
+
+            if current < 5:
+                connection.executescript("""
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE IF NOT EXISTS geyser_capture_source_leases (
+                        source_id TEXT PRIMARY KEY,
+                        owner_id TEXT NOT NULL UNIQUE,
+                        acquired_at TEXT NOT NULL,
+                        pid INTEGER,
+                        pid_start_ticks INTEGER
+                    );
+                    INSERT OR IGNORE INTO geyser_schema_migrations(version, applied_at)
+                        VALUES (5, CURRENT_TIMESTAMP);
+                    COMMIT;
+                """)
+
+    @staticmethod
+    def _capture_authority_table(connection):
+        connection.execute("""CREATE TABLE IF NOT EXISTS cm36_capture_authority (
+            source_id TEXT PRIMARY KEY REFERENCES geyser_capture_source_leases(source_id) ON DELETE CASCADE,
+            capture_owner TEXT NOT NULL, generation INTEGER NOT NULL,
+            supervisor_owner TEXT NOT NULL, radar TEXT NOT NULL,
+            revision INTEGER NOT NULL, digest TEXT NOT NULL)""")
+
+    @staticmethod
+    def _capture_authority_digest(source_id,owner_id,generation,supervisor_owner,radar,revision):
+        import json
+        return hashlib.sha256(json.dumps([source_id,owner_id,generation,supervisor_owner,radar,revision],
+            separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+
+    def _record_capture_authority(self,connection,source_id,owner_id):
+        authority=getattr(self,"_collector_authority",None)
+        if authority is None:
+            return
+        self._capture_authority_table(connection)
+        values=(source_id,owner_id,authority.generation,authority.owner,authority.radar,authority.control_revision)
+        connection.execute("INSERT INTO cm36_capture_authority VALUES(?,?,?,?,?,?,?)",
+                           (*values,self._capture_authority_digest(*values)))
+
+    def _recover_revoked_capture_owner(self,connection,source_id,owner_id):
+        """Same transaction, only a provably revoked managed lease may be reclaimed.
+        Legacy (unbound) ownership still requires proof of process death.
+        """
+        from smart_money_radar.storage.collector_authority import AuthorityLost,collector_control_revision
+        authority=getattr(self,"_collector_authority",None)
+        if authority is None:
+            return False
+        self._capture_authority_table(connection)
+        row=connection.execute(
+            "SELECT capture_owner,generation,supervisor_owner,radar,revision,digest FROM cm36_capture_authority WHERE source_id=?",
+            (source_id,)).fetchone()
+        if row is None:
+            return False
+        old_owner,generation,supervisor_owner,radar,revision,digest=row
+        if (old_owner!=owner_id or radar not in ("launch","smart_money")
+                or digest!=self._capture_authority_digest(source_id,*row[:-1])):
+            raise AuthorityLost("capture authority metadata inconsistent")
+        if radar!=authority.radar:
+            raise AuthorityLost("capture belongs to independent radar")
+        revoked=(generation<authority.generation or
+                 (generation==authority.generation and supervisor_owner==authority.owner
+                  and revision<collector_control_revision(connection,radar)))
+        if not revoked:
+            return False
+        removed=connection.execute("DELETE FROM geyser_capture_source_leases WHERE source_id=? AND owner_id=?",
+                                   (source_id,owner_id))
+        if removed.rowcount!=1:
+            raise AuthorityLost("capture owner changed")
+        return True
+
+    def acquire_capture_source_lease(self, *, source_id: str, owner_id: str) -> None:
+        """Exclusive same-source ownership, held in the existing SQLite transaction layer.
+
+        A persistent source lease fails closed after process death until explicitly
+        released or forcibly recovered by a verified dead-owner procedure. This
+        avoids silently declaring another live writer interrupted.
+        """
+        _text(source_id, "source_id")
+        _text(owner_id, "owner_id")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
+            if connection.execute(
+                "SELECT 1 FROM geyser_capture_source_leases WHERE source_id = ?",
+                (source_id,),
+            ).fetchone():
+                raise ValueError("capture source already owned; do not recover active writer")
+            connection.execute(
+                """INSERT INTO geyser_capture_source_leases
+                   (source_id, owner_id, acquired_at, pid, pid_start_ticks)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (source_id, owner_id, datetime.now(timezone.utc).isoformat(),
+                 os.getpid(), self.local_process_start_ticks(os.getpid())),
+            )
+            self._record_capture_authority(connection,source_id,owner_id)
+
+    def release_capture_source_lease(self, *, source_id: str, owner_id: str) -> None:
+        _text(source_id, "source_id")
+        _text(owner_id, "owner_id")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
+            result = connection.execute(
+                """DELETE FROM geyser_capture_source_leases
+                   WHERE source_id = ? AND owner_id = ?""",
+                (source_id, owner_id),
+            )
+            if result.rowcount != 1:
+                raise ValueError("capture source lease not owned by caller")
+
+    @staticmethod
+    def local_process_start_ticks(pid: int) -> int:
+        """Read a Linux process start identity; fail closed if unavailable."""
+        if type(pid) is not int or pid <= 0:
+            raise ValueError("valid PID required")
+        try:
+            raw = (Path("/proc") / str(pid) / "stat").read_text()
+            closing = raw.rfind(")")
+            fields = raw[closing + 2:].split() if closing >= 0 else []
+            if len(fields) <= 19:
+                raise ValueError("incomplete procfs process stat")
+            return int(fields[19])
+        except (OSError, ValueError) as exc:
+            raise ValueError("cannot establish local process identity") from exc
+
+    def get_capture_source_lease(self, *, source_id: str) -> dict | None:
+        """Read current local lease for safe owner-identity recovery."""
+        _text(source_id, "source_id")
+        with self._connection() as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                """SELECT source_id, owner_id, pid, pid_start_ticks, acquired_at
+                   FROM geyser_capture_source_leases WHERE source_id = ?""",
+                (source_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def release_dead_capture_source_lease(self, *, source_id: str,
+                                          owner_id: str) -> bool:
+        """Reclaim only if procfs conclusively identifies a different/absent owner."""
+        _text(source_id, "source_id")
+        _text(owner_id, "owner_id")
+        if not Path("/proc/self/stat").exists():
+            raise ValueError("procfs unavailable; operator review required")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
+            row = connection.execute(
+                """SELECT owner_id, pid, pid_start_ticks
+                   FROM geyser_capture_source_leases
+                   WHERE source_id = ?""", (source_id,),
+            ).fetchone()
+            if row is None or row[0] != owner_id:
+                raise ValueError("capture ownership changed")
+            if self._recover_revoked_capture_owner(connection,source_id,owner_id):
+                return True
+            pid, start_ticks = row[1:]
+            if type(pid) is not int or type(start_ticks) is not int:
+                raise ValueError("legacy lease without process identity; operator review")
+            if pid <= 0 or start_ticks <= 0:
+                raise ValueError("invalid lease process identity")
+            try:
+                existing = self.local_process_start_ticks(pid)
+            except ValueError as exc:
+                # Only a missing /proc/<pid> directory is positive proof that
+                # this local PID is gone. Permission/parse errors fail closed.
+                if (Path("/proc") / str(pid)).exists():
+                    raise ValueError("process liveness is ambiguous") from exc
+            else:
+                if existing == start_ticks:
+                    raise ValueError("capture owner still alive")
+                # PID reused since the original lease was acquired.
+            connection.execute(
+                """DELETE FROM geyser_capture_source_leases
+                   WHERE source_id = ? AND owner_id = ?""",
+                (source_id, owner_id),
+            )
+            return True
+
     def start_capture_session(self, source_id: str, stream_id: str) -> None:
         """Record an attempt before opening its network connection."""
-        with self._connection() as connection, connection:
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             connection.execute(
                 """INSERT INTO geyser_capture_sessions(source_id, stream_id, started_at)
                    VALUES (?, ?, ?)""",
@@ -317,8 +528,7 @@ class SQLiteGeyserRawStore:
     def finish_capture_session(self, source_id: str, stream_id: str, outcome: str) -> int:
         """Record terminal status and the exact number of archived frame deliveries."""
         outcome = _text(outcome, "capture outcome")
-        with self._connection() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             scope = (source_id, stream_id)
             frame_count = connection.execute(
                 "SELECT COUNT(*) FROM geyser_wire_frames WHERE source_id = ? AND stream_id = ?",
@@ -333,6 +543,76 @@ class SQLiteGeyserRawStore:
             if result.rowcount != 1:
                 raise ValueError("sessão de captura inexistente ou já finalizada")
             return frame_count
+
+    def recover_incomplete_capture_sessions(self, *, source_id: str,
+                                            owner_id: str | None = None) -> list[str]:
+        """Mark prior crashed capture attempts; never claim their ledger coverage.
+
+        This uses the existing capture metadata and a single SQLite transaction.
+        Open sessions belong to a previous process at runner startup. Their RAW
+        frames remain intact and their ordering domains are never reused.
+        """
+        _text(source_id, "source_id")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
+            prior=connection.execute(
+                "SELECT owner_id FROM geyser_capture_source_leases WHERE source_id = ?",
+                (source_id,),
+            ).fetchone()
+            if prior and (owner_id is None or not self._recover_revoked_capture_owner(connection,source_id,prior[0])):
+                raise ValueError("cannot recover incomplete sessions while source leased")
+            if owner_id is not None:
+                _text(owner_id, "owner_id")
+                connection.execute(
+                    """INSERT INTO geyser_capture_source_leases
+                       (source_id, owner_id, acquired_at, pid, pid_start_ticks)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (source_id, owner_id, datetime.now(timezone.utc).isoformat(),
+                     os.getpid(), self.local_process_start_ticks(os.getpid())),
+                )
+                self._record_capture_authority(connection,source_id,owner_id)
+            # Also recover a kill between registering the stream and creating
+            # its session metadata: both operations were previously separate.
+            orphaned = connection.execute(
+                """SELECT s.stream_id FROM geyser_frame_streams AS s
+                   LEFT JOIN geyser_capture_sessions AS c
+                   ON c.source_id = s.source_id AND c.stream_id = s.stream_id
+                   WHERE s.source_id = ? AND c.stream_id IS NULL
+                   ORDER BY s.stream_id""",
+                (source_id,),
+            ).fetchall()
+            for (stream_id,) in orphaned:
+                now = datetime.now(timezone.utc).isoformat()
+                count = connection.execute(
+                    """SELECT COUNT(*) FROM geyser_wire_frames
+                       WHERE source_id = ? AND stream_id = ?""",
+                    (source_id, stream_id),
+                ).fetchone()[0]
+                connection.execute(
+                    """INSERT INTO geyser_capture_sessions
+                       (source_id, stream_id, started_at, finished_at,
+                        outcome, frame_count)
+                       VALUES (?, ?, ?, ?, 'process_interrupted_unknown', ?)""",
+                    (source_id, stream_id, now, now, count),
+                )
+            rows = connection.execute(
+                """SELECT stream_id FROM geyser_capture_sessions
+                   WHERE source_id = ? AND finished_at IS NULL
+                   ORDER BY started_at, stream_id""",
+                (source_id,),
+            ).fetchall()
+            for (stream_id,) in rows:
+                count = connection.execute(
+                    """SELECT COUNT(*) FROM geyser_wire_frames
+                       WHERE source_id = ? AND stream_id = ?""",
+                    (source_id, stream_id),
+                ).fetchone()[0]
+                connection.execute(
+                    """UPDATE geyser_capture_sessions SET finished_at = ?,
+                       outcome = 'process_interrupted_unknown', frame_count = ?
+                       WHERE source_id = ? AND stream_id = ? AND finished_at IS NULL""",
+                    (datetime.now(timezone.utc).isoformat(), count, source_id, stream_id),
+                )
+            return [stream_id for (stream_id,) in orphaned] + [stream_id for (stream_id,) in rows]
 
     def get_capture_session(self, source_id: str, stream_id: str) -> dict | None:
         """Return audit metadata if the archive records how its stream ended."""
@@ -428,8 +708,7 @@ class SQLiteGeyserRawStore:
         stream_id = _text(stream_id, "stream_id")
         ordering_domain_id = _text(ordering_domain_id, "ordering_domain_id")
         initial = _frame_sequence(initial_sequence)
-        with self._connection() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             rows = connection.execute(
                 """SELECT stream_id, ordering_domain_id, initial_sequence
                    FROM geyser_frame_streams WHERE source_id = ?
@@ -470,8 +749,7 @@ class SQLiteGeyserRawStore:
             _text(frame_kind, "frame_kind")
         digest = hashlib.sha256(payload).hexdigest()
         coordinate = (source_id, stream_id, sequence)
-        with self._connection() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             stream = connection.execute(
                 """SELECT initial_sequence, contiguous_sequence, last_seen_sequence, tainted
                    FROM geyser_frame_streams
@@ -587,7 +865,7 @@ class SQLiteGeyserRawStore:
             raise ValueError("initial_sequence é obrigatório")
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None)):
                 existing = connection.execute(
                     "SELECT initial_sequence, baseline_kind FROM geyser_transport_checkpoints "
                     "WHERE source_id = ? AND stream_id = ?", (source_id, stream_id)
@@ -800,7 +1078,7 @@ class SQLiteGeyserRawStore:
         resolution_note = _text(resolution_note, "resolution_note")
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None)):
                 row = connection.execute(
                     "SELECT source_id, stream_id, status FROM geyser_transport_anomalies "
                     "WHERE anomaly_id = ?", (anomaly_id,)
@@ -854,7 +1132,7 @@ class SQLiteGeyserRawStore:
         digest = hashlib.sha256(event.payload_bytes).hexdigest()
 
         with self._connection() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None)):
                 existing = connection.execute(
                     "SELECT source_id, event_kind, schema_version, payload_encoding, "
                     "payload_bytes, payload_sha256 FROM geyser_raw_events WHERE event_id = ?",

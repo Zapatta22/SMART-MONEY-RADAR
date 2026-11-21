@@ -19,6 +19,8 @@ class DashboardHTTPTests(unittest.TestCase):
         }
         self.store.storage_stats.return_value = {}
         self.store.get_events.return_value = []
+        self.store.list_cpmm_launch_archived_event_inputs.return_value = []
+        self.store.list_smr_archived_event_inputs.return_value = []
         self.token = "t" * 40
         self.server = create_read_only_server(
             self.store, auth_token=self.token, port=0
@@ -48,6 +50,40 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertIn("SMART MONEY RADAR", body)
         self.assertIn("SMR_API_TOKEN", body)
         self.assertIn("/api/v1/dashboard", body)
+
+    def test_mobile_dashboard_has_separate_archived_radar_render_targets(self):
+        with self.request("/") as response:
+            html=response.read().decode("utf-8")
+        self.assertIn('id="launchEvents"',html)
+        self.assertIn('id="smartEvents"',html)
+        self.assertIn("data.radar_events",html)
+        self.assertIn('id="radarCollectors"',html)
+        self.assertIn("last_archived_event_at",html)
+        self.assertIn("textContent",html)
+
+    def test_api_serializes_archived_smart_money_without_trades(self):
+        import hashlib
+        raw=b'{"result":{"slot":9,"transaction":{"signatures":["sig-9"]}}}'
+        self.store.list_smr_archived_event_inputs.return_value=[{
+            "operation_id":"op-9","pool":"pool-9","side":"BUY",
+            "available_at":"2026-11-20T23:30:00+00:00",
+            "signature":"sig-9","wallet":"wallet-9",
+            "raw_bytes":raw,"slot":9,
+            "observed_at":"2026-11-20T23:29:00+00:00",
+            "chain":"solana","occurred_at":"2026-11-20T23:28:00+00:00",
+        }]
+        with self.request("/api/v1/dashboard",self.token) as response:
+            data=json.loads(response.read())
+        self.assertEqual(data["radar_events"]["launch"],[])
+        item,=data["radar_events"]["smart_money"]
+        self.assertEqual(item["wallet_address"],"wallet-9")
+        self.assertEqual(item["raw_sha256"],hashlib.sha256(raw).hexdigest())
+        self.assertEqual(item["direction"],"BUY")
+        self.assertEqual(item["coverage"],"UNKNOWN")
+        self.assertEqual(item["evidence_quality"],"UNKNOWN")
+        self.assertFalse(item["operational_authorized"])
+        self.assertEqual(data["radars"]["smart_money"]["status"],"UNKNOWN")
+        self.assertEqual(data["radars"]["smart_money"]["last_archived_event_at"],"2026-11-20T23:30:00+00:00")
 
     def test_dashboard_requires_bearer_token(self):
         with self.assertRaises(HTTPError) as caught:

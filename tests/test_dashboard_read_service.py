@@ -35,6 +35,8 @@ class DashboardReadServiceTests(unittest.TestCase):
             amount=Decimal("1.2500"),
         )]
 
+        store.list_cpmm_launch_archived_event_inputs.return_value = []
+        store.list_smr_archived_event_inputs.return_value = []
         service = DashboardReadService(store)
         result = service.get_overview(wallet_address="wallet-a")
 
@@ -62,11 +64,49 @@ class DashboardReadServiceTests(unittest.TestCase):
         diagnostics.get_report.return_value = {"total_attempts": 0}
         store.storage_stats.return_value = {}
         store.get_events.return_value = []
+        store.list_cpmm_launch_archived_event_inputs.return_value = []
+        store.list_smr_archived_event_inputs.return_value = []
 
         result = DashboardReadService(store, diagnostics).get_overview()
 
         self.assertEqual(result["reconciliation"], {"total_attempts": 0})
         diagnostics.get_report.assert_called_once_with(wallet_address=None)
+
+    def test_independent_radars_default_to_unknown_and_never_authorize_trades(self):
+        store = Mock()
+        store.get_reconciliation_diagnostics.return_value = {
+            "total_attempts": 0, "statuses": {}, "top_reasons": [],
+            "pending_transactions_count": 0, "pending_transactions": [],
+        }
+        store.storage_stats.return_value = {}
+        store.get_events.return_value = []
+        store.list_cpmm_launch_archived_event_inputs.return_value = []
+        store.list_smr_archived_event_inputs.return_value = []
+        result = DashboardReadService(store).get_overview()
+        self.assertEqual(set(result["radars"]), {"launch", "smart_money"})
+        for radar in result["radars"].values():
+            self.assertEqual(radar["status"], "UNKNOWN")
+            self.assertEqual(radar["evidence_coverage"], "UNKNOWN")
+            self.assertFalse(radar["operational_authorized"])
+            self.assertEqual(radar["paper_modes"],
+                             {"immediate": "BLOCKED", "confirmed": "BLOCKED"})
+
+    def test_archived_event_channels_render_independently_read_only(self):
+        store=Mock()
+        store.get_reconciliation_diagnostics.return_value={"total_attempts":0}
+        store.storage_stats.return_value={}
+        store.get_events.return_value=[]
+        store.list_cpmm_launch_archived_event_inputs.return_value=[]
+        store.list_smr_archived_event_inputs.return_value=[]
+        response=DashboardReadService(store).get_overview()
+        self.assertEqual(set(response["radar_events"]),{"launch","smart_money"})
+        self.assertEqual(response["radar_events"]["launch"],[])
+        self.assertEqual(response["radar_events"]["smart_money"],[])
+        self.assertEqual(response["mode"],"read_only")
+        self.assertIsNone(response["radars"]["launch"]["last_archived_event_at"])
+        self.assertIsNone(response["radars"]["smart_money"]["last_archived_event_at"])
+        store.list_cpmm_launch_archived_event_inputs.assert_called_once_with(limit=20)
+        store.list_smr_archived_event_inputs.assert_called_once_with(limit=20)
 
     def test_no_network_or_mutation_methods_are_exposed(self):
         service = DashboardReadService(Mock())

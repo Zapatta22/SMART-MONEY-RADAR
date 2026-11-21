@@ -1,0 +1,16 @@
+name: SMR browser authentication
+on:
+  push:
+    branches: [codex/smr-cpmm-ws-integrated-recovery]
+  workflow_dispatch:
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install . playwright
+      - run: python -m playwright install --with-deps chromium
+      - run: SMR_BROWSER_TEST=1 PYTHONPATH=src python -m unittest discover -s tests -p 'test_cm37*browser*.py' -v

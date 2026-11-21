@@ -64,6 +64,7 @@ class PaperConfig:
     stop_loss: Decimal = Decimal("0.10")
     take_profit: Decimal = Decimal("0.20")
     max_entry_deviation_bps: Decimal | None = None
+    allow_partial_fills: bool = False
 
     def __post_init__(self) -> None:
         fields = (
@@ -79,6 +80,8 @@ class PaperConfig:
         deviation = self.max_entry_deviation_bps
         if deviation is not None and (not deviation.is_finite() or deviation < 0):
             raise ValueError("desvio máximo de entrada inválido")
+        if type(self.allow_partial_fills) is not bool:
+            raise ValueError("partial-fill policy must be boolean")
         if not ZERO < self.stop_loss < ONE or self.take_profit <= 0:
             raise ValueError("limites de saída inválidos")
 
@@ -190,19 +193,32 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
         if pending is not None and (cancel_entry or (
             market_at > pending.signal.at and (
                 pending.side == "BUY" or (
-                    tick.volume > 0 and (tick.bid_size is None or tick.bid_size >= quantity)
+                    tick.volume > 0 and (tick.bid_size is None or tick.bid_size >= quantity
+                        or (config.allow_partial_fills and tick.bid_size > 0))
                 )
             )
         )):
             if pending.side == "SELL":
-                fee = quantity * sell_price * fee_rate
-                proceeds = quantity * sell_price - fee
+                sold = min(quantity,tick.bid_size) if config.allow_partial_fills and tick.bid_size is not None else quantity
+                fee = sold * sell_price * fee_rate
+                proceeds = sold * sell_price - fee
+                cost_sold = entry_cost if sold == quantity else entry_cost * sold / quantity
                 cash += proceeds
-                realized_pnl += proceeds - entry_cost
+                realized_pnl += proceeds - cost_sold
                 fills.append(PaperFill("SELL", pending.signal.at, tick.at, sell_price,
-                                       quantity, fee, pending.reason, tick.quote_id, market_at))
-                quantity = ZERO
-                opened_at = None
+                                       sold, fee, pending.reason, tick.quote_id, market_at))
+                quantity -= sold
+                entry_cost -= cost_sold
+                if quantity == ZERO:
+                    opened_at = None
+                else:
+                    # A partial exit retains its original decision and waits for
+                    # a later independent quote; no second fill on this quote.
+                    liquidation = quantity * sell_price * (ONE - fee_rate)
+                    equity = cash + liquidation
+                    peak = max(peak, equity)
+                    drawdown = max(drawdown, (peak-equity)/peak)
+                    continue
             else:
                 buy_price = (tick.ask or tick.price) * (ONE + slippage)
                 entry_budget = min(config.max_entry_cash, cash * config.max_exposure)
@@ -210,7 +226,12 @@ def _replay(ticks: Iterable[ReplayTick], config: PaperConfig, mode: str) -> Pape
                 buy_quantity = notional / buy_price
                 rejection = _entry_rejection(tick, pending, buy_price, config)
                 if rejection is None and tick.ask_size is not None and buy_quantity > tick.ask_size:
-                    rejection = "insufficient_ask_size"
+                    if config.allow_partial_fills and tick.ask_size > 0:
+                        buy_quantity = tick.ask_size
+                        notional = buy_quantity * buy_price
+                        entry_budget = notional * (ONE + fee_rate)
+                    else:
+                        rejection = "insufficient_ask_size"
                 if rejection is not None:
                     rejected_entries += 1
                     decisions.append(PaperDecision(tick.at, "reject", rejection))

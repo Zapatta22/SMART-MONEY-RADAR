@@ -67,6 +67,14 @@ class BoundedCpmmRecovery:
         self.disconnects.append(record)
         self.coverage="UNKNOWN"
 
+
+    def classify_failed_transport(self,*,record:DisconnectRecord)->None:
+        """Close current journal only after its RAW deliveries are durable."""
+        self.note_failure(record)
+
+    def can_retry(self)->bool:
+        return bool(self.disconnects) and self.reconnect_attempts < self.policy.max_reconnects
+
     def finalize(self,outcome:str)->None:
         if self.current is not None and self.current.active:
             self.current.finish(outcome)

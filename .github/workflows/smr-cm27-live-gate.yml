@@ -1,0 +1,44 @@
+name: SMR CM27 read-only bounded Solana WebSocket live gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      approve_read_only:
+        description: "Type READ_ONLY_BOUNDED_CM27 to authorize one short public-network capture"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smr-cm27-public-live-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: ${{ inputs.approve_read_only == 'READ_ONLY_BOUNDED_CM27' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing project
+        run: python -m pip install -e .
+      - name: One bounded public Solana capture, read-only
+        env:
+          PYTHONPATH: src
+          SMR_LIVE_CAPTURE_OPT_IN: READ_ONLY_BOUNDED_CM27
+        run: |
+          set -euo pipefail
+          python tools/capture_live_cpmm_ws_baseline.py
+      - name: Preserve SQLite, RAW, session manifest even after failed capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smr-cm27-live-read-only
+          path: /tmp/smr-cpmm-baseline-live/
+          retention-days: 7
+          if-no-files-found: warn

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
+from smart_money_radar.storage.collector_authority import collector_write, bind_projection
 
 
 POLICY_ID = "geyser-unsequenced-delivery:v2"
@@ -84,6 +85,9 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                 )
                 connection.commit()
 
+    def bind_collector(self, authority):
+        return bind_projection(self,authority)
+
     @contextmanager
     def _connect(self):
         connection = sqlite3.connect(self.database_path, timeout=30.0)
@@ -99,8 +103,7 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
     def rebuild(self) -> dict[str, int | str]:
         """Rebuild atomically while keeping delivery-sized working sets in SQLite."""
         batch_size = 500
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connect() as connection, collector_write(connection,getattr(self,"_collector_authority",None)):
 
             # Materialize only eligible witnesses in a connection-local SQLite
             # table. This replaces the Python-wide delivery list, conflict set,
@@ -265,7 +268,6 @@ class SQLiteGeyserUnsequencedDeliveryAudit:
                 counts["reconciled_count"],counts["unresolved_count"],
                 counts["conflict_count"],completed_at,
             ))
-            connection.commit()
         return {"generation":generation, **counts}
 
     def list_deliveries(self, classification: str | None = None) -> list[dict]:

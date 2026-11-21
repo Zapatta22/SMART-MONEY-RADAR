@@ -1,10 +1,11 @@
 """Armazenamento histórico SQLite, com deduplicação local de eventos."""
 
+import hashlib
 import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -15,6 +16,7 @@ from smart_money_radar.domain.models import (
 )
 from smart_money_radar.domain.normalization import NormalizedObservation
 from smart_money_radar.domain.swap_bundle_builder import SwapDomainBundle
+from smart_money_radar.storage.collector_authority import collector_write, verify_collector_authority
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,25 @@ class SQLiteEventStore:
         else:
             self.database_path.parent.mkdir(parents=True, exist_ok=True)
             self._initialize()
+
+    def bind_collector(self, authority):
+        """Bind a new handle to an immutable generation, without migrations."""
+        from smart_money_radar.storage.collector_authority import CollectorAuthority, AuthorityLost
+        if not isinstance(authority, CollectorAuthority) or self.read_only:
+            raise ValueError("writable store and collector authority required")
+        if str(self.database_path)==":memory:" or not Path(self.database_path).samefile(authority.database_path):
+            raise AuthorityLost("collector database mismatch")
+        if getattr(self,"_collector_authority",None) is not None:
+            raise AuthorityLost("a bound collector handle cannot be rebound")
+        bound = object.__new__(type(self))
+        bound.__dict__ = self.__dict__.copy()
+        bound._collector_authority = authority
+        return bound
+
+    def assert_collector_authority(self, radar=None):
+        with self._connection_scope() as conn, conn:
+            conn.execute("BEGIN")
+            verify_collector_authority(conn,getattr(self,"_collector_authority",None),radar)
 
     def _connect(self) -> sqlite3.Connection:
         if self._memory_connection is not None:
@@ -289,6 +310,367 @@ class SQLiteEventStore:
                        ON swap_reconciliation_attempts(wallet_address, signature, attempted_at, id)"""
                 )
 
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS cpmm_launch_raw (
+                           sha256 TEXT PRIMARY KEY,
+                           payload BLOB NOT NULL,
+                           archived_at TEXT NOT NULL
+                       )"""
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS cpmm_launch_evidence (
+                           pool TEXT NOT NULL,
+                           identity TEXT NOT NULL,
+                           sha256 TEXT NOT NULL REFERENCES cpmm_launch_raw(sha256),
+                           PRIMARY KEY(pool, identity, sha256)
+                       )"""
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS cpmm_launch_stream_cursor (
+                           source_id TEXT PRIMARY KEY,
+                           first_sequence INTEGER NOT NULL CHECK(first_sequence >= 0),
+                           last_sequence INTEGER NOT NULL CHECK(last_sequence >= first_sequence),
+                           updated_at TEXT NOT NULL
+                       )"""
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS cpmm_launch_stream_delivery (
+                           source_id TEXT NOT NULL,
+                           sequence INTEGER NOT NULL CHECK(sequence >= 0),
+                           sha256 TEXT NOT NULL REFERENCES cpmm_launch_raw(sha256),
+                           PRIMARY KEY(source_id, sequence)
+                       )"""
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS cpmm_launch_rpc_cursor (
+                           source_id TEXT PRIMARY KEY,
+                           signature TEXT NOT NULL,
+                           last_sequence INTEGER NOT NULL CHECK(last_sequence >= 0),
+                           updated_at TEXT NOT NULL
+                       )"""
+                )
+
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm33_paper_runs (
+                    run_id TEXT PRIMARY KEY, radar TEXT NOT NULL CHECK(radar IN ('launch','smart_money')),
+                    metadata TEXT NOT NULL, metadata_sha TEXT NOT NULL,
+                    report TEXT NOT NULL, report_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm33_paper_ticks (
+                    run_id TEXT NOT NULL REFERENCES cm33_paper_runs(run_id),
+                    sequence INTEGER NOT NULL CHECK(sequence>=0), quote_id TEXT NOT NULL,
+                    signal_id TEXT, payload TEXT NOT NULL, payload_sha TEXT NOT NULL,
+                    PRIMARY KEY(run_id,sequence), UNIQUE(run_id,quote_id),
+                    UNIQUE(run_id,signal_id))""")
+
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm34_capital_accounts (
+                    account_id TEXT PRIMARY KEY, metadata TEXT NOT NULL, metadata_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm34_capital_journal (
+                    account_id TEXT NOT NULL REFERENCES cm34_capital_accounts(account_id),
+                    seq INTEGER NOT NULL CHECK(seq>=0), event_id TEXT NOT NULL,
+                    payload TEXT NOT NULL, payload_sha TEXT NOT NULL,
+                    previous_sha TEXT NOT NULL, chain_sha TEXT NOT NULL,
+                    PRIMARY KEY(account_id,seq), UNIQUE(account_id,event_id))""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm34_capital_runs (
+                    account_id TEXT NOT NULL REFERENCES cm34_capital_accounts(account_id),
+                    run_id TEXT PRIMARY KEY REFERENCES cm33_paper_runs(run_id),
+                    binding TEXT NOT NULL, binding_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm34_operational_journal (
+                    seq INTEGER PRIMARY KEY CHECK(seq>=0), event_id TEXT NOT NULL UNIQUE,
+                    payload TEXT NOT NULL, payload_sha TEXT NOT NULL,
+                    previous_sha TEXT NOT NULL, chain_sha TEXT NOT NULL)""")
+
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm35_wallet_profiles (
+                    snapshot_id TEXT PRIMARY KEY, cutoff TEXT NOT NULL, policy_sha TEXT NOT NULL,
+                    payload TEXT NOT NULL, payload_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE INDEX IF NOT EXISTS idx_cm35_wallet_cutoff
+                    ON cm35_wallet_profiles(cutoff)""")
+
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm36_supervisor_lease (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1), generation INTEGER NOT NULL,
+                    owner TEXT NOT NULL, heartbeat REAL NOT NULL, expires REAL NOT NULL,
+                    status TEXT NOT NULL, payload_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm36_supervisor_tasks (
+                    radar TEXT PRIMARY KEY CHECK(radar IN ('launch','smart_money')),
+                    payload TEXT NOT NULL, payload_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm36_decision_journal (
+                    radar TEXT NOT NULL, event_id TEXT NOT NULL, event_sha TEXT NOT NULL,
+                    payload TEXT NOT NULL, payload_sha TEXT NOT NULL,
+                    PRIMARY KEY(radar,event_id,event_sha))""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm36_supervisor_alerts (
+                    id TEXT PRIMARY KEY, radar TEXT NOT NULL, payload TEXT NOT NULL,
+                    payload_sha TEXT NOT NULL)""")
+
+    def archive_cpmm_launches(
+        self, payloads: list[bytes], *,
+        source_id: str | None = None, first_sequence: int | None = None,
+    ) -> dict:
+        """Archive RAW and identities; optional durable consumer sequence in same commit.
+
+        The sequence is assigned by the upstream consumer, NOT a Solana slot.
+        The first seen sequence is a local baseline, not proof of prior coverage.
+        """
+        from smart_money_radar.data_sources.raydium_cpmm_launch import detect_cpmm_pool_initializations
+
+        if self.read_only:
+            raise ValueError("arquivo de lançamentos exige SQLite gravável")
+        if (source_id is None) != (first_sequence is None):
+            raise ValueError("origem e primeira sequência devem ser informadas juntas")
+        if source_id is not None:
+            if (not isinstance(source_id, str) or not source_id.strip()
+                    or len(source_id) > 256 or "\x00" in source_id):
+                raise ValueError("identidade do consumidor inválida")
+            if (type(first_sequence) is not int or first_sequence < 0
+                    or not payloads or first_sequence + len(payloads) - 1 > 2**63 - 1):
+                raise ValueError("intervalo de sequência inválido")
+        inputs = []
+        frames = []
+        candidates = {}
+        records = []
+        for raw in payloads:
+            if not isinstance(raw, bytes):
+                raise ValueError("payload RAW deve conter bytes")
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise ValueError("transação do Launch Radar precisa ser um objeto JSON")
+            digest = hashlib.sha256(raw).hexdigest()
+            frames.append((digest, raw))
+            found = detect_cpmm_pool_initializations(payload)
+            inputs.append({"sha256": digest, "matched_initializations": len(found)})
+            if not found:
+                continue
+            identities = []
+            for observation in found:
+                fields = asdict(observation)
+                identity = json.dumps(fields, sort_keys=True, separators=(",", ":"))
+                identities.append((observation.pool, identity, digest))
+                candidates.setdefault(observation.pool, fields)
+            records.append((digest, raw, identities))
+
+        with self._connection_scope() as connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "launch"):
+                return self._archive_cpmm_launches_prepared(
+                    connection, inputs, frames, candidates, records,
+                    source_id=source_id, first_sequence=first_sequence,
+                )
+
+    def _archive_cpmm_launches_prepared(
+        self, connection: sqlite3.Connection, inputs: list, frames: list,
+        candidates: dict, records: list, *,
+        source_id: str | None, first_sequence: int | None,
+    ) -> dict:
+        """Persist prepared evidence in a caller-owned SQLite transaction."""
+        new_pools = []
+        conflicts = []
+        stream_report = None
+        if True:
+            new_deliveries = []
+            replayed_count = 0
+            if source_id is not None:
+                previous = connection.execute(
+                    "SELECT first_sequence, last_sequence FROM cpmm_launch_stream_cursor "
+                    "WHERE source_id = ?", (source_id,),
+                ).fetchone()
+                start = previous[0] if previous else None
+                last = previous[1] if previous else None
+                for offset, (digest, _) in enumerate(frames):
+                    sequence = first_sequence + offset
+                    saved = connection.execute(
+                        "SELECT sha256 FROM cpmm_launch_stream_delivery "
+                        "WHERE source_id = ? AND sequence = ?", (source_id, sequence),
+                    ).fetchone()
+                    if saved is not None:
+                        if saved[0] != digest:
+                            raise ValueError("conflito de identidade RAW na sequência já arquivada")
+                        if last is None or sequence > last:
+                            raise ValueError("cursor de lançamentos inconsistente")
+                        replayed_count += 1
+                        continue
+                    if last is not None and sequence != last + 1:
+                        raise ValueError("lacuna ou sequência histórica desconhecida no consumidor")
+                    if start is None:
+                        start = sequence
+                    new_deliveries.append((source_id, sequence, digest))
+                    last = sequence
+            known = {
+                pool for pool in candidates if connection.execute(
+                    "SELECT 1 FROM cpmm_launch_evidence WHERE pool = ? LIMIT 1", (pool,)
+                ).fetchone()
+            }
+            archived_at = datetime.now(timezone.utc).isoformat()
+            # INSERT OR IGNORE must not conceal a damaged existing RAW row.
+            for digest, raw in frames:
+                saved = connection.execute(
+                    "SELECT payload FROM cpmm_launch_raw WHERE sha256=?", (digest,),
+                ).fetchone()
+                if saved is not None and bytes(saved[0]) != raw:
+                    raise ValueError("conflito de integridade RAW arquivado")
+            for digest, raw, identities in records:
+                connection.execute(
+                    "INSERT OR IGNORE INTO cpmm_launch_raw VALUES (?, ?, ?)",
+                    (digest, raw, archived_at),
+                )
+                connection.executemany(
+                    "INSERT OR IGNORE INTO cpmm_launch_evidence VALUES (?, ?, ?)", identities,
+                )
+            for pool, observation in candidates.items():
+                count = connection.execute(
+                    "SELECT COUNT(DISTINCT identity) FROM cpmm_launch_evidence WHERE pool = ?", (pool,)
+                ).fetchone()[0]
+                if count > 1:
+                    conflicts.append(pool)
+                elif pool not in known:
+                    new_pools.append(observation)
+            if source_id is not None:
+                # Save even non-Initialize frames: the cursor must never claim
+                # an examined delivery without its immutable RAW bytes.
+                connection.executemany(
+                    "INSERT OR IGNORE INTO cpmm_launch_raw VALUES (?, ?, ?)",
+                    ((digest, raw, archived_at) for digest, raw in frames),
+                )
+                connection.executemany(
+                    "INSERT INTO cpmm_launch_stream_delivery VALUES (?, ?, ?)", new_deliveries,
+                )
+                if new_deliveries:
+                    connection.execute(
+                        """INSERT INTO cpmm_launch_stream_cursor
+                           VALUES (?, ?, ?, ?)
+                           ON CONFLICT(source_id) DO UPDATE SET
+                               last_sequence = excluded.last_sequence,
+                               updated_at = excluded.updated_at""",
+                        (source_id, start, last, archived_at),
+                    )
+                stream_report = {
+                    "source_id": source_id, "first_sequence": start,
+                    "last_sequence": last, "new_deliveries": len(new_deliveries),
+                    "replayed_deliveries": replayed_count,
+                    "prior_coverage": "UNKNOWN",
+                }
+        report = {
+            "inputs": inputs, "initializations": new_pools, "conflicted_pools": conflicts,
+        }
+        if stream_report is not None:
+            report["stream_cursor"] = stream_report
+        return report
+
+    def get_cpmm_launch_rpc_cursor(self, source_id: str) -> dict | None:
+        """Fetch durable RPC cursor without altering state."""
+        if not isinstance(source_id, str) or not source_id.strip():
+            raise ValueError("source_id obrigatório")
+        with self._connection_scope() as connection:
+            row = connection.execute(
+                "SELECT signature, last_sequence FROM cpmm_launch_rpc_cursor "
+                "WHERE source_id = ?", (source_id,),
+            ).fetchone()
+        return None if row is None else {"signature": row[0], "last_sequence": row[1]}
+
+    def archive_cpmm_launch_rpc_batch(
+        self, payloads: list[bytes], *, source_id: str, first_sequence: int,
+        expected_signature: str | None, latest_signature: str,
+        evidence_ids: list[str] | None = None,
+    ) -> dict:
+        """Archive all raw transactions and move RPC signature cursor atomically."""
+        from smart_money_radar.data_sources.raydium_cpmm_launch import detect_cpmm_pool_initializations
+
+        if self.read_only:
+            raise ValueError("arquivo de lançamentos exige SQLite gravável")
+        if (not isinstance(source_id, str) or not source_id.strip()
+                or len(source_id) > 256 or "\x00" in source_id
+                or not isinstance(latest_signature, str) or not latest_signature.strip()
+                or (expected_signature is not None and
+                    (not isinstance(expected_signature, str) or not expected_signature.strip()))):
+            raise ValueError("identidade RPC inválida")
+        if (type(first_sequence) is not int or first_sequence < 0
+                or not isinstance(payloads, list) or not payloads
+                or first_sequence + len(payloads) - 1 > 2**63 - 1):
+            raise ValueError("intervalo RPC inválido")
+        frames = []
+        inputs = []
+        candidates = {}
+        records = []
+        signatures = set()
+        prior_slot = None
+        last_signature = None
+        for raw in payloads:
+            if not isinstance(raw, bytes):
+                raise ValueError("RAW RPC deve conter bytes")
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise ValueError("transação RPC inválida")
+            tx = payload.get("result")
+            transaction = tx.get("transaction") if isinstance(tx, dict) else None
+            sigs = transaction.get("signatures") if isinstance(transaction, dict) else None
+            slot = tx.get("slot") if isinstance(tx, dict) else None
+            meta = tx.get("meta") if isinstance(tx, dict) else None
+            if (not isinstance(sigs, list) or not sigs or not isinstance(sigs[0], str)
+                    or not sigs[0] or sigs[0] in signatures or sigs[0] == expected_signature
+                    or type(slot) is not int or slot < 0
+                    or (prior_slot is not None and slot < prior_slot)
+                    or not isinstance(meta, dict) or "err" not in meta):
+                raise ValueError("identidade, slot ou metadados RPC inválidos")
+            last_signature = sigs[0]
+            signatures.add(last_signature)
+            prior_slot = slot
+            digest = hashlib.sha256(raw).hexdigest()
+            found = detect_cpmm_pool_initializations(payload)
+            frames.append((digest, raw))
+            inputs.append({"sha256": digest, "matched_initializations": len(found)})
+            if not found:
+                continue
+            identities = []
+            for observation in found:
+                fields = asdict(observation)
+                identity = json.dumps(fields, sort_keys=True, separators=(",", ":"))
+                identities.append((observation.pool, identity, digest))
+                candidates.setdefault(observation.pool, fields)
+            records.append((digest, raw, identities))
+
+        if last_signature != latest_signature:
+            raise ValueError("checkpoint RPC não corresponde ao último RAW")
+        if evidence_ids is not None and (len(evidence_ids)!=len(payloads) or not all(isinstance(e,str) for e in evidence_ids)):
+            raise ValueError("incomplete evidence batch")
+        with self._connection_scope() as connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "launch"):
+                previous = connection.execute(
+                    "SELECT signature, last_sequence FROM cpmm_launch_rpc_cursor "
+                    "WHERE source_id = ?", (source_id,),
+                ).fetchone()
+                if (previous[0] if previous else None) != expected_signature:
+                    raise ValueError("checkpoint RPC alterado durante a coleta")
+                if first_sequence != (previous[1] + 1 if previous else 0):
+                    raise ValueError("sequência RPC descontínua")
+                if previous is not None:
+                    anchor = connection.execute(
+                        """SELECT raw.payload, raw.sha256 FROM cpmm_launch_stream_delivery d
+                           JOIN cpmm_launch_raw raw ON raw.sha256=d.sha256
+                           WHERE d.source_id=? AND d.sequence=?""", (source_id, previous[1]),
+                    ).fetchone()
+                    if anchor is None or hashlib.sha256(bytes(anchor[0])).hexdigest() != anchor[1]:
+                        raise ValueError("checkpoint RPC sem RAW íntegro")
+                    anchor_tx = json.loads(anchor[0])["result"]
+                    if (anchor_tx["transaction"]["signatures"][0] != expected_signature
+                            or json.loads(payloads[0])["result"]["slot"] < anchor_tx["slot"]):
+                        raise ValueError("checkpoint RPC diverge do RAW ou slot anterior")
+                report = self._archive_cpmm_launches_prepared(
+                    connection, inputs, frames, candidates, records,
+                    source_id=source_id, first_sequence=first_sequence,
+                )
+                for index,raw in enumerate(payloads):
+                    tx=json.loads(raw)["result"]
+                    sig=tx["transaction"]["signatures"][0]
+                    self._cm38_link_in_connection(connection,radar="launch",wallet_address=source_id,
+                        signature=sig,evidence_id=evidence_ids[index] if evidence_ids is not None else None,
+                        kind="launch_transaction",operation_id=sig,slot=tx["slot"],
+                        commitment="finalized",source_id=source_id)
+                connection.execute(
+                    """INSERT INTO cpmm_launch_rpc_cursor VALUES (?, ?, ?, ?)
+                       ON CONFLICT(source_id) DO UPDATE SET
+                           signature=excluded.signature,
+                           last_sequence=excluded.last_sequence,
+                           updated_at=excluded.updated_at""",
+                    (source_id, latest_signature, first_sequence + len(payloads) - 1,
+                     datetime.now(timezone.utc).isoformat()),
+                )
+        return report
+
     def save_events(self, events: list[ActivityEvent]) -> int:
         """Grava eventos e retorna quantos registros novos foram inseridos."""
         rows = [
@@ -305,7 +687,7 @@ class SQLiteEventStore:
         if not rows:
             return 0
         with self._connection_scope() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 before = connection.total_changes
                 connection.executemany(
                     """
@@ -370,7 +752,7 @@ class SQLiteEventStore:
             for event in events
         ]
         with self._connection_scope() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 connection.execute(
                     """
                     INSERT INTO observed_transactions
@@ -424,6 +806,10 @@ class SQLiteEventStore:
                         )
                 inserted = connection.total_changes - before
                 if advance_checkpoint:
+                    self._cm38_link_in_connection(connection,radar="smart_money",
+                        wallet_address=wallet_address,signature=signature,
+                        evidence_id=None,kind="wallet_transaction",operation_id=signature,
+                        commitment="confirmed",source_id="helius-wallet-rpc")
                     self._mark_processed_in_connection(connection, wallet_address, signature)
                 return inserted
 
@@ -442,15 +828,76 @@ class SQLiteEventStore:
             (wallet_address, signature),
         )
 
+    @staticmethod
+    def _cm38_link_in_connection(connection, *, radar, wallet_address, signature,
+                                  evidence_id, kind, operation_id, slot=None, commitment=None,
+                                  source_id=None):
+        """Verify true RPC RAW and bind economics in the checkpoint transaction.
+
+        Empty evidence is compatible only with previously uncaptured legacy
+        observations; never permit an existing captured signature to bypass.
+        """
+        from smart_money_radar.services.rpc_observation_journal import RpcObservationJournal
+        from smart_money_radar.storage.collector_authority import AuthorityLost
+        exists=connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cm38_rpc_observations'"
+        ).fetchone()
+        if evidence_id is None:
+            if exists and connection.execute(
+                "SELECT 1 FROM cm38_rpc_observations WHERE radar=? AND signature=?",
+                (radar,signature)
+            ).fetchone():
+                raise ValueError("captured transaction requires an explicit evidence link")
+            return
+        if not isinstance(evidence_id,str) or len(evidence_id)!=64 or not exists:
+            raise ValueError("missing original RPC evidence")
+        row=connection.execute(
+            "SELECT metadata,metadata_sha,raw FROM cm38_rpc_observations WHERE evidence_id=?",
+            (evidence_id,)
+        ).fetchone()
+        if row is None: raise ValueError("original RPC evidence missing")
+        record=RpcObservationJournal._read(evidence_id,row)
+        meta=record["metadata"]
+        if meta["radar"]!=radar or meta["signature"]!=signature:
+            raise ValueError("RPC source radar or signature mismatch")
+        if commitment is not None and meta["commitment_requested"]!=commitment:
+            raise ValueError("confirmed/finalized commitment mismatch")
+        if source_id is not None and meta["source_id"]!=source_id:
+            raise ValueError("RPC source identity mismatch")
+        if slot is not None and meta["slot"]!=slot:
+            raise ValueError("RPC slot mismatch")
+        available=datetime.fromisoformat(meta["available_at"])
+        if available.tzinfo is None or available>datetime.now(timezone.utc):
+            raise ValueError("future or non-timezoned evidence")
+        connection.execute("""CREATE TABLE IF NOT EXISTS cm38_economic_evidence_links (
+            radar TEXT NOT NULL, wallet_address TEXT NOT NULL, signature TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, evidence_id TEXT NOT NULL,
+            linked_at TEXT NOT NULL,
+            PRIMARY KEY(radar,wallet_address,signature,entity_type,entity_id),
+            FOREIGN KEY(evidence_id) REFERENCES cm38_rpc_observations(evidence_id))""")
+        old=connection.execute(
+            """SELECT evidence_id FROM cm38_economic_evidence_links WHERE
+               radar=? AND wallet_address=? AND signature=? AND entity_type=? AND entity_id=?""",
+            (radar,wallet_address,signature,kind,operation_id)
+        ).fetchone()
+        if old is not None and old[0]!=evidence_id:
+            raise ValueError("conflicting RPC evidence for derived economics")
+        if old is None:
+            connection.execute(
+                "INSERT INTO cm38_economic_evidence_links VALUES (?,?,?,?,?,?,?)",
+                (radar,wallet_address,signature,kind,operation_id,evidence_id,
+                 datetime.now(timezone.utc).isoformat())
+            )
+
     def mark_processed(
         self, wallet_address: str, signature: str, *, replay_bundles: tuple[SwapDomainBundle, ...] = (),
+        evidence_id: str | None = None,
     ) -> None:
         """Marca a transação como concluída sem regredir o checkpoint por replay antigo."""
         if not wallet_address.strip() or not signature.strip():
             raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
         with self._connection_scope() as connection:
-            with connection:
-                connection.execute("BEGIN IMMEDIATE")
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 parent = connection.execute(
                     """SELECT slot, observed_at FROM observed_transactions
                        WHERE wallet_address = ? AND signature = ?""",
@@ -459,6 +906,21 @@ class SQLiteEventStore:
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes de marcar como processada.")
 
+                self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
+                    signature=signature,evidence_id=evidence_id,kind="wallet_transaction",
+                    operation_id=signature,slot=parent[0],commitment="confirmed",source_id="helius-wallet-rpc")
+                for opid, in connection.execute(
+                    "SELECT operation_id FROM swap_observations WHERE wallet_address=? AND signature=?",
+                    (wallet_address,signature)):
+                    self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
+                        signature=signature,evidence_id=evidence_id,kind="swap_and_classification",
+                        operation_id=opid,slot=parent[0],commitment="confirmed",source_id="helius-wallet-rpc")
+                for opid, in connection.execute(
+                    "SELECT DISTINCT operation_id FROM swap_reconciliation_attempts WHERE wallet_address=? AND signature=?",
+                    (wallet_address,signature)):
+                    self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
+                        signature=signature,evidence_id=evidence_id,kind="economic_reconciliation",
+                        operation_id=opid,slot=parent[0],commitment="confirmed",source_id="helius-wallet-rpc")
                 if replay_bundles:
                     available_at = datetime.now(timezone.utc).isoformat()
                     receipts = []
@@ -472,6 +934,9 @@ class SQLiteEventStore:
                             if record.startswith("pool_state:") and record.removeprefix("pool_state:").strip()
                         }
                         pool_address = next(iter(pools)) if len(pools) == 1 else None
+                        self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
+                            signature=signature,evidence_id=evidence_id,kind="replay_opportunity",
+                            operation_id=observation.operation_id,slot=parent[0],commitment="confirmed",source_id="helius-wallet-rpc")
                         receipts.append((
                             observation.operation_id, wallet_address, item.evidence.program_id, pool_address,
                             observation.input_mint, observation.output_mint,
@@ -541,8 +1006,7 @@ class SQLiteEventStore:
         if observation.chain.strip().lower() != "solana":
             raise ValueError("Esta versão do EventStore aceita swaps apenas da chain Solana.")
         with self._connection_scope() as connection:
-            with connection:
-                connection.execute("BEGIN IMMEDIATE")
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 parent = connection.execute(
                     """SELECT 1 FROM observed_transactions
                        WHERE wallet_address = ? AND signature = ?""",
@@ -615,6 +1079,30 @@ class SQLiteEventStore:
             columns = tuple(item[0] for item in cursor.description)
             return [dict(zip(columns, row)) for row in cursor]
 
+    def list_wallet_discovery_receipts(self, *, limit: int = 5000) -> list[dict]:
+        """Bounded raw-linked receipt snapshot, not a whole-chain wallet scan.
+
+        Return first-publication receipts in stable receipt order. Caller must
+        preserve UNKNOWN coverage and must not evaluate a truncated snapshot.
+        """
+        if type(limit) is not int or not 1 <= limit <= 10001:
+            raise ValueError("discovery limit outside allowed bounds")
+        with self._connection_scope() as connection:
+            rows=connection.execute("""
+                SELECT a.operation_id,a.wallet_address,s.signature,a.program_id,a.pool_address,
+                       a.input_mint,a.output_mint,a.input_amount,a.output_amount,a.side,a.confidence,
+                       a.occurred_at,a.available_at,o.payload_json,o.slot,o.observed_at,o.chain,
+                       o.parse_status,s.wallet_address
+                FROM swap_replay_archive a
+                LEFT JOIN swap_observations s ON s.operation_id=a.operation_id
+                LEFT JOIN observed_transactions o ON o.wallet_address=a.wallet_address AND o.signature=s.signature
+                ORDER BY a.receipt_id LIMIT ?
+            """,(limit,)).fetchall()
+        names=("operation_id","wallet","signature","program","pool","input_mint","output_mint",
+               "input_amount","output_amount","side","confidence","occurred_at","available_at",
+               "payload_json","slot","observed_at","chain","parse_status","observation_wallet")
+        return [dict(zip(names,r)) for r in rows]
+
     def list_wallet_signal_receipts(
         self, *, wallet: str, program: str, base_mint: str, quote_mint: str, pool: str,
     ) -> list[dict]:
@@ -674,6 +1162,73 @@ class SQLiteEventStore:
                 evidence=tuple(json.loads(ev[4])),
             ) if ev else None,
         }
+
+    def list_smr_archived_event_inputs(self, *, limit: int = 20) -> list[dict]:
+        """Read original swap receipts with transaction RAW, not inferred live coverage.
+
+        Returned payload bytes match exactly the JSON text persisted by this
+        SQLite store. Local hashes prove integrity only, never provider trust.
+        """
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        with self._connection_scope() as connection:
+            rows = connection.execute(
+                """SELECT archive.operation_id, archive.pool_address,
+                          archive.side, archive.available_at,
+                          swap.signature, swap.wallet_address,
+                          observed.payload_json, observed.slot,
+                          observed.observed_at, observed.chain,
+                          archive.occurred_at, archive.program_id, archive.input_mint,
+                          archive.output_mint, archive.confidence
+                   FROM swap_replay_archive AS archive
+                   JOIN swap_observations AS swap
+                     ON swap.operation_id=archive.operation_id
+                    AND swap.wallet_address=archive.wallet_address
+                   LEFT JOIN observed_transactions AS observed
+                     ON observed.wallet_address=swap.wallet_address
+                    AND observed.signature=swap.signature
+                   ORDER BY archive.receipt_id DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [{
+            "operation_id": row[0], "pool": row[1], "side": row[2],
+            "available_at": row[3], "signature": row[4], "wallet": row[5],
+            "raw_bytes": row[6].encode("utf-8") if row[6] is not None else None,
+            "slot": row[7], "observed_at": row[8],
+            "chain": row[9], "occurred_at": row[10], "program": row[11],
+            "input_mint": row[12], "output_mint": row[13], "confidence": row[14],
+        } for row in rows]
+
+    def list_cpmm_launch_archived_event_inputs(self, *, limit: int = 20) -> list[dict]:
+        """Join original Launch Radar RAW/detected identities, if its journal exists.
+
+        This is intentionally optional: legacy SMR databases lack Launch tables.
+        Missing tables never get created by a read-only dashboard.
+        """
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        with self._connection_scope() as connection:
+            tables = {r[0] for r in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+                " AND name IN ('cpmm_launch_evidence','cpmm_launch_raw')"
+            )}
+            if tables != {"cpmm_launch_evidence", "cpmm_launch_raw"}:
+                return []
+            rows = connection.execute(
+                """SELECT evidence.pool, evidence.identity, evidence.sha256,
+                          raw.payload, raw.archived_at,
+                          (SELECT COUNT(DISTINCT e.identity) FROM cpmm_launch_evidence e
+                            WHERE e.pool=evidence.pool) AS identity_count
+                   FROM cpmm_launch_evidence AS evidence
+                   JOIN cpmm_launch_raw AS raw ON raw.sha256=evidence.sha256
+                   ORDER BY raw.archived_at DESC, evidence.pool
+                   LIMIT ?""", (limit,),
+            ).fetchall()
+        return [{
+            "pool": row[0], "identity_json": row[1], "raw_sha256": row[2],
+            "raw_bytes": bytes(row[3]), "archived_at": row[4],
+            "pool_identity_conflict": row[5] > 1,
+        } for row in rows]
 
     def get_raw_transaction(self, wallet_address: str, signature: str) -> dict | None:
         """Recupera payload bruto para auditoria e replay do parser."""
@@ -745,7 +1300,7 @@ class SQLiteEventStore:
             for event in events
         ]
         with self._connection_scope() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 exists = connection.execute(
                     """SELECT 1 FROM observed_transactions
                        WHERE wallet_address = ? AND signature = ? AND payload_json IS NOT NULL""",
@@ -794,6 +1349,83 @@ class SQLiteEventStore:
                                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                             delta_rows,
                         )
+                # New CM38H derived-state receipt: preserve every reparse as an
+                # immutable, hash-chained decision bound to original RPC RAW
+                # when available, without moving wallet checkpoints.
+                from hashlib import sha256 as cm38_sha256
+                import uuid as cm38_uuid
+                parent=connection.execute(
+                    "SELECT payload_json,slot FROM observed_transactions WHERE wallet_address=? AND signature=?",
+                    (wallet_address,signature)
+                ).fetchone()
+                old_rpc=connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cm38_rpc_observations'"
+                ).fetchone()
+                linked=None
+                if old_rpc:
+                    linked=connection.execute(
+                        """SELECT evidence_id FROM cm38_economic_evidence_links WHERE
+                           radar='smart_money' AND wallet_address=? AND signature=?
+                           AND entity_type='wallet_transaction' AND entity_id=?""",
+                        (wallet_address,signature,signature)
+                    ).fetchone() if connection.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cm38_economic_evidence_links'"
+                    ).fetchone() else None
+                    captured=connection.execute(
+                        "SELECT 1 FROM cm38_rpc_observations WHERE radar='smart_money' AND signature=?",
+                        (signature,)
+                    ).fetchone()
+                    if captured and linked is None:
+                        raise ValueError("reprocessing captured transaction requires an existing RPC link")
+                    if linked is not None:
+                        self._cm38_link_in_connection(
+                            connection,radar="smart_money",wallet_address=wallet_address,
+                            signature=signature,evidence_id=linked[0],kind="wallet_transaction",
+                            operation_id=signature,slot=parent[1],commitment="confirmed",
+                            source_id="helius-wallet-rpc",
+                        )
+                # SQLite requires the referenced table to exist even in
+                # archives predating the CM38 RPC collector.
+                if not old_rpc:
+                    connection.execute("""CREATE TABLE IF NOT EXISTS cm38_rpc_observations(
+                        evidence_id TEXT PRIMARY KEY,radar TEXT NOT NULL,
+                        signature TEXT NOT NULL,available_at TEXT NOT NULL,
+                        metadata TEXT NOT NULL,metadata_sha TEXT NOT NULL,raw BLOB NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm38_reprocessing_history(
+                    receipt_id TEXT PRIMARY KEY,wallet_address TEXT NOT NULL,
+                    signature TEXT NOT NULL,evidence_id TEXT,
+                    parser_version TEXT NOT NULL,parse_status TEXT NOT NULL,
+                    derived_sha256 TEXT NOT NULL,previous_sha256 TEXT,
+                    receipt_sha256 TEXT NOT NULL,created_at TEXT NOT NULL,
+                    FOREIGN KEY(evidence_id) REFERENCES cm38_rpc_observations(evidence_id))""")
+                derived=json.dumps({
+                    "wallet":wallet_address,"signature":signature,"parser_version":parser_version,
+                    "parse_status":parse_status,"parse_error":parse_error,
+                    "events":rows,
+                    "deltas":sorted([
+                        (d.wallet_address,d.signature,d.token_mint,d.direction,str(d.amount),d.decimals)
+                        for d in normalized_observation.token_deltas
+                    ]) if normalized_observation else [],
+                    "payload_hash":cm38_sha256((parent[0] or "").encode()).hexdigest(),
+                },sort_keys=True,separators=(",",":"))
+                previous=connection.execute(
+                    """SELECT receipt_sha256 FROM cm38_reprocessing_history
+                       WHERE wallet_address=? AND signature=? ORDER BY rowid DESC LIMIT 1""",
+                    (wallet_address,signature)
+                ).fetchone()
+                prev_hash=previous[0] if previous else None
+                derived_hash=cm38_sha256(derived.encode()).hexdigest()
+                receipt=cm38_uuid.uuid4().hex
+                timestamp=datetime.now(timezone.utc).isoformat()
+                receipt_hash=cm38_sha256(json.dumps([
+                    receipt,wallet_address,signature,linked[0] if linked else None,
+                    parser_version,parse_status,derived_hash,prev_hash,timestamp,
+                ],separators=(",",":")).encode()).hexdigest()
+                connection.execute(
+                    "INSERT INTO cm38_reprocessing_history VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (receipt,wallet_address,signature,linked[0] if linked else None,
+                     parser_version,parse_status,derived_hash,prev_hash,receipt_hash,timestamp)
+                )
                 return len(rows)
 
     def get_token_deltas(
@@ -865,7 +1497,7 @@ class SQLiteEventStore:
             ))
         attempt_id = uuid.uuid4().hex
         with self._connection_scope() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 parent = connection.execute(
                     "SELECT 1 FROM observed_transactions WHERE wallet_address = ? AND signature = ?",
                     (wallet_address, signature),
@@ -1113,26 +1745,29 @@ class SQLiteEventStore:
         return row is not None
 
     def save_checkpoint(self, wallet_address: str, signature: str) -> None:
-        """Registra assinatura processada e atualiza o cursor mais recente conhecido."""
+        """Legacy signature-only cursor, rejected when captured evidence exists.
+
+        Preserve historical bootstrap/checkpoint semantics without falsely
+        creating an observed transaction or declaring evidence authenticated.
+        """
         if not wallet_address.strip() or not signature.strip():
             raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
         with self._connection_scope() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
+                self._cm38_link_in_connection(
+                    connection, radar="smart_money", wallet_address=wallet_address,
+                    signature=signature, evidence_id=None, kind="wallet_transaction",
+                    operation_id=signature, commitment="confirmed",
+                    source_id="helius-wallet-rpc",
+                )
                 connection.execute(
-                    """
-                    INSERT OR IGNORE INTO processed_signatures (wallet_address, signature)
-                    VALUES (?, ?)
-                    """,
+                    "INSERT OR IGNORE INTO processed_signatures (wallet_address, signature) VALUES (?, ?)",
                     (wallet_address, signature),
                 )
                 connection.execute(
-                    """
-                    INSERT INTO wallet_checkpoints (wallet_address, signature)
-                    VALUES (?, ?)
-                    ON CONFLICT(wallet_address) DO UPDATE SET
-                        signature = excluded.signature,
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
+                    """INSERT INTO wallet_checkpoints(wallet_address,signature) VALUES (?,?)
+                       ON CONFLICT(wallet_address) DO UPDATE SET
+                       signature=excluded.signature,updated_at=CURRENT_TIMESTAMP""",
                     (wallet_address, signature),
                 )
 

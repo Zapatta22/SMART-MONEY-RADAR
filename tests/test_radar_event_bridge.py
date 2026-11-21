@@ -209,9 +209,9 @@ class RadarEventBridgeTests(unittest.TestCase):
                 # actual archived tables, without registering a fake live feed.
                 with store._connection_scope() as conn:
                     with conn:
-                        conn.execute("""CREATE TABLE cpmm_launch_raw
+                        conn.execute("""CREATE TABLE IF NOT EXISTS cpmm_launch_raw
                             (sha256 TEXT PRIMARY KEY,payload BLOB NOT NULL,archived_at TEXT NOT NULL)""")
-                        conn.execute("""CREATE TABLE cpmm_launch_evidence
+                        conn.execute("""CREATE TABLE IF NOT EXISTS cpmm_launch_evidence
                             (pool TEXT NOT NULL,identity TEXT NOT NULL,sha256 TEXT NOT NULL,
                              PRIMARY KEY(pool,identity,sha256))""")
                         conn.execute("INSERT INTO cpmm_launch_raw VALUES (?,?,?)",

@@ -52,7 +52,8 @@ class RadarEventBridgeTests(unittest.TestCase):
 
     def test_archive_launch_is_not_misrepresented_as_live_notification(self):
         event,=launch_events_from_archive([archived_launch()])
-        self.assertEqual(event.origin,"ARCHIVED_RPC")
+        self.assertEqual(event.origin,"ARCHIVED_UNATTESTED")
+        self.assertIn("archive_origin_unattested",event.reasons)
         self.assertIsNone(event.provider)
         self.assertEqual(event.coverage,"UNKNOWN")
         self.assertNotEqual(event.evidence_quality,"VERIFIED")
@@ -78,16 +79,23 @@ class RadarEventBridgeTests(unittest.TestCase):
         row=archived_launch()
         self.assertEqual(len(launch_events_from_archive([row,row])),1)
 
-    def test_regressive_slot_is_tainted(self):
-        a=archived_launch()
-        b=dict(a)
-        # A different source reference with identical payload is allowed to be
-        # displayed, but an archive inconsistency never warrants promotion.
-        b["raw_sha256"]="a"*64
-        a["identity_json"]=json.dumps({**json.loads(a["identity_json"]),"slot":471578451})
-        events=launch_events_from_archive([a,b])
-        self.assertTrue(events)
-        self.assertTrue(all(x.verdict=="UNKNOWN" for x in events))
+    def test_unordered_archive_never_infers_ledger_slot_order(self):
+        row=archived_launch()
+        event,=launch_events_from_archive([row])
+        self.assertIn("ordering_domain_unverified",event.reasons)
+        self.assertNotIn("slot_regression",event.reasons)
+        self.assertEqual(event.coverage,"UNKNOWN")
+
+    def test_conflicting_launch_identities_for_pool_are_tainted(self):
+        first=archived_launch()
+        other=dict(first)
+        identity=json.loads(other["identity_json"])
+        identity["creator"]="alternate-creator"
+        other["identity_json"]=json.dumps(identity)
+        events=launch_events_from_archive([first,other])
+        self.assertEqual(len(events),2)
+        self.assertTrue(all(x.evidence_quality=="CONFLICTED" for x in events))
+        self.assertTrue(all("duplicate_identity_conflict" in x.reasons for x in events))
 
     def test_smart_money_swap_direction_is_derived_not_trade_permission(self):
         item,=smart_money_events_from_archive([receipt()])
@@ -98,6 +106,8 @@ class RadarEventBridgeTests(unittest.TestCase):
         self.assertEqual(item.coverage,"UNKNOWN")
         self.assertFalse(item.operational_authorized)
         self.assertIn("derived_or_offline_origin",item.reasons)
+        self.assertIn("raw_hash_unanchored",item.reasons)
+        self.assertEqual(item.evidence_quality,"UNKNOWN")
 
     def test_smart_missing_signature_stays_unknown(self):
         item,=smart_money_events_from_archive([receipt(signature=None)])

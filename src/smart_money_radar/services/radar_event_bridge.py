@@ -21,7 +21,7 @@ from smart_money_radar.services.radar_integration_status import (
 )
 from smart_money_radar.storage.event_store import SQLiteEventStore
 
-OriginKind = Literal["ARCHIVED_RPC", "ARCHIVED_DERIVED", "FIXTURE_OFFLINE", "SIMULATED_TEST"]
+OriginKind = Literal["ARCHIVED_RPC", "ARCHIVED_UNATTESTED", "ARCHIVED_DERIVED", "FIXTURE_OFFLINE", "SIMULATED_TEST"]
 
 
 @dataclass(frozen=True)
@@ -82,7 +82,9 @@ def _event(
         reasons.add("observation_time_unknown")
     elif available_at is not None and observed_at > available_at:
         reasons.add("observation_after_publication")
-    if origin != "ARCHIVED_RPC":
+    if origin == "ARCHIVED_UNATTESTED":
+        reasons.add("archive_origin_unattested")
+    elif origin != "ARCHIVED_RPC":
         reasons.add("derived_or_offline_origin")
     if raw is None:
         reasons.add("raw_not_persisted")
@@ -94,7 +96,8 @@ def _event(
         "observation_after_publication" in reasons or
         "source_identity_conflict" in reasons or
         "slot_regression" in reasons
-    ) else "UNKNOWN" if snapshot.evidence_status == "UNKNOWN" else "LOCALLY_CONSISTENT"
+    ) else "UNKNOWN" if (snapshot.evidence_status == "UNKNOWN"
+                         or "raw_hash_unanchored" in reasons) else "LOCALLY_CONSISTENT"
     return IntegratedRadarEvent(
         id=event_id, radar=radar, event_type=event_type, origin=origin,
         source_id=source_id, provider=None,
@@ -112,15 +115,14 @@ def _event(
 
 def launch_events_from_archive(
     rows: list[dict[str, Any]], *,
-    origin: OriginKind = "ARCHIVED_RPC",
+    origin: OriginKind = "ARCHIVED_UNATTESTED",
     source_id: str = "launch-sqlite-archive",
 ) -> tuple[IntegratedRadarEvent, ...]:
     """Validate archive records against the unchanged original Launch decoder."""
-    if origin not in ("ARCHIVED_RPC", "FIXTURE_OFFLINE", "SIMULATED_TEST"):
+    if origin not in ("ARCHIVED_RPC", "ARCHIVED_UNATTESTED", "FIXTURE_OFFLINE", "SIMULATED_TEST"):
         raise ValueError("launch origin not supported")
     events: dict[str, IntegratedRadarEvent] = {}
-    conflicts: set[str] = set()
-    last_by_source: dict[str, int] = {}
+    pool_identities: dict[str, set[str]] = {}
     for row in rows:
         raw = row.get("raw_bytes")
         digest = row.get("raw_sha256")
@@ -136,6 +138,10 @@ def launch_events_from_archive(
             continue
         pool = row["pool"]
         source_ref = f"cpmm_launch_evidence:{pool}:{digest or 'UNKNOWN'}"
+        canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+        identity_hash = sha256(canonical.encode("utf-8")).hexdigest()
+        pool_identities.setdefault(pool, set()).add(identity_hash)
+        event_key = f"{source_ref}:{identity_hash}"
         # JSON round-trip turns CPI path tuples into lists. Compare canonical
         # serialized evidence rather than unequal Python container types.
         matching = [x for x in candidates if x.pool == pool
@@ -149,34 +155,22 @@ def launch_events_from_archive(
         if match is None:
             reasons.append("source_identity_conflict")
         # Archived_at is a local ingest time, never a source timestamp.
-        if source_ref in events:
-            if events[source_ref].raw_sha256 != digest:
-                conflicts.add(source_ref)
+        if event_key in events:
             continue
         item = _event(
             radar="launch", source_id=source_id,
-            event_id=f"launch:{pool}:{sig or 'UNKNOWN'}:{identity.get('instruction_index', 'UNKNOWN')}",
+            event_id=f"launch:{pool}:{sig or 'UNKNOWN'}:{slot if slot is not None else 'UNKNOWN'}:{identity.get('instruction_index', 'UNKNOWN')}",
             event_type="CPMM_POOL_INITIALIZED",
             origin=origin, signature=sig, slot=slot, pool=pool,
             available_at=captured, observed_at=None,
             raw=raw, expected_hash=digest,
-            source_reference=source_ref, extra_reasons=tuple(reasons),
+            source_reference=source_ref,
+            extra_reasons=tuple(reasons) + ("ordering_domain_unverified",),
         )
-        if slot is not None:
-            previous = last_by_source.get(source_id)
-            if previous is not None and slot < previous:
-                item = _event(
-                    radar="launch", source_id=source_id, event_id=item.id,
-                    event_type=item.event_type, origin=origin,
-                    signature=sig, slot=slot, pool=pool,
-                    available_at=captured, observed_at=None, raw=raw,
-                    expected_hash=digest, source_reference=source_ref,
-                    extra_reasons=tuple(reasons) + ("slot_regression",),
-                )
-            last_by_source[source_id] = slot
-        events[source_ref] = item
-    for key in conflicts:
-        original = events[key]
+        events[event_key] = item
+    for key, original in tuple(events.items()):
+        if len(pool_identities[original.pool]) <= 1:
+            continue
         events[key] = IntegratedRadarEvent(**{
             **asdict(original),
             "evidence_quality": "CONFLICTED",
@@ -208,7 +202,7 @@ def smart_money_events_from_archive(
         slot = row.get("slot")
         if type(slot) is not int or slot < 0:
             slot = None
-        reasons: list[str] = []
+        reasons: list[str] = ["raw_hash_unanchored", "ordering_domain_unverified"]
         if row.get("chain") not in (None, "solana"):
             reasons.append("source_identity_conflict")
         if raw is not None:

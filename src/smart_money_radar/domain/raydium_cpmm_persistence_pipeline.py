@@ -3,6 +3,7 @@
 Este adaptador não envia transações e não decide entradas financeiras. Ele apenas
 arquiva transações observadas, reconcilia swaps Raydium CPMM e persiste evidências.
 """
+from smart_money_radar.storage.collector_authority import AuthorityLost
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
@@ -93,6 +94,8 @@ def process_raydium_cpmm_observation(
         normalized = normalize_transaction(
             payload, wallet_address, signature, observed_at=timestamp
         )
+    except AuthorityLost:
+        raise
     except Exception as exc:
         # Guarda o payload bruto para replay, mas não avança o cursor.
         store.save_observation(
@@ -233,6 +236,8 @@ def process_raydium_cpmm_observation(
             saved,
             True,
         )
+    except AuthorityLost:
+        raise
     except Exception as exc:
         # Preserve an explicit parse/reconstruction error and keep checkpoint
         # untouched. The raw payload remains available for replay.

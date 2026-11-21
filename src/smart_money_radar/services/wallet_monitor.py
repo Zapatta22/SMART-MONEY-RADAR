@@ -1,5 +1,6 @@
 """Monitor WebSocket de carteiras com reconexão exponencial."""
 
+from smart_money_radar.storage.collector_authority import AuthorityLost
 import asyncio
 import json
 import logging
@@ -83,6 +84,8 @@ class WalletMonitor:
                     return
                 raise ConnectionError("A sessão WebSocket terminou inesperadamente.")
             except asyncio.CancelledError:
+                raise
+            except AuthorityLost:
                 raise
             except Exception as exc:
                 if stop_event.is_set():
@@ -205,6 +208,8 @@ class WalletMonitor:
                 return False
             try:
                 transaction = await self.data_source.get_transaction_async(signature)
+            except AuthorityLost:
+                raise
             except Exception as exc:
                 self._logger.warning(
                     "Tentativa %d/%d falhou ao consultar transação (%s).",
@@ -220,6 +225,8 @@ class WalletMonitor:
                         signature=signature,
                         reference_mints=self.reference_mints,
                     )
+                except AuthorityLost:
+                    raise
                 except Exception as exc:
                     self._logger.warning(
                         "Transação arquivada, mas o pipeline CPMM não foi concluído (%s); checkpoint preservado.",

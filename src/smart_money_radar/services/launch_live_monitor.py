@@ -6,6 +6,7 @@ bounded finalized RPC reconciliation, and reconnect always starts with backfill.
 """
 from __future__ import annotations
 
+from smart_money_radar.storage.collector_authority import AuthorityLost
 import asyncio
 import json
 import logging
@@ -94,6 +95,8 @@ class LaunchLiveMonitor:
         start = self.clock()
         try:
             outcome = await self.backfill.synchronize(address, stop_event=stop)
+        except AuthorityLost:
+            raise
         except Exception:
             self.incomplete_reconciliations += 1
             raise
@@ -166,6 +169,8 @@ class LaunchLiveMonitor:
             try:
                 await self._listen(stop)
             except asyncio.CancelledError:
+                raise
+            except AuthorityLost:
                 raise
             except Exception as exc:
                 if stop.is_set():

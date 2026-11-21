@@ -86,6 +86,9 @@ class RawIngestResult:
     conflict_id: int | None = None
 
 
+from smart_money_radar.storage.collector_authority import collector_write
+
+
 class SQLiteGeyserRawStore:
     """Persist immutable event content separately from every transport delivery.
 
@@ -115,6 +118,18 @@ class SQLiteGeyserRawStore:
             path.parent.mkdir(parents=True, exist_ok=True)
             with self._connection() as connection:
                 self._initialize(connection)
+
+    def bind_collector(self, authority):
+        """Capture an immutable generation on the same SQLite file."""
+        from smart_money_radar.storage.collector_authority import CollectorAuthority, AuthorityLost
+        if not isinstance(authority, CollectorAuthority) or self.read_only:
+            raise ValueError("writable store and collector authority required")
+        if str(self.database_path)==":memory:" or not Path(self.database_path).samefile(authority.database_path):
+            raise AuthorityLost("collector database mismatch")
+        bound=object.__new__(type(self))
+        bound.__dict__=self.__dict__.copy()
+        bound._collector_authority=authority
+        return bound
 
     def _connect(self) -> sqlite3.Connection:
         if self._read_only:
@@ -346,8 +361,7 @@ class SQLiteGeyserRawStore:
         """
         _text(source_id, "source_id")
         _text(owner_id, "owner_id")
-        with self._connection() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             if connection.execute(
                 "SELECT 1 FROM geyser_capture_source_leases WHERE source_id = ?",
                 (source_id,),
@@ -364,8 +378,7 @@ class SQLiteGeyserRawStore:
     def release_capture_source_lease(self, *, source_id: str, owner_id: str) -> None:
         _text(source_id, "source_id")
         _text(owner_id, "owner_id")
-        with self._connection() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             result = connection.execute(
                 """DELETE FROM geyser_capture_source_leases
                    WHERE source_id = ? AND owner_id = ?""",
@@ -408,8 +421,7 @@ class SQLiteGeyserRawStore:
         _text(owner_id, "owner_id")
         if not Path("/proc/self/stat").exists():
             raise ValueError("procfs unavailable; operator review required")
-        with self._connection() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             row = connection.execute(
                 """SELECT owner_id, pid, pid_start_ticks
                    FROM geyser_capture_source_leases
@@ -442,7 +454,7 @@ class SQLiteGeyserRawStore:
 
     def start_capture_session(self, source_id: str, stream_id: str) -> None:
         """Record an attempt before opening its network connection."""
-        with self._connection() as connection, connection:
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             connection.execute(
                 """INSERT INTO geyser_capture_sessions(source_id, stream_id, started_at)
                    VALUES (?, ?, ?)""",
@@ -452,8 +464,7 @@ class SQLiteGeyserRawStore:
     def finish_capture_session(self, source_id: str, stream_id: str, outcome: str) -> int:
         """Record terminal status and the exact number of archived frame deliveries."""
         outcome = _text(outcome, "capture outcome")
-        with self._connection() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             scope = (source_id, stream_id)
             frame_count = connection.execute(
                 "SELECT COUNT(*) FROM geyser_wire_frames WHERE source_id = ? AND stream_id = ?",
@@ -478,8 +489,7 @@ class SQLiteGeyserRawStore:
         frames remain intact and their ordering domains are never reused.
         """
         _text(source_id, "source_id")
-        with self._connection() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             if connection.execute(
                 "SELECT 1 FROM geyser_capture_source_leases WHERE source_id = ?",
                 (source_id,),
@@ -632,8 +642,7 @@ class SQLiteGeyserRawStore:
         stream_id = _text(stream_id, "stream_id")
         ordering_domain_id = _text(ordering_domain_id, "ordering_domain_id")
         initial = _frame_sequence(initial_sequence)
-        with self._connection() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             rows = connection.execute(
                 """SELECT stream_id, ordering_domain_id, initial_sequence
                    FROM geyser_frame_streams WHERE source_id = ?
@@ -674,8 +683,7 @@ class SQLiteGeyserRawStore:
             _text(frame_kind, "frame_kind")
         digest = hashlib.sha256(payload).hexdigest()
         coordinate = (source_id, stream_id, sequence)
-        with self._connection() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
             stream = connection.execute(
                 """SELECT initial_sequence, contiguous_sequence, last_seen_sequence, tainted
                    FROM geyser_frame_streams
@@ -791,7 +799,7 @@ class SQLiteGeyserRawStore:
             raise ValueError("initial_sequence é obrigatório")
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None)):
                 existing = connection.execute(
                     "SELECT initial_sequence, baseline_kind FROM geyser_transport_checkpoints "
                     "WHERE source_id = ? AND stream_id = ?", (source_id, stream_id)
@@ -1004,7 +1012,7 @@ class SQLiteGeyserRawStore:
         resolution_note = _text(resolution_note, "resolution_note")
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None)):
                 row = connection.execute(
                     "SELECT source_id, stream_id, status FROM geyser_transport_anomalies "
                     "WHERE anomaly_id = ?", (anomaly_id,)
@@ -1058,7 +1066,7 @@ class SQLiteGeyserRawStore:
         digest = hashlib.sha256(event.payload_bytes).hexdigest()
 
         with self._connection() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None)):
                 existing = connection.execute(
                     "SELECT source_id, event_kind, schema_version, payload_encoding, "
                     "payload_bytes, payload_sha256 FROM geyser_raw_events WHERE event_id = ?",

@@ -6,6 +6,7 @@ subscriptions -> one fresh RPC baseline. A gap is never closed by reconnecting.
 """
 from __future__ import annotations
 
+from smart_money_radar.storage.collector_authority import AuthorityLost
 import asyncio
 import base64
 from datetime import datetime,timezone
@@ -177,6 +178,8 @@ class CpmmRecoveryRunner:
                                     if (not isinstance(rpc_result,tuple) or
                                         len(rpc_result)!=4 or rpc_result[3] is not None):
                                         raise RuntimeError("rpc_baseline_unavailable")
+                                except AuthorityLost:
+                                    raise
                                 except Exception as exc:
                                     failure_phase="baseline"
                                     raise RuntimeError("rpc_baseline_failed") from exc
@@ -186,6 +189,8 @@ class CpmmRecoveryRunner:
                 except asyncio.CancelledError:
                     self.manifest["stop_reason"]="operator_cancelled"
                     self.recovery.finalize("cancelled")
+                    raise
+                except AuthorityLost:
                     raise
                 except Exception as exc:
                     err=disconnect_record(session_id=session.session_id,exc=exc,
@@ -273,6 +278,8 @@ class CpmmRecoveryRunner:
                             report["baseline_error"]="CancelledError"
                         except asyncio.TimeoutError:
                             report["baseline_error"]="RPC_TIMEOUT"
+                        except AuthorityLost:
+                            raise
                         except Exception as exc:
                             report["baseline_error"]=type(exc).__name__
                             if failure_phase=="persist":

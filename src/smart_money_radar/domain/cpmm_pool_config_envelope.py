@@ -9,6 +9,10 @@ import json
 
 from smart_money_radar.data_sources.raydium_cpmm_decoder import RAYDIUM_CPMM_PROGRAM_ID
 
+# Existing Raydium CPMM vault authority PDA, used by the original launch decoder.
+# This constant checks an account role; it does not authenticate the RPC provider.
+CPMM_VAULT_AUTHORITY = "GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL"
+
 
 def validate_pool_config_rpc_envelope(*, raw_payload: bytes, expected_slot: int,
                                       expected_pool: str, expected_config: str):

@@ -66,6 +66,8 @@ class SQLiteEventStore:
             raise ValueError("writable store and collector authority required")
         if str(self.database_path)==":memory:" or not Path(self.database_path).samefile(authority.database_path):
             raise AuthorityLost("collector database mismatch")
+        if getattr(self,"_collector_authority",None) is not None:
+            raise AuthorityLost("a bound collector handle cannot be rebound")
         bound = object.__new__(type(self))
         bound.__dict__ = self.__dict__.copy()
         bound._collector_authority = authority

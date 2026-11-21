@@ -25,7 +25,7 @@ from smart_money_radar.services.radar_intelligence import read_intelligence_repo
 from smart_money_radar.services.wallet_discovery import WalletDiscoveryPolicy, discover_wallets, _write_wallet_snapshot
 from smart_money_radar.services.synthetic_capital import read_capital_accounts
 
-from smart_money_radar.storage.collector_authority import AuthorityLost, CollectorAuthority, collector_control_revision
+from smart_money_radar.storage.collector_authority import AuthorityLost, CollectorAuthority, collector_control_revision, verify_collector_authority
 
 @dataclass(frozen=True)
 class SupervisorPolicy:
@@ -105,6 +105,12 @@ class PersistentSupervisor:
             if old and now<old[2]:raise AuthorityLost("clock regressed")
             if old and old[4]=="ACTIVE" and now<old[3]:
                 raise AuthorityLost("active supervisor already owns database")
+            # Durable distinction between standalone and previously managed.
+            marker=conn.execute("SELECT 1 FROM sqlite_master WHERE name='cm36_managed_marker' AND type='table'").fetchone()
+            if marker and old is None:
+                raise AuthorityLost("managed lease missing; explicit recovery required")
+            conn.execute("CREATE TABLE IF NOT EXISTS cm36_managed_marker (singleton INTEGER PRIMARY KEY CHECK(singleton=1))")
+            conn.execute("INSERT OR IGNORE INTO cm36_managed_marker VALUES(1)")
             generation=old[0]+1 if old else 1
             _write_lease(conn,generation,self.owner,now,now+self.policy.lease_seconds,"ACTIVE")
             if old and old[4]=="ACTIVE":
@@ -128,6 +134,7 @@ class PersistentSupervisor:
             token = CollectorAuthority(str(self.store.database_path.resolve()),
                                        self.generation,self.owner,radar,self.clock,
                                        collector_control_revision(conn,radar))
+            verify_collector_authority(conn,token,radar)
         return token
 
     def bind_collector_store(self, store, radar):

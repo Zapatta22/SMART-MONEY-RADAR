@@ -52,7 +52,12 @@ def verify_collector_authority(connection, authority, radar=None):
             "SELECT generation,owner,heartbeat,expires,status,payload_sha "
             "FROM cm36_supervisor_lease WHERE singleton=1"
         ).fetchone() if exists else None
+        managed = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cm36_managed_marker'"
+        ).fetchone()
         if row is None:
+            if managed:
+                raise AuthorityLost("managed supervisor lease missing")
             if authority is None:
                 return  # standalone archive, not supervisor-authorized
             raise AuthorityLost("missing managed generation")
@@ -133,6 +138,8 @@ def bind_projection(store, authority):
     """Bind a preinitialized file-backed projection/recovery store."""
     if not isinstance(authority,CollectorAuthority) or not Path(store.database_path).samefile(authority.database_path):
         raise AuthorityLost("projection database mismatch")
+    if getattr(store,"_collector_authority",None) is not None:
+        raise AuthorityLost("a bound projection handle cannot be rebound")
     bound=object.__new__(type(store))
     bound.__dict__=store.__dict__.copy()
     bound._collector_authority=authority

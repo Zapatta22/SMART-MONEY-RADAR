@@ -91,3 +91,31 @@ class TerminalTransport(unittest.IsolatedAsyncioTestCase):
         await entered.wait();t.cancel()
         with self.assertRaises(asyncio.CancelledError): await t
         self.assertTrue(cleaned.is_set())
+
+
+    async def test_thread_rpc_result_discarded_after_authority_revocation(self):
+        import threading
+        from smart_money_radar.storage.collector_authority import await_authorized
+        store=ExpiringStore();store._force_authority_poll=True
+        entered=threading.Event();release=threading.Event();finished=threading.Event()
+        published=[]
+        def rpc():
+            entered.set()
+            try:
+                if not release.wait(3): raise RuntimeError("test release timeout")
+                return {"late":"reply"}
+            finally: finished.set()
+        async def collect():
+            reply=await await_authorized(store,"launch",lambda:asyncio.to_thread(rpc),poll_seconds=.005)
+            published.append(reply)
+        task=asyncio.create_task(collect())
+        try:
+            self.assertTrue(await asyncio.to_thread(entered.wait,1))
+            store.valid=False
+            with self.assertRaises(AuthorityLost):
+                await asyncio.wait_for(task,1)
+            self.assertEqual(published,[])
+        finally:
+            release.set()
+        self.assertTrue(await asyncio.to_thread(finished.wait,1))
+        self.assertEqual(published,[])

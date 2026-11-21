@@ -5,6 +5,7 @@ Reports actual wall/CPU/RSS/storage; not 24-hour or network homologation.
 """
 import json
 import resource
+import statistics
 import tempfile
 import time
 from datetime import datetime,timezone
@@ -39,6 +40,7 @@ def main():
             raise RuntimeError("supervisor benchmark did not complete every radar cycle")
         metrics={"scope":"EMPTY_ARCHIVE_OFFLINE","cycles":100,"radar_cycles":sum(actual.values()),"cycles_by_radar":actual,
             "cycle_mean_ms":1000*sum(latencies)/len(latencies),
+            "cycle_median_ms":1000*statistics.median(latencies),
             "cycle_p95_ms":1000*sorted(latencies)[94],
             "cycle_max_ms":1000*max(latencies),
             "wall_seconds":time.perf_counter()-wall,"cpu_seconds":time.process_time()-cpu,

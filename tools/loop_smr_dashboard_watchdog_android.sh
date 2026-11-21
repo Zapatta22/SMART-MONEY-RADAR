@@ -28,7 +28,7 @@ if ! flock -n 8; then
 fi
 failures=0
 while :; do
-  if bash "$ROOT/tools/watch_smr_dashboard_android.sh"; then
+  if bash "$ROOT/tools/watch_smr_dashboard_android.sh" 8>&-; then
     failures=0
   else
     failures=$((failures + 1))
@@ -38,5 +38,5 @@ while :; do
       exit 1
     fi
   fi
-  sleep "$INTERVAL"
+  sleep "$INTERVAL" 8>&-
 done

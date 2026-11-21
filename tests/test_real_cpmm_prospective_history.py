@@ -347,6 +347,18 @@ class RealCpmmHistoryTests(unittest.TestCase):
             for mode in ("immediate", "confirmed"):
                 receipt = launch_metric_receipts(**args, strategy=mode)
                 self.assertEqual(receipt["economic_qualification"]["account_archive"]["capture_id"], a.capture_id)
+                from decimal import Decimal, localcontext
+                archive=receipt["economic_qualification"]["account_archive"]
+                with localcontext() as ctx:
+                    ctx.prec=50
+                    q=Decimal(archive["quote_reserve_raw"]).scaleb(-archive["quote_decimals"])
+                    t=Decimal(archive["token_reserve_raw"]).scaleb(-archive["token_decimals"])
+                    self.assertEqual(Decimal(archive["quote_reserve_normalized"]),q)
+                    self.assertEqual(Decimal(archive["token_reserve_normalized"]),t)
+                    self.assertEqual(Decimal(archive["estimated_spot_quote_per_token"]),q/t)
+                    self.assertEqual(Decimal(archive["estimated_pool_value_quote"]),2*q)
+                self.assertEqual(archive["decimals_provenance"],"POOL_DECLARED_NOT_MINT_ATTESTED")
+                self.assertFalse(archive["operational_authorized"])
                 self.assertFalse(receipt["operational_authorized"])
             db.close()
 

@@ -245,6 +245,26 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(rejected["accepted_offline"])
         self.assertIn("persisted supervisor lease disagrees with report", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_validly_hashed_wrong_radar_status(self):
+        import hashlib
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        with sqlite3.connect(workspace / "offline-soak.sqlite") as conn:
+            payload = conn.execute(
+                "SELECT payload FROM cm36_supervisor_tasks WHERE radar='launch'"
+            ).fetchone()[0]
+            task = json.loads(payload)
+            task["status"] = "FAULTED"
+            changed = json.dumps(task, sort_keys=True, separators=(",", ":"))
+            conn.execute(
+                "UPDATE cm36_supervisor_tasks SET payload=?,payload_sha=? WHERE radar='launch'",
+                (changed, hashlib.sha256(changed.encode()).hexdigest()),
+            )
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("launch persisted status disagrees with final report", rejected["issues"])
+
     def test_offline_evidence_gate_rejects_missing_progress_journal(self):
         process = self.start(2.0)
         self.report(process, 0)

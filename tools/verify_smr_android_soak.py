@@ -67,6 +67,22 @@ def verify(workspace):
             if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 issues.append("SQLite integrity check failed")
             try:
+                lease = conn.execute(
+                    "SELECT generation,owner,heartbeat,expires,status,payload_sha "
+                    "FROM cm36_supervisor_lease WHERE singleton=1"
+                ).fetchone()
+                if lease is None:
+                    issues.append("missing persisted supervisor lease")
+                else:
+                    generation, owner, heartbeat, expires, state, digest = lease
+                    lease_payload = json.dumps(
+                        [generation, owner, heartbeat, expires, state],
+                        sort_keys=True, separators=(",", ":"),
+                    )
+                    if hashlib.sha256(lease_payload.encode()).hexdigest() != digest:
+                        issues.append("persisted supervisor lease hash mismatch")
+                    if state != "STOPPED" or generation != supervisor.get("generation"):
+                        issues.append("persisted supervisor lease disagrees with report")
                 rows = conn.execute("SELECT radar,payload,payload_sha FROM cm36_supervisor_tasks").fetchall()
                 persisted = {}
                 for radar, payload, digest in rows:

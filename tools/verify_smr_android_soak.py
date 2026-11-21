@@ -36,9 +36,16 @@ def verify(workspace):
             or not 0 < duration <= elapsed or elapsed == float("inf")):
         issues.append("offline soak target duration not reached")
     if (report.get("physical_android_verified") is not False
-            or report.get("autonomy_24h_verified") is not False
-            or report.get("target_24h_reached") is not False):
+            or report.get("autonomy_24h_verified") is not False):
         issues.append("untrusted physical/autonomy verification claim")
+    # Reaching a target duration is a measurement, not proof of physical Android autonomy.
+    target_24h = report.get("target_24h_reached")
+    if type(target_24h) is not bool or target_24h != (
+        report.get("outcome") == "COMPLETED"
+        and type(report.get("elapsed_seconds")) in (int, float)
+        and report["elapsed_seconds"] >= 86400
+    ):
+        issues.append("inconsistent 24-hour target claim")
     progress = workspace / "progress.jsonl"
     if not progress.is_file():
         issues.append("missing progress journal")

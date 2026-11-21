@@ -1,6 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Inicia o painel SMR local sem criar ou migrar bancos automaticamente.
 set -euo pipefail
+umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"

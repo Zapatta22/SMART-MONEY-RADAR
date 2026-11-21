@@ -276,5 +276,34 @@ class RealCpmmHistoryTests(unittest.TestCase):
             db.close()
 
 
+
+    def test_cm69_automatic_receipts_select_causal_head_and_block_conflict(self):
+        from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
+        from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+        a,b = self.capture(0),self.capture(1)
+        acc = next(x.accounts for x in decode_raydium_cpmm_swaps(json.loads(self.old))
+                   if x.accounts.pool_state == a.observation.pool)
+        with tempfile.TemporaryDirectory() as d:
+            db = SQLiteCpmmProspectiveHistory(Path(d) / "evidence.sqlite")
+            db.append_capture(a, manifest_raw=self.bundles[0][0])
+            db.append_capture(b, manifest_raw=self.bundles[1][0],
+                              prior_capture_id=a.capture_id, coverage="PARTIAL")
+            args = dict(pool=a.observation.pool, token_mint=acc.input_token_mint,
+                        quote_mint=acc.output_token_mint, cpmm_history=db,
+                        original_transaction_raw=self.old, original_manifest=self.old_manifest)
+            for mode in ("immediate", "confirmed"):
+                for point, expected in ((a.observation.available_at,a),(CUTOFF,b)):
+                    receipt = launch_metric_receipts(**args, at=point, strategy=mode)
+                    archive = receipt["economic_qualification"]["account_archive"]
+                    self.assertEqual(archive["capture_id"], expected.capture_id)
+                    self.assertFalse(receipt["operational_authorized"])
+            with db.connection:
+                db.connection.execute("UPDATE prospective_cpmm_captures SET coverage='CONFLICT' WHERE capture_id=?", (b.capture_id,))
+            bad = launch_metric_receipts(**args, at=CUTOFF, strategy="confirmed")
+            self.assertEqual(bad["economic_qualification"]["account_archive"]["status"], "CONFLICTED")
+            self.assertIn("cpmm_account_archive_conflict", bad["safety_blocks"])
+            db.close()
+
+
 if __name__=="__main__":
     unittest.main()

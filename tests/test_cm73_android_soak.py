@@ -329,6 +329,18 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(rejected["accepted_offline"])
         self.assertIn("launch invalid radar state structure", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_malformed_radar_map(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["supervisor"]["radars"] = ["launch", "smart_money"]
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("invalid radar report structure", rejected["issues"])
+
     def test_offline_evidence_gate_rejects_missing_progress_journal(self):
         process = self.start(2.0)
         self.report(process, 0)

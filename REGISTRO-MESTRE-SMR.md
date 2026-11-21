@@ -1,5 +1,5 @@
 # SMART MONEY RADAR (SMR) — REGISTRO MESTRE
-Última atualização: 2026-11-21 — integração offline do estimador inteiro CPMM no Launch Radar
+Última atualização: 2026-11-21 — CM72, qualificação dos radares e recuperação offline do supervisor
 
 ## 1. Estado executivo
 
@@ -4484,3 +4484,18 @@ O comando `supervisor-offline DATABASE --launch-history PATH --launch-scope POOL
 CM39 permanece bloqueado. Sem captura live, execução de ordens ou alteração de capital. As referências CM38 85%, Launch 55%, Smart Money 76% e CM39 24% permanecem como estimativas de desenvolvimento.
 
 A [CI 44918363298](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44918363298) do commit de integração passou nos jobs `test` e `python314-evaluation`. A suíte principal executou 1.378 testes, com 2 ignorados e nenhuma falha. A compilação e o benchmark offline do supervisor também passaram.
+
+## CM72 — qualificação e recuperação offline
+
+Base `60e28077306b385c93f38ebcad7f4fc6707ccda1`. Os incrementos foram publicados na branch `codex/cm38j-economic-evidence-audit`.
+
+- **Launch Radar** (`1e6ce5d`). Uma captura local recente pode bloquear a qualificação quando a reserva de cotação está abaixo do mínimo. A reconciliação de reservas e decimais no mesmo slot marca divergências e suprime os modelos. Capturas antigas permanecem informativas. A regra vale nas estratégias Immediate e Confirmed, no qualificador e no supervisor. O slot comum não estabelece a ordem dentro do slot.
+- **Smart Money Radar** (`0d64d64`). O consenso offline incorpora um recibo causal e limitado de vínculos por assinatura RPC arquivada. Ausência, excesso ou conflito de evidência suprimem o agrupamento. O recibo preserva zero carteiras com independência comprovada e não atribui controle comum. O supervisor registra o recibo para novas decisões com escopo compatível.
+- **Supervisor e Android** (`dcac649`, `eb841c3`). Retentativas limitadas para contenção transitória SQLite, com verificação de geração e sem repetir a etapa já concluída pelo outro radar. Se o ciclo e o encerramento falharem, o erro do ciclo permanece como causa principal. O ensaio compatível com Linux e Termux mede ciclos, latência, armazenamento e reabertura do SQLite. Foram demonstrados oito ciclos por radar, dois reinícios e integridade SQLite no ensaio local com arquivo vazio. A operação de 24 horas em Android físico permanece por validar.
+- **Validação cruzada**. O journal preserva suas decisões em reinício. A liquidez insuficiente afeta somente Launch, e o Smart Money mantém recibos e decisões independentes. Main, PR #111 e PR #113 foram preservadas. CM39 permanece bloqueado.
+
+Estimativas gerenciais de desenvolvimento para este marco: Launch Radar 57% (55% de referência, com reconciliação e bloqueio local incorporados); Smart Money Radar 77% (76% de referência, com auditoria causal incorporada); infraestrutura 67% (dois de três marcos de referência completos: supervisor offline e instalação/autenticação Android já observadas; autonomia física prolongada pendente). CM39 permanece em 24% estimados e bloqueado. A média simples dessas quatro frentes é 56% arredondados; ela mede o programa inteiro, enquanto a referência CM38 de 85% mede somente seu escopo. Os percentuais são aproximações de planejamento, sem equivalência a prontidão financeira ou operacional.
+
+Permanecem abertas a autenticação independente de dados e de mercado, a paginação e cobertura causal dos arquivos, a reconciliação econômica integral, a atribuição independente entre carteiras e a autonomia física de 24 horas. Não houve merge, captura live, gasto adicional ou operação financeira.
+
+A [CI 44919375484](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44919375484) verificou o commit `eb841c319095292ca26b2b50540c94ab11561091` com os dois jobs aprovados. A suíte principal executou 1.392 testes, com 2 ignorados e zero falhas. Compilação, benchmark offline e verificações de compatibilidade Python 3.14 e Android passaram.

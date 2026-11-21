@@ -166,6 +166,18 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(rejected["accepted_offline"])
         self.assertIn("launch persisted checkpoint hash mismatch", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_lease_digest_tampering(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        import sqlite3
+        with sqlite3.connect(workspace / "offline-soak.sqlite") as conn:
+            conn.execute("UPDATE cm36_supervisor_lease SET payload_sha=? WHERE singleton=1",
+                         ("0" * 64,))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("persisted supervisor lease hash mismatch", rejected["issues"])
+
     def test_offline_evidence_gate_rejects_missing_progress_journal(self):
         process = self.start(2.0)
         self.report(process, 0)

@@ -221,6 +221,30 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(rejected["accepted_offline"])
         self.assertIn("persisted supervisor lease hash mismatch", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_validly_hashed_wrong_lease_generation(self):
+        import hashlib
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        with sqlite3.connect(workspace / "offline-soak.sqlite") as conn:
+            generation, owner, heartbeat, expires, state = conn.execute(
+                "SELECT generation,owner,heartbeat,expires,status "
+                "FROM cm36_supervisor_lease WHERE singleton=1"
+            ).fetchone()
+            altered = generation + 1
+            payload = json.dumps(
+                [altered, owner, heartbeat, expires, state],
+                sort_keys=True, separators=(",", ":"),
+            )
+            conn.execute(
+                "UPDATE cm36_supervisor_lease SET generation=?,payload_sha=? "
+                "WHERE singleton=1",
+                (altered, hashlib.sha256(payload.encode()).hexdigest()),
+            )
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("persisted supervisor lease disagrees with report", rejected["issues"])
+
     def test_offline_evidence_gate_rejects_missing_progress_journal(self):
         process = self.start(2.0)
         self.report(process, 0)

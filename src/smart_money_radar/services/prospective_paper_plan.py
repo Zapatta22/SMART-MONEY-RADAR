@@ -33,6 +33,19 @@ def plan_prospective_paper(store,*,account_id,radar,as_of,source_assessment,rada
         if receipt["status"]!="BLOCKED" or receipt["virtual_ledger_mutated"]:
             raise ValueError("unauthorized audit state")
         reasons.add("persisted_opportunity_entry_remains_blocked")
+    from smart_money_radar.services.cm38j_metric_provenance import qualify_metric_set
+    receipts=radar_qualification.get("economic_receipts")
+    metric_audit=None
+    if receipts is not None:
+        if not isinstance(receipts,(list,tuple)):
+            raise ValueError("economic receipts must be a sequence")
+        metric_audit=qualify_metric_set(radar=radar,metrics=list(receipts))
+        if not metric_audit["complete_economic_evidence"]:
+            reasons.add("cm38j_economic_evidence_incomplete")
+        # Completeness is not a provider attestation or prospective approval.
+        reasons.add("cm38j_receipts_information_only")
+    else:
+        reasons.add("cm38j_economic_receipts_missing")
     if not radar_qualification.get("qualified",False):
         reasons.add("radar_economic_qualification_missing")
     if account["capital_available"]=="0":
@@ -44,6 +57,7 @@ def plan_prospective_paper(store,*,account_id,radar,as_of,source_assessment,rada
             "real_execution_authorized":False,
             "eligible_ticks":0,"entry_count":0,"exit_count":0,
             "ledger_mutated":False,
+            "economic_metric_audit":metric_audit,
             "audited_attempt_id":receipt["attempt_id"] if receipt is not None else None,
             "original_rpc_evidence_id":receipt["evidence_id"] if receipt is not None else None,
             "reserved_amount":account["capital_reserved"],

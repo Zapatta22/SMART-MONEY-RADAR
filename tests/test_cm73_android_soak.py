@@ -128,6 +128,24 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(rejected["accepted_offline"])
         self.assertIn("persisted cycles disagree with final report", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_missing_progress_journal(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "progress.jsonl").unlink()
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("missing progress journal", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_missing_sqlite_archive(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "offline-soak.sqlite").unlink()
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("missing offline SQLite archive", rejected["issues"])
+
     def test_worker_crash_reopens_same_archive_after_fenced_lease_expires(self):
         process = self.start(4.5, max_restarts=2)
         worker = self.wait_for_worker(process)

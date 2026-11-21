@@ -19,6 +19,8 @@ class DashboardHTTPTests(unittest.TestCase):
         }
         self.store.storage_stats.return_value = {}
         self.store.get_events.return_value = []
+        self.store.list_cpmm_launch_archived_event_inputs.return_value = []
+        self.store.list_smr_archived_event_inputs.return_value = []
         self.token = "t" * 40
         self.server = create_read_only_server(
             self.store, auth_token=self.token, port=0

@@ -62,7 +62,13 @@ def verify(workspace):
     if not progress.is_file():
         issues.append("missing progress journal")
     else:
-        entries = [json.loads(line) for line in progress.read_text().splitlines() if line.strip()]
+        try:
+            entries = [json.loads(line) for line in progress.read_text().splitlines() if line.strip()]
+            if any(not isinstance(entry, dict) for entry in entries):
+                raise ValueError("non-object journal entry")
+        except (json.JSONDecodeError, ValueError, UnicodeError):
+            entries = []
+            issues.append("invalid progress journal JSON")
         if not entries or entries[0].get("event") != "started" or entries[-1].get("event") != "finished":
             issues.append("incomplete progress journal")
         else:

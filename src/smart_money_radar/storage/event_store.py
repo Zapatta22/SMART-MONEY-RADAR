@@ -675,6 +675,67 @@ class SQLiteEventStore:
             ) if ev else None,
         }
 
+    def list_smr_archived_event_inputs(self, *, limit: int = 20) -> list[dict]:
+        """Read original swap receipts with transaction RAW, not inferred live coverage.
+
+        Returned payload bytes match exactly the JSON text persisted by this
+        SQLite store. Local hashes prove integrity only, never provider trust.
+        """
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        with self._connection_scope() as connection:
+            rows = connection.execute(
+                """SELECT archive.operation_id, archive.pool_address,
+                          archive.side, archive.available_at,
+                          swap.signature, swap.wallet_address,
+                          observed.payload_json, observed.slot,
+                          observed.observed_at, observed.chain,
+                          archive.occurred_at
+                   FROM swap_replay_archive AS archive
+                   JOIN swap_observations AS swap
+                     ON swap.operation_id=archive.operation_id
+                   LEFT JOIN observed_transactions AS observed
+                     ON observed.wallet_address=swap.wallet_address
+                    AND observed.signature=swap.signature
+                   ORDER BY archive.receipt_id DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [{
+            "operation_id": row[0], "pool": row[1], "side": row[2],
+            "available_at": row[3], "signature": row[4], "wallet": row[5],
+            "raw_bytes": row[6].encode("utf-8") if row[6] is not None else None,
+            "slot": row[7], "observed_at": row[8],
+            "chain": row[9], "occurred_at": row[10],
+        } for row in rows]
+
+    def list_cpmm_launch_archived_event_inputs(self, *, limit: int = 20) -> list[dict]:
+        """Join original Launch Radar RAW/detected identities, if its journal exists.
+
+        This is intentionally optional: legacy SMR databases lack Launch tables.
+        Missing tables never get created by a read-only dashboard.
+        """
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        with self._connection_scope() as connection:
+            tables = {r[0] for r in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+                " AND name IN ('cpmm_launch_evidence','cpmm_launch_raw')"
+            )}
+            if tables != {"cpmm_launch_evidence", "cpmm_launch_raw"}:
+                return []
+            rows = connection.execute(
+                """SELECT evidence.pool, evidence.identity, evidence.sha256,
+                          raw.payload, raw.archived_at
+                   FROM cpmm_launch_evidence AS evidence
+                   JOIN cpmm_launch_raw AS raw ON raw.sha256=evidence.sha256
+                   ORDER BY raw.archived_at DESC, evidence.pool
+                   LIMIT ?""", (limit,),
+            ).fetchall()
+        return [{
+            "pool": row[0], "identity_json": row[1], "raw_sha256": row[2],
+            "raw_bytes": bytes(row[3]), "archived_at": row[4],
+        } for row in rows]
+
     def get_raw_transaction(self, wallet_address: str, signature: str) -> dict | None:
         """Recupera payload bruto para auditoria e replay do parser."""
         with self._connection_scope() as connection:

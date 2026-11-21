@@ -4559,3 +4559,12 @@ Na PR #115 Draft, os commits `1f6c39b`, `59644e3` e `29f4774` integram o journal
 Os testes adicionados cobrem retomada após expiração de geração, isolamento dos radares, adulteração do digest de alerta e expiração anterior ao heartbeat. A CI dos novos commits precisa ser confirmada antes de declarar CM76 validado. As CIs CM75 #44939674125 e #44939671549 foram informadas como aprovadas, sujeitas a confirmação no GitHub.
 
 Estimativas conservadoras mantidas até homologação da integração: Launch 60%; Smart Money 81%; infraestrutura 67%; CM39 24% bloqueado; global 58%. Homologação física Android 24 horas pendente. Main e PRs #111/#113 preservadas; sem merge, ordens reais, captura live ou custos adicionais.
+
+
+### CM77 — classificação de recuperação persistente (21/11/2026)
+
+CI CM76 #44940138110: SUCCESS no commit `29f4774`; validação automatizada da integração do histórico local do watchdog aprovada. O HEAD da PR #115 continuou Draft e a main não foi alterada.
+
+Implementação CM77 publicada em `af279ae`, `86dc7a3`, `58ef20e` e `1d44df7`: o dashboard read-only classifica início inicial, retomada após expiração e reinício após parada registrada usando exclusivamente os eventos SHA-256 já verificados; exibe contador e estado de heartbeat. Testes cobrem expiração, reinício limpo, duplicidade de supervisor impedida por fencing e indisponibilidade por heartbeat expirado. A classificação identifica a sequência persistida; não prova se o reinício foi iniciado por operador ou watchdog externo sem evidência específica desse acionador.
+
+CI CM77 pendente de resultado definitivo. Percentuais estimativos mantidos: Launch 60%; Smart Money 81%; infraestrutura 67%; CM39 24% bloqueado; global 58%. Sem homologação física de 24 horas, captura live, operações financeiras, merge ou gastos adicionais.

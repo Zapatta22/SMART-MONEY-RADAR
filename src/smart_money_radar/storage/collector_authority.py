@@ -21,6 +21,7 @@ class CollectorAuthority:
     owner: str
     radar: str
     clock: Callable[[], float] = time.time
+    control_revision: int = -1
 
     def __post_init__(self):
         if (not self.database_path or self.database_path == ":memory:"
@@ -28,6 +29,16 @@ class CollectorAuthority:
                 or not self.owner or self.radar not in ("launch","smart_money")
                 or not callable(self.clock)):
             raise ValueError("invalid collector authority")
+
+
+def collector_control_revision(connection, radar):
+    """Revision of the validated journal for the selected radar."""
+    row=connection.execute(
+        "SELECT MAX(seq) FROM cm34_operational_journal "
+        "WHERE json_extract(payload,'$.radar')=? "
+        "AND json_extract(payload,'$.action') IN ('START','PAUSE','RADAR_FAULT','RADAR_RECOVERED')",
+        (radar,)).fetchone()
+    return -1 if row[0] is None else row[0]
 
 
 def verify_collector_authority(connection, authority, radar=None):
@@ -65,7 +76,8 @@ def verify_collector_authority(connection, authority, radar=None):
             raise AuthorityLost("collector generation expired, stopped or replaced")
         from smart_money_radar.services.operational_controls import read_control_state
         controls = read_control_state(connection)
-        if controls["emergency_halt"] or controls["radars"][authority.radar] != "RUNNING":
+        if (controls["emergency_halt"] or controls["radars"][authority.radar] != "RUNNING"
+                or collector_control_revision(connection, authority.radar) != authority.control_revision):
             raise AuthorityLost("collector paused or emergency halted")
     except AuthorityLost:
         raise
@@ -81,3 +93,10 @@ def collector_write(connection, authority, radar=None):
         verify_collector_authority(connection, authority, radar)
         yield
         verify_collector_authority(connection, authority, radar)
+
+
+def check_collector(store, radar=None):
+    """Network-boundary check, not a substitute for the transactional fence."""
+    method=getattr(store,"assert_collector_authority",None)
+    if method is not None:
+        method(radar)

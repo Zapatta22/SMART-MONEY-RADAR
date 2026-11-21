@@ -25,7 +25,7 @@ from smart_money_radar.services.radar_intelligence import read_intelligence_repo
 from smart_money_radar.services.wallet_discovery import WalletDiscoveryPolicy, discover_wallets, _write_wallet_snapshot
 from smart_money_radar.services.synthetic_capital import read_capital_accounts
 
-from smart_money_radar.storage.collector_authority import AuthorityLost, CollectorAuthority
+from smart_money_radar.storage.collector_authority import AuthorityLost, CollectorAuthority, collector_control_revision
 
 @dataclass(frozen=True)
 class SupervisorPolicy:
@@ -126,8 +126,13 @@ class PersistentSupervisor:
             conn.execute("BEGIN IMMEDIATE")
             self._fence(conn)
             token = CollectorAuthority(str(self.store.database_path.resolve()),
-                                       self.generation,self.owner,radar,self.clock)
+                                       self.generation,self.owner,radar,self.clock,
+                                       collector_control_revision(conn,radar))
         return token
+
+    def bind_collector_store(self, store, radar):
+        """Issue a new immutable handle without activating network access."""
+        return store.bind_collector(self.collector_authority(radar))
 
     def heartbeat(self):
         with self.store._connection_scope() as conn,conn:

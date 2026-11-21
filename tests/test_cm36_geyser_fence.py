@@ -86,3 +86,13 @@ class CM36GeyserFence(unittest.TestCase):
             self.bound.ingest(self.event(),self.delivery())
         wallet.ingest(self.event(),self.delivery())
         self.assertEqual(self.raw.counts()["geyser_raw_deliveries"],1)
+
+    def test_pause_then_resume_does_not_revive_old_generation_handle(self):
+        for event,action in (("pause","PAUSE"),("resume","START")):
+            self.controls.apply(capability=self.key,event_id=event,action=action,actor="test",
+                reason="offline",radar="launch",at=datetime.fromtimestamp(self.now,timezone.utc))
+        with self.assertRaises(AuthorityLost):
+            self.bound.ingest(self.event(),self.delivery())
+        fresh=self.sup.bind_collector_store(self.raw,"launch")
+        fresh.ingest(self.event(),self.delivery())
+        self.assertEqual(self.raw.counts()["geyser_raw_deliveries"],1)

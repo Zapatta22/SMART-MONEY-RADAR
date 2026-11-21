@@ -16,7 +16,7 @@ from smart_money_radar.domain.models import (
 )
 from smart_money_radar.domain.normalization import NormalizedObservation
 from smart_money_radar.domain.swap_bundle_builder import SwapDomainBundle
-from smart_money_radar.storage.collector_authority import collector_write
+from smart_money_radar.storage.collector_authority import collector_write, verify_collector_authority
 
 
 @dataclass(frozen=True)
@@ -70,6 +70,11 @@ class SQLiteEventStore:
         bound.__dict__ = self.__dict__.copy()
         bound._collector_authority = authority
         return bound
+
+    def assert_collector_authority(self, radar=None):
+        with self._connection_scope() as conn, conn:
+            conn.execute("BEGIN")
+            verify_collector_authority(conn,getattr(self,"_collector_authority",None),radar)
 
     def _connect(self) -> sqlite3.Connection:
         if self._memory_connection is not None:

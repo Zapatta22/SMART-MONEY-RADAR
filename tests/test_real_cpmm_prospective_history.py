@@ -252,5 +252,29 @@ class RealCpmmHistoryTests(unittest.TestCase):
             db.close()
 
 
+
+    def test_cm69_candidate_selection_excludes_future_and_other_pool(self):
+        a, b = self.capture(0), self.capture(1)
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "evidence.sqlite"
+            db = SQLiteCpmmProspectiveHistory(path)
+            db.append_capture(a, manifest_raw=self.bundles[0][0])
+            db.append_capture(b, manifest_raw=self.bundles[1][0],
+                              prior_capture_id=a.capture_id, coverage="PARTIAL")
+            db.close()
+            db = SQLiteCpmmProspectiveHistory(path)
+            pool = a.observation.pool
+            self.assertEqual(db.candidate_capture_ids(pool=pool, cutoff=CUTOFF),
+                             (b.capture_id, a.capture_id))
+            self.assertEqual(db.candidate_capture_ids(pool=pool, cutoff=a.observation.available_at),
+                             (a.capture_id,))
+            self.assertEqual(db.candidate_capture_ids(pool=pool, cutoff=CUTOFF, limit=1),
+                             (b.capture_id,))
+            self.assertEqual(db.candidate_capture_ids(pool="other", cutoff=CUTOFF), ())
+            with self.assertRaises(ValueError):
+                db.candidate_capture_ids(pool=pool, cutoff=CUTOFF, limit=0)
+            db.close()
+
+
 if __name__=="__main__":
     unittest.main()

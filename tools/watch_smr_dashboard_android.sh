@@ -9,9 +9,9 @@ if [[ -z "$DB" || ! -f "$DB" ]]; then
   echo "ERRO: SMR_DB_PATH deve apontar para um SQLite existente." >&2
   exit 2
 fi
-command -v curl >/dev/null 2>&1 || { echo "ERRO: curl não encontrado." >&2; exit 2; }
+command -v python >/dev/null 2>&1 || { echo "ERRO: python não encontrado." >&2; exit 2; }
 URL="http://127.0.0.1:8765/"
-if curl --silent --fail --max-time 3 --output /dev/null "$URL"; then
+if python "$ROOT/tools/check_smr_dashboard_health.py"; then
   echo "Painel local responde; nenhuma ação necessária."
   exit 0
 fi

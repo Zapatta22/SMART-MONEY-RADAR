@@ -43,10 +43,11 @@ def verify(workspace):
     if set(tasks) != {"launch", "smart_money"}:
         issues.append("missing independent radar progress")
     else:
-        for name, task in tasks.items():
+        for name, task in list(tasks.items()):
             if not isinstance(task, dict):
                 issues.append(f"{name} invalid radar state structure")
                 task = {}
+                tasks[name] = task
             if type(task.get("cycles")) is not int or task["cycles"] < 1:
                 issues.append(f"{name} has no completed offline cycles")
             if task.get("status") != "READY" or type(task.get("failures")) is not int or task["failures"] != 0:

@@ -38,7 +38,7 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
                            min_liquidity_quote=Decimal("100"),
                            max_concentration_fraction=Decimal("0.4"),
                            volume_window=timedelta(minutes=5),
-                           amount_in: Decimal | None = None):
+                           amount_in: Decimal | None = None, rpc_store=None):
     """Reconcile one pool and a bounded interval, never other-pool quotes.
 
     The safety/volume contracts validate RAW hashes and time. A model impact
@@ -131,6 +131,9 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
         "operational_authorized": False,
         "prospective_paper_authorized": False,
     }
+    # Resolve transaction references against original persisted RPC bytes.
+    # Account/reserve snapshots require a separate account evidence contract.
+    economic["rpc_archive"] = _resolve_launch_rpc(rpc_store, economic["evidence"], at)
     economic["sha256"] = sha256(json.dumps(economic, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     return {
         "economic_qualification": economic,
@@ -156,3 +159,40 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
         "operational_authorized": False,
         "prospective_paper_authorized": False,
     }
+
+
+def _resolve_launch_rpc(store, links, cutoff):
+    """Read-only local archive linkage. Never attests economic amount or finality."""
+    from smart_money_radar.services.rpc_observation_journal import RpcObservationJournal
+    result = []
+    if store is None:
+        return {"status": "UNKNOWN", "links": result}
+    journal = RpcObservationJournal(store)
+    with store._connection_scope() as conn:
+        exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cm38_rpc_observations'").fetchone()
+        for link in links:
+            if link["kind"] != "swap":
+                continue
+            row = conn.execute(
+                "SELECT radar,signature,available_at,metadata,metadata_sha,raw FROM cm38_rpc_observations WHERE evidence_id=?",
+                (link["evidence_id"],)).fetchone() if exists else None
+            status = "UNKNOWN"
+            if row is not None:
+                try:
+                    item = journal._read(link["evidence_id"], row[3:])
+                    meta = item["metadata"]
+                    expected = ("launch", link["signature"], link["source_id"],
+                                link["raw_sha256"], link["slot"], "finalized")
+                    actual = (meta["radar"], meta["signature"], meta["source_id"],
+                              meta["raw_sha256"], meta["slot"], meta["commitment_requested"])
+                    if (actual != expected or link["commitment"] != "finalized"
+                            or tuple(row[:3]) != (meta["radar"], meta["signature"], meta["available_at"])
+                            or item["evidence"].available_at > cutoff
+                            or item["evidence"].available_at != datetime.fromisoformat(link["available_at"])):
+                        raise ValueError("RPC scope or cutoff conflict")
+                    status = "LOCAL_BYTES_LINKED"
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    status = "CONFLICTED"
+            result.append({"evidence_id": link["evidence_id"], "status": status})
+    return {"status": "CONFLICTED" if any(x["status"] == "CONFLICTED" for x in result) else "UNKNOWN",
+            "links": result}

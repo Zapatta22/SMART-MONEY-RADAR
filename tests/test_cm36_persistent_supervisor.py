@@ -125,3 +125,23 @@ class CM36Tests(unittest.TestCase):
         self.assertEqual(status["status"],"STOPPED")
         self.assertEqual(status["radars"]["launch"]["cycles"],20)
         self.assertEqual(status["radars"]["smart_money"]["cycles"],20)
+
+    def test_cm69_launch_history_dependency_isolated_across_restart(self):
+        from smart_money_radar.storage.cpmm_prospective_history import SQLiteCpmmProspectiveHistory
+        from smart_money_radar.services.radar_intelligence import read_intelligence_reports
+        history=SQLiteCpmmProspectiveHistory(Path(self.tmp.name)/"launch.sqlite")
+        self.addCleanup(history.close)
+        for generation in (1,2):
+            a=PersistentSupervisor(self.store,policy=self.policy,clock=lambda:self.now,
+                                   launch_history=history)
+            self.assertEqual(a.acquire(),generation)
+            with patch("smart_money_radar.services.persistent_supervisor.read_intelligence_reports",
+                       wraps=read_intelligence_reports) as read:
+                report=a.cycle()
+                self.assertEqual(report["tasks"]["launch"]["status"],"READY")
+                self.assertEqual(report["tasks"]["smart_money"]["status"],"READY")
+                calls={next(iter(c.args[1])):c.kwargs["cpmm_history"] for c in read.call_args_list}
+                self.assertIs(calls["launch"],history)
+                self.assertIsNone(calls["smart_money"])
+            a.stop()
+            self.now+=2

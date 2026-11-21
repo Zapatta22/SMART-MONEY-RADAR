@@ -71,6 +71,7 @@ class CPMMSupervisorTests(unittest.TestCase):
         finally:
             history.close()
         self.original_slot = fixture.old_manifest["slot_observed"]
+        self.original_sha256 = fixture.old_manifest["raw_sha256"]
 
     def test_journals_both_strategies_and_preserves_independent_radar_on_restart(self):
         for token, quote in ((OTHER, SOL), (SOL, OTHER)):
@@ -151,6 +152,20 @@ class CPMMSupervisorTests(unittest.TestCase):
                         self.assertEqual(archive["capture_id"], self.capture.capture_id)
                         self.assertEqual(archive["liquidity_check"]["status"], "STALE")
                         self.assertEqual(archive["liquidity_check"]["reconciliation"], "DECLARATION_MISSING")
+                        historical = archive["historical_swap_reconciliation"]
+                        self.assertEqual(historical["status"], "OBSERVED_EVENT_AND_TRANSFERS_RECONCILED_UNATTESTED")
+                        self.assertEqual(historical["slot"], self.original_slot)
+                        self.assertEqual(historical["transaction_raw_sha256"], self.original_sha256)
+                        self.assertLess(historical["slot"], archive["slot"])
+                        self.assertLess(
+                            datetime.fromisoformat(historical["available_at"]),
+                            datetime.fromisoformat(archive["available_at"]),
+                        )
+                        self.assertFalse(historical["historical_ammconfig_snapshot_verified"])
+                        self.assertFalse(historical["historical_poolstate_snapshot_verified"])
+                        self.assertFalse(historical["quote_available_before_swap"])
+                        self.assertFalse(historical["independently_authenticated"])
+                        self.assertFalse(historical["operational_authorized"])
                         self.assertIn("buy_model", archive)
                         self.assertIn("sell_model", archive)
                         for key, expected in EXPECTED[quote].items():
@@ -193,6 +208,8 @@ class CPMMSupervisorTests(unittest.TestCase):
                 result = runner.cycle()
                 self.assertFalse(result["execution_enabled"])
                 self.assertFalse(result["live_authorized"])
+                self.assertNotIn("archive_cursor", result["tasks"]["launch"])
+                self.assertEqual(result["tasks"]["smart_money"]["archive_coverage"]["independent_coverage"], "UNKNOWN")
                 for task in result["tasks"].values():
                     self.assertEqual(task["status"], "READY")
                     self.assertEqual(task["processed_new"], int(start))
@@ -218,7 +235,9 @@ class CPMMSupervisorTests(unittest.TestCase):
         )
         before = self.capture.observation.available_at - timedelta(microseconds=1)
         receipt = launch_metric_receipts(**args, at=before)
-        self.assertNotIn("buy_integer_model", receipt["economic_qualification"]["account_archive"])
+        archive = receipt["economic_qualification"]["account_archive"]
+        self.assertNotIn("buy_integer_model", archive)
+        self.assertNotIn("historical_swap_reconciliation", archive)
         self.assertFalse(receipt["operational_authorized"])
 
         with history.connection:

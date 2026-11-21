@@ -22,6 +22,9 @@ from smart_money_radar.services.synthetic_paper_ledger import RADARS, _encode, _
 from smart_money_radar.services.operational_controls import read_control_state
 from smart_money_radar.services.radar_event_bridge import launch_events_from_archive, smart_money_events_from_archive
 from smart_money_radar.services.radar_intelligence import read_intelligence_reports
+from smart_money_radar.services.smart_money_archive_page import (
+    read_smart_money_archive_page, verify_archive_cursor,
+)
 from smart_money_radar.services.wallet_discovery import WalletDiscoveryPolicy, discover_wallets, _write_wallet_snapshot
 from smart_money_radar.services.synthetic_capital import read_capital_accounts
 
@@ -174,11 +177,19 @@ class PersistentSupervisor:
         # Only bounded archive reads and pure analysis; no independent write
         # transaction, no RPC calls, no synthetic or real orders generated.
         point=_stamp(now)
+        page = None
         if radar=="launch":
             events=launch_events_from_archive(self.store.list_cpmm_launch_archived_event_inputs(limit=self.policy.batch_limit))
             profile=None
         else:
-            events=smart_money_events_from_archive(self.store.list_smr_archived_event_inputs(limit=self.policy.batch_limit))
+            with self._connection_scope() as conn:
+                task = _task(conn, radar)
+            page = read_smart_money_archive_page(
+                self.store, cursor=task.get("archive_cursor", 0),
+                cursor_anchor=task.get("archive_cursor_anchor"), cutoff=point,
+                limit=self.policy.batch_limit,
+            )
+            events=smart_money_events_from_archive(page.rows)
             profile=discover_wallets(self.store,as_of=point,policy=self.discovery_policy)
         from dataclasses import asdict
         source=[asdict(e) for e in events]
@@ -192,7 +203,7 @@ class PersistentSupervisor:
             # Serialize datetimes, Decimals via existing canonical codec.
             payload={"event":event,"decision":decision,"paper":paper_preflight(decision,kind="PROSPECTIVE_SIMULATION")}
             results.append((event["id"],_hash(_encode(event)),payload))
-        return profile,results
+        return profile,results,page
     def _blocked(self,conn,radar):
         c=read_control_state(conn)
         return c["emergency_halt"] or c["radars"][radar]!="RUNNING"
@@ -206,7 +217,7 @@ class PersistentSupervisor:
                 return task # explicit reviewed reset is future work, no infinite retry
             if now<task["next_due"]:return task
         try:
-            profile,results=self._prepare(radar,now)
+            profile,results,page=self._prepare(radar,now)
         except Exception as exc:
             if isinstance(exc,AuthorityLost) or _transient_sqlite_lock(exc):raise
             return self._failure(radar,type(exc).__name__)
@@ -216,11 +227,19 @@ class PersistentSupervisor:
                 economic_store=self.bind_collector_store(self.store,radar)
             with self._connection_scope() as conn,conn:
                 conn.execute("BEGIN IMMEDIATE");finished=self._fence(conn)
+                prepared_cycles = task["cycles"]
                 task=_task(conn,radar)
                 if self._blocked(conn,radar):
                     task.update(status="PAUSED",pending=True);_put_task(conn,task);return task
+                if page is not None:
+                    if task["cycles"] != prepared_cycles:
+                        return task
+                    verify_archive_cursor(conn, task.get("archive_cursor", 0),
+                                          task.get("archive_cursor_anchor"))
+                    verify_archive_cursor(conn, page.cursor, page.cursor_anchor)
                 if profile is not None:_write_wallet_snapshot(conn,profile)
                 new=0
+                latest_new_event = task["checkpoint"]
                 for eid,ed,payload in results:
                     old=conn.execute("SELECT payload,payload_sha FROM cm36_decision_journal WHERE radar=? AND event_id=? AND event_sha=?",(radar,eid,ed)).fetchone()
                     if old:
@@ -234,11 +253,25 @@ class PersistentSupervisor:
                     conn.execute("INSERT INTO cm36_decision_journal VALUES(?,?,?,?,?)",(radar,eid,ed,encoded,_hash(encoded)))
                     _alert(conn,radar,"ARCHIVED_EVENT_BLOCKED",ed,finished)
                     new+=1
+                    latest_new_event = eid
                 if task["failures"]:_alert(conn,radar,"RECOVERED",str(self.generation)+":"+str(task["cycles"]),finished)
+                checkpoint = latest_new_event
+                if page is None and results:
+                    checkpoint = results[-1][0]
                 task.update(status="READY",failures=0,last_error=None,next_due=finished+self.policy.interval_seconds,
                     last_activity=_stamp(finished).isoformat(),cycles=task["cycles"]+1,
-                    checkpoint=results[-1][0] if results else task["checkpoint"],
+                    checkpoint=checkpoint,
                     pending=False,processed_new=new)
+                if page is not None:
+                    previous = task.get("archive_coverage", {})
+                    coverage = {
+                        key: previous.get(key, 0) + value if type(value) is int else value
+                        for key, value in page.coverage.items()
+                    }
+                    task.update(
+                        archive_cursor=page.cursor, archive_cursor_anchor=page.cursor_anchor,
+                        archive_coverage=coverage, pending=coverage["status"] != "LOCAL_PAGE_DRAINED",
+                    )
                 _put_task(conn,task)
                 # Verify immediately before commit; no other owner can acquire
                 # the same database until this write transaction commits.

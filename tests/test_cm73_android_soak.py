@@ -164,7 +164,7 @@ class AndroidSoakTests(unittest.TestCase):
         report_path.write_text(json.dumps(report))
         rejected = verify_soak(workspace)
         self.assertFalse(rejected["accepted_offline"])
-        self.assertIn("untrusted physical/autonomy verification claim", rejected["issues"])
+        self.assertIn("inconsistent 24-hour target claim", rejected["issues"])
 
     def test_offline_evidence_gate_rejects_checkpoint_hash_tampering(self):
         process = self.start(2.0)

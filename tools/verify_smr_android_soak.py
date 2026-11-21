@@ -53,8 +53,11 @@ def verify(workspace):
         "sqlite": "offline-soak.sqlite",
     }:
         issues.append("unexpected offline artifact manifest")
-    if not (workspace / "worker.log").is_file():
+    worker_log = workspace / "worker.log"
+    if not worker_log.is_file():
         issues.append("missing offline worker log")
+    elif not worker_log.read_text().strip():
+        issues.append("empty offline worker log")
     progress = workspace / "progress.jsonl"
     if not progress.is_file():
         issues.append("missing progress journal")

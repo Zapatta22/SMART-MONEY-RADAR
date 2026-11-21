@@ -145,3 +145,33 @@ class SQLiteCpmmProspectiveHistory:
             "SELECT payload_json FROM prospective_cpmm_deltas WHERE from_capture_id=? AND to_capture_id=?",
             (from_id,to_id)).fetchone()
         return json.loads(row[0]) if row else None
+
+    def reconstruct_capture(self, capture_id: str, *, original_transaction_raw: bytes,
+                            original_manifest: dict, cutoff: datetime):
+        """Re-decode archived account bytes at a cutoff, without writing state.
+
+        Returns a local prospective observation, never historical pre-swap proof.
+        The caller must supply the original transaction evidence, not amounts.
+        """
+        from smart_money_radar.services.prospective_cpmm_history import capture_from_raw
+        entry = self.get_capture(capture_id)
+        if entry is None:
+            return None
+        if entry["coverage"] == "CONFLICT":
+            raise ValueError("conflicted capture")
+        capture = capture_from_raw(
+            manifest_raw=entry["manifest_raw"], request_raw=entry["request_raw"],
+            response_raw=entry["response_raw"],
+            original_transaction_raw=original_transaction_raw,
+            original_manifest=original_manifest, cutoff=cutoff,
+            source_id=entry["source_id"])
+        obs = capture.observation
+        expected = (capture.capture_id, obs.pool, obs.slot, obs.source_id,
+                    obs.observed_at.isoformat(), obs.available_at.isoformat(),
+                    capture.decoder_version, "SHA256_BOUND_UNATTESTED")
+        actual = tuple(entry[k] for k in (
+            "capture_id", "pool", "slot", "source_id", "observed_at",
+            "available_at", "decoder_version", "integrity"))
+        if actual != expected:
+            raise ValueError("archived capture metadata conflict")
+        return capture

@@ -27,6 +27,13 @@ def verify(workspace):
         for name, task in tasks.items():
             if type(task.get("cycles")) is not int or task["cycles"] < 1:
                 issues.append(f"{name} has no completed offline cycles")
+            if task.get("status") != "READY" or type(task.get("failures")) is not int or task["failures"] != 0:
+                issues.append(f"{name} final state is not healthy")
+    elapsed = report.get("elapsed_seconds")
+    duration = report.get("target_duration_seconds")
+    if (type(elapsed) not in (int, float) or type(duration) not in (int, float)
+            or not 0 < duration <= elapsed or elapsed == float("inf")):
+        issues.append("offline soak target duration not reached")
     if report.get("physical_android_verified") is not False or report.get("autonomy_24h_verified") is not False:
         issues.append("untrusted physical/autonomy verification claim")
     progress = workspace / "progress.jsonl"

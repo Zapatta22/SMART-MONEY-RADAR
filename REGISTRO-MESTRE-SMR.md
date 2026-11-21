@@ -4464,3 +4464,11 @@ Commits f95e9ae36d5d0bb8ee9dca2a563e52dd04dbf45f (qualificador usa journal persi
 ## CM69 — reconstrução local de reservas CPMM
 
 Publicados 3793b77 (reconstrução SQLite), 5c44593 (testes), 16575f1 (recibo Launch opcional por captura) e b6d9d0a (teste de replay/escopo). Vínculo local prospectivo de reservas raw, taxas e hashes, sem autenticação independente ou prova histórica. CI pendente. Ainda falta conexão automática do qualificador/supervisor, descoberta causal de captura, decimais e liquidez/impacto derivados, reconciliação com valores declarados, testes de rollback e isolamento. CM38 85%, Launch 55% como referência até validação. CM39 bloqueado; sem captura live ou operações financeiras; retornar a privado após validações.
+
+### CM69 — continuidade 2026-11-21
+
+Seleção causal de capturas por pool e cutoff (b02fbec), testes de reinício e isolamento (5f2f2d7), reconstrução do candidato mais recente sem fallback de conflito (2fa6b68), seleção automática nos recibos Launch quando fornecidos RAW e manifesto originais (dd36f01), testes das duas estratégias (441823f). Qualificador encaminha evidências opcionais (5de5704).
+
+CI observada: 441823f: 44910181707 in_progress/null; dd36f01: 44910120152 completed/success; 2fa6b68: 44910050654 completed/success; 5f2f2d7: 44909840922 completed/success; b02fbec: 44909805802 completed/success; 5de5704: 44909424050 completed/success.
+
+Pendente: origem automática persistida do RAW e manifesto, integração radar_intelligence/supervisor, normalização decimal, reconciliação econômica e testes de rollback. A captura posterior ao swap não comprova estado histórico anterior. Sem autorização operacional. CM38 85%, Launch 55%, Smart Money 76%, CM39 24% bloqueado; estimativas mantidas. Main e PRs 111/113 não alteradas nesta etapa.

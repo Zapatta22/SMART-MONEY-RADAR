@@ -154,6 +154,18 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertIn("launch final state is not healthy", rejected["issues"])
         self.assertIn("offline soak target duration not reached", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_false_24h_completion(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["target_24h_reached"] = True
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("untrusted physical/autonomy verification claim", rejected["issues"])
+
     def test_offline_evidence_gate_rejects_checkpoint_hash_tampering(self):
         process = self.start(2.0)
         self.report(process, 0)

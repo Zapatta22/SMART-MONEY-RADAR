@@ -40,6 +40,11 @@ class CheckpointEntrypointGates(unittest.TestCase):
         self.assertEqual(self.store.get_checkpoint(self.wallet),other)
         self.store.save_checkpoint(self.wallet,other)
         self.assertEqual(self.store.get_checkpoint(self.wallet),other)
+    def test_legacy_bootstrap_without_observed_parent_remains_valid(self):
+        self.store.save_checkpoint("legacy-bootstrap","unobserved-signature")
+        self.assertEqual(self.store.get_checkpoint("legacy-bootstrap"),"unobserved-signature")
+        self.assertIsNone(self.store.get_checkpoint(self.wallet))
+
     def test_reprocessing_does_not_advance_cursor(self):
         self.store.save_observation(self.wallet,self.sig,self.tx,[],parse_status="ok",advance_checkpoint=False)
         self.store.reprocess_observation(self.wallet,self.sig,[],parse_status="ok",parser_version="2")

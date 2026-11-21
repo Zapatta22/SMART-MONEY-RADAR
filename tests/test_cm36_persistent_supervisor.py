@@ -200,6 +200,48 @@ class CM36Tests(unittest.TestCase):
         self.assertEqual(history["watchdog_history"], [])
         self.assertEqual(history["availability"], "UNAVAILABLE")
 
+    def test_cm77_recovery_after_expiry_and_clean_restart_are_distinct(self):
+        a = self.runner()
+        a.acquire()
+        self.now += 10
+        b = self.runner()
+        b.acquire()
+        b.stop()
+        self.now += 1
+        c = self.runner()
+        c.acquire()
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        history = DashboardReadService(reader).get_overview()["supervisor_history"]
+        self.assertEqual(history["integrity"], "VERIFIED_LOCAL")
+        self.assertEqual(history["recovery_count"], 1)
+        self.assertEqual(history["watchdog_state"], "RUNNING_LOCAL")
+        kinds = [event["kind"] for event in history["recovery_history"]]
+        self.assertEqual(kinds, ["INITIAL_START", "AUTOMATIC_AFTER_EXPIRY",
+                                 "RESTART_AFTER_STOP"])
+
+    def test_cm77_duplicate_owner_cannot_create_false_recovery(self):
+        a = self.runner()
+        a.acquire()
+        with self.assertRaises(AuthorityLost):
+            self.runner().acquire()
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        history = DashboardReadService(reader).get_overview()["supervisor_history"]
+        self.assertEqual(history["recovery_count"], 0)
+        self.assertEqual(len(history["recovery_history"]), 1)
+
+    def test_cm77_expired_heartbeat_is_not_live_readiness(self):
+        a = self.runner()
+        a.acquire()
+        self.now += 10
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        history = DashboardReadService(reader).get_overview()["supervisor_history"]
+        self.assertIn(history["watchdog_state"], ("HEARTBEAT_LOST", "UNAVAILABLE"))
+        self.assertFalse(history["live_authorized"])
+        self.assertFalse(history["execution_enabled"])
+
     def test_corrupt_lease_fails_closed(self):
         a=self.runner();a.acquire()
         with sqlite3.connect(self.db) as c:c.execute("UPDATE cm36_supervisor_lease SET generation=99")

@@ -65,7 +65,6 @@ class Cm38iAudit(unittest.TestCase):
             self.assertFalse(c.execute("SELECT 1 FROM sqlite_master WHERE name='cm38i_virtual_entry_attempts'").fetchone())
     def test_expired_and_insufficient_virtual_capital_are_explicit(self):
         self.assertIn("opportunity_expired",self.record(max_age_seconds=1)["reasons"])
-        self.assertEqual(self.record(request_id="request1")["status"],"BLOCKED") if False else None
     def test_insufficient_capital_and_exposure(self):
         p=self.record(requested_notional=D("200"))
         self.assertIn("insufficient_virtual_capital",p["reasons"])
@@ -94,6 +93,24 @@ class Cm38iAudit(unittest.TestCase):
         with self.store._connection_scope() as c:
             self.assertFalse(c.execute("SELECT 1 FROM sqlite_master WHERE name='cm38i_virtual_entry_attempts'").fetchone())
         self.assertEqual(SyntheticCapitalCoordinator(self.store).snapshot("virtual"),self.before)
+
+    def test_retroactive_risk_change_rejected_by_immutable_trigger(self):
+        import sqlite3
+        self.record()
+        with self.assertRaises(sqlite3.IntegrityError):
+            with self.store._connection_scope() as c,c:
+                c.execute("UPDATE cm38i_risk_decisions SET reasons_json='[]'")
+        self.assertEqual(audit_blocked_entry(self.store,"request1")["status"],"BLOCKED")
+
+    def test_integrity_digest_detects_tamper_even_if_trigger_was_disabled(self):
+        self.record()
+        with self.store._connection_scope() as c,c:
+            c.execute("DROP TRIGGER cm38i_immut_cm38i_risk_decisions_update")
+            c.execute("UPDATE cm38i_risk_decisions SET reasons_json='[]'")
+        with self.assertRaisesRegex(ValueError,"integrity conflict"):
+            audit_blocked_entry(self.store,"request1")
+        with self.assertRaisesRegex(ValueError,"integrity conflict"):
+            self.record()
     def test_strategies_and_radars_are_independent(self):
         e=self.capture(radar="smart_money",source="other")
         p=self.record(request_id="s2",radar="smart_money",strategy="confirmed",evidence_id=e)

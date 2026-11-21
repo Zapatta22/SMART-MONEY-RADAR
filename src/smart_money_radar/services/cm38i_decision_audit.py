@@ -75,6 +75,42 @@ def _schema(conn):
         request_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL CHECK(status='BLOCKED'),
         created_at TEXT NOT NULL, virtual_ledger_mutated INTEGER NOT NULL CHECK(virtual_ledger_mutated=0),
         FOREIGN KEY(decision_id) REFERENCES cm38i_risk_decisions(decision_id))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS cm38i_decision_integrity(
+        attempt_id TEXT PRIMARY KEY,receipt_sha256 TEXT NOT NULL,
+        FOREIGN KEY(attempt_id) REFERENCES cm38i_virtual_entry_attempts(attempt_id))""")
+    for table in ("cm38i_opportunities","cm38i_risk_decisions",
+                  "cm38i_virtual_entry_attempts","cm38i_decision_integrity"):
+        for kind in ("UPDATE","DELETE"):
+            conn.execute("CREATE TRIGGER IF NOT EXISTS cm38i_immut_"+table+"_"+kind.lower()+
+                         " BEFORE "+kind+" ON "+table+
+                         " BEGIN SELECT RAISE(ABORT,'CM38I audit is immutable'); END")
+
+
+def _integrity(conn, attempt_id):
+    """Verify persisted opportunity/risk/attempt content; never trust caller or mutated rows."""
+    tables=(
+        ("cm38i_virtual_entry_attempts","attempt_id",attempt_id),
+        ("cm38i_risk_decisions","decision_id",None),
+        ("cm38i_opportunities","opportunity_id",None),
+    )
+    att=conn.execute("SELECT * FROM cm38i_virtual_entry_attempts WHERE attempt_id=?",
+                     (attempt_id,)).fetchone()
+    if att is None: raise ValueError("orphan virtual attempt")
+    dec=conn.execute("SELECT * FROM cm38i_risk_decisions WHERE decision_id=?",(att[1],)).fetchone()
+    if dec is None: raise ValueError("orphan risk decision")
+    opp=conn.execute("SELECT * FROM cm38i_opportunities WHERE opportunity_id=?",(dec[1],)).fetchone()
+    if opp is None: raise ValueError("orphan opportunity")
+    try:
+        prior=conn.execute(
+            "SELECT receipt_sha256 FROM cm38i_decision_integrity WHERE attempt_id=?",
+            (attempt_id,)).fetchone()
+    except sqlite3.OperationalError as exc:
+        raise ValueError("missing immutable decision integrity receipt") from exc
+    actual=_hash(["CM38I-DECISION-INTEGRITY-1",list(opp),list(dec),list(att)])
+    if prior is None or prior[0]!=actual:
+        raise ValueError("retroactive risk decision integrity conflict")
+    return opp,dec,att
+
 
 
 def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
@@ -135,6 +171,7 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
             if old:
                 if old[0] != fingerprint:
                     raise ValueError("idempotency request conflicts with prior decision")
+                _integrity(conn,old[1])
                 return {"opportunity_id": old[3], "decision_id": old[2],
                         "attempt_id": old[1], "request_id": request_id,
                         "status": "BLOCKED", "reasons": tuple(json.loads(old[4])),
@@ -232,6 +269,17 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
             (attempt_id,decision_id,request_id,"BLOCKED",
              datetime.now(timezone.utc).isoformat(),0)
         )
+        attempt_row=conn.execute("SELECT * FROM cm38i_virtual_entry_attempts WHERE attempt_id=?",
+                                 (attempt_id,)).fetchone()
+        decision_row=conn.execute("SELECT * FROM cm38i_risk_decisions WHERE decision_id=?",
+                                  (decision_id,)).fetchone()
+        opportunity_row=conn.execute("SELECT * FROM cm38i_opportunities WHERE opportunity_id=?",
+                                     (op_id,)).fetchone()
+        receipt_hash=_hash(["CM38I-DECISION-INTEGRITY-1",
+                            list(opportunity_row),list(decision_row),list(attempt_row)])
+        conn.execute("INSERT INTO cm38i_decision_integrity VALUES (?,?)",
+                     (attempt_id,receipt_hash))
+        _integrity(conn,attempt_id)
     return {"opportunity_id":op_id,"decision_id":decision_id,
             "attempt_id":attempt_id,"request_id":request_id,"status":"BLOCKED",
             "reasons":tuple(sorted(reasons)),"virtual_ledger_mutated":False,
@@ -258,6 +306,7 @@ def audit_blocked_entry(store: SQLiteEventStore, request_id: str):
                WHERE a.request_id=?""",(request_id,)
         ).fetchone()
         if row is None: return None
+        _integrity(conn,row[0])
         raw = conn.execute(
             "SELECT metadata,metadata_sha,raw FROM cm38_rpc_observations WHERE evidence_id=?",
             (row[6],)

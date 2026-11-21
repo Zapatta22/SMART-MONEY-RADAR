@@ -447,6 +447,8 @@ class AndroidSoakTests(unittest.TestCase):
                 {"status": "ACTIVE", "radars": [], "live_authorized": False,
                  "execution_enabled": False},
                 sqlite3.DatabaseError("fixture probe failed"),
+                # Final report probes independently after the monitoring failure.
+                sqlite3.DatabaseError("fixture probe failed"),
             ],
         ):
             report = soak._monitor(self.output, store, journal, worker_log, Event(), 1, 0.1, 0)

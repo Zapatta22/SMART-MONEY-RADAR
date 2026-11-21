@@ -8,6 +8,11 @@ from smart_money_radar.services.persistent_supervisor import PersistentSuperviso
 class SupervisorEconomicCycle(unittest.TestCase):
     def setUp(self):
         fixture.CausalEconomics.setUp(self)
+        from smart_money_radar.services.operational_controls import LocalOperationalControls
+        cap=b'offline-test-capability-0000000000'
+        controls=LocalOperationalControls(self.store,operator_capability=cap)
+        for radar in ('launch','smart_money'):
+            controls.apply(capability=cap,event_id='start-'+radar,action='START',actor='fixture',at=datetime.now(timezone.utc),radar=radar,reason='offline archive evaluation only')
 
     def test_unconfigured_scope_is_blocked(self):
         s=PersistentSupervisor(self.store)

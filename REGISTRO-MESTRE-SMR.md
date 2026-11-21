@@ -4415,3 +4415,8 @@ CM55 CI 44902473942: 1335 Python aprovados, 2 ignorados; escopo automático, rol
 ## CM57 — testes integrais supervisor econômico
 
 CM56 CI 44902676965: 1337 Python aprovados, 2 ignorados. CM57 publica testes de ciclo real offline com fixture RPC persistida, snapshot causal, reabertura e checkpoint, e rollback por falha no journal CM36 com isolamento Launch. CI pendente; não declarar homologação integral antes de prova. CM39 permanece bloqueado. Validação econômica real e live separadas. Retornar repositório a privado após validações.
+
+
+## CM58 — correção da configuração offline
+
+CI CM57 44904225643: 1337 aprovados, 2 falhas, 2 ignorados. Ambos os testes encontraram PAUSED. Fixture inicia radares via LocalOperationalControls, mantendo entradas pausadas e sem alterar controles de produção. Homologação CM38K/I pendente de CI e critérios integrais. CM39 bloqueado; retornar a privado após validações.

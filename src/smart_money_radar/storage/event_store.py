@@ -806,6 +806,10 @@ class SQLiteEventStore:
                         )
                 inserted = connection.total_changes - before
                 if advance_checkpoint:
+                    self._cm38_link_in_connection(connection,radar="smart_money",
+                        wallet_address=wallet_address,signature=signature,
+                        evidence_id=None,kind="wallet_transaction",operation_id=signature,
+                        commitment="confirmed",source_id="helius-wallet-rpc")
                     self._mark_processed_in_connection(connection, wallet_address, signature)
                 return inserted
 
@@ -1664,28 +1668,8 @@ class SQLiteEventStore:
         return row is not None
 
     def save_checkpoint(self, wallet_address: str, signature: str) -> None:
-        """Registra assinatura processada e atualiza o cursor mais recente conhecido."""
-        if not wallet_address.strip() or not signature.strip():
-            raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
-        with self._connection_scope() as connection:
-            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO processed_signatures (wallet_address, signature)
-                    VALUES (?, ?)
-                    """,
-                    (wallet_address, signature),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO wallet_checkpoints (wallet_address, signature)
-                    VALUES (?, ?)
-                    ON CONFLICT(wallet_address) DO UPDATE SET
-                        signature = excluded.signature,
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (wallet_address, signature),
-                )
+        """Legacy API reuses the captured-evidence checkpoint gate."""
+        self.mark_processed(wallet_address, signature)
 
 
     def integrity_check(self) -> list[str]:

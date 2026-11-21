@@ -136,7 +136,13 @@ class FinalizedLaunchBackfill:
             transaction = await self.rpc.get_finalized_transaction_async(sig)
             if transaction is None or not isinstance(transaction, dict):
                 raise LaunchBackfillGap("transação indisponível; cursor preservado")
-            signatures = transaction.get("transaction", {}).get("signatures")
+            tx_body = transaction.get("transaction")
+            meta = transaction.get("meta")
+            if not isinstance(tx_body, dict) or not isinstance(meta, dict) or "err" not in meta:
+                raise LaunchBackfillGap("transação incompleta; cursor preservado")
+            if "err" in entry and entry["err"] != meta["err"]:
+                raise LaunchBackfillGap("estado de execução divergente")
+            signatures = tx_body.get("signatures")
             if not isinstance(signatures, list) or not signatures or signatures[0] != sig:
                 raise LaunchBackfillGap("assinatura divergente na transação")
             if transaction.get("slot") != entry["slot"]:

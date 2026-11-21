@@ -97,6 +97,7 @@ def _event(
         "raw_sha256_conflict" in reasons or
         "observation_after_publication" in reasons or
         "source_identity_conflict" in reasons or
+        "duplicate_identity_conflict" in reasons or
         "slot_regression" in reasons
     ) else "UNKNOWN" if (snapshot.evidence_status == "UNKNOWN"
                          or "raw_hash_unanchored" in reasons) else "LOCALLY_CONSISTENT"
@@ -157,6 +158,8 @@ def launch_events_from_archive(
         reasons: list[str] = []
         if match is None:
             reasons.append("source_identity_conflict")
+        if row.get("pool_identity_conflict") is True:
+            reasons.append("duplicate_identity_conflict")
         # Archived_at is a local ingest time, never a source timestamp.
         if event_key in events:
             continue

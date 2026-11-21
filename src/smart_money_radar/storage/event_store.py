@@ -428,6 +428,13 @@ class SQLiteEventStore:
                 ).fetchone()
             }
             archived_at = datetime.now(timezone.utc).isoformat()
+            # INSERT OR IGNORE must not conceal a damaged existing RAW row.
+            for digest, raw in frames:
+                saved = connection.execute(
+                    "SELECT payload FROM cpmm_launch_raw WHERE sha256=?", (digest,),
+                ).fetchone()
+                if saved is not None and bytes(saved[0]) != raw:
+                    raise ValueError("conflito de integridade RAW arquivado")
             for digest, raw, identities in records:
                 connection.execute(
                     "INSERT OR IGNORE INTO cpmm_launch_raw VALUES (?, ?, ?)",
@@ -510,12 +517,29 @@ class SQLiteEventStore:
         inputs = []
         candidates = {}
         records = []
+        signatures = set()
+        prior_slot = None
+        last_signature = None
         for raw in payloads:
             if not isinstance(raw, bytes):
                 raise ValueError("RAW RPC deve conter bytes")
             payload = json.loads(raw)
             if not isinstance(payload, dict):
                 raise ValueError("transação RPC inválida")
+            tx = payload.get("result")
+            transaction = tx.get("transaction") if isinstance(tx, dict) else None
+            sigs = transaction.get("signatures") if isinstance(transaction, dict) else None
+            slot = tx.get("slot") if isinstance(tx, dict) else None
+            meta = tx.get("meta") if isinstance(tx, dict) else None
+            if (not isinstance(sigs, list) or not sigs or not isinstance(sigs[0], str)
+                    or not sigs[0] or sigs[0] in signatures or sigs[0] == expected_signature
+                    or type(slot) is not int or slot < 0
+                    or (prior_slot is not None and slot < prior_slot)
+                    or not isinstance(meta, dict) or "err" not in meta):
+                raise ValueError("identidade, slot ou metadados RPC inválidos")
+            last_signature = sigs[0]
+            signatures.add(last_signature)
+            prior_slot = slot
             digest = hashlib.sha256(raw).hexdigest()
             found = detect_cpmm_pool_initializations(payload)
             frames.append((digest, raw))
@@ -530,6 +554,8 @@ class SQLiteEventStore:
                 candidates.setdefault(observation.pool, fields)
             records.append((digest, raw, identities))
 
+        if last_signature != latest_signature:
+            raise ValueError("checkpoint RPC não corresponde ao último RAW")
         with self._connection_scope() as connection:
             with connection:
                 connection.execute("BEGIN IMMEDIATE")
@@ -541,6 +567,18 @@ class SQLiteEventStore:
                     raise ValueError("checkpoint RPC alterado durante a coleta")
                 if first_sequence != (previous[1] + 1 if previous else 0):
                     raise ValueError("sequência RPC descontínua")
+                if previous is not None:
+                    anchor = connection.execute(
+                        """SELECT raw.payload, raw.sha256 FROM cpmm_launch_stream_delivery d
+                           JOIN cpmm_launch_raw raw ON raw.sha256=d.sha256
+                           WHERE d.source_id=? AND d.sequence=?""", (source_id, previous[1]),
+                    ).fetchone()
+                    if anchor is None or hashlib.sha256(bytes(anchor[0])).hexdigest() != anchor[1]:
+                        raise ValueError("checkpoint RPC sem RAW íntegro")
+                    anchor_tx = json.loads(anchor[0])["result"]
+                    if (anchor_tx["transaction"]["signatures"][0] != expected_signature
+                            or json.loads(payloads[0])["result"]["slot"] < anchor_tx["slot"]):
+                        raise ValueError("checkpoint RPC diverge do RAW ou slot anterior")
                 report = self._archive_cpmm_launches_prepared(
                     connection, inputs, frames, candidates, records,
                     source_id=source_id, first_sequence=first_sequence,
@@ -992,7 +1030,9 @@ class SQLiteEventStore:
                 return []
             rows = connection.execute(
                 """SELECT evidence.pool, evidence.identity, evidence.sha256,
-                          raw.payload, raw.archived_at
+                          raw.payload, raw.archived_at,
+                          (SELECT COUNT(DISTINCT e.identity) FROM cpmm_launch_evidence e
+                            WHERE e.pool=evidence.pool) AS identity_count
                    FROM cpmm_launch_evidence AS evidence
                    JOIN cpmm_launch_raw AS raw ON raw.sha256=evidence.sha256
                    ORDER BY raw.archived_at DESC, evidence.pool
@@ -1001,6 +1041,7 @@ class SQLiteEventStore:
         return [{
             "pool": row[0], "identity_json": row[1], "raw_sha256": row[2],
             "raw_bytes": bytes(row[3]), "archived_at": row[4],
+            "pool_identity_conflict": row[5] > 1,
         } for row in rows]
 
     def get_raw_transaction(self, wallet_address: str, signature: str) -> dict | None:

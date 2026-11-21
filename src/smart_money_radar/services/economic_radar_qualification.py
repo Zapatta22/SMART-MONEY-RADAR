@@ -6,7 +6,7 @@ positive operational, trade and prospective execution claims fail closed.
 """
 from __future__ import annotations
 from dataclasses import replace
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 from decimal import Decimal
 
 from smart_money_radar.services.market_opportunity_bridge import classify_with_market_evidence
@@ -15,6 +15,10 @@ from smart_money_radar.services.wallet_consensus import WalletConsensusReport
 from smart_money_radar.services.wallet_discovery import WalletDiscoveryPolicy,discover_wallets
 from smart_money_radar.services.rpc_observation_journal import RpcObservationJournal
 from smart_money_radar.storage.event_store import SQLiteEventStore
+from smart_money_radar.services.cm38j_metric_provenance import (
+    describe_metric, qualify_metric_set, SMART_MONEY_INDICATORS,
+)
+from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
 
 def _cutoff(value):
     if not isinstance(value,datetime) or value.utcoffset() is None:
@@ -59,7 +63,15 @@ def qualify_launch_at(store,*,signature,base:OpportunityEvidence,consensus:Walle
     if safety is None: reasons.add("mint_freeze_token2022_safety_missing")
     if liquidity is None: reasons.add("liquidity_reserves_unverified")
     if not swaps: reasons.add("volume_economic_reconciliation_missing")
+    receipt_bundle=launch_metric_receipts(token_mint=base.token_mint,
+        pool=base.pool, quote_mint=quote_mint, at=point,
+        strategy="immediate", safety=safety, liquidity=liquidity,
+        swaps=tuple(swaps), min_liquidity_quote=min_liquidity_quote,
+        max_concentration_fraction=max_concentration_fraction)
     return {"radar":"launch","signature":signature,"cutoff":point.isoformat(),
+            "economic_receipts":receipt_bundle["metrics"],
+            "economic_receipt_audit":receipt_bundle["metric_audit"],
+            "estimated_impact_fraction":receipt_bundle["estimated_impact_fraction"],
             "pool":base.pool,"token_mint":base.token_mint,
             "classification":audit.classification,
             "safety":audit.safety,"volume":audit.volume,
@@ -119,7 +131,16 @@ def qualify_smart_money_at(store,*,as_of,policy:WalletDiscoveryPolicy=WalletDisc
             reasons.update(("realized_pnl_unverified","fees_and_costs_unverified",
                             "drawdown_unverified","wallet_owner_independence_unverified",
                             "historical_coverage_unknown"))
-            profile.update({"rpc_linked_operations":linked,
+            economic_receipts=[describe_metric(name=name,value=None,
+                start=point-timedelta(days=30),end=point,available_at=point,
+                decision_at=point,quality="UNKNOWN",
+                unavailable_reason="economic_cost_basis_or_attestation_missing",
+                radar="smart_money",method="CM35_DISCOVERY_WITH_CM38_RAW_LINK_AUDIT")
+                for name in SMART_MONEY_INDICATORS]
+            profile.update({"economic_receipts":economic_receipts,
+                            "economic_receipt_audit":qualify_metric_set(
+                                radar="smart_money",metrics=economic_receipts),
+                            "rpc_linked_operations":linked,
                             "rpc_unlinked_operations":missing,
                             "rpc_conflicted_operations":conflicted,
                             "original_rpc_evidence_ids":tuple(sorted(set(ids))),

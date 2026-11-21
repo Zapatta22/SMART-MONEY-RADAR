@@ -8,6 +8,8 @@ on:
       - "tests/**"
       - "tools/benchmark_geyser_unsequenced_audit.py"
       - "tools/benchmark_cm36_supervisor.py"
+      - "tools/*android*.sh"
+      - "tools/prepare_smr_eval_db.py"
       - "pyproject.toml"
       - ".github/workflows/smr-tests.yml"
   pull_request:
@@ -41,3 +43,19 @@ jobs:
             echo "CM36_BENCHMARK_SAMPLE $sample/3 (fresh process and database)"
             PYTHONPATH=src python tools/benchmark_cm36_supervisor.py
           done
+
+  python314-evaluation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install project dependencies on Python 3.14
+        run: python -m pip install -e .
+      - name: Verify compatible dashboard and Android installer paths
+        run: |
+          bash -n tools/install_smr_android_eval.sh tools/run_smr_dashboard_android.sh
+          PYTHONPATH=src python -m unittest discover -s tests -p 'test_cm37*.py' -v
+          PYTHONPATH=src python -m unittest discover -s tests -p 'test_dashboard_android_launcher.py' -v
+          PYTHONPATH=src python -m unittest discover -s tests -p 'test_android_eval_installer.py' -v

@@ -10,7 +10,7 @@ import time
 from datetime import datetime,timezone
 from pathlib import Path
 from smart_money_radar.storage.event_store import SQLiteEventStore
-from smart_money_radar.services.persistent_supervisor import PersistentSupervisor,SupervisorPolicy
+from smart_money_radar.services.persistent_supervisor import PersistentSupervisor,SupervisorPolicy,read_supervisor_status
 from smart_money_radar.services.operational_controls import LocalOperationalControls
 
 def main():
@@ -26,10 +26,21 @@ def main():
         supervisor.acquire()
         def size():return sum(p.stat().st_size for p in Path(d).glob("smr.sqlite*"))
         before=size();wall=time.perf_counter();cpu=time.process_time()
+        latencies=[]
         for _ in range(100):
-            supervisor.cycle();clock[0]+=1
+            started=time.perf_counter()
+            supervisor.cycle()
+            latencies.append(time.perf_counter()-started)
+            clock[0]+=1
         supervisor.stop()
-        metrics={"scope":"EMPTY_ARCHIVE_OFFLINE","cycles":100,"radar_cycles":200,
+        status=read_supervisor_status(store,now=clock[0])
+        actual={r:t["cycles"] for r,t in status["radars"].items()}
+        if actual!={"launch":100,"smart_money":100} or status["status"]!="STOPPED":
+            raise RuntimeError("supervisor benchmark did not complete every radar cycle")
+        metrics={"scope":"EMPTY_ARCHIVE_OFFLINE","cycles":100,"radar_cycles":sum(actual.values()),"cycles_by_radar":actual,
+            "cycle_mean_ms":1000*sum(latencies)/len(latencies),
+            "cycle_p95_ms":1000*sorted(latencies)[94],
+            "cycle_max_ms":1000*max(latencies),
             "wall_seconds":time.perf_counter()-wall,"cpu_seconds":time.process_time()-cpu,
             "process_peak_rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             "storage_before_bytes":before,"storage_after_bytes":size(),

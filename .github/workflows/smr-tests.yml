@@ -7,6 +7,7 @@ on:
       - "src/**"
       - "tests/**"
       - "tools/benchmark_geyser_unsequenced_audit.py"
+      - "tools/benchmark_cm36_supervisor.py"
       - "pyproject.toml"
       - ".github/workflows/smr-tests.yml"
   pull_request:
@@ -34,3 +35,5 @@ jobs:
         run: PYTHONPATH=src python -m unittest discover -s tests -v
       - name: Compile source and tests
         run: python -m compileall -q src tests
+      - name: Benchmark offline CM36 supervisor
+        run: PYTHONPATH=src python tools/benchmark_cm36_supervisor.py

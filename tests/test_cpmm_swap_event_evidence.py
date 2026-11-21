@@ -10,7 +10,13 @@ from datetime import datetime,timezone
 from pathlib import Path
 
 from smart_money_radar.services.cpmm_swap_event_evidence import (
-    decode_cpmm_swap_event, reconcile_observed_swap_event,
+    _base58, decode_cpmm_swap_event, reconcile_observed_swap_event,
+)
+from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+from smart_money_radar.data_sources.raydium_cpmm_decoder import RAYDIUM_CPMM_PROGRAM_ID
+from smart_money_radar.data_sources.solana_token_transfer_decoder import SPL_TOKEN_PROGRAM_ID
+from smart_money_radar.services.launch_cpmm_historical_reconciliation import (
+    reconcile_launch_historical_swap,
 )
 
 ROOT=Path(__file__).resolve().parents[1]/"data/evidence/mainnet/2026-11-20"
@@ -120,6 +126,27 @@ class RealCpmmSwapEventTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"sem início"):
             self.modified(remove_begin)
 
+    def test_swap_event_from_nested_program_is_not_cpmm_evidence(self):
+        def move_into_inner_invocation(tx):
+            logs = tx["result"]["meta"]["logMessages"]
+            event = "Program data: " + self.event_encoded
+            position = logs.index(event)
+            invocation = f"Program {SPL_TOKEN_PROGRAM_ID} invoke [2]"
+            logs.pop(position)
+            logs.insert(logs.index(invocation, position) + 1, event)
+
+        with self.assertRaisesRegex(ValueError, "único"):
+            self.modified(move_into_inner_invocation)
+
+    def test_failed_cpmm_log_rejects_event_even_with_successful_transaction_metadata(self):
+        def mark_swap_failed(tx):
+            logs = tx["result"]["meta"]["logMessages"]
+            success = f"Program {RAYDIUM_CPMM_PROGRAM_ID} success"
+            logs[logs.index(success)] = f"Program {RAYDIUM_CPMM_PROGRAM_ID} failed: fixture error"
+
+        with self.assertRaisesRegex(ValueError, "sem sucesso"):
+            self.modified(mark_swap_failed)
+
     def test_wrong_pool_from_event_rejected(self):
         def bad(x):
             logs=x["result"]["meta"]["logMessages"]
@@ -151,6 +178,60 @@ class RealCpmmSwapEventTests(unittest.TestCase):
 
     def test_event_replay_is_deterministic(self):
         self.assertEqual(self.proof(),self.proof())
+
+    def test_launch_historical_reconciliation_uses_scoped_transfer_not_instruction_minimum(self):
+        swap, = decode_raydium_cpmm_swaps(self.obj)
+        mints = {swap.accounts.input_token_mint: 6, swap.accounts.output_token_mint: 9}
+        receipt = reconcile_launch_historical_swap(
+            transaction_raw=self.raw, manifest=self.manifest, cutoff=CUT, swap=swap,
+            quote_mint=swap.accounts.output_token_mint, pool_decimals=mints,
+        )
+        self.assertEqual(receipt["status"], "OBSERVED_EVENT_AND_TRANSFERS_RECONCILED_UNATTESTED")
+        self.assertEqual(receipt["side"], "SELL")
+        self.assertEqual(receipt["quote_amount_raw"], "98099917")
+        self.assertEqual(receipt["quote_amount_normalized"], "0.098099917")
+        self.assertEqual(receipt["token_amount_normalized"], "19727.477255")
+        self.assertEqual(receipt["output_transfer"]["inner_instruction_index"], 1)
+        self.assertEqual(receipt["trade_fee_raw"], "49318694")
+        self.assertEqual(receipt["creator_fee_raw"], "49075")
+        self.assertEqual(receipt["creator_fee_mint"], swap.accounts.output_token_mint)
+        self.assertFalse(receipt["historical_fee_rates_verified"])
+        self.assertFalse(receipt["quote_available_before_swap"])
+
+    def test_launch_historical_reconciliation_rejects_transfer_amount_and_decimal_conflicts(self):
+        tx = json.loads(self.raw)
+        swap, = decode_raydium_cpmm_swaps(tx)
+        mints = {swap.accounts.input_token_mint: 6, swap.accounts.output_token_mint: 9}
+        instructions = next(group["instructions"] for group in tx["result"]["meta"]["innerInstructions"]
+                            if group["index"] == swap.instruction_index)
+        instructions[1]["data"] = _base58(bytes([12]) + (98099916).to_bytes(8, "little") + bytes([9]))
+        invalid_transfer = json.dumps(tx).encode()
+        for raw, decimals, reason in (
+            (invalid_transfer, mints, "historical_event_transfer_mismatch"),
+            (self.raw, {**mints, swap.accounts.output_token_mint: 8},
+             "historical_and_prospective_mint_decimals_disagree"),
+        ):
+            with self.subTest(reason=reason):
+                manifest = {**self.manifest, "raw_sha256": hashlib.sha256(raw).hexdigest()}
+                receipt = reconcile_launch_historical_swap(
+                    transaction_raw=raw, manifest=manifest, cutoff=CUT, swap=swap,
+                    quote_mint=swap.accounts.output_token_mint, pool_decimals=decimals,
+                )
+                self.assertEqual(receipt["status"], "CONFLICTED")
+                self.assertEqual(receipt["reason"], reason)
+                self.assertNotIn("quote_amount_raw", receipt)
+
+    def test_launch_historical_reconciliation_excludes_evidence_until_cutoff(self):
+        swap, = decode_raydium_cpmm_swaps(self.obj)
+        receipt = reconcile_launch_historical_swap(
+            transaction_raw=self.raw, manifest=self.manifest,
+            cutoff=datetime(2026, 11, 20, 18, 24, tzinfo=timezone.utc),
+            swap=swap, quote_mint=swap.accounts.output_token_mint,
+            pool_decimals={swap.accounts.input_token_mint: 6, swap.accounts.output_token_mint: 9},
+        )
+        self.assertEqual(receipt["status"], "UNAVAILABLE")
+        self.assertNotIn("signature", receipt)
+        self.assertNotIn("event_raw_sha256", receipt)
 
 
 if __name__=="__main__":

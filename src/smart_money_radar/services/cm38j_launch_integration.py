@@ -29,6 +29,9 @@ from smart_money_radar.services.market_volume_audit import audit_swap_volume
 from smart_money_radar.services.cm38j_metric_provenance import (
     describe_metric, qualify_metric_set,
 )
+from smart_money_radar.services.launch_cpmm_historical_reconciliation import (
+    reconcile_launch_historical_swap,
+)
 
 _MAX_RESERVE_AGE = timedelta(minutes=5)
 CPMM_LOCAL_LIQUIDITY_BLOCK = "cpmm_local_quote_reserve_below_minimum"
@@ -305,13 +308,14 @@ def _resolve_launch_accounts(history, capture_id, original_raw, original_manifes
         if capture is None:
             return result
         obs = capture.observation
-        matches = [x.accounts for x in decode_raydium_cpmm_swaps(json.loads(original_raw))
+        matches = [x for x in decode_raydium_cpmm_swaps(json.loads(original_raw))
                    if x.accounts.pool_state == pool]
-        if (obs.pool != pool or len(matches) != 1 or token_mint == quote_mint
-                or {matches[0].input_token_mint, matches[0].output_token_mint}
-                   != {token_mint, quote_mint}):
+        if obs.pool != pool or len(matches) != 1 or token_mint == quote_mint:
             raise ValueError("account scope conflict")
-        input_is_quote = matches[0].input_token_mint == quote_mint
+        swap = matches[0]
+        if {swap.accounts.input_token_mint, swap.accounts.output_token_mint} != {token_mint, quote_mint}:
+            raise ValueError("account mint scope conflict")
+        input_is_quote = swap.accounts.input_token_mint == quote_mint
         result.update(status="LOCAL_PROSPECTIVE_BYTES_LINKED",
                       capture_id=capture.capture_id, slot=obs.slot,
                       source_id=obs.source_id, available_at=obs.available_at.isoformat(),
@@ -347,6 +351,10 @@ def _resolve_launch_accounts(history, capture_id, original_raw, original_manifes
         if check["reconciliation"] == "SAME_SLOT_CONFLICT":
             result["status"] = "CONFLICTED"
             return result
+        result["historical_swap_reconciliation"] = reconcile_launch_historical_swap(
+            transaction_raw=original_raw, manifest=original_manifest, cutoff=cutoff,
+            swap=swap, quote_mint=quote_mint, pool_decimals=decimals,
+        )
         if integer_scenarios:
             config = decode_amm_config(base64.b64decode(accounts[1]["data"][0], validate=True))
             reserves = {

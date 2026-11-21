@@ -16,14 +16,17 @@ from hashlib import sha256
 from struct import unpack_from
 import base64
 import json
+import re
 
 from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
 from smart_money_radar.data_sources.raydium_cpmm_decoder import RAYDIUM_CPMM_PROGRAM_ID, RaydiumCpmmSwapBaseInput
-from smart_money_radar.services.historical_cpmm_state import reconstruct_tx_vaults
+from smart_money_radar.services.historical_cpmm_state import HistoricalCpmmState, reconstruct_tx_vaults
 
 _EVENT_DISCRIMINATOR = sha256(b"event:SwapEvent").digest()[:8]
 _EVENT_LENGTH = 170
 _ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+_INVOKE_LOG = re.compile(r"Program (\w+) invoke \[([0-9]+)\]")
+_END_LOG = re.compile(r"Program (\w+) (success|failed: .+)")
 
 
 def _base58(raw: bytes) -> str:
@@ -74,6 +77,7 @@ class ObservedSwapEconomicProof:
     quote_available_before_swap: bool = False
     executable_quote_proven: bool = False
     replay_eligible: bool = False
+    transaction_state: HistoricalCpmmState | None = None
 
 
 def decode_cpmm_swap_event(raw: bytes) -> CpmmSwapEvent:
@@ -139,23 +143,33 @@ def reconcile_observed_swap_event(
     logs=tx["meta"].get("logMessages")
     if not isinstance(logs,list):
         raise ValueError("logs SwapEvent ausentes")
-    # Match logs to the actual CPMM invocation; a free-floating Program data
-    # line is not accepted as evidence.
-    invoke=f"Program {RAYDIUM_CPMM_PROGRAM_ID} invoke [1]"
-    end=f"Program {RAYDIUM_CPMM_PROGRAM_ID} success"
-    active=False
+    # Program data belongs to the innermost active invocation, including CPI.
+    frames=[]
+    cpmm_invocations=0
     candidates=[]
     for line in logs:
-        if line==invoke:
-            if active:
-                raise ValueError("invocação CPMM aninhada ambígua")
-            active=True
-        elif line==end:
-            if not active:
-                raise ValueError("fim CPMM sem início")
-            active=False
+        if not isinstance(line,str):
+            raise ValueError("linha de log RPC inválida")
+        invoke=_INVOKE_LOG.fullmatch(line)
+        end=_END_LOG.fullmatch(line)
+        if invoke:
+            program,depth=invoke.groups()
+            if int(depth)!=len(frames)+1:
+                raise ValueError("invocação CPI sem início correspondente")
+            if program==RAYDIUM_CPMM_PROGRAM_ID:
+                if frames:
+                    raise ValueError("invocação CPMM aninhada ambígua")
+                cpmm_invocations+=1
+            frames.append(program)
+        elif end:
+            program,outcome=end.groups()
+            if not frames or program!=frames[-1]:
+                raise ValueError("fim de invocação sem início correspondente")
+            if program==RAYDIUM_CPMM_PROGRAM_ID and outcome!="success":
+                raise ValueError("invocação CPMM sem sucesso")
+            frames.pop()
         elif line.startswith("Program data: "):
-            if not active:
+            if frames!=[RAYDIUM_CPMM_PROGRAM_ID]:
                 continue
             value=line[len("Program data: "):]
             try:
@@ -164,7 +178,7 @@ def reconcile_observed_swap_event(
                 raise ValueError("evento RPC base64 adulterado") from exc
             if encoded[:8]==_EVENT_DISCRIMINATOR:
                 candidates.append(encoded)
-    if active or len(candidates)!=1:
+    if frames or cpmm_invocations!=1 or len(candidates)!=1:
         raise ValueError("SwapEvent único e ordenado não demonstrado")
     event_bytes=candidates[0]
     ev=decode_cpmm_swap_event(event_bytes)
@@ -175,6 +189,7 @@ def reconcile_observed_swap_event(
            s.accounts.input_token_mint==ev.input_mint==state.input_vault.mint and
            s.accounts.output_token_mint==ev.output_mint==state.output_vault.mint and
            s.instruction_index==target["instruction_index"] and
+           s.inner_instruction_index is None and
            isinstance(s.instruction,RaydiumCpmmSwapBaseInput)]
     if len(match)!=1 or not ev.base_input:
         raise ValueError("SwapEvent não coincide com instrução CPMM")
@@ -201,4 +216,5 @@ def reconcile_observed_swap_event(
         calculated_net_output_raw=net,
         observed_output_raw=ev.output_amount_raw,
         difference_raw=net-ev.output_amount_raw,
+        transaction_state=state,
     )

@@ -38,7 +38,9 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
                            min_liquidity_quote=Decimal("100"),
                            max_concentration_fraction=Decimal("0.4"),
                            volume_window=timedelta(minutes=5),
-                           amount_in: Decimal | None = None, rpc_store=None):
+                           amount_in: Decimal | None = None, rpc_store=None,
+                           cpmm_history=None, capture_id=None,
+                           original_transaction_raw=None, original_manifest=None):
     """Reconcile one pool and a bounded interval, never other-pool quotes.
 
     The safety/volume contracts validate RAW hashes and time. A model impact
@@ -134,6 +136,11 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
     # Resolve transaction references against original persisted RPC bytes.
     # Account/reserve snapshots require a separate account evidence contract.
     economic["rpc_archive"] = _resolve_launch_rpc(rpc_store, economic["evidence"], at)
+    economic["account_archive"] = _resolve_launch_accounts(
+        cpmm_history, capture_id, original_transaction_raw, original_manifest,
+        pool, token_mint, quote_mint, at)
+    if economic["account_archive"]["status"] == "CONFLICTED":
+        economic["safety_blocks"] = sorted(set(economic["safety_blocks"] + ["cpmm_account_archive_conflict"]))
     economic["sha256"] = sha256(json.dumps(economic, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     return {
         "economic_qualification": economic,
@@ -149,7 +156,7 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
         "reserve_evidence_ids": tuple(safety_audit.evidence_ids),
         "volume_evidence_ids": tuple(volume_audit.evidence_ids),
         "volume_risk_flags": tuple(volume_audit.risk_flags),
-        "safety_blocks": tuple(safety_audit.mandatory_blocks),
+        "safety_blocks": tuple(economic["safety_blocks"]),
         "estimated_output": str(estimate.estimated_output) if estimate else None,
         "estimated_impact_fraction": str(estimate.price_impact_fraction)
           if estimate else None,
@@ -196,3 +203,39 @@ def _resolve_launch_rpc(store, links, cutoff):
             result.append({"evidence_id": link["evidence_id"], "status": status})
     return {"status": "CONFLICTED" if any(x["status"] == "CONFLICTED" for x in result) else "UNKNOWN",
             "links": result}
+
+
+def _resolve_launch_accounts(history, capture_id, original_raw, original_manifest,
+                             pool, token_mint, quote_mint, cutoff):
+    """Expose decoded raw reserves only as local point-in-time observations."""
+    result = {"status": "UNKNOWN", "independently_authenticated": False,
+              "historical_pre_swap_proven": False, "operational_authorized": False}
+    if history is None or capture_id is None:
+        return result
+    try:
+        from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+        capture = history.reconstruct_capture(
+            capture_id, original_transaction_raw=original_raw,
+            original_manifest=original_manifest, cutoff=cutoff)
+        if capture is None:
+            return result
+        obs = capture.observation
+        matches = [x.accounts for x in decode_raydium_cpmm_swaps(json.loads(original_raw))
+                   if x.accounts.pool_state == pool]
+        if (obs.pool != pool or len(matches) != 1 or token_mint == quote_mint
+                or {matches[0].input_token_mint, matches[0].output_token_mint}
+                   != {token_mint, quote_mint}):
+            raise ValueError("account scope conflict")
+        input_is_quote = matches[0].input_token_mint == quote_mint
+        result.update(status="LOCAL_PROSPECTIVE_BYTES_LINKED",
+                      capture_id=capture.capture_id, slot=obs.slot,
+                      source_id=obs.source_id, available_at=obs.available_at.isoformat(),
+                      request_sha256=obs.request_sha256, response_sha256=obs.response_sha256,
+                      account_sha256=list(obs.account_sha256),
+                      quote_reserve_raw=str(obs.effective_input_raw if input_is_quote else obs.effective_output_raw),
+                      token_reserve_raw=str(obs.effective_output_raw if input_is_quote else obs.effective_input_raw),
+                      trade_fee_rate=obs.declared_trade_fee_rate,
+                      creator_fee_rate=obs.declared_creator_fee_rate)
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
+        result["status"] = "CONFLICTED"
+    return result

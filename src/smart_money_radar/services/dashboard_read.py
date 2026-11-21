@@ -12,6 +12,7 @@ from smart_money_radar.services.radar_intelligence import read_intelligence_repo
 from smart_money_radar.services.synthetic_paper_ledger import read_synthetic_paper, paper_preflight
 from smart_money_radar.services.synthetic_capital import read_capital_accounts
 from smart_money_radar.services.operational_controls import read_operational_status
+from smart_money_radar.services.wallet_discovery import read_wallet_snapshots
 
 
 class DashboardReadService:
@@ -77,6 +78,7 @@ class DashboardReadService:
             "synthetic_paper": read_synthetic_paper(self._event_store),
             "capital_accounts": read_capital_accounts(self._event_store),
             "operational_controls": read_operational_status(self._event_store),
+            "wallet_discovery": read_wallet_snapshots(self._event_store,limit=1),
             "paper_preflight": {radar: [paper_preflight(d,kind="HISTORICAL_REPLAY")
                 for d in decisions] for radar,decisions in intelligence.items()},
             # Separate radar channels are observational until independently

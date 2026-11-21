@@ -78,6 +78,7 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
     market_result=None
     volume_result=None
     archived_market=None
+    qualified_consensus=None
     risk_reasons=[]
     risk_status="UNKNOWN"
     market=market or MarketInputs()
@@ -118,6 +119,15 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
         else:
             if set((event.get("input_mint"),event.get("output_mint")))!={scope.token_mint,scope.quote_mint}:
                 raise ValueError("smart money token/pool scope mismatch")
+            if isinstance(store,SQLiteEventStore) and event.get("program"):
+                from smart_money_radar.services.wallet_discovery import WalletDiscoveryPolicy,qualified_consensus_at
+                qualified_consensus=qualified_consensus_at(store,as_of=point,
+                    policy=WalletDiscoveryPolicy(quote_mints=(scope.quote_mint,),manual_wallets=scope.wallets),
+                    program=event["program"],pool=event["pool"],base_mint=scope.token_mint,
+                    quote_mint=scope.quote_mint,window=scope.window,
+                    max_publication_delay=scope.max_publication_delay,min_confidence=scope.min_confidence)
+                reasons.update(qualified_consensus["consensus"]["reasons"])
+                reasons.add("manual_consensus_observational_only")
             if not event.get("program") or not scope.wallets:
                 reasons.add("explicit_consensus_scope_missing")
             elif event.get("wallet_address") not in scope.wallets:
@@ -178,6 +188,7 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
         "market":asdict(market_result) if market_result else None,
         "volume":asdict(volume_result) if volume_result else None,
         "archived_market":asdict(archived_market) if archived_market else None,
+        "qualified_consensus":qualified_consensus,
         "paper_modes":{"immediate":"BLOCKED","confirmed":"BLOCKED"},
         "operational_authorized":False,
     }

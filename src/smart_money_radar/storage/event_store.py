@@ -358,6 +358,12 @@ class SQLiteEventStore:
                     payload TEXT NOT NULL, payload_sha TEXT NOT NULL,
                     previous_sha TEXT NOT NULL, chain_sha TEXT NOT NULL)""")
 
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm35_wallet_profiles (
+                    snapshot_id TEXT PRIMARY KEY, cutoff TEXT NOT NULL, policy_sha TEXT NOT NULL,
+                    payload TEXT NOT NULL, payload_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE INDEX IF NOT EXISTS idx_cm35_wallet_cutoff
+                    ON cm35_wallet_profiles(cutoff)""")
+
     def archive_cpmm_launches(
         self, payloads: list[bytes], *,
         source_id: str | None = None, first_sequence: int | None = None,
@@ -947,6 +953,30 @@ class SQLiteEventStore:
             cursor = connection.execute(query + " ORDER BY receipt_id", params)
             columns = tuple(item[0] for item in cursor.description)
             return [dict(zip(columns, row)) for row in cursor]
+
+    def list_wallet_discovery_receipts(self, *, limit: int = 5000) -> list[dict]:
+        """Bounded raw-linked receipt snapshot, not a whole-chain wallet scan.
+
+        Return first-publication receipts in stable receipt order. Caller must
+        preserve UNKNOWN coverage and must not evaluate a truncated snapshot.
+        """
+        if type(limit) is not int or not 1 <= limit <= 10001:
+            raise ValueError("discovery limit outside allowed bounds")
+        with self._connection_scope() as connection:
+            rows=connection.execute("""
+                SELECT a.operation_id,a.wallet_address,s.signature,a.program_id,a.pool_address,
+                       a.input_mint,a.output_mint,a.input_amount,a.output_amount,a.side,a.confidence,
+                       a.occurred_at,a.available_at,o.payload_json,o.slot,o.observed_at,o.chain,
+                       o.parse_status,s.wallet_address
+                FROM swap_replay_archive a
+                LEFT JOIN swap_observations s ON s.operation_id=a.operation_id
+                LEFT JOIN observed_transactions o ON o.wallet_address=a.wallet_address AND o.signature=s.signature
+                ORDER BY a.receipt_id LIMIT ?
+            """,(limit,)).fetchall()
+        names=("operation_id","wallet","signature","program","pool","input_mint","output_mint",
+               "input_amount","output_amount","side","confidence","occurred_at","available_at",
+               "payload_json","slot","observed_at","chain","parse_status","observation_wallet")
+        return [dict(zip(names,r)) for r in rows]
 
     def list_wallet_signal_receipts(
         self, *, wallet: str, program: str, base_mint: str, quote_mint: str, pool: str,

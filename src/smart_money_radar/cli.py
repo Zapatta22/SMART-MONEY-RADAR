@@ -9,7 +9,9 @@ import os
 import signal
 import sqlite3
 from collections.abc import Sequence
+from contextlib import ExitStack
 from dataclasses import asdict
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from smart_money_radar.data_sources.helius import HeliusDataSource
@@ -17,6 +19,16 @@ from smart_money_radar.domain.models import Wallet
 from smart_money_radar.services.wallet_monitor import WalletMonitor
 from smart_money_radar.settings import HeliusSettings, SettingsError
 from smart_money_radar.storage.event_store import SQLiteEventStore
+
+
+def _positive_decimal(text: str) -> Decimal:
+    try:
+        amount = Decimal(text)
+    except InvalidOperation:
+        raise argparse.ArgumentTypeError("informe um valor decimal positivo e finito") from None
+    if not amount.is_finite() or amount <= 0:
+        raise argparse.ArgumentTypeError("informe um valor decimal positivo e finito")
+    return amount
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -107,6 +119,12 @@ def _parser() -> argparse.ArgumentParser:
     supervisor.add_argument("--cycles", type=int, default=1)
     supervisor.add_argument("--reference-mint", action="append", default=[])
     supervisor.add_argument("--interval", type=float, default=5.0)
+    supervisor.add_argument("--launch-history", type=Path, help="arquivo SQLite CPMM local em somente leitura")
+    supervisor.add_argument("--launch-scope", nargs=3, metavar=("POOL", "TOKEN_MINT", "QUOTE_MINT"))
+    supervisor.add_argument("--launch-buy-in", type=_positive_decimal, help="entrada de compra em unidades da cotação")
+    supervisor.add_argument("--launch-sell-in", type=_positive_decimal, help="entrada de venda em unidades do token")
+    supervisor.add_argument("--launch-buy-out", type=_positive_decimal, help="saída de compra em unidades do token")
+    supervisor.add_argument("--launch-sell-out", type=_positive_decimal, help="saída de venda em unidades da cotação")
     return parser
 
 
@@ -124,12 +142,44 @@ def main(argv: Sequence[str] | None = None) -> None:
         if args.command == "supervisor-offline":
             from threading import Event
             from smart_money_radar.services.persistent_supervisor import PersistentSupervisor, SupervisorPolicy
+            from smart_money_radar.services.radar_intelligence import IntelligenceScope, LaunchModelScenarios
             from smart_money_radar.services.wallet_discovery import WalletDiscoveryPolicy
-            store=SQLiteEventStore(args.database)
-            try:
+            from smart_money_radar.storage.cpmm_prospective_history import SQLiteCpmmProspectiveHistory
+
+            amounts = (args.launch_buy_in, args.launch_sell_in, args.launch_buy_out, args.launch_sell_out)
+            if (args.launch_history is None) != (args.launch_scope is None) or (
+                args.launch_history is None and any(amount is not None for amount in amounts)
+            ):
+                raise ValueError("informe --launch-history e --launch-scope juntos para configurar o Launch Radar")
+            with ExitStack() as resources:
+                history = None
+                scopes = None
+                if args.launch_history is not None:
+                    if args.launch_history.resolve() == args.database.resolve() or (
+                        args.database.exists() and args.launch_history.exists()
+                        and args.launch_history.samefile(args.database)
+                    ):
+                        raise ValueError("o histórico CPMM e o banco do supervisor precisam ser arquivos distintos")
+                    pool, token_mint, quote_mint = args.launch_scope
+                    if not all(value.strip() for value in args.launch_scope) or token_mint == quote_mint:
+                        raise ValueError("informe um pool e mints distintos no escopo do Launch Radar")
+                    history = SQLiteCpmmProspectiveHistory(args.launch_history, read_only=True)
+                    resources.callback(history.close)
+                    scenarios = LaunchModelScenarios(
+                        buy_amount_in=args.launch_buy_in, sell_amount_in=args.launch_sell_in,
+                        buy_amount_out=args.launch_buy_out, sell_amount_out=args.launch_sell_out,
+                    ) if any(amount is not None for amount in amounts) else None
+                    scopes = {("launch", pool): IntelligenceScope(
+                        token_mint=token_mint, quote_mint=quote_mint,
+                        min_liquidity_quote=Decimal("100"), max_concentration_fraction=Decimal("0.4"),
+                        launch_scenarios=scenarios,
+                    )}
+                store = SQLiteEventStore(args.database)
+                resources.callback(store.close)
                 runner=PersistentSupervisor(store,policy=SupervisorPolicy(interval_seconds=args.interval,
                     lease_seconds=max(30.0,args.interval*3),max_backoff_seconds=max(60.0,args.interval)),
-                    discovery_policy=WalletDiscoveryPolicy(quote_mints=tuple(args.reference_mint)))
+                    discovery_policy=WalletDiscoveryPolicy(quote_mints=tuple(args.reference_mint)),
+                    launch_history=history, scopes=scopes)
                 stop=Event()
                 previous={}
                 try:
@@ -138,8 +188,6 @@ def main(argv: Sequence[str] | None = None) -> None:
                     runner.run(stop,max_cycles=args.cycles)
                 finally:
                     for name,handler in previous.items():signal.signal(name,handler)
-            finally:
-                store.close()
             return
         if args.command == "geyser-evidence":
             _inspect_geyser_evidence(args)
@@ -249,7 +297,6 @@ def _scan_cpmm_launches(paths: Sequence[Path], *, journal: Path | None = None) -
 
 def _paper_replay(args: argparse.Namespace) -> None:
     from datetime import datetime, timezone
-    from decimal import Decimal, InvalidOperation
 
     from smart_money_radar.domain.paper_replay import PaperConfig, ReplayTick, compare_paper_reports, replay_paper
 

@@ -54,11 +54,24 @@ CREATE TABLE IF NOT EXISTS prospective_cpmm_deltas(
 class SQLiteCpmmProspectiveHistory:
     """No migrations of the existing swap observation/event SQLite database."""
 
-    def __init__(self,path:str|Path):
+    def __init__(self, path: str | Path, *, read_only: bool = False):
         self.path=str(path)
-        self.connection=sqlite3.connect(self.path)
-        self.connection.execute("PRAGMA foreign_keys=ON")
-        self.connection.executescript(_SCHEMA)
+        database = Path(path).resolve().as_uri() + "?mode=ro" if read_only else self.path
+        self.connection = sqlite3.connect(database, uri=read_only)
+        try:
+            self.connection.execute("PRAGMA foreign_keys=ON")
+            if read_only:
+                required = {"prospective_cpmm_captures", "prospective_cpmm_originals", "prospective_cpmm_deltas"}
+                tables = {row[0] for row in self.connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )}
+                if not required.issubset(tables):
+                    raise ValueError("arquivo SQLite de histórico CPMM inválido")
+            else:
+                self.connection.executescript(_SCHEMA)
+        except (sqlite3.Error, ValueError):
+            self.connection.close()
+            raise
 
     def close(self):
         self.connection.close()

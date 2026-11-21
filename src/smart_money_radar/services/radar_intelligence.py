@@ -26,6 +26,23 @@ from smart_money_radar.services.sqlite_market_history import archived_volume_at
 from smart_money_radar.storage.event_store import SQLiteEventStore
 
 @dataclass(frozen=True)
+class LaunchModelScenarios:
+    """Optional offline amounts in human units of the scoped input/output mint."""
+
+    buy_amount_in: Decimal | None = None
+    sell_amount_in: Decimal | None = None
+    buy_amount_out: Decimal | None = None
+    sell_amount_out: Decimal | None = None
+
+    def __post_init__(self):
+        for name, amount in asdict(self).items():
+            if amount is not None and (
+                not isinstance(amount, Decimal) or not amount.is_finite() or amount <= 0
+            ):
+                raise ValueError(f"{name} must be a positive finite Decimal")
+
+
+@dataclass(frozen=True)
 class IntelligenceScope:
     token_mint: str
     quote_mint: str
@@ -35,6 +52,11 @@ class IntelligenceScope:
     window: timedelta = timedelta(minutes=5)
     max_publication_delay: timedelta = timedelta(minutes=5)
     min_confidence: Decimal = Decimal("0.8")
+    launch_scenarios: LaunchModelScenarios | None = None
+
+    def __post_init__(self):
+        if self.launch_scenarios is not None and not isinstance(self.launch_scenarios, LaunchModelScenarios):
+            raise ValueError("launch_scenarios must be LaunchModelScenarios")
 
 @dataclass(frozen=True)
 class MarketInputs:
@@ -131,13 +153,21 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
                                 raise ValueError("CPMM original swap must follow launch slot")
                     else:
                         history = None
+                scenarios = scope.launch_scenarios
+                scenario_amounts = {} if scenarios is None else {
+                    "amount_in": scenarios.buy_amount_in,
+                    "sell_amount_in": scenarios.sell_amount_in,
+                    "buy_amount_out": scenarios.buy_amount_out,
+                    "sell_amount_out": scenarios.sell_amount_out,
+                }
                 launch_economics = {mode: launch_metric_receipts(
                     token_mint=scope.token_mint, pool=event["pool"], quote_mint=scope.quote_mint,
                     at=point, strategy=mode, safety=market.safety, liquidity=market.liquidity,
                     swaps=market.swaps, min_liquidity_quote=scope.min_liquidity_quote,
                     max_concentration_fraction=scope.max_concentration_fraction,
                     volume_window=scope.window, rpc_store=store,
-                    cpmm_history=history, capture_id=capture_id)["economic_qualification"]
+                    cpmm_history=history, capture_id=capture_id,
+                    **scenario_amounts)["economic_qualification"]
                     for mode in ("immediate", "confirmed")}
                 if any(x["rpc_archive"]["status"] == "CONFLICTED" or
                        x["account_archive"]["status"] == "CONFLICTED" for x in launch_economics.values()):
@@ -224,7 +254,10 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
     if radar == "launch":
         result["economic_qualification"] = launch_economics
     # Stable decision identifier: includes as_of, policy output, scope and exact evidence.
-    result["id"]="decision:"+_id([result,asdict(scope) if scope else None,
+    scope_identity = asdict(scope) if scope else None
+    if scope_identity is not None and (radar != "launch" or scope.launch_scenarios is None):
+        scope_identity.pop("launch_scenarios")
+    result["id"]="decision:"+_id([result,scope_identity,
                                    asdict(risk_limits) if risk_limits else None,
                                    asdict(risk_snapshot) if risk_snapshot else None])
     return result

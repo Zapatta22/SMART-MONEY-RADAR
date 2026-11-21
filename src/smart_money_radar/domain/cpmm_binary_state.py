@@ -45,6 +45,8 @@ class PoolStateFields:
     fund_fees_token_1: int
     creator_fees_token_0: int
     creator_fees_token_1: int
+    creator_fee_on: int | None = None
+    enable_creator_fee: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,7 @@ def decode_pool_state(raw: bytes) -> PoolStateFields:
     keys = [_pubkey(raw[8 + 32*i:8 + 32*(i+1)]) for i in range(10)]
     status = raw[329]
     decimals0, decimals1 = raw[331], raw[332]
+    creator_fee_on, enable_creator_fee = raw[389], raw[390]
     if status & ~7 or decimals0 > 18 or decimals1 > 18:
         raise ValueError("status ou decimals PoolState inválidos")
     return PoolStateFields(
@@ -76,6 +79,8 @@ def decode_pool_state(raw: bytes) -> PoolStateFields:
         fund_fees_token_1=_u64(raw, 365),
         creator_fees_token_0=_u64(raw, 397),
         creator_fees_token_1=_u64(raw, 405),
+        creator_fee_on=creator_fee_on if creator_fee_on in (0, 1, 2) else None,
+        enable_creator_fee=bool(enable_creator_fee) if enable_creator_fee in (0, 1) else None,
     )
 
 

@@ -6,11 +6,19 @@ a model estimate or a locally hashed observation to independent attestation.
 """
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, DecimalException, localcontext
 from hashlib import sha256
 import json
 
+from smart_money_radar.domain.cpmm_binary_state import decode_amm_config, decode_pool_state
+from smart_money_radar.domain.cpmm_integer_estimator import (
+    CPMMFeeRates, FEE_RATE_DENOMINATOR,
+    estimate_exact_input as estimate_integer_exact_input,
+    estimate_exact_output as estimate_integer_exact_output,
+)
+from smart_money_radar.domain.cpmm_reserve_estimator import estimate_exact_input
 from smart_money_radar.domain.cpmm_reserve_snapshot import (
     validate_snapshot, estimate_from_snapshot,
 )
@@ -41,7 +49,9 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
                            amount_in: Decimal | None = None, rpc_store=None,
                            cpmm_history=None, capture_id=None,
                            original_transaction_raw=None, original_manifest=None,
-                           sell_amount_in: Decimal | None = None):
+                           sell_amount_in: Decimal | None = None,
+                           buy_amount_out: Decimal | None = None,
+                           sell_amount_out: Decimal | None = None):
     """Reconcile one pool and a bounded interval, never other-pool quotes.
 
     The safety/volume contracts validate RAW hashes and time. A model impact
@@ -57,6 +67,10 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
     if sell_amount_in is not None and (not isinstance(sell_amount_in, Decimal)
                                       or not sell_amount_in.is_finite() or sell_amount_in <= 0):
         raise ValueError("positive finite sell estimate amount required")
+    for amount in (buy_amount_out, sell_amount_out):
+        if amount is not None and (not isinstance(amount, Decimal)
+                                   or not amount.is_finite() or amount <= 0):
+            raise ValueError("positive finite exact output amount required")
     swaps = tuple(swaps)
     if liquidity is not None and liquidity.quote_mint != quote_mint:
         raise ValueError("liquidity quote mint mismatch")
@@ -99,8 +113,11 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
         if reserve.pool != pool or reserve.available_at != liquidity.envelope.available_at.isoformat():
             raise ValueError("reserve snapshot scope/timestamp mismatch")
         if amount_in is not None:
-            estimate = estimate_from_snapshot(reserve, amount_in)
-            if estimate.is_observed_quote or estimate.pool != pool:
+            try:
+                estimate = estimate_from_snapshot(reserve, amount_in)
+            except DecimalException:
+                estimate = None
+            if estimate is not None and (estimate.is_observed_quote or estimate.pool != pool):
                 raise ValueError("model estimate cannot be observed quote")
     # Local hashes prove byte integrity only, not independent RPC authenticity.
     links = []
@@ -140,36 +157,38 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
     # Resolve transaction references against original persisted RPC bytes.
     # Account/reserve snapshots require a separate account evidence contract.
     economic["rpc_archive"] = _resolve_launch_rpc(rpc_store, economic["evidence"], at)
+    integer_scenarios = (
+        ("buy_integer_model", "EXACT_INPUT", quote_mint, token_mint, amount_in),
+        ("sell_integer_model", "EXACT_INPUT", token_mint, quote_mint, sell_amount_in),
+        ("buy_integer_exact_output_model", "EXACT_OUTPUT", quote_mint, token_mint, buy_amount_out),
+        ("sell_integer_exact_output_model", "EXACT_OUTPUT", token_mint, quote_mint, sell_amount_out),
+    )
     economic["account_archive"] = _resolve_launch_accounts(
         cpmm_history, capture_id, original_transaction_raw, original_manifest,
-        pool, token_mint, quote_mint, at)
+        pool, token_mint, quote_mint, at,
+        tuple(scenario for scenario in integer_scenarios if scenario[-1] is not None))
     archive = economic["account_archive"]
-    if amount_in is not None and archive["status"] == "LOCAL_PROSPECTIVE_BYTES_LINKED":
-        from smart_money_radar.domain.cpmm_reserve_estimator import estimate_exact_input
+    if (archive["status"] == "LOCAL_PROSPECTIVE_BYTES_LINKED"
+            and (amount_in is not None or sell_amount_in is not None)):
         # Generic trade-fee-only scenario; creator fee allocation/rounding
         # is not established by this model. Never present as total cost.
         q = Decimal(archive["quote_reserve_normalized"])
         t = Decimal(archive["token_reserve_normalized"])
         fee = Decimal(archive["trade_fee_rate"]) / Decimal(100)
-        if q > 0 and t > 0:
-            model = estimate_exact_input(pool=pool, slot=archive["slot"],
-                reserve_in=q, reserve_out=t, amount_in=amount_in, fee_bps=fee)
-            archive["buy_model"] = {
-                "input_quote": str(amount_in), "estimated_output_token": str(model.estimated_output),
-                "fee_inclusive_impact_fraction": str(model.price_impact_fraction),
-                "trade_fee_bps": str(fee), "creator_fee_included": False,
-                "kind": "GENERIC_TRADE_FEE_ONLY_NOT_EXECUTABLE",
-                "operational_authorized": False}
-    if sell_amount_in is not None and archive["status"] == "LOCAL_PROSPECTIVE_BYTES_LINKED":
-        from smart_money_radar.domain.cpmm_reserve_estimator import estimate_exact_input
-        q = Decimal(archive["quote_reserve_normalized"])
-        t = Decimal(archive["token_reserve_normalized"])
-        fee = Decimal(archive["trade_fee_rate"]) / Decimal(100)
-        if q > 0 and t > 0:
-            model = estimate_exact_input(pool=pool, slot=archive["slot"],
-                reserve_in=t, reserve_out=q, amount_in=sell_amount_in, fee_bps=fee)
-            archive["sell_model"] = {
-                "input_token": str(sell_amount_in), "estimated_output_quote": str(model.estimated_output),
+        for key, amount, x, y, unit_in, unit_out in (
+            ("buy_model", amount_in, q, t, "quote", "token"),
+            ("sell_model", sell_amount_in, t, q, "token", "quote"),
+        ):
+            if amount is None or x <= 0 or y <= 0:
+                continue
+            try:
+                model = estimate_exact_input(pool=pool, slot=archive["slot"],
+                    reserve_in=x, reserve_out=y, amount_in=amount, fee_bps=fee)
+            except (DecimalException, ValueError):
+                continue
+            archive[key] = {
+                f"input_{unit_in}": str(amount),
+                f"estimated_output_{unit_out}": str(model.estimated_output),
                 "fee_inclusive_impact_fraction": str(model.price_impact_fraction),
                 "trade_fee_bps": str(fee), "creator_fee_included": False,
                 "kind": "GENERIC_TRADE_FEE_ONLY_NOT_EXECUTABLE",
@@ -241,7 +260,7 @@ def _resolve_launch_rpc(store, links, cutoff):
 
 
 def _resolve_launch_accounts(history, capture_id, original_raw, original_manifest,
-                             pool, token_mint, quote_mint, cutoff):
+                             pool, token_mint, quote_mint, cutoff, integer_scenarios):
     """Expose decoded raw reserves only as local point-in-time observations."""
     result = {"status": "UNKNOWN", "independently_authenticated": False,
               "historical_pre_swap_proven": False, "operational_authorized": False}
@@ -289,11 +308,8 @@ def _resolve_launch_accounts(history, capture_id, original_raw, original_manifes
                       trade_fee_rate=obs.declared_trade_fee_rate,
                       creator_fee_rate=obs.declared_creator_fee_rate)
         # Decimals declared by the validated pool account, not independent mint proof.
-        import base64
-        from decimal import localcontext
-        from smart_money_radar.domain.cpmm_binary_state import decode_pool_state
-        state = decode_pool_state(base64.b64decode(
-            json.loads(capture.response_raw)["result"]["value"][0]["data"][0], validate=True))
+        accounts = json.loads(capture.response_raw)["result"]["value"]
+        state = decode_pool_state(base64.b64decode(accounts[0]["data"][0], validate=True))
         decimals = {state.token_0_mint: state.mint_0_decimals,
                     state.token_1_mint: state.mint_1_decimals}
         if set(decimals) != {token_mint, quote_mint}:
@@ -308,7 +324,99 @@ def _resolve_launch_accounts(history, capture_id, original_raw, original_manifes
                           estimated_spot_quote_per_token=str(quote/token) if token>0 and quote>0 else None,
                           estimated_pool_value_quote=str(quote*2) if token>0 and quote>0 else None,
                           normalized_values_status="LOCAL_ESTIMATE_NOT_EXECUTABLE")
+        if integer_scenarios:
+            config = decode_amm_config(base64.b64decode(accounts[1]["data"][0], validate=True))
+            reserves = {
+                token_mint: int(result["token_reserve_raw"]),
+                quote_mint: int(result["quote_reserve_raw"]),
+            }
+            for key, mode, input_mint, output_mint, amount in integer_scenarios:
+                result[key] = _estimate_integer_scenario(
+                    mode, input_mint, output_mint, amount, decimals, reserves, state, config,
+                )
 
     except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
         result["status"] = "CONFLICTED"
+    return result
+
+
+def _raw_amount(amount: Decimal, decimals: int) -> int:
+    if not 0 <= amount.adjusted() + decimals <= 19:
+        raise ValueError("scenario amount must fit in positive raw token units")
+    sign, digits, exponent = amount.as_tuple()
+    scaled = Decimal((sign, digits, exponent + decimals))
+    integral = int(scaled)
+    if integral != scaled or integral > (1 << 64) - 1:
+        raise ValueError("scenario amount must be exactly representable as raw u64")
+    return integral
+
+
+def _estimate_integer_scenario(mode, input_mint, output_mint, amount, decimals,
+                               reserves, state, config):
+    result = {
+        "status": "UNAVAILABLE",
+        "kind": "RAYDIUM_CPMM_INTEGER_NOT_EXECUTABLE",
+        "mode": mode,
+        "input_mint": input_mint,
+        "output_mint": output_mint,
+        "operational_authorized": False,
+    }
+    if state.creator_fee_on is None or state.enable_creator_fee is None:
+        result["reason"] = "creator_fee_policy_unavailable"
+        return result
+    amount_mint = input_mint if mode == "EXACT_INPUT" else output_mint
+    try:
+        amount_raw = _raw_amount(amount, decimals[amount_mint])
+    except ValueError:
+        result["reason"] = "scenario_amount_not_positive_raw_u64"
+        return result
+
+    creator_fee_on_input = (
+        state.creator_fee_on == 0
+        or state.creator_fee_on == 1 and input_mint == state.token_0_mint
+        or state.creator_fee_on == 2 and input_mint == state.token_1_mint
+    )
+    try:
+        fees = CPMMFeeRates(
+            trade_fee_rate=config.trade_fee_rate,
+            creator_fee_rate=config.creator_fee_rate if state.enable_creator_fee else 0,
+            protocol_fee_rate=config.protocol_fee_rate,
+            fund_fee_rate=config.fund_fee_rate,
+            creator_fee_on_input=creator_fee_on_input,
+        )
+    except ValueError:
+        result["reason"] = "invalid_cpmm_fee_rates"
+        return result
+    try:
+        if mode == "EXACT_INPUT":
+            estimate = estimate_integer_exact_input(
+                reserve_in=reserves[input_mint], reserve_out=reserves[output_mint],
+                amount_in=amount_raw, fees=fees,
+            )
+        else:
+            estimate = estimate_integer_exact_output(
+                reserve_in=reserves[input_mint], reserve_out=reserves[output_mint],
+                amount_out=amount_raw, fees=fees,
+            )
+    except ValueError:
+        result["reason"] = "scenario_outside_cpmm_curve_bounds"
+        return result
+    result.update(
+        status="MODEL_ESTIMATE",
+        fee_provenance="POOL_AND_AMM_CONFIG_LOCAL_BYTES",
+        fee_rate_denominator=FEE_RATE_DENOMINATOR,
+        trade_fee_rate=fees.trade_fee_rate,
+        creator_fee_rate=fees.creator_fee_rate,
+        protocol_fee_rate=fees.protocol_fee_rate,
+        fund_fee_rate=fees.fund_fee_rate,
+        creator_fee_enabled=state.enable_creator_fee,
+        creator_fee_mode=state.creator_fee_on,
+        creator_fee_on_input=estimate.creator_fee_on_input,
+        input_amount_raw=str(estimate.input_amount),
+        output_amount_raw=str(estimate.output_amount),
+        trade_fee_raw=str(estimate.trade_fee),
+        creator_fee_raw=str(estimate.creator_fee),
+        protocol_fee_raw=str(estimate.protocol_fee),
+        fund_fee_raw=str(estimate.fund_fee),
+    )
     return result

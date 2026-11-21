@@ -243,6 +243,10 @@ def _monitor(workspace, store, journal, worker_log, stop, duration, interval, ma
                 last_written_progress = now
             if snapshot["lease"] in ("CLOCK_CONFLICT", "CONFLICTED"):
                 detail = snapshot.get("probe_error", snapshot["lease"])
+                log("unsafe_supervisor_state", lease=snapshot["lease"],
+                    probe_error=snapshot.get("probe_error"),
+                    worker_pid=process.pid if process is not None else None,
+                    worker_exit_code=process.poll() if process is not None else None)
                 raise ValueError(f"unsafe supervisor state: {detail}")
             if process is not None and process.poll() is None and any(
                 now - last_advance[radar] >= stall_limit for radar in RADARS

@@ -41,8 +41,14 @@ def qualify_launch_at(store,*,signature,base:OpportunityEvidence,consensus:Walle
     safe_base=replace(base,source_status="CONFLICTED" if rpc["status"]=="CONFLICTED" or base.source_status=="CONFLICTED" else "UNKNOWN",
                       history_coverage="UNKNOWN",wallet_independence_verified=False,
                       liquidity_verified=False,volume_verified=False)
+    # The legacy classifier requires these two independence contracts to
+    # agree. Do not trust a caller's positive consensus claim without an
+    # independently linked owner-identity attestation.
+    safe_consensus=replace(consensus,independence_verified=False,
+                           actionable=False,
+                           reasons=tuple(sorted(set(consensus.reasons)|{"independence_not_attested"})))
     audit=classify_with_market_evidence(
-        base=safe_base,consensus=consensus,safety=safety,liquidity=liquidity,
+        base=safe_base,consensus=safe_consensus,safety=safety,liquidity=liquidity,
         swaps=tuple(swaps),quote_mint=quote_mint,
         min_liquidity_quote=min_liquidity_quote,
         max_concentration_fraction=max_concentration_fraction)

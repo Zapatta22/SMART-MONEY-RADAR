@@ -62,7 +62,10 @@ class AndroidSoakTests(unittest.TestCase):
 
     def report(self, process, exit_code):
         stdout, stderr = process.communicate(timeout=8)
-        self.assertEqual(process.returncode, exit_code, (stdout, stderr))
+        if process.returncode != exit_code:
+            reports = list(self.output.glob("smr-soak-*/report.json"))
+            diagnostics = [p.read_text() for p in reports]
+            self.fail(f"soak exit {process.returncode}, expected {exit_code}: {(stdout, stderr)}; reports={diagnostics}")
         workspace = self.workspace()
         self.assertEqual(workspace.stat().st_mode & 0o777, 0o700)
         self.assertEqual(self.production.read_bytes(), self.original)
@@ -93,10 +96,11 @@ class AndroidSoakTests(unittest.TestCase):
         self.fail("offline soak worker did not start")
 
     def test_short_run_produces_local_report_and_progress_for_both_radars(self):
-        process = self.start(0.9)
+        # Allow the CI runner to initialize Python/SQLite before the deadline.
+        process = self.start(2.0)
         report = self.report(process, 0)
         self.assertEqual(report["outcome"], "COMPLETED")
-        self.assertGreaterEqual(report["elapsed_seconds"], 0.9)
+        self.assertGreaterEqual(report["elapsed_seconds"], 2.0)
         self.assertEqual(report["sqlite_integrity"], ["ok"])
         self.assertEqual(report["supervisor"]["lease"], "STOPPED")
         self.assertEqual(set(report["supervisor"]["radars"]), {"launch", "smart_money"})

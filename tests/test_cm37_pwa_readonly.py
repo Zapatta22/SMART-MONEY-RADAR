@@ -57,3 +57,11 @@ class PwaReadOnly(unittest.TestCase):
             self.assertIn('id="equityHistory"',html)
             self.assertIn("não é taxa de trades",html)
             self.assertIn("Histórico insuficiente",html)
+
+    def test_scoped_filters_and_unavailable_state_are_present(self):
+        with urlopen(self.base+"/dashboard",timeout=5) as r:
+            html=r.read().decode()
+            for key in ("filterRadar","filterStrategy","filterSince","filterUntil","filteredPositions"):
+                self.assertIn('id="'+key+'"',html)
+            self.assertIn("não ao saldo global",html)
+            self.assertIn("Dados indisponíveis",html)

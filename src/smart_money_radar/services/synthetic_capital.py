@@ -99,8 +99,20 @@ def _load(conn,account):
         if last is not None and at<last: raise ValueError("capital chronology conflict")
         last=at
         rid=ev["run_id"]
-        if ev["type"]=="RESERVE":
-            if rid in active or rid in settled: raise ValueError("duplicate allocation")
+        if ev["type"]=="POLICY":
+            if rid!="__capital_policy__" or active:
+                raise ValueError("policy change with active reservations")
+            candidate=CapitalLimits(**{k:Decimal(v) for k,v in ev["limits"].items()})
+            config=_decode_config(ev["future_config"])
+            risk=_decode_limits(ev["future_risk"])
+            if config.max_entry_cash>config.initial_cash or risk.max_position_fraction>candidate.total_exposure:
+                raise ValueError("invalid future run policy")
+            limits=candidate
+            meta=dict(meta,future_config=ev["future_config"],future_risk=ev["future_risk"])
+            if Decimal(ev["equity"])!=latest_equity:
+                raise ValueError("policy cannot modify capital")
+        elif ev["type"]=="RESERVE":
+            if rid=="__capital_policy__" or rid in active or rid in settled: raise ValueError("duplicate allocation")
             budget=Decimal(ev["budget"])
             if budget<=0 or budget>cash: raise ValueError("invalid reserved amount")
             cash-=budget
@@ -179,6 +191,7 @@ def _snapshot(state,as_of=None):
                if e["type"]=="MARK" and point is not None and _time(e["at"]).date()==point.date()),ZERO)
     return {"account_id":meta["account_id"],"kind":KIND,"currency":meta["currency"],"allowed_radars":meta["radars"],
         "initial_capital":meta["initial"],"capital_available":str(cash),"capital_reserved":str(reserved),
+        "risk_limits":{k:str(v) for k,v in asdict(limits).items()},"future_run_config":meta.get("future_config"),"future_entry_risk":meta.get("future_risk"),
         "equity":str(equity),"peak_equity":str(peak),"drawdown":str(drawdown),
         "realized_pnl":str(realized),"unrealized_pnl":str(unrealized),"daily_realized_pnl":str(daily),
         "exposure":exposure,"positions":[{"run_id":r,"radar":v["radar"],"pool":v["pool"],
@@ -206,6 +219,40 @@ class SyntheticCapitalCoordinator:
                 if old!=(meta,_hash(meta)): raise ValueError("account conflict")
                 return
             conn.execute("INSERT INTO cm34_capital_accounts VALUES(?,?,?)",(account_id,meta,_hash(meta)))
+    def update_future_policy(self,account_id,*,event_id,limits:CapitalLimits,config:PaperConfig,risk_limits:EntryRiskLimits,at):
+        """Change future synthetic risk only; never touch principal or reserves.
+        Fully settled accounts only; historical replay stays immutable.
+        This local core is not an HTTP command or a real order adapter.
+        """
+        if self.store.read_only: raise ValueError("read-only")
+        _identity(event_id);point=_time(at)
+        if not isinstance(limits,CapitalLimits) or not isinstance(config,PaperConfig) or not isinstance(risk_limits,EntryRiskLimits):
+            raise ValueError("typed synthetic policy required")
+        if config.max_entry_cash>config.initial_cash or risk_limits.max_position_fraction>limits.total_exposure:
+            raise ValueError("inconsistent future policy")
+        with self.store._connection_scope() as conn,conn,localcontext() as ctx:
+            ctx.prec=40
+            conn.execute("BEGIN IMMEDIATE")
+            state=_load(conn,account_id)
+            meta,prior,events,prev,active,settled,reports,cash,reserved,equity,peak,dd,last,pnl=state
+            ev={"type":"POLICY","id":event_id,"run_id":"__capital_policy__","at":point.isoformat(),
+                "limits":{k:str(v) for k,v in asdict(limits).items()},
+                "future_config":json.loads(_encode(asdict(config))),
+                "future_risk":json.loads(_encode(asdict(risk_limits))),"equity":str(equity)}
+            for old in events:
+                if old["id"]==event_id:
+                    ev["equity"]=old["equity"]
+                    if ev!=old: raise ValueError("policy request id conflict")
+                    return _snapshot(state)
+            if active or reserved!=ZERO or (last is not None and point<last):
+                raise ValueError("settle all reservations before changing policy")
+            if config.initial_cash>cash or config.initial_cash>equity*limits.total_exposure:
+                raise ValueError("future allocation exceeds available capital")
+            if dd>=limits.max_drawdown:
+                raise ValueError("new drawdown limit already breached")
+            _append_event(conn,account_id,events,prev,ev)
+            return _snapshot(_load(conn,account_id),point)
+
     def reserve(self,account_id,*,event_id,run_id,radar,pool,token,wallet,strategy,config:PaperConfig,risk_limits:EntryRiskLimits,at):
         """Escrow an entire virtual subaccount, including fees, before any order."""
         if self.store.read_only: raise ValueError("read-only")
@@ -228,8 +275,10 @@ class SyntheticCapitalCoordinator:
                     ev["equity"]=old["equity"]
                     if ev!=old: raise ValueError("reservation id conflict")
                     return _snapshot(state)
-            if radar not in meta["radars"] or (last is not None and point<last):
+            if run_id=="__capital_policy__" or radar not in meta["radars"] or (last is not None and point<last):
                 raise ValueError("allocation scope/time mismatch")
+            if meta.get("future_config") is not None and (json.loads(_encode(asdict(config)))!=meta["future_config"] or json.loads(_encode(asdict(risk_limits)))!=meta["future_risk"]):
+                raise ValueError("allocation does not match current audited future policy")
             if conn.execute("SELECT 1 FROM cm33_paper_runs WHERE run_id=?",(run_id,)).fetchone():
                 raise ValueError("run already exists")
             from smart_money_radar.services.operational_controls import read_control_state

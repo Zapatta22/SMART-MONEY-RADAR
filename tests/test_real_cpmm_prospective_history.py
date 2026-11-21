@@ -327,5 +327,29 @@ class RealCpmmHistoryTests(unittest.TestCase):
             db.close()
 
 
+
+    def test_cm69_archive_only_receipts_after_restart(self):
+        from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
+        from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+        a = self.capture(0)
+        acc = next(x.accounts for x in decode_raydium_cpmm_swaps(json.loads(self.old))
+                   if x.accounts.pool_state == a.observation.pool)
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "archive.sqlite"
+            db = SQLiteCpmmProspectiveHistory(path)
+            db.append_capture(a, manifest_raw=self.bundles[0][0])
+            db.bind_original(a.capture_id, original_transaction_raw=self.old,
+                             original_manifest=self.old_manifest, cutoff=CUTOFF)
+            db.close()
+            db = SQLiteCpmmProspectiveHistory(path)
+            args = dict(pool=a.observation.pool, token_mint=acc.input_token_mint,
+                        quote_mint=acc.output_token_mint, cpmm_history=db, at=CUTOFF)
+            for mode in ("immediate", "confirmed"):
+                receipt = launch_metric_receipts(**args, strategy=mode)
+                self.assertEqual(receipt["economic_qualification"]["account_archive"]["capture_id"], a.capture_id)
+                self.assertFalse(receipt["operational_authorized"])
+            db.close()
+
+
 if __name__=="__main__":
     unittest.main()

@@ -6,7 +6,7 @@ meaning. No live trading or complete-coverage status exists in this module.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import asdict
 from datetime import datetime,timezone
 from hashlib import sha256
@@ -67,7 +67,8 @@ class SQLiteCpmmProspectiveHistory:
         return [row[0] for row in self.connection.execute("PRAGMA integrity_check")]
 
     def append_capture(self,capture:CpmmCapture,*,manifest_raw:bytes,
-                       prior_capture_id:str|None=None,coverage:str="OBSERVED")->bool:
+                       prior_capture_id:str|None=None,coverage:str="OBSERVED",
+                       _within_transaction:bool=False)->bool:
         if not isinstance(capture,CpmmCapture):
             raise TypeError("captura inválida")
         if coverage not in {"OBSERVED","PARTIAL","UNKNOWN","CONFLICT"}:
@@ -99,7 +100,7 @@ class SQLiteCpmmProspectiveHistory:
             if old!=(capture.request_raw,capture.response_raw,manifest_raw,prior_capture_id,coverage):
                 raise ValueError("conflito de captura imutável")
             return False
-        with connection:
+        with (nullcontext() if _within_transaction else connection):
             connection.execute(
                 "INSERT INTO prospective_cpmm_captures VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (capture.capture_id,capture.observation.pool,capture.observation.slot,
@@ -110,6 +111,22 @@ class SQLiteCpmmProspectiveHistory:
                  capture.request_raw,capture.response_raw,manifest_raw,
                  capture.decoder_version,prior_capture_id,coverage,"SHA256_BOUND_UNATTESTED"))
         return True
+
+    def append_capture_with_original(self, capture: CpmmCapture, *, manifest_raw: bytes,
+                                     original_transaction_raw: bytes, original_manifest: dict,
+                                     cutoff: datetime, prior_capture_id: str | None = None,
+                                     coverage: str = "OBSERVED") -> bool:
+        """Commit capture and original together, including replay of legacy captures."""
+        with self.connection:
+            self.connection.execute("BEGIN IMMEDIATE")
+            created = self.append_capture(
+                capture, manifest_raw=manifest_raw, prior_capture_id=prior_capture_id,
+                coverage=coverage, _within_transaction=True)
+            bound = self.bind_original(
+                capture.capture_id, original_transaction_raw=original_transaction_raw,
+                original_manifest=original_manifest, cutoff=cutoff,
+                _within_transaction=True)
+            return created or bound
 
     def append_delta(self,delta:CpmmHistoryDelta):
         if not isinstance(delta,CpmmHistoryDelta):raise TypeError("delta inválido")
@@ -213,7 +230,8 @@ class SQLiteCpmmProspectiveHistory:
         return capture
 
     def bind_original(self, capture_id: str, *, original_transaction_raw: bytes,
-                      original_manifest: dict, cutoff: datetime) -> bool:
+                      original_manifest: dict, cutoff: datetime,
+                      _within_transaction: bool = False) -> bool:
         """Persist validated original bytes, with immutable replay semantics."""
         capture = self.reconstruct_capture(
             capture_id, original_transaction_raw=original_transaction_raw,
@@ -228,7 +246,7 @@ class SQLiteCpmmProspectiveHistory:
         payload = (original_transaction_raw,
                    json.dumps(original_manifest, sort_keys=True, separators=(",", ":")),
                    sha256(original_transaction_raw).hexdigest())
-        with self.connection:
+        with (nullcontext() if _within_transaction else self.connection):
             self.connection.execute("INSERT OR IGNORE INTO prospective_cpmm_originals VALUES(?,?,?,?)",
                                     (capture_id, *payload))
             changed = self.connection.execute("SELECT changes()").fetchone()[0]

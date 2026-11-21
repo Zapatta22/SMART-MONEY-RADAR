@@ -89,6 +89,10 @@ def _parser() -> argparse.ArgumentParser:
     snapshot.add_argument("--pool", required=True)
     snapshot.add_argument("--slot", type=int, required=True)
     snapshot.add_argument("--block-time", type=int, required=True)
+    launch = subparsers.add_parser(
+        "launch-scan", help="identifica inicializações CPMM em transações RPC arquivadas",
+    )
+    launch.add_argument("transactions", type=Path, nargs="+")
     return parser
 
 
@@ -127,6 +131,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
             print(json.dumps(asdict(snapshot), default=str, ensure_ascii=False))
             return
+        if args.command == "launch-scan":
+            _scan_cpmm_launches(args.transactions)
+            return
         settings = HeliusSettings.from_environment()
         source = HeliusDataSource(settings)
         if args.command == "check":
@@ -138,6 +145,32 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
     except (OSError, SettingsError, RuntimeError, ValueError, sqlite3.Error) as exc:
         raise SystemExit(str(exc)) from None
+
+
+def _scan_cpmm_launches(paths: Sequence[Path]) -> None:
+    from smart_money_radar.data_sources.raydium_cpmm_launch import (
+        deduplicate_cpmm_pool_initializations,
+        detect_cpmm_pool_initializations,
+    )
+
+    detections = []
+    inputs = []
+    for path in paths:
+        raw = path.read_bytes()
+        payload = json.loads(raw)
+        if not isinstance(payload, dict):
+            raise ValueError("transação do Launch Radar precisa ser um objeto JSON")
+        found = detect_cpmm_pool_initializations(payload)
+        detections.extend(found)
+        inputs.append({
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "matched_initializations": len(found),
+        })
+    print(json.dumps({
+        "evidence_scope": "archived_rpc_payload",
+        "inputs": inputs,
+        "initializations": [asdict(item) for item in deduplicate_cpmm_pool_initializations(detections)],
+    }, ensure_ascii=False))
 
 
 def _paper_replay(args: argparse.Namespace) -> None:

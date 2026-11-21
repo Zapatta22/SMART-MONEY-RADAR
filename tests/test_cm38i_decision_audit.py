@@ -111,6 +111,39 @@ class Cm38iAudit(unittest.TestCase):
             audit_blocked_entry(self.store,"request1")
         with self.assertRaisesRegex(ValueError,"integrity conflict"):
             self.record()
+    def test_cm39_preflight_reuses_persisted_blocked_decision_without_capital_change(self):
+        from smart_money_radar.services.prospective_paper_plan import plan_prospective_paper
+        receipt=self.record()
+        result=plan_prospective_paper(self.store,account_id="virtual",radar="launch",
+            as_of=self.at+timedelta(seconds=5),source_assessment={
+                "radar":"launch","provider_authenticated":True,
+                "independently_finalized":True},
+            radar_qualification={"radar":"launch","qualified":True},
+            audited_request_id="request1")
+        self.assertEqual(result["audited_attempt_id"],receipt["attempt_id"])
+        self.assertEqual(result["original_rpc_evidence_id"],self.eid)
+        self.assertIn("persisted_opportunity_entry_remains_blocked",result["reasons"])
+        self.assertFalse(result["prospective_authorized"])
+        self.assertFalse(result["ledger_mutated"])
+        self.assertEqual(SyntheticCapitalCoordinator(self.store).snapshot("virtual"),self.before)
+        with self.assertRaises(ValueError):
+            plan_prospective_paper(self.store,account_id="virtual",radar="smart_money",
+                as_of=self.at+timedelta(seconds=5),
+                source_assessment={"radar":"smart_money"},
+                radar_qualification={"radar":"smart_money"},
+                audited_request_id="request1")
+    def test_cm39_cannot_reuse_missing_or_tampered_audit(self):
+        from smart_money_radar.services.prospective_paper_plan import plan_prospective_paper
+        def preflight():
+            return plan_prospective_paper(self.store,account_id="virtual",radar="launch",
+                as_of=self.at+timedelta(seconds=5),source_assessment={"radar":"launch"},
+                radar_qualification={"radar":"launch"},audited_request_id="request1")
+        with self.assertRaises(ValueError):preflight()
+        self.record()
+        with self.store._connection_scope() as c,c:
+            c.execute("DROP TRIGGER cm38i_immut_cm38i_risk_decisions_update")
+            c.execute("UPDATE cm38i_risk_decisions SET reasons_json='[]'")
+        with self.assertRaises(ValueError):preflight()
     def test_strategies_and_radars_are_independent(self):
         e=self.capture(radar="smart_money",source="other")
         p=self.record(request_id="s2",radar="smart_money",strategy="confirmed",evidence_id=e)

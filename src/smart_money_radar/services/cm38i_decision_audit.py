@@ -319,8 +319,16 @@ def audit_blocked_entry(store: SQLiteEventStore, request_id: str):
             raise ValueError("derived evidence provenance conflict")
         if row[1] != "BLOCKED" or row[2] != 0:
             raise ValueError("forbidden prospective execution state")
+        account_scope=conn.execute("SELECT account_id FROM cm38i_risk_decisions WHERE decision_id=?",
+                                   (row[3],)).fetchone()
+        opportunity_scope=conn.execute("SELECT strategy FROM cm38i_opportunities WHERE opportunity_id=?",
+                                       (row[4],)).fetchone()
+        if account_scope is None or opportunity_scope is None:
+            raise ValueError("orphan decision scope")
         return {"attempt_id":row[0],"decision_id":row[3],
                 "opportunity_id":row[4],"evidence_id":row[6],
+                "account_id":account_scope[0],"radar":row[7],
+                "strategy":opportunity_scope[0],
                 "status":"BLOCKED","reasons":tuple(json.loads(row[5])),
                 "virtual_ledger_mutated":False,
                 "prospective_authorized":False}

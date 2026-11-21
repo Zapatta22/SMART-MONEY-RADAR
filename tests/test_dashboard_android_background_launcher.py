@@ -81,5 +81,36 @@ class BackgroundDashboardLauncherTests(unittest.TestCase):
             self.assertEqual(tables, {"unrelated"})
 
 
+    def test_active_pid_without_http_does_not_spawn_duplicate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = Path(tmp) / "existing.sqlite"
+            database.touch()
+            state = Path(tmp) / "state"
+            state.mkdir()
+            (state / "dashboard.pid").write_text(str(os.getpid()) + chr(10))
+            fakebin = Path(tmp) / "bin"
+            fakebin.mkdir()
+            fakecurl = fakebin / "curl"
+            fakecurl.write_text("#!/bin/sh" + chr(10) + "exit 7" + chr(10))
+            fakecurl.chmod(0o700)
+            env = os.environ.copy()
+            env.update(
+                SMR_DB_PATH=str(database),
+                SMR_DASHBOARD_STATE_DIR=str(state),
+                PATH=str(fakebin) + os.pathsep + env.get("PATH", ""),
+            )
+            result = subprocess.run(
+                ["bash", str(SCRIPT)],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(result.returncode, 3, result.stderr)
+            self.assertIn("ainda ativo", result.stderr)
+            self.assertFalse((state / "dashboard.log").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

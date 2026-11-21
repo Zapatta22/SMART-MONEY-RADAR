@@ -59,6 +59,8 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertIn("data.radar_events",html)
         self.assertIn('id="radarCollectors"',html)
         self.assertIn("last_archived_event_at",html)
+        self.assertIn("offline_supervisor",html)
+        self.assertIn("Ciclos persistidos",html)
         self.assertIn("textContent",html)
 
     def test_api_serializes_archived_smart_money_without_trades(self):

@@ -136,8 +136,11 @@ def launch_events_from_archive(
             continue
         pool = row["pool"]
         source_ref = f"cpmm_launch_evidence:{pool}:{digest or 'UNKNOWN'}"
+        # JSON round-trip turns CPI path tuples into lists. Compare canonical
+        # serialized evidence rather than unequal Python container types.
         matching = [x for x in candidates if x.pool == pool
-                    and asdict(x) == identity]
+                    and json.dumps(asdict(x),sort_keys=True,separators=(",",":"))
+                    == json.dumps(identity,sort_keys=True,separators=(",",":"))]
         match = matching[0] if len(matching) == 1 else None
         sig = identity.get("signature") if match is not None else None
         slot = identity.get("slot") if match is not None else None

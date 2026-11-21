@@ -174,6 +174,13 @@ def _spawn_worker(workspace, deadline, interval, output):
 def _stop_worker(process):
     if process.poll() is not None:
         return False
+    # The worker independently observes the same deadline. Give its supervisor
+    # time to persist STOPPED and exit normally before sending SIGTERM.
+    try:
+        process.wait(timeout=1.0)
+        return False
+    except subprocess.TimeoutExpired:
+        pass
     process.terminate()
     try:
         process.wait(timeout=5)

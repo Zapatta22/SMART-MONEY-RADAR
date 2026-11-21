@@ -72,7 +72,7 @@ if [[ -L "$STATE/health.token" ]]; then
   echo "ERRO: health.token não pode ser link simbólico." >&2
   exit 2
 fi
-printf '%s\\n' "$SMR_API_TOKEN" > "$STATE/health.token"
+printf '%s\n' "$SMR_API_TOKEN" > "$STATE/health.token"
 chmod 600 "$STATE/health.token"
 
 echo

@@ -74,3 +74,55 @@ class EconomicRadarQualifiers(unittest.TestCase):
             plan_prospective_paper(self.store,account_id="virtual-launch",radar="smart_money",
                 as_of=self.at,source_assessment={"radar":"smart_money"},
                 radar_qualification={"radar":"smart_money"})
+
+    def test_linked_wallet_receipt_still_cannot_invent_pnl(self):
+        from smart_money_radar.domain.models import SwapObservation,SwapClassification,SwapEvidence,build_swap_operation_id
+        from smart_money_radar.domain.swap_bundle_builder import SwapDomainBundle
+        from smart_money_radar.services.rpc_observation_journal import RpcObservationJournal
+        from unittest.mock import patch
+        import json
+        wallet="wallet-a";signature="1"*64
+        tx={"slot":42,"transaction":{"signatures":[signature],"message":{
+            "instructions":[],"accountKeys":[wallet],"header":{"numRequiredSignatures":1}}},
+            "meta":{"err":None}}
+        raw=json.dumps({"jsonrpc":"2.0","result":tx}).encode()
+        eid=RpcObservationJournal(self.store).append(radar="smart_money",signature=signature,
+            source_id="helius-wallet-rpc",endpoint_host="public-rpc.invalid",
+            raw_payload=raw,observed_at=self.at,available_at=self.at,
+            expected_slot=42,commitment_requested="confirmed")
+        self.store.save_observation(wallet,signature,tx,[],parse_status="ok",
+                                    advance_checkpoint=False)
+        with self.store._connection_scope() as conn,conn:
+            conn.execute("""UPDATE observed_transactions SET slot=42,chain='solana',observed_at=?
+                            WHERE wallet_address=? AND signature=?""",
+                        (self.at.isoformat(),wallet,signature))
+        opid=build_swap_operation_id("solana",signature,0)
+        obs=SwapObservation(opid,"solana",wallet,signature,"quote","base",
+                            Decimal("10"),Decimal("2"),self.at,"1")
+        classification=SwapClassification(opid,"BUY",Decimal(".95"),"fixture")
+        evidence=SwapEvidence(opid,"dex",None,0,evidence=("pool_state:pool",))
+        self.store.save_swap_bundle(obs,classification,evidence)
+        self.store.mark_processed(wallet,signature,replay_bundles=(
+            SwapDomainBundle(obs,classification,evidence),),evidence_id=eid)
+        report=qualify_smart_money_at(self.store,as_of=datetime.now(timezone.utc),
+            policy=WalletDiscoveryPolicy(quote_mints=("quote",),min_transactions=2))
+        (profile,)=report["profiles"]
+        self.assertEqual(profile["rpc_linked_operations"],1)
+        self.assertEqual(profile["rpc_unlinked_operations"],0)
+        self.assertFalse(profile["qualified"])
+        self.assertIsNone(profile["realized_pnl"])
+        self.assertIsNone(profile["win_rate"])
+    def test_invalid_rpc_source_does_not_advance_wallet_checkpoint(self):
+        import json
+        from smart_money_radar.services.rpc_observation_journal import RpcObservationJournal
+        wallet="wallet-a";signature="1"*64
+        tx={"slot":42,"transaction":{"signatures":[signature],"message":{"instructions":[]}},"meta":{"err":None}}
+        raw=json.dumps({"jsonrpc":"2.0","result":tx}).encode()
+        eid=RpcObservationJournal(self.store).append(radar="smart_money",signature=signature,
+            source_id="different-untrusted-source",endpoint_host="provider.invalid",
+            raw_payload=raw,observed_at=self.at,available_at=self.at,
+            expected_slot=42,commitment_requested="confirmed")
+        self.store.save_observation(wallet,signature,tx,[],parse_status="ok",advance_checkpoint=False)
+        with self.assertRaises(ValueError):
+            self.store.mark_processed(wallet,signature,evidence_id=eid)
+        self.assertIsNone(self.store.get_checkpoint(wallet))

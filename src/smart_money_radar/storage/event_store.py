@@ -904,19 +904,19 @@ class SQLiteEventStore:
 
                 self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
                     signature=signature,evidence_id=evidence_id,kind="wallet_transaction",
-                    operation_id=signature,slot=parent[0],commitment="confirmed")
+                    operation_id=signature,slot=parent[0],commitment="confirmed",source_id="helius-wallet-rpc")
                 for opid, in connection.execute(
                     "SELECT operation_id FROM swap_observations WHERE wallet_address=? AND signature=?",
                     (wallet_address,signature)):
                     self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
                         signature=signature,evidence_id=evidence_id,kind="swap_and_classification",
-                        operation_id=opid,slot=parent[0],commitment="confirmed")
+                        operation_id=opid,slot=parent[0],commitment="confirmed",source_id="helius-wallet-rpc")
                 for opid, in connection.execute(
                     "SELECT DISTINCT operation_id FROM swap_reconciliation_attempts WHERE wallet_address=? AND signature=?",
                     (wallet_address,signature)):
                     self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
                         signature=signature,evidence_id=evidence_id,kind="economic_reconciliation",
-                        operation_id=opid,slot=parent[0],commitment="confirmed")
+                        operation_id=opid,slot=parent[0],commitment="confirmed",source_id="helius-wallet-rpc")
                 if replay_bundles:
                     available_at = datetime.now(timezone.utc).isoformat()
                     receipts = []
@@ -932,7 +932,7 @@ class SQLiteEventStore:
                         pool_address = next(iter(pools)) if len(pools) == 1 else None
                         self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
                             signature=signature,evidence_id=evidence_id,kind="replay_opportunity",
-                            operation_id=observation.operation_id,slot=parent[0],commitment="confirmed")
+                            operation_id=observation.operation_id,slot=parent[0],commitment="confirmed",source_id="helius-wallet-rpc")
                         receipts.append((
                             observation.operation_id, wallet_address, item.evidence.program_id, pool_address,
                             observation.input_mint, observation.output_mint,

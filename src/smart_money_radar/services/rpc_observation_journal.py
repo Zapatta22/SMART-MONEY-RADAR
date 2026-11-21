@@ -122,7 +122,9 @@ class RpcObservationJournal:
         if len({x.endpoint_host.casefold() for x in evidence})<2:
             reasons.add("distinct_endpoint_missing")
             if status!="CONFLICTED": status="UNKNOWN"
-        return {"radar":radar,"signature":signature,"cutoff":point.isoformat(),
+        from smart_money_radar.services.market_trust_gate import evaluate_market_trust
+        trust=evaluate_market_trust(evidence,assessment=status)
+        return {"trust":trust,"radar":radar,"signature":signature,"cutoff":point.isoformat(),
                 "status":status,"evidence_ids":ids,"reasons":sorted(reasons),
                 "historical_coverage":"UNKNOWN","operational_coverage":"UNKNOWN",
                 "provider_authenticated":False,"independently_finalized":False,

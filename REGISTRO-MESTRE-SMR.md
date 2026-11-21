@@ -4410,3 +4410,8 @@ CM54 CI 44902234771: 1333 Python aprovados, 2 ignorados; vínculo causal explíc
 ## CM56 — supervisor econômico offline
 
 CM55 CI 44902473942: 1335 Python aprovados, 2 ignorados; escopo automático, rollback causal e reabertura aprovados. CM56 conecta journal CM36 ao CM38I na transação do supervisor, com conta/notional offline explicitamente configurados e autoridade de geração; Launch independente. Sem configuração ou evidência, bloqueio. Testes iniciais publicados; fluxo completo, recuperação integrada e CI ainda pendentes. Não homologa live nem autoriza capital. Retornar repositório a privado após validações.
+
+
+## CM57 — testes integrais supervisor econômico
+
+CM56 CI 44902676965: 1337 Python aprovados, 2 ignorados. CM57 publica testes de ciclo real offline com fixture RPC persistida, snapshot causal, reabertura e checkpoint, e rollback por falha no journal CM36 com isolamento Launch. CI pendente; não declarar homologação integral antes de prova. CM39 permanece bloqueado. Validação econômica real e live separadas. Retornar repositório a privado após validações.

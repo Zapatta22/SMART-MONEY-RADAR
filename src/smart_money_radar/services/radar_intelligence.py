@@ -56,7 +56,8 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
                             scope: IntelligenceScope | None = None,
                             market: MarketInputs | None = None,
                             risk_limits: EntryRiskLimits | None = None,
-                            risk_snapshot: EntryRiskSnapshot | None = None) -> dict:
+                            risk_snapshot: EntryRiskSnapshot | None = None,
+                            cpmm_history=None) -> dict:
     """Evaluate only within the archived event's scope and availability cutoff.
 
     Market/risk arguments are explicit offline inputs, not trusted live proofs.
@@ -122,9 +123,11 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
                     at=point, strategy=mode, safety=market.safety, liquidity=market.liquidity,
                     swaps=market.swaps, min_liquidity_quote=scope.min_liquidity_quote,
                     max_concentration_fraction=scope.max_concentration_fraction,
-                    volume_window=scope.window, rpc_store=store)["economic_qualification"]
+                    volume_window=scope.window, rpc_store=store,
+                    cpmm_history=cpmm_history)["economic_qualification"]
                     for mode in ("immediate", "confirmed")}
-                if any(x["rpc_archive"]["status"] == "CONFLICTED" for x in launch_economics.values()):
+                if any(x["rpc_archive"]["status"] == "CONFLICTED" or
+                       x["account_archive"]["status"] == "CONFLICTED" for x in launch_economics.values()):
                     verdict="REJECTED"
                     reasons.add("launch_persisted_rpc_conflict")
             # A creation instruction is not a current tradable reserve or a quote.
@@ -214,7 +217,7 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
     return result
 
 def read_intelligence_reports(store, events: dict, *, scopes: dict | None = None,
-                              as_of: datetime | None = None) -> dict:
+                              as_of: datetime | None = None, cpmm_history=None) -> dict:
     """Read-only view; no inferred quote mint or wallet qualification.
 
     No configured scopes means explicit UNKNOWN decisions. Optional trusted
@@ -242,7 +245,8 @@ def read_intelligence_reports(store, events: dict, *, scopes: dict | None = None
                 if decision_at is None:
                     continue
                 report=evaluate_archived_event(event,store=store,as_of=decision_at,
-                    scope=scopes.get((radar,event["pool"])))
+                    scope=scopes.get((radar,event["pool"])),
+                    cpmm_history=cpmm_history if radar=="launch" else None)
             except (ValueError,TypeError,KeyError,ArithmeticError):
                 report={"id":"decision:invalid:"+_id(event),"event_id":event.get("id"),
                     "radar":radar,"pool":event.get("pool"),"origin":event.get("origin"),

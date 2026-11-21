@@ -4380,3 +4380,8 @@ Próxima tarefa: criar trilha econômica por operação com política de custo d
 **Estimativas CM45 sujeitas a auditoria:** CM38F 49%, CM38J 34%, CM38K 30%, CM38I 62%, CM39 24%, CM38 global 62%. Não significam produção ou trades habilitados. Launch Radar e ambas estratégias intactos. CM39 mantém zero ticks, entradas e execuções financeiras.
 
 **Próxima tarefa:** implementar vínculo per-operation da projeção FIFO a swaps e classificações existentes, fonte RPC imutável e tempo, com rejeição da classificação corrigida, contabilidade de taxas token e lançamentos parciais; ampliar testes de origem conflitante, rollback e reinício. Preservar PR111/PR113 e main; não mergear, não force-push, não executar captura real, não pedir Android, e restaurar PRIVATE após validações autorizadas.
+
+
+## CM50 — validação do adaptador persistente
+
+CM48 cb0790a: CI 44897891126, 1323 testes Python aprovados, 2 ignorados. CM49 36fd9c0: CI 44898025121, erro de identidade na fixture, não homologado. CM50 ajusta metadados da fixture legada, identifica motivo RAW explicitamente e testa reabertura. CI pendente; PnL e cobertura permanecem indisponíveis. Main e PRs 111/113 preservadas; sem merge, live ou execução financeira. Retornar repositório a privado após validações.

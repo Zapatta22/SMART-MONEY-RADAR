@@ -2,14 +2,14 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 import unittest
-from test_cm38_economic_child_links import EconomicChildEvidenceLinks as Fixture
+import test_cm38_economic_child_links as child
 from smart_money_radar.services.cm38k_persisted_fifo import persist_fifo_swap
 from smart_money_radar.services.cm38k_fifo_reconstruction import verify_fifo_receipt
 
 class PersistedEconomicFixture(unittest.TestCase):
     def setUp(self):
         # Reuse existing setup and bundle persistence, not its unrelated tests.
-        Fixture.setUp(self)
+        child.EconomicChildEvidenceLinks.setUp(self)
         self.tx["transaction"]["message"].update(
             accountKeys=[self.wallet], header={"numRequiredSignatures":1})
         self.tx["blockTime"]=int(self.at.timestamp())
@@ -19,8 +19,11 @@ class PersistedEconomicFixture(unittest.TestCase):
         self.tx["meta"].update(fee=5000,
             preTokenBalances=[balance("quote",20,1),balance("base",0,2)],
             postTokenBalances=[balance("quote",10,1),balance("base",2,2)])
-        self.eid=Fixture.capture(self,radar="smart_money",source="helius-wallet-rpc")
-        self.op,bundle=Fixture.add_swap(self)
+        self.eid=child.EconomicChildEvidenceLinks.capture(self,radar="smart_money",source="helius-wallet-rpc")
+        self.op,bundle=child.EconomicChildEvidenceLinks.add_swap(self)
+        with self.store._connection_scope() as c,c:
+            c.execute("UPDATE observed_transactions SET chain=?, observed_at=? WHERE wallet_address=? AND signature=?",
+                      ("solana",self.at.isoformat(),self.wallet,self.signature))
         self.store.mark_processed(self.wallet,self.signature,replay_bundles=(bundle,),evidence_id=self.eid)
         self.cutoff=datetime.now(timezone.utc)
 
@@ -50,3 +53,17 @@ class PersistedEconomicFixture(unittest.TestCase):
             c.execute("UPDATE swap_replay_archive SET input_amount='11' WHERE operation_id=?",(self.op,))
         with self.assertRaises(ValueError):
             self.receipt()
+
+    def test_reopen_deterministic(self):
+        first=self.receipt()
+        from smart_money_radar.storage.event_store import SQLiteEventStore
+        with self.store._connection_scope() as c:
+            path=c.execute("PRAGMA database_list").fetchone()[2]
+        self.store.close()
+        reopened=SQLiteEventStore(path)
+        try:
+            self.assertEqual(persist_fifo_swap(reopened,operation_id=self.op,as_of=self.cutoff),first)
+            with reopened._connection_scope() as c:
+                self.assertEqual(c.execute("SELECT COUNT(*) FROM cm38k_persisted_fifo").fetchone()[0],1)
+        finally:
+            reopened.close()

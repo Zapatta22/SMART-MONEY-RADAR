@@ -46,7 +46,10 @@ def _derive(conn, operation_id, cutoff):
     occurred = _time(d["occurred_at"])
     if not occurred <= available <= cutoff:
         raise ValueError("future or inverted swap timestamp")
-    if (_raw(d, cutoff)[1] or d["wallet"] != d["swap_wallet"]
+    issues = _raw(d, cutoff)[1]
+    if issues:
+        raise ValueError("RAW identity conflict: " + ",".join(issues))
+    if (d["wallet"] != d["swap_wallet"]
             or d["program"] != d["evidence_program"]
             or d["side"] != d["classified_side"]
             or d["side"] not in ("BUY", "SELL")
@@ -92,6 +95,8 @@ def _derive(conn, operation_id, cutoff):
     tx = json.loads(raw[2])["result"]
     stored = json.loads(d["payload_json"])
     if (meta["radar"] != "smart_money" or meta["signature"] != d["signature"]
+            or meta["source_id"] != "helius-wallet-rpc"
+            or meta["commitment_requested"] != "confirmed"
             or meta["slot"] != d["slot"] or meta["status"] == "CONFLICTED"
             or _time(meta["available_at"]) > available
             or tx != stored.get("result", stored)):

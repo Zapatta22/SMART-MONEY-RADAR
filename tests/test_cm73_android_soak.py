@@ -154,6 +154,15 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertIn("launch final state is not healthy", rejected["issues"])
         self.assertIn("offline soak target duration not reached", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_empty_worker_log(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "worker.log").write_text("")
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("empty offline worker log", rejected["issues"])
+
     def test_offline_evidence_gate_rejects_artifact_manifest_tampering(self):
         process = self.start(2.0)
         self.report(process, 0)

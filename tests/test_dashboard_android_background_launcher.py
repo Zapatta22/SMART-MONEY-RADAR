@@ -19,6 +19,11 @@ class BackgroundDashboardLauncherTests(unittest.TestCase):
         result = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_background_child_closes_startup_lock_descriptor(self):
+        source = SCRIPT.read_text()
+        self.assertIn('exec 9>"$STATE/startup.lock"', source)
+        self.assertIn('</dev/null 9>&- &', source)
+
     def test_missing_database_is_rejected_without_creating_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             missing = Path(tmp) / "absent.sqlite"

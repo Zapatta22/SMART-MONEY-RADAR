@@ -62,7 +62,8 @@ class AndroidSoakTests(unittest.TestCase):
         return workspace
 
     def report(self, process, exit_code):
-        # CI contention and lease fencing may outlast the short soak duration.\n        stdout, stderr = process.communicate(timeout=20)
+        # CI contention and lease fencing may outlast the short soak duration.
+        stdout, stderr = process.communicate(timeout=20)
         if process.returncode != exit_code:
             reports = list(self.output.glob("smr-soak-*/report.json"))
             diagnostics = [p.read_text() for p in reports]

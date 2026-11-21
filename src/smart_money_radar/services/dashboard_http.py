@@ -143,8 +143,15 @@ function render(data){
  const sup=data.supervisor||{},supPanel=el("supervisorStatus"),supAlerts=el("supervisorAlerts");supPanel.replaceChildren();supAlerts.replaceChildren();const supHeader=document.createElement("p");supHeader.textContent=(sup.status||"NOT_STARTED")+" · geração "+(sup.generation??"-")+" · heartbeat "+(sup.last_heartbeat||"-");supPanel.append(supHeader);
  const hist=data.supervisor_history||{},historyPanel=el("supervisorHistory");historyPanel.replaceChildren();
  const summary=document.createElement("p");
- summary.textContent="Watchdog local · integridade "+val(hist.integrity)+" · disponibilidade "+val(hist.availability)+" · dados "+val(hist.freshness)+" · expiração "+val(hist.expires_at)+" · recuperações registradas "+val(hist.restart_events);
+ summary.textContent="Watchdog local · integridade "+val(hist.integrity)+" · disponibilidade "+val(hist.availability)+" · dados "+val(hist.freshness)+" · expiração "+val(hist.expires_at)+" · expirações registradas "+val(hist.restart_events)+" · recuperações após expiração "+val(hist.recovery_count)+" · estado "+val(hist.watchdog_state);
  historyPanel.append(summary);
+ if(hist.integrity==="VERIFIED_LOCAL"){
+  for(const entry of hist.recovery_history||[]){
+   const line=document.createElement("p");
+   line.textContent="Ciclo · "+val(entry.kind)+" · "+val(entry.at)+" · geração "+val(entry.generation);
+   historyPanel.append(line);
+  }
+ }
  if(hist.integrity==="VERIFIED_LOCAL"){
   for(const entry of hist.watchdog_history||[]){
    const line=document.createElement("p");

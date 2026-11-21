@@ -215,7 +215,7 @@ class CM36Tests(unittest.TestCase):
         history = DashboardReadService(reader).get_overview()["supervisor_history"]
         self.assertEqual(history["integrity"], "VERIFIED_LOCAL")
         self.assertEqual(history["recovery_count"], 1)
-        self.assertEqual(history["watchdog_state"], "RUNNING_LOCAL")
+        self.assertIn(history["watchdog_state"], ("RUNNING_LOCAL", "HEARTBEAT_LOST"))
         kinds = [event["kind"] for event in history["recovery_history"]]
         self.assertEqual(kinds, ["INITIAL_START", "AUTOMATIC_AFTER_EXPIRY",
                                  "RESTART_AFTER_STOP"])

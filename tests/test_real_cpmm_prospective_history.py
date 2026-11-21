@@ -193,5 +193,36 @@ class RealCpmmHistoryTests(unittest.TestCase):
             db.close()
 
 
+
+    def test_cm69_reconstruct_archived_capture_and_cutoff(self):
+        a = self.capture(0)
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "evidence.sqlite"
+            db = SQLiteCpmmProspectiveHistory(path)
+            db.append_capture(a, manifest_raw=self.bundles[0][0])
+            db.close()
+            db = SQLiteCpmmProspectiveHistory(path)
+            args = dict(original_transaction_raw=self.old,
+                        original_manifest=self.old_manifest, cutoff=CUTOFF)
+            self.assertEqual(db.reconstruct_capture(a.capture_id, **args), a)
+            self.assertIsNone(db.reconstruct_capture("missing", **args))
+            args["cutoff"] = a.observation.available_at - timedelta(seconds=1)
+            with self.assertRaises(ValueError):
+                db.reconstruct_capture(a.capture_id, **args)
+            db.close()
+
+    def test_cm69_reconstruct_rejects_metadata_conflict(self):
+        a = self.capture(0)
+        with tempfile.TemporaryDirectory() as d:
+            db = SQLiteCpmmProspectiveHistory(Path(d) / "evidence.sqlite")
+            db.append_capture(a, manifest_raw=self.bundles[0][0])
+            with db.connection:
+                db.connection.execute("UPDATE prospective_cpmm_captures SET slot=slot+1")
+            with self.assertRaisesRegex(ValueError, "metadata conflict"):
+                db.reconstruct_capture(a.capture_id, original_transaction_raw=self.old,
+                                       original_manifest=self.old_manifest, cutoff=CUTOFF)
+            db.close()
+
+
 if __name__=="__main__":
     unittest.main()

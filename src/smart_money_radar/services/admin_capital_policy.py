@@ -37,7 +37,7 @@ def apply_capital_command(store,action,policy,event_id,at):
         coordinator.create(account_id=account,initial=_d(policy["initial"]),currency="USDC",
             radars=tuple(radars),limits=limits,admin_event_id=event_id,admin_at=at)
         return coordinator.snapshot(account)
-    if action!="CAPITAL_POLICY" or set(policy)!={"account_id","limits","config","entry_risk"}:
+    if action!="CAPITAL_POLICY" or set(policy) not in ({"account_id","limits","config","entry_risk"},{"account_id","limits","config","entry_risk","budgets"}):
         raise ValueError("invalid policy update")
     cfg=policy["config"]
     if not isinstance(cfg,dict) or set(cfg)!={"initial_cash","max_entry_cash","max_exposure","fee_bps","slippage_bps","stop_loss","take_profit","max_entry_deviation_bps","allow_partial_fills"}:
@@ -48,7 +48,7 @@ def apply_capital_command(store,action,policy,event_id,at):
     kwargs["max_entry_deviation_bps"]=None if cfg["max_entry_deviation_bps"] is None else _d(cfg["max_entry_deviation_bps"])
     config=PaperConfig(**kwargs)
     risk=_fields(policy["entry_risk"],EntryRiskLimits)
-    return coordinator.update_future_policy(account,event_id=event_id,limits=limits,config=config,risk_limits=risk,at=at)
+    return coordinator.update_future_policy(account,event_id=event_id,limits=limits,config=config,risk_limits=risk,at=at,budgets=policy.get("budgets"))
 
 def read_capital_command(conn,event_id):
     rows=conn.execute("SELECT account_id FROM cm34_capital_journal WHERE event_id=?",(event_id,)).fetchall()

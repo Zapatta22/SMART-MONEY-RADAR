@@ -56,6 +56,25 @@ def _decimal(v):
         raise ValueError("positive finite Decimal required")
     return v
 
+def _validate_budgets(budgets,radars,available):
+    if not isinstance(budgets,dict) or set(budgets)!=set(radars): raise ValueError("explicit budgets for all account radars required")
+    import re
+    combined=ZERO
+    for scope in budgets.values():
+        if not isinstance(scope,dict) or set(scope)!=set(MODES): raise ValueError("both strategies require budgets")
+        for v in scope.values():
+            if not isinstance(v,str) or not re.fullmatch(r"[0-9]{1,18}(\.[0-9]{1,12})?",v): raise ValueError("budget requires decimal text")
+            amount=Decimal(v)
+            if not amount.is_finite() or amount<ZERO: raise ValueError("invalid strategy budget")
+            combined+=amount
+    if combined>available: raise ValueError("budgets exceed available virtual capital")
+
+def _budget_blocked(meta,active,radar,strategy,extra):
+    if meta.get("budgets") is None: return False
+    ceiling=Decimal(meta["budgets"][radar][strategy])
+    used=sum((Decimal(v["budget"]) for v in active.values() if v["radar"]==radar and v["strategy"]==strategy),ZERO)
+    return used+extra>ceiling
+
 def _chain(prev,seq,eid,digest):
     return _hash(_encode([prev,seq,eid,digest]))
 
@@ -111,7 +130,10 @@ def _load(conn,account):
             if config.max_entry_cash>config.initial_cash or risk.max_position_fraction>candidate.total_exposure:
                 raise ValueError("invalid future run policy")
             limits=candidate
-            meta=dict(meta,future_config=ev["future_config"],future_risk=ev["future_risk"])
+            budgets=ev.get("budgets",meta.get("budgets"))
+            if budgets is not None:
+                _validate_budgets(budgets,meta["radars"],cash)
+            meta=dict(meta,future_config=ev["future_config"],future_risk=ev["future_risk"],budgets=budgets)
             if Decimal(ev["equity"])!=latest_equity:
                 raise ValueError("policy cannot modify capital")
         elif ev["type"]=="RESERVE":
@@ -194,7 +216,7 @@ def _snapshot(state,as_of=None):
                if e["type"]=="MARK" and point is not None and _time(e["at"]).date()==point.date()),ZERO)
     return {"account_id":meta["account_id"],"kind":KIND,"currency":meta["currency"],"allowed_radars":meta["radars"],
         "initial_capital":meta["initial"],"capital_available":str(cash),"capital_reserved":str(reserved),
-        "risk_limits":{k:str(v) for k,v in asdict(limits).items()},"future_run_config":meta.get("future_config"),"future_entry_risk":meta.get("future_risk"),
+        "risk_limits":{k:str(v) for k,v in asdict(limits).items()},"future_run_config":meta.get("future_config"),"future_entry_risk":meta.get("future_risk"),"strategy_budgets":meta.get("budgets"),
         "equity":str(equity),"peak_equity":str(peak),"drawdown":str(drawdown),
         "realized_pnl":str(realized),"unrealized_pnl":str(unrealized),"daily_realized_pnl":str(daily),
         "exposure":exposure,"positions":[{"run_id":r,"radar":v["radar"],"pool":v["pool"],
@@ -227,7 +249,7 @@ class SyntheticCapitalCoordinator:
                 _identity(admin_event_id)
                 _append_event(conn,account_id,[],GENESIS,{"type":"CREATE","id":admin_event_id,"run_id":"__capital_policy__","at":_time(admin_at).isoformat(),"equity":str(initial)})
                 _load(conn,account_id)
-    def update_future_policy(self,account_id,*,event_id,limits:CapitalLimits,config:PaperConfig,risk_limits:EntryRiskLimits,at):
+    def update_future_policy(self,account_id,*,event_id,limits:CapitalLimits,config:PaperConfig,risk_limits:EntryRiskLimits,at,budgets=None):
         """Change future synthetic risk only; never touch principal or reserves.
         Fully settled accounts only; historical replay stays immutable.
         This local core is not an HTTP command or a real order adapter.
@@ -247,11 +269,15 @@ class SyntheticCapitalCoordinator:
                 "limits":{k:str(v) for k,v in asdict(limits).items()},
                 "future_config":json.loads(_encode(asdict(config))),
                 "future_risk":json.loads(_encode(asdict(risk_limits))),"equity":str(equity)}
+            if budgets is not None:
+                ev["budgets"]=json.loads(_encode(budgets))
             for old in events:
                 if old["id"]==event_id:
                     ev["equity"]=old["equity"]
                     if ev!=old: raise ValueError("policy request id conflict")
                     return _snapshot(state)
+            if budgets is not None or meta.get("budgets") is not None:
+                _validate_budgets(budgets if budgets is not None else meta["budgets"],meta["radars"],cash)
             if active or reserved!=ZERO or (last is not None and point<last):
                 raise ValueError("settle all reservations before changing policy")
             if config.initial_cash>cash or config.initial_cash>equity*limits.total_exposure:
@@ -293,6 +319,7 @@ class SyntheticCapitalCoordinator:
             ctl=read_control_state(conn)
             if ctl["emergency_halt"] or ctl["radars"][radar]!="RUNNING" or ctl["entries_paused"]:
                 raise ValueError("operational pause blocks reservation")
+            if _budget_blocked(meta,active,radar,strategy,budget): raise ValueError("radar strategy budget exceeded")
             if equity<=0 or budget>cash or reserved+budget>equity*limits.total_exposure:
                 raise ValueError("insufficient capital or aggregate exposure")
             for axis,limit in (("radar",limits.per_radar),("strategy",limits.per_strategy),
@@ -341,6 +368,7 @@ class SyntheticCapitalCoordinator:
                 ("token",limits.per_token),("pool",limits.per_pool),("wallet",limits.per_wallet)):
                 used=sum((Decimal(v["budget"]) for v in active.values() if v[axis]==r[axis]),ZERO)
                 blocked=blocked or used>equity*limit
+            blocked=blocked or _budget_blocked(meta,active,r["radar"],r["strategy"],ZERO)
             effective=replace(tick,entry_allowed=tick.entry_allowed and not blocked,halted=halted)
             before=Decimal(reports[run_id]["realized_pnl"])
             result=SyntheticPaperLedger(self.store)._append(run_id,tick=effective,signal_id=signal_id,connection=conn)

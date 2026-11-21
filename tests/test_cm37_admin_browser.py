@@ -25,7 +25,8 @@ class AdminFieldsBrowser(unittest.TestCase):
                     for k in ("total_exposure","per_radar","per_strategy","per_token","per_pool","per_wallet","max_daily_loss","max_drawdown"):
                         page.locator("#lim_"+k).fill("0,5")
                     page.locator("#adminExecute").click()
-                    page.wait_for_function("document.getElementById('adminResult').textContent.includes('APPLIED')")
+                    from playwright.sync_api import expect
+                    expect(page.locator("#adminResult")).to_contain_text("APPLIED",timeout=10000)
                     self.assertEqual(errors,[])
                     browser.close()
             finally:

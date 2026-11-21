@@ -4405,3 +4405,8 @@ CM53 CI 44901794243: 1330 Python aprovados, 2 ignorados. CM54 adiciona escopo ec
 ## CM55 — inferência automática de escopo causal
 
 CM54 CI 44902234771: 1333 Python aprovados, 2 ignorados; vínculo causal explícito homologado nos cenários testados. CM55 deriva escopo único dos vínculos RPC de replay para novas decisões Smart Money sem escopo explícito; ambiguidade rejeitada; ausência marcada como bloqueio. Launch preservado. Testes de reabertura e falha injetada durante INSERT causal publicados. CI pendente. Não representa integração do supervisor live nem homologação econômica integral. CM39 bloqueado; retornar repositório a privado após validações.
+
+
+## CM56 — supervisor econômico offline
+
+CM55 CI 44902473942: 1335 Python aprovados, 2 ignorados; escopo automático, rollback causal e reabertura aprovados. CM56 conecta journal CM36 ao CM38I na transação do supervisor, com conta/notional offline explicitamente configurados e autoridade de geração; Launch independente. Sem configuração ou evidência, bloqueio. Testes iniciais publicados; fluxo completo, recuperação integrada e CI ainda pendentes. Não homologa live nem autoriza capital. Retornar repositório a privado após validações.

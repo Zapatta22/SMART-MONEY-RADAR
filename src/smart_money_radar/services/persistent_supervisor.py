@@ -92,13 +92,17 @@ def _alert(conn,radar,kind,identity,now):
 class PersistentSupervisor:
     """One owner per database, fenced generations; no takeover of live adapters."""
     def __init__(self,store,*,policy=SupervisorPolicy(),discovery_policy=WalletDiscoveryPolicy(),
-                 scopes=None,clock=time.time):
+                 scopes=None,clock=time.time,economic_account_id=None,economic_notional=None):
         if not isinstance(store,SQLiteEventStore) or store.read_only or not isinstance(policy,SupervisorPolicy):
             raise ValueError("writable SQLite store and policy required")
         if str(store.database_path)==":memory:":raise ValueError("persistent database required")
         self.store=store;self.policy=policy;self.discovery_policy=discovery_policy
         self.scopes=dict(scopes or {}); self.clock=clock
         self.owner=uuid.uuid4().hex;self.generation=None
+        self.economic_account_id=economic_account_id
+        self.economic_notional=economic_notional
+        if (economic_account_id is None)!=(economic_notional is None):
+            raise ValueError("explicit offline economic account and notional required")
     def acquire(self):
         with self.store._connection_scope() as conn,conn:
             conn.execute("BEGIN IMMEDIATE");now=_number(self.clock());old=_lease(conn)
@@ -191,6 +195,9 @@ class PersistentSupervisor:
             if isinstance(exc,AuthorityLost):raise
             return self._failure(radar,type(exc).__name__)
         try:
+            economic_store=None
+            if radar=="smart_money" and self.economic_account_id is not None:
+                economic_store=self.bind_collector_store(self.store,radar)
             with self.store._connection_scope() as conn,conn:
                 conn.execute("BEGIN IMMEDIATE");finished=self._fence(conn)
                 task=_task(conn,radar)
@@ -204,6 +211,9 @@ class PersistentSupervisor:
                         old_obj=_verify_record(old)
                         if _hash(_encode(old_obj["event"]))!=ed:raise ValueError("decision journal event conflict")
                         continue
+                    if radar=="smart_money":
+                        payload["causal_economic_attempt"]=self._economic_attempt(
+                            conn,economic_store,payload["event"],_stamp(now))
                     encoded=_encode(payload)
                     conn.execute("INSERT INTO cm36_decision_journal VALUES(?,?,?,?,?)",(radar,eid,ed,encoded,_hash(encoded)))
                     _alert(conn,radar,"ARCHIVED_EVENT_BLOCKED",ed,finished)
@@ -221,6 +231,31 @@ class PersistentSupervisor:
         except AuthorityLost:raise
         except (sqlite3.Error,ValueError,TypeError,KeyError,ArithmeticError) as exc:
             return self._failure(radar,type(exc).__name__)
+    def _economic_attempt(self,conn,bound,event,point):
+        """Reuse CM38I under the existing generation-fenced journal commit."""
+        if bound is None:
+            return {"status":"BLOCKED","reason":"offline_economic_account_not_configured"}
+        if event.get("direction") not in ("BUY","SELL") or not event.get("wallet_address"):
+            return {"status":"BLOCKED","reason":"economic_scope_unknown"}
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='cm38_economic_evidence_links'").fetchone():
+            return {"status":"BLOCKED","reason":"economic_rpc_link_missing"}
+        op=event["source_reference"].removeprefix("swap_replay_archive:")
+        rows=conn.execute("""SELECT evidence_id FROM cm38_economic_evidence_links
+            WHERE radar='smart_money' AND wallet_address=? AND signature=?
+              AND entity_type='replay_opportunity' AND entity_id=? AND linked_at<=?""",
+            (event["wallet_address"],event["signature"],op,point.isoformat())).fetchall()
+        if len(rows)!=1:
+            return {"status":"BLOCKED","reason":"economic_rpc_link_missing_or_ambiguous"}
+        from smart_money_radar.services.cm38i_decision_audit import record_blocked_virtual_entry
+        token,quote=(event["output_mint"],event["input_mint"]) if event["direction"]=="BUY" else (event["input_mint"],event["output_mint"])
+        if not token or not quote:
+            return {"status":"BLOCKED","reason":"economic_scope_unknown"}
+        request_id="cm36:"+_hash(_encode(["smart_money",op,rows[0][0]]))
+        return record_blocked_virtual_entry(bound,request_id=request_id,
+            account_id=self.economic_account_id,radar="smart_money",strategy="confirmed",
+            evidence_id=rows[0][0],decision_at=point,requested_notional=self.economic_notional,
+            economic_scope=(event["wallet_address"],token,quote),_connection=conn)
+
     def _failure(self,radar,error):
         with self.store._connection_scope() as conn,conn:
             conn.execute("BEGIN IMMEDIATE");now=self._fence(conn);task=_task(conn,radar)

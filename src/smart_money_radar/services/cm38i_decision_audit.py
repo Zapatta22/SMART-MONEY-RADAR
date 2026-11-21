@@ -124,7 +124,7 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
                                  account_id: str, radar: str, strategy: str,
                                  evidence_id: str, decision_at: datetime,
                                  requested_notional: Decimal,
-                                 max_age_seconds: int = 300, economic_scope: tuple[str,str,str] | None = None):
+                                 max_age_seconds: int = 300, economic_scope: tuple[str,str,str] | None = None, _connection=None):
     """Persist a fail-closed attempt using the existing capital/RPC journals.
 
     Idempotency applies only to identical request content. A new request for an
@@ -151,9 +151,14 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
             _name(item)
         params.append(list(economic_scope))
     fingerprint = _hash(params)
-    with store._connection_scope() as conn, collector_write(
-        conn, getattr(store, "_collector_authority", None), radar
-    ):
+    from contextlib import nullcontext
+    from smart_money_radar.storage.collector_authority import verify_collector_authority
+    scope = store._connection_scope() if _connection is None else nullcontext(_connection)
+    with scope as conn, (collector_write(conn, getattr(store, "_collector_authority", None), radar) if _connection is None else nullcontext()):
+        if _connection is not None:
+            if not conn.in_transaction or getattr(store,"_collector_authority",None) is None:
+                raise ValueError("fenced writer required")
+            verify_collector_authority(conn,store._collector_authority,radar)
         # Capture integrity must be confirmed before checking existing receipts.
         row = conn.execute(
             "SELECT metadata,metadata_sha,raw FROM cm38_rpc_observations WHERE evidence_id=?",

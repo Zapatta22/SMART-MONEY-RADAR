@@ -233,9 +233,9 @@ def _monitor(workspace, store, journal, worker_log, stop, duration, interval, ma
     try:
         while not stop.is_set() and _now() < deadline:
             snapshot = _runtime_snapshot(store)
-            # A concurrent SQLite writer can transiently block a read-only probe.
-            # Retry once before fencing; persistent conflicts still fail closed.
-            if snapshot["lease"] == "CONFLICTED":
+            # Retry only a read/probe error. A verified persisted integrity
+            # conflict has no probe_error and must fence immediately.
+            if snapshot["lease"] == "CONFLICTED" and "probe_error" in snapshot:
                 stop.wait(min(0.1, max(0, deadline - _now())))
                 snapshot = _runtime_snapshot(store)
             now = _now()

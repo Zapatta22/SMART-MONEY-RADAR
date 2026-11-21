@@ -32,7 +32,8 @@ class CheckpointEntrypointGates(unittest.TestCase):
             self.store.save_checkpoint(self.wallet,self.sig)
         self.assertIsNone(self.store.get_checkpoint(self.wallet))
         self.store.mark_processed(self.wallet,self.sig,evidence_id=self.eid)
-        self.store.save_checkpoint(self.wallet,self.sig)
+        with self.assertRaises(ValueError):
+            self.store.save_checkpoint(self.wallet,self.sig)
         self.assertEqual(self.store.get_checkpoint(self.wallet),self.sig)
     def test_uncaptured_legacy_observation_keeps_unknown_status(self):
         other="2"*64

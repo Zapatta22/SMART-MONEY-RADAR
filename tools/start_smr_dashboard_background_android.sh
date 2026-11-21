@@ -14,6 +14,17 @@ DB="$(cd "$(dirname "$DB")" && pwd)/$(basename "$DB")"
 STATE="${SMR_DASHBOARD_STATE_DIR:-$HOME/.local/state/smr-dashboard}"
 mkdir -p "$STATE"
 chmod 700 "$STATE"
+# Serialize startup attempts across concurrent Termux sessions.
+# flock is kernel-managed: an interrupted launcher releases its lock.
+if ! command -v flock >/dev/null 2>&1; then
+  echo "ERRO: flock não encontrado; inicialização concorrente não é segura." >&2
+  exit 2
+fi
+exec 9>"$STATE/startup.lock"
+if ! flock -n 9; then
+  echo "ERRO: outra inicialização do painel está em andamento." >&2
+  exit 3
+fi
 LOG="$STATE/dashboard.log"
 PIDFILE="$STATE/dashboard.pid"
 URL="http://127.0.0.1:8765/"

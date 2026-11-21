@@ -27,6 +27,14 @@ class AuthenticatedHealthProbeTests(unittest.TestCase):
             token.chmod(0o644)
             self.assertEqual(self.run_probe(Path(tmp)).returncode, 1)
 
+    def test_world_readable_state_directory_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            token = Path(tmp) / "health.token"
+            token.write_text("a" * 64)
+            token.chmod(0o600)
+            Path(tmp).chmod(0o755)
+            self.assertEqual(self.run_probe(Path(tmp)).returncode, 1)
+
     def test_symlink_token_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "secret"

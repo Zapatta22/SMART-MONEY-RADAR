@@ -1,5 +1,5 @@
 # SMART MONEY RADAR (SMR) — REGISTRO MESTRE
-Última atualização: 2026-11-21 — CM72, qualificação dos radares e recuperação offline do supervisor
+Última atualização: 2026-11-21 — CM73, reconciliação, paginação e preparação do ensaio Android
 
 ## 1. Estado executivo
 
@@ -4499,3 +4499,31 @@ Estimativas gerenciais de desenvolvimento para este marco: Launch Radar 57% (55%
 Permanecem abertas a autenticação independente de dados e de mercado, a paginação e cobertura causal dos arquivos, a reconciliação econômica integral, a atribuição independente entre carteiras e a autonomia física de 24 horas. Não houve merge, captura live, gasto adicional ou operação financeira.
 
 A [CI 44919375484](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44919375484) verificou o commit `eb841c319095292ca26b2b50540c94ab11561091` com os dois jobs aprovados. A suíte principal executou 1.392 testes, com 2 ignorados e zero falhas. Compilação, benchmark offline e verificações de compatibilidade Python 3.14 e Android passaram.
+
+## CM73 — reconciliação causal, autenticação offline e ensaio Android
+
+Base `9880393052ee31247bf8f7bf211be081f2021ab3`, na branch `codex/cm38j-economic-evidence-audit`. Validação de referência CM72 na execução `44919375484`.
+
+### Verificação de assinatura de observação RPC
+
+`smr verify-rpc-attestation BANCO EVIDENCE_ID ENVELOPE.json --trust POLITICA.json --radar launch --network solana-mainnet` lê o journal em modo somente leitura. Em `--radar`, use o radar para o qual a observação foi arquivada. O comando usa o OpenSSL instalado para verificar Ed25519 e retorna JSON com código de saída diferente de zero quando a verificação falha ou fica inconclusiva.
+
+A política local mantém `keys` indexadas por `key_id`, cada chave com `public_key_hex`, `network`, `radar`, `source_id`, `endpoint_host`, `valid_from` e `valid_until`. O envelope contém `key_id`, `claim` e `signature` em Base64. A mensagem assinada é o prefixo ASCII `SMR:solana-rpc-observation:ed25519:v1`, um byte zero e o JSON ASCII de `{"key_id": ..., "claim": ...}` com chaves ordenadas, caracteres não ASCII escapados e separadores compactos. A declaração inclui rede, radar, origem, host, ID do journal, assinatura e slot da transação, SHA-256 do RAW, compromisso solicitado e horários de observação e emissão com fuso.
+
+O commit `c410be6` valida o signatário pela chave fixada localmente e vincula a declaração aos bytes arquivados e ao corte. Testado com assinaturas Ed25519 reais usando vetor público de teste e observações dos dois radares. A disponibilidade da atestação na CLI é o momento da verificação. Finalidade, independência econômica, inclusão na cadeia e autorização operacional continuam sem comprovação.
+
+### Launch Radar
+
+O commit `b22ada8` liga o recibo das estratégias Immediate e Confirmed ao evento CPMM, às transferências SPL e aos deltas dos vaults da transação arquivada. O ensaio com a captura real arquivada reconciliou valores brutos, decimais, taxas observadas e preço médio efetivamente negociado. O vínculo por assinatura, slot, instrução, hashes e cutoff mantém as evidências históricas separadas da captura prospectiva. Restam a prova independente do estado e da tabela de taxas anteriores à instrução, a cobertura de outras formas de swap e a validação econômica e de mercado independente.
+
+### Smart Money Radar
+
+O commit `faf4c08` percorre o arquivo SQLite em ordem de inserção, com um cursor vinculado à última posição e gravado na mesma transação do journal de decisões. A leitura é limitada por página. Registros com publicação ou vínculo já conhecido posterior ao corte aguardam. A cobertura acumulada discrimina vínculos locais, lacunas, conflitos e posições ausentes. O histórico legado continua deduplicado. Decisões imutáveis continuam sem requalificação retroativa quando faltava um vínculo na primeira leitura. A cobertura independente permanece desconhecida e o número de carteiras com independência comprovada permanece zero.
+
+### Termux e fechamento
+
+O commit `3427c4f` fornece o comando `bash tools/run_smr_android_soak.sh`. A execução padrão dura 86.400 segundos, em SQLite offline isolado. O diretório privado `~/smr-soak-results/smr-soak-*` recebe `progress.jsonl`, `worker.log`, `offline-soak.sqlite` e o `report.json` final. O supervisor é monitorado por radar. O processo pode ser recuperado após a expiração da geração e dentro do limite de reinícios. Seis testes no host demonstraram recuperação após SIGKILL, encerramento, falha de monitoramento e relatório final. A execução física de 24 horas no Android permanece pendente.
+
+Estimativas de desenvolvimento, usando a média simples do CM72. Launch Radar **60%** (57% de referência mais reconciliação causal de um swap legado arquivado), Smart Money Radar **81%** (77% mais paginação e checkpoint transacional), infraestrutura **67%** (ensaios host e verificador disponíveis, autonomia Android física pendente) e CM39 **24%**, bloqueado. Global **58,00%**, ante 56,25% de referência. As porcentagens são estimativas de planejamento. Main, PR #111 e PR #113 preservadas. Sem merge, captura live, operação financeira ou gasto adicional.
+
+A [CI 44920426901](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44920426901) verificou o commit `faf4c08d891f3a115b523f6e85e341f10c1bedaa`. Os dois jobs passaram. A suíte principal executou 1.411 testes, com 2 ignorados e zero falhas. Compilação, benchmark offline e verificações Python 3.14/Android passaram.

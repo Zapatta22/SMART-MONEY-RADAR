@@ -105,7 +105,9 @@ function render(data){
    const box=document.createElement("div"),title=document.createElement("b"),detail=document.createElement("p");
    box.className="metric";title.textContent=name==="launch"?"Launch Radar":"Smart Money Radar";
    detail.className="muted";detail.textContent="Coletor: "+val(state.status)+" · Cobertura: "+val(state.evidence_coverage)+" · Último arquivo: "+val(state.last_archived_event_at);
-   box.append(title,detail);collectors.append(box);
+   const offline=state.offline_supervisor||{},progress=document.createElement("p");
+   progress.className="muted";progress.textContent="Supervisor offline: "+val(offline.lease_status)+" · Tarefa: "+val(offline.task_status)+" · Ciclos persistidos: "+val(offline.cycles)+" · Última atividade local: "+val(offline.last_activity);
+   box.append(title,detail,progress);collectors.append(box);
  });
  const reasons=el("reasons");reasons.replaceChildren();(d.top_reasons||[]).forEach(x=>{const p=document.createElement("p");p.textContent=val(x.reason)+" · "+val(x.count)+" ocorrência(s)";reasons.append(p);});if(!reasons.children.length)reasons.textContent="Nenhum motivo registrado.";
  const radarChannels=data.radar_events||{};

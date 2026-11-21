@@ -109,6 +109,13 @@ def _integrity(conn, attempt_id):
     actual=_hash(["CM38I-DECISION-INTEGRITY-1",list(opp),list(dec),list(att)])
     if prior is None or prior[0]!=actual:
         raise ValueError("retroactive risk decision integrity conflict")
+    causal = [reason.removeprefix("causal_economic_sha256:") for reason in json.loads(dec[4])
+              if reason.startswith("causal_economic_sha256:")]
+    if causal:
+        row = conn.execute("SELECT payload,digest FROM cm38i_causal_economics WHERE attempt_id=?",
+                           (attempt_id,)).fetchone()
+        if row is None or causal != [row[1]] or _hash(json.loads(row[0])) != row[1]:
+            raise ValueError("causal economic integrity conflict")
     return opp,dec,att
 
 
@@ -117,7 +124,7 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
                                  account_id: str, radar: str, strategy: str,
                                  evidence_id: str, decision_at: datetime,
                                  requested_notional: Decimal,
-                                 max_age_seconds: int = 300):
+                                 max_age_seconds: int = 300, economic_scope: tuple[str,str,str] | None = None):
     """Persist a fail-closed attempt using the existing capital/RPC journals.
 
     Idempotency applies only to identical request content. A new request for an
@@ -137,6 +144,12 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
         raise ValueError("bounded evidence TTL required")
     params = [request_id, account_id, radar, strategy, evidence_id,
               at.isoformat(), str(amount), max_age_seconds, VERSION]
+    if economic_scope is not None:
+        if radar != "smart_money" or not isinstance(economic_scope, tuple) or len(economic_scope)!=3:
+            raise ValueError("invalid causal economic scope")
+        for item in economic_scope:
+            _name(item)
+        params.append(list(economic_scope))
     fingerprint = _hash(params)
     with store._connection_scope() as conn, collector_write(
         conn, getattr(store, "_collector_authority", None), radar
@@ -178,6 +191,20 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
                         "virtual_ledger_mutated": False, "prospective_authorized": False,
                         "real_execution_authorized": False, "idempotent_replay": True}
 
+        economic = None
+        if economic_scope is not None:
+            from smart_money_radar.services.cm38k_persisted_fifo import reconstruct_persisted_wallet, fifo_metric_receipts
+            from smart_money_radar.services.cm38j_metric_provenance import qualify_metric_set
+            wallet, token, quote = economic_scope
+            fifo = reconstruct_persisted_wallet(store,wallet=wallet,token=token,quote_mint=quote,
+                                                as_of=at,_connection=conn)
+            if evidence_id not in {line["evidence_id"] for line in fifo["lineage"]}:
+                raise ValueError("causal decision evidence absent from FIFO")
+            metrics = fifo_metric_receipts(fifo)
+            economic = {"schema":"CM38I-CAUSAL-ECONOMICS-1","radar":radar,"strategy":strategy,
+                        "decision_at":at.isoformat(),"fifo":fifo,"metrics":metrics,
+                        "qualification":qualify_metric_set(radar=radar,metrics=metrics),
+                        "disposition":"REJECTED_UNVERIFIED_ECONOMICS"}
         account = _snapshot(_load(conn, account_id))
         if radar not in account["allowed_radars"]:
             raise ValueError("synthetic account radar scope mismatch")
@@ -252,6 +279,9 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
             "SELECT 1 FROM cm38i_opportunities WHERE opportunity_id=?", (op_id,)
         ).fetchone():
             raise ValueError("duplicate opportunity: distinct request denied")
+        if economic is not None:
+            reasons.add("causal_economic_sha256:"+_hash(economic))
+            reasons.add("causal_economics_not_computable")
         reason_json = _json(sorted(reasons))
         conn.execute(
             "INSERT INTO cm38i_opportunities VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -279,6 +309,15 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
                             list(opportunity_row),list(decision_row),list(attempt_row)])
         conn.execute("INSERT INTO cm38i_decision_integrity VALUES (?,?)",
                      (attempt_id,receipt_hash))
+        if economic is not None:
+            conn.execute("""CREATE TABLE IF NOT EXISTS cm38i_causal_economics(
+                attempt_id TEXT PRIMARY KEY REFERENCES cm38i_virtual_entry_attempts(attempt_id),
+                payload TEXT NOT NULL,digest TEXT NOT NULL)""")
+            for action in ("UPDATE","DELETE"):
+                conn.execute("CREATE TRIGGER IF NOT EXISTS cm38i_causal_no_"+action.lower()+
+                    " BEFORE "+action+" ON cm38i_causal_economics BEGIN SELECT RAISE(ABORT,'immutable causal economics'); END")
+            conn.execute("INSERT INTO cm38i_causal_economics VALUES(?,?,?)",
+                         (attempt_id,_json(economic),_hash(economic)))
         _integrity(conn,attempt_id)
     return {"opportunity_id":op_id,"decision_id":decision_id,
             "attempt_id":attempt_id,"request_id":request_id,"status":"BLOCKED",
@@ -290,7 +329,7 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
 def audit_blocked_entry(store: SQLiteEventStore, request_id: str):
     """Read back a blocked entry and revalidate its original RAW before use."""
     _name(request_id)
-    with store._connection_scope() as conn:
+    with store._connection_scope() as conn, conn:
         conn.execute("BEGIN")
         if not conn.execute(
             "SELECT 1 FROM sqlite_master WHERE name='cm38i_virtual_entry_attempts'"

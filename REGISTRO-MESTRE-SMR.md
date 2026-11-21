@@ -4395,3 +4395,8 @@ CM50: CI 44898206511, 1327 testes aprovados e 2 ignorados. CM51: CI 44898449157,
 ## CM53 — custos adicionais e proveniência econômica
 
 CM52 homologado CI 44898584810: 1328 Python aprovados, 2 ignorados. CM53 implementa custo de rede separado somente quando demonstrável em WSOL ou pago por terceiro; não duplica taxas embutidas. Recibos CM38J indisponíveis vinculados ao hash FIFO; associação retrospectiva CM38I reconstruída no cutoff original, não prova uso causal. Testes sintéticos de PnL e custos; CI pendente. Cobertura/autenticidade independentes continuam UNKNOWN, capital e CM39 bloqueados. Retornar repositório a privado após validações.
+
+
+## CM54 — vínculo causal econômico offline
+
+CM53 CI 44901794243: 1330 Python aprovados, 2 ignorados. CM54 adiciona escopo econômico opcional às novas decisões Smart Money: reconstrução FIFO e recibos na mesma transação, digest vinculado às razões imutáveis e snapshot causal persistido atomicamente. Decisões legadas intactas; associação retrospectiva não causal. Testes de replay, capital, escopo, futuro e adulteração publicados, CI pendente. CM39 bloqueado; cobertura e autenticação independentes pendentes. Retornar repositório a privado após validações.

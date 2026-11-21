@@ -13,31 +13,36 @@ from smart_money_radar.storage.event_store import SQLiteEventStore
 
 
 _DASHBOARD_HTML = """<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SMART MONEY RADAR</title>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SMART MONEY RADAR</title><meta name="theme-color" content="#0b1018"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/smr-icon.svg" type="image/svg+xml">
 <style>
 :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0b1018;color:#e8edf5}body{margin:0;padding:18px;max-width:1050px;margin-inline:auto}h1{font-size:1.3rem;letter-spacing:.08em}.muted{color:#9aa8ba;font-size:.85rem}.panel{background:#141d29;border:1px solid #293648;border-radius:12px;padding:14px;margin:14px 0}.row{display:flex;gap:8px;flex-wrap:wrap}input,button,select{font:inherit;padding:10px;border-radius:8px;border:1px solid #35465d;background:#0b131e;color:#e8edf5}input{flex:1;min-width:200px}button{background:#234b72}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px}.metric{background:#0d1520;border:1px solid #293648;border-radius:9px;padding:11px}.metric b{display:block;font-size:1.4rem;overflow-wrap:anywhere}.good{color:#76d6a2}.warn{color:#f2c36d}.bad{color:#ff8585}.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.83rem}td,th{text-align:left;padding:8px;border-bottom:1px solid #293648;overflow-wrap:anywhere}#message{min-height:1.3em;color:#f2c36d}
+
+html{scroll-behavior:smooth}h2{font-size:1.08rem}h3{font-size:.92rem}.brand{display:flex;align-items:center;gap:12px;margin:14px 0}.brand img{width:52px;height:52px}.brand h1{margin:0}.brand p{margin:4px 0}.nav{display:flex;overflow:auto;gap:8px;padding:8px 0;position:sticky;top:0;background:#0b1018;z-index:2}.nav a{white-space:nowrap;color:#bce0f8;text-decoration:none;background:#172638;border:1px solid #314763;border-radius:10px;padding:10px;font-size:.8rem}.panel{scroll-margin-top:68px;min-width:0}.scope{font-size:.75rem;color:#f2c36d;letter-spacing:.05em}.grid>section{min-width:0}#freshness{font-size:.82rem;color:#f2c36d}.unavailable{color:#a5b4c6}@media(max-width:600px){body{padding:11px}.grid{grid-template-columns:minmax(0,1fr)}.panel{padding:11px}input{min-width:0;width:100%;flex:1 1 100%}button{min-height:44px}.brand h1{font-size:1.12rem}.nav a{padding:12px 10px}.tablewrap{max-width:100%}}
 </style></head><body>
-<h1>SMART MONEY RADAR</h1><p class="muted">Painel local · consulta somente leitura</p>
+<header class="brand"><img src="/smr-icon.svg" alt=""><div><h1>SMART MONEY RADAR</h1><p class="muted">CENTRAL DE INTELIGÊNCIA SOLANA · somente leitura</p></div></header><nav class="nav" aria-label="Navegação principal"><a href="#patrimonio">Patrimônio</a><a href="#radares">Radares</a><a href="#oportunidades">Oportunidades</a><a href="#negociacoes">Negociações</a><a href="#capital">Capital e risco</a><a href="#carteiras">Carteiras</a><a href="#alertas">Alertas</a><a href="#supervisor">Supervisor</a><a href="#configuracoes">Configurações</a></nav><p id="freshness" role="status">Sem consulta autenticada · indicadores indisponíveis.</p>
 <section class="panel"><div class="row"><input id="token" type="password" autocomplete="off" placeholder="Token local SMR_API_TOKEN"><button id="connect">Conectar</button><button id="refresh" disabled>Atualizar</button></div><p id="message" role="status" aria-live="polite"></p><p class="muted">O token permanece somente na memória desta página e não é salvo no navegador. Abra no mesmo dispositivo onde o SMR está executando.</p></section>
-<section class="panel"><h2>Visão geral</h2><div class="grid" id="metrics"></div><h3>Status de reconciliação</h3><div class="grid" id="statuses"></div></section>
-<section class="panel"><h2>Estado dos coletores</h2><p class="muted">Status live: UNKNOWN quando não há telemetria autenticada. A última data de arquivo não demonstra coletor ativo.</p><div class="grid" id="radarCollectors"></div></section>
+<section class="panel" id="patrimonio"><h2>Patrimônio</h2><p class="scope">SIMULAÇÃO SINTÉTICA · NÃO É SALDO REAL</p><p class="muted">Histórico patrimonial autenticado indisponível. Contas e moedas não são somadas.</p><div id="equityCards" class="grid"><p class="unavailable">Aguardando dados persistidos.</p></div></section><section class="panel"><h2>Visão geral</h2><div class="grid" id="metrics"></div><h3>Status de reconciliação</h3><div class="grid" id="statuses"></div></section>
+<section class="panel" id="radares"><h2>Estado dos coletores</h2><p class="muted">Status live: UNKNOWN quando não há telemetria autenticada. A última data de arquivo não demonstra coletor ativo.</p><div class="grid" id="radarCollectors"></div></section>
 <section class="panel"><h2>Motivos recorrentes</h2><div id="reasons" class="muted">Aguardando conexão.</div></section>
 <section class="panel"><h2>Eventos dos radares · evidências</h2><p class="muted">Lançamentos e Smart Money são independentes. Arquivo histórico/fixture não significa captura live; cobertura e autorização permanecem desconhecidas ou bloqueadas.</p><div class="grid"><section><h3>Launch Radar</h3><div id="launchEvents" class="tablewrap muted">Nenhuma evidência arquivada disponível.</div></section><section><h3>Smart Money Radar</h3><div id="smartEvents" class="tablewrap muted">Nenhuma evidência arquivada disponível.</div></section></div></section>
-<section class="panel"><h2>Inteligência e risco · análise offline</h2><p class="muted">Pontuação observacional; confiança UNKNOWN sem prova independente. Nenhuma ordem autorizada.</p><div class="grid"><section><h3>Launch Radar</h3><div id="launchOpportunities" class="tablewrap muted"></div></section><section><h3>Smart Money Radar</h3><div id="smartOpportunities" class="tablewrap muted"></div></section></div></section>
-<section class="panel"><h2>Paper Trading · somente testes sintéticos</h2><p class="muted">Capital virtual independente por execução. Não representa rentabilidade histórica ou futura. Replay histórico, prospectivo e live bloqueados.</p><div class="grid"><section><h3>Launch Radar</h3><div id="launchSynthetic" class="tablewrap muted"></div></section><section><h3>Smart Money Radar</h3><div id="smartSynthetic" class="tablewrap muted"></div></section></div></section>
-<section class="panel"><h2>Capital multipool · sintético</h2><div id="capitalAccounts" class="muted"></div></section>
-<section class="panel"><h2>Controles locais e alertas</h2><p class="muted">Somente leitura; sem autorização remota ou operação financeira.</p><div id="operationalState"></div><div id="operationalAlerts"></div></section>
-<section class="panel"><h2>Smart Money · carteiras descobertas</h2><p class="muted">Ranking observacional local, não ranking de rentabilidade. Candidatas não qualificadas não votam no consenso automático.</p><div id="walletDiscovery" class="tablewrap muted"></div></section>
-<section class="panel"><h2>Supervisor · arquivo local</h2><p class="muted">Heartbeat local não comprova conexão à Solana nem execução financeira.</p><div id="supervisorStatus"></div><div id="supervisorAlerts"></div></section>
+<section class="panel" id="oportunidades"><h2>Inteligência e risco · análise offline</h2><p class="muted">Pontuação observacional; confiança UNKNOWN sem prova independente. Nenhuma ordem autorizada.</p><div class="grid"><section><h3>Launch Radar</h3><div id="launchOpportunities" class="tablewrap muted"></div></section><section><h3>Smart Money Radar</h3><div id="smartOpportunities" class="tablewrap muted"></div></section></div></section>
+<section class="panel" id="negociacoes"><h2>Paper Trading · somente testes sintéticos</h2><p class="muted">Capital virtual independente por execução. Não representa rentabilidade histórica ou futura. Replay histórico, prospectivo e live bloqueados.</p><div class="grid"><section><h3>Launch Radar</h3><div id="launchSynthetic" class="tablewrap muted"></div></section><section><h3>Smart Money Radar</h3><div id="smartSynthetic" class="tablewrap muted"></div></section></div></section>
+<section class="panel" id="capital"><h2>Capital multipool · sintético</h2><div id="capitalAccounts" class="muted"></div></section>
+<section class="panel" id="alertas"><h2>Controles locais e alertas</h2><p class="muted">Somente leitura; sem autorização remota ou operação financeira.</p><div id="operationalState"></div><div id="operationalAlerts"></div></section>
+<section class="panel" id="carteiras"><h2>Smart Money · carteiras descobertas</h2><p class="muted">Ranking observacional local, não ranking de rentabilidade. Candidatas não qualificadas não votam no consenso automático.</p><div id="walletDiscovery" class="tablewrap muted"></div></section>
+<section class="panel" id="supervisor"><h2>Supervisor · arquivo local</h2><p class="muted">Heartbeat local não comprova conexão à Solana nem execução financeira.</p><div id="supervisorStatus"></div><div id="supervisorAlerts"></div></section>
 <section class="panel"><h2>Últimos eventos</h2><div class="tablewrap"><table><thead><tr><th>Data</th><th>Carteira</th><th>Ativo</th><th>Direção</th><th>Quantidade</th></tr></thead><tbody id="events"></tbody></table></div></section>
 <section class="panel"><div class="row"><h2 style="flex:1">Auditoria de swaps</h2><select id="statusFilter"><option value="">Todos os status</option><option>MATCHED</option><option>INCOMPLETE</option><option>AMBIGUOUS</option><option>UNRESOLVED</option></select><button id="loadAttempts" disabled>Consultar</button></div><div class="tablewrap"><table><thead><tr><th>Data</th><th>Status</th><th>Operação</th><th>Instrução</th><th>Motivo</th></tr></thead><tbody id="attempts"></tbody></table></div></section>
-<script>
+<section class="panel" id="configuracoes"><h2>Configurações e controle</h2><p class="scope">COMANDOS EXTERNOS BLOQUEADOS</p><p>Iniciar, pausar, configurar risco, stop-loss, take-profit, capital virtual e parada emergencial: disponíveis somente após homologação administrativa. Nenhuma ordem real autorizada.</p></section><script>
 let token="";
 const el=id=>document.getElementById(id), val=v=>v===null||v===undefined||v===""?"—":String(v), short=v=>{v=val(v);return v.length>18?v.slice(0,8)+"…"+v.slice(-6):v};
 async function api(path){const r=await fetch(path,{headers:{Authorization:"Bearer "+token},cache:"no-store"});if(!r.ok){if(r.status===401)throw Error("Token inválido ou ausente.");throw Error("Falha HTTP "+r.status);}return r.json();}
 function td(tr,v){const x=document.createElement("td");x.textContent=val(v);tr.append(x);return x;}
 function rowEmpty(target,cols,msg){const tr=document.createElement("tr"),x=document.createElement("td");x.colSpan=cols;x.textContent=msg;tr.append(x);target.replaceChildren(tr);}
 function render(data){
+ const cards=el("equityCards");cards.replaceChildren();for(const a of (data.capital_accounts||[])){const c=document.createElement("section");c.className="metric";const title=document.createElement("span"),value=document.createElement("b"),detail=document.createElement("p");title.textContent="Conta sintética "+val(a.account_id)+" · "+val(a.currency);value.textContent=val(a.equity);detail.textContent="Disponível "+val(a.capital_available)+" · Reserva "+val(a.capital_reserved)+" · PnL "+val(a.realized_pnl)+" · Drawdown "+val(a.drawdown)+" · Estado "+val(a.status||a.risk_status);c.append(title,value,detail);cards.append(c);}if(!cards.children.length)cards.textContent="Nenhuma conta sintética persistida; patrimônio real indisponível.";
+ el("freshness").textContent="Consulta local concluída em "+new Date().toLocaleString("pt-BR")+" · não comprova atualização de mercado.";
+
  const d=data.reconciliation||{},st=d.statuses||{},labels=["Tentativas auditadas","Operações distintas","Assinaturas distintas","Transações pendentes"],nums=[d.total_attempts,d.distinct_operations,d.distinct_signatures,d.pending_transactions_count],m=el("metrics");m.replaceChildren();
  nums.forEach((n,i)=>{const box=document.createElement("div"),l=document.createElement("span"),b=document.createElement("b");box.className="metric";l.className="muted";l.textContent=labels[i];b.textContent=val(n);box.append(l,b);m.append(box);});
  const s=el("statuses");s.replaceChildren();Object.entries(st).forEach(([k,n])=>{const box=document.createElement("div"),l=document.createElement("span"),b=document.createElement("b");box.className="metric";l.className="muted";l.textContent=k;b.textContent=val(n);b.className=k==="MATCHED"?"good":k==="INCOMPLETE"?"warn":"bad";box.append(l,b);s.append(box);});
@@ -82,11 +87,21 @@ function render(data){
  const sup=data.supervisor||{},supPanel=el("supervisorStatus"),supAlerts=el("supervisorAlerts");supPanel.replaceChildren();supAlerts.replaceChildren();const supHeader=document.createElement("p");supHeader.textContent=(sup.status||"NOT_STARTED")+" · geração "+(sup.generation??"-")+" · heartbeat "+(sup.last_heartbeat||"-");supPanel.append(supHeader);Object.entries(sup.radars||{}).forEach(([r,t])=>{const p=document.createElement("p");p.textContent=r+" · "+t.status+" · checkpoint "+(t.checkpoint||"-")+" · conexão "+t.connection+" · falhas "+t.failures+" · última atividade "+(t.last_activity||"-");supPanel.append(p);});(sup.alerts||[]).forEach(a=>{const p=document.createElement("p");p.textContent=a.at+" · "+a.radar+" · "+a.kind;supAlerts.append(p);});
  const events=el("events");events.replaceChildren();(data.recent_events||[]).forEach(x=>{const tr=document.createElement("tr");td(tr,x.occurred_at);td(tr,short(x.wallet_address));td(tr,short(x.token_mint));td(tr,x.direction);td(tr,x.amount);events.append(tr);});if(!events.children.length)rowEmpty(events,5,"Nenhum evento persistido.");
 }
-async function refresh(){el("message").textContent="Consultando banco local…";try{render(await api("/api/v1/dashboard"));el("message").textContent="Conectado · dados atualizados · somente leitura";}catch(e){el("message").textContent=e.message;}}
+async function refresh(){el("message").textContent="Consultando banco local…";try{render(await api("/api/v1/dashboard"));el("message").textContent="Conectado · dados atualizados · somente leitura";}catch(e){el("message").textContent=e.message;el("freshness").textContent="Dados não atualizados · última visualização pode estar desatualizada. Não operar com estes dados.";}}
 async function attempts(){el("message").textContent="Consultando auditoria…";try{const q=new URLSearchParams({limit:"100"});if(el("statusFilter").value)q.set("status",el("statusFilter").value);const data=await api("/api/v1/reconciliation/attempts?"+q),body=el("attempts");body.replaceChildren();(data.items||[]).forEach(x=>{const tr=document.createElement("tr"),s=td(tr,x.attempted_at),status=td(tr,x.status);status.className=x.status==="MATCHED"?"good":x.status==="INCOMPLETE"?"warn":"bad";td(tr,short(x.operation_id));td(tr,x.instruction_index);td(tr,x.reason);body.append(tr);});if(!body.children.length)rowEmpty(body,5,"Nenhuma tentativa encontrada.");el("message").textContent="Auditoria atualizada.";}catch(e){el("message").textContent=e.message;}}
 el("connect").addEventListener("click",async()=>{token=el("token").value.trim();if(token.length<32){token="";el("message").textContent="Informe o token completo (mínimo 32 caracteres).";return;}el("refresh").disabled=false;el("loadAttempts").disabled=false;await refresh();});
 el("refresh").addEventListener("click",refresh);el("loadAttempts").addEventListener("click",attempts);
+if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/smr-sw.js").catch(()=>{});
 </script></body></html>"""
+
+
+# Only fixed public shell assets are available without the bearer token.
+_PWA_ICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="104" fill="#0b1018"/><g fill="none" stroke="#27d5ab" stroke-width="16"><circle cx="256" cy="256" r="170"/><circle cx="256" cy="256" r="110"/><circle cx="256" cy="256" r="48"/><path d="M256 256 389 146M86 256h340M256 86v340" opacity=".6"/></g><circle cx="389" cy="146" r="26" fill="#54edc7"/><circle cx="256" cy="256" r="13" fill="#fff"/></svg>"""
+_PWA_MANIFEST = json.dumps({"name":"SMART MONEY RADAR","short_name":"SMR","id":"/dashboard","start_url":"/dashboard","scope":"/","display":"standalone","lang":"pt-BR","theme_color":"#0b1018","background_color":"#0b1018","icons":[{"src":"/smr-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]},ensure_ascii=False)
+# No caching, no background sync, no authenticated request interception.
+# Installing this worker does not make market/account data available offline.
+_PWA_WORKER = """self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));"""
+_PUBLIC_PWA = {"/manifest.webmanifest":("application/manifest+json",_PWA_MANIFEST),"/smr-icon.svg":("image/svg+xml",_PWA_ICON),"/smr-sw.js":("application/javascript",_PWA_WORKER)}
 
 class _SMRRequestHandler(BaseHTTPRequestHandler):
     server_version = "SMRReadOnly/1.0"
@@ -99,7 +114,7 @@ class _SMRRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
+        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -127,6 +142,17 @@ class _SMRRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path in ("/", "/dashboard"):
             self._send_html()
+            return
+        if parsed.path in _PUBLIC_PWA and not parsed.query:
+            mime, content = _PUBLIC_PWA[parsed.path]
+            body=content.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type",mime+"; charset=utf-8")
+            self.send_header("Content-Length",str(len(body)))
+            self.send_header("Cache-Control","no-store")
+            self.send_header("X-Content-Type-Options","nosniff")
+            self.end_headers()
+            self.wfile.write(body)
             return
         if not self._authorized():
             return

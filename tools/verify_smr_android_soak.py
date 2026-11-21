@@ -35,7 +35,9 @@ def verify(workspace):
     if (type(elapsed) not in (int, float) or type(duration) not in (int, float)
             or not 0 < duration <= elapsed or elapsed == float("inf")):
         issues.append("offline soak target duration not reached")
-    if report.get("physical_android_verified") is not False or report.get("autonomy_24h_verified") is not False:
+    if (report.get("physical_android_verified") is not False
+            or report.get("autonomy_24h_verified") is not False
+            or report.get("target_24h_reached") is not False):
         issues.append("untrusted physical/autonomy verification claim")
     progress = workspace / "progress.jsonl"
     if not progress.is_file():

@@ -67,3 +67,47 @@ class PersistedEconomicFixture(unittest.TestCase):
                 self.assertEqual(c.execute("SELECT COUNT(*) FROM cm38k_persisted_fifo").fetchone()[0],1)
         finally:
             reopened.close()
+
+
+    def test_partial_sale_persisted_wallet(self):
+        from datetime import timedelta
+        from smart_money_radar.domain.models import SwapObservation, SwapClassification, SwapEvidence, build_swap_operation_id
+        from smart_money_radar.domain.swap_bundle_builder import SwapDomainBundle
+        from smart_money_radar.storage.event_store import SwapReconciliationRecord
+        from smart_money_radar.services.rpc_observation_journal import RpcObservationJournal
+        from smart_money_radar.services.cm38k_persisted_fifo import reconstruct_persisted_wallet
+        import json
+        sig="2"*64
+        at=self.at+timedelta(seconds=1)
+        tx=json.loads(json.dumps(self.tx))
+        tx["slot"]=43
+        tx["blockTime"]=int(at.timestamp())
+        tx["transaction"]["signatures"]=[sig]
+        for balance,amount in zip(tx["meta"]["preTokenBalances"],(10,2)):
+            balance["uiTokenAmount"]["amount"]=str(amount)
+        for balance,amount in zip(tx["meta"]["postTokenBalances"],(17,1)):
+            balance["uiTokenAmount"]["amount"]=str(amount)
+        eid=RpcObservationJournal(self.store).append(radar="smart_money",signature=sig,
+            source_id="helius-wallet-rpc",endpoint_host="public-endpoint.invalid",
+            raw_payload=json.dumps({"result":tx}).encode(),observed_at=at,available_at=at,
+            expected_slot=43,commitment_requested="confirmed")
+        self.store.save_observation(self.wallet,sig,tx,[],parse_status="ok",advance_checkpoint=False)
+        with self.store._connection_scope() as c,c:
+            c.execute("UPDATE observed_transactions SET slot=43,chain='solana',observed_at=? WHERE wallet_address=? AND signature=?",
+                      (at.isoformat(),self.wallet,sig))
+        oid=build_swap_operation_id("solana",sig,0)
+        obs=SwapObservation(oid,"solana",self.wallet,sig,"base","quote",Decimal(1),Decimal(7),at,"1")
+        cls=SwapClassification(oid,"SELL",Decimal(".95"),"fixture")
+        ev=SwapEvidence(oid,"dex",None,0,evidence=("pool_state:pool",))
+        self.store.save_swap_bundle(obs,cls,ev)
+        self.store.save_swap_reconciliation_attempt(self.wallet,sig,
+            [SwapReconciliationRecord(oid,0,None,(),"MATCHED","fixture")])
+        self.store.mark_processed(self.wallet,sig,replay_bundles=(SwapDomainBundle(obs,cls,ev),),evidence_id=eid)
+        args=dict(wallet=self.wallet,token="base",quote_mint="quote",as_of=datetime.now(timezone.utc))
+        result=reconstruct_persisted_wallet(self.store,**args)
+        verify_fifo_receipt(result)
+        self.assertEqual(Decimal(result["lots"][0]["remaining"]),Decimal(1))
+        self.assertEqual(Decimal(result["observed_operations"][1]["net_quote_amount"]),Decimal(7))
+        self.assertIsNone(result["realized_pnl"])
+        self.assertEqual(result["status"],"NOT_COMPUTABLE")
+        self.assertEqual(reconstruct_persisted_wallet(self.store,**args),result)

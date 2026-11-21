@@ -19,7 +19,7 @@ def _time(value):
     return t.astimezone(timezone.utc)
 
 
-def _derive(conn, operation_id, cutoff):
+def _derive(conn, operation_id, cutoff, *, operation_only=False):
     cur = conn.execute("""
       SELECT a.*, s.signature, s.chain, s.wallet_address AS swap_wallet,
         s.input_mint AS swap_input, s.output_mint AS swap_output,
@@ -132,6 +132,8 @@ def _derive(conn, operation_id, cutoff):
         credit if buy else debit, occurred, available, meta["source_id"], eid,
         meta["raw_sha256"], quote_mint=quote, quote_amount=debit if buy else credit,
         independently_attested=False, history_complete=False)
+    if operation_only:
+        return op, {"slot": d["slot"], "signature": d["signature"], "network_fee_lamports": tx["meta"].get("fee")}
     receipt = reconstruct_fifo((op,), wallet=d["wallet"], token=token,
                                quote_mint=quote, as_of=cutoff)
     receipt["reasons"] = sorted(set(receipt["reasons"]) | {"network_fee_quote_cost_unproven"})
@@ -174,4 +176,52 @@ def persist_fifo_swap(store, *, operation_id, as_of):
             if prior is None:
                 conn.execute("INSERT INTO cm38k_persisted_fifo VALUES (?,?,?,?)",
                              (operation_id, cutoff.isoformat(), *target))
+            return receipt
+
+
+def reconstruct_persisted_wallet(store, *, wallet, token, quote_mint, as_of):
+    """Rebuild a local observed inventory in one read snapshot, never attest coverage."""
+    cutoff = _time(as_of)
+    if cutoff > datetime.now(timezone.utc) or token == quote_mint:
+        raise ValueError("invalid wallet reconstruction scope")
+    with localcontext() as ctx:
+        ctx.prec = 100
+        with store._connection_scope() as conn, conn:
+            conn.execute("BEGIN")
+            rows = conn.execute("""
+                SELECT operation_id,available_at FROM swap_replay_archive
+                WHERE wallet_address=? AND ((input_mint=? AND output_mint=?)
+                    OR (input_mint=? AND output_mint=?))
+                ORDER BY receipt_id
+            """, (wallet,token,quote_mint,quote_mint,token)).fetchall()
+            operations, evidence = [], []
+            for oid, available in rows:
+                if _time(available) > cutoff:
+                    continue
+                op, detail = _derive(conn, oid, cutoff, operation_only=True)
+                if (op.wallet, op.token, op.quote_mint) != (wallet,token,quote_mint):
+                    raise ValueError("wallet scope conflict")
+                operations.append(op)
+                evidence.append({"operation_id":oid, **detail})
+            if len({e["slot"] for e in evidence}) != len(evidence):
+                raise ValueError("ambiguous FIFO ordering within slot")
+            ordered = sorted(zip(operations,evidence), key=lambda pair:pair[1]["slot"])
+            if any(a[0].occurred_at >= b[0].occurred_at for a,b in zip(ordered,ordered[1:])):
+                raise ValueError("ambiguous FIFO time ordering")
+            receipt = reconstruct_fifo(tuple(op for op,_ in ordered),wallet=wallet,
+                token=token,quote_mint=quote_mint,as_of=cutoff)
+            receipt["lots"] = [{**lot,"cost_remaining":None,"cost_status":"UNKNOWN"}
+                               for lot in receipt["lots"]]
+            receipt["status"]="NOT_COMPUTABLE"
+            receipt["realized_pnl"]=None
+            receipt["unrealized_pnl"]=None
+            receipt["win_rate"]=None
+            receipt["realized_sales"]=None
+            receipt["reasons"]=sorted(set(receipt["reasons"]) | {
+                "network_fee_quote_cost_unproven","wallet_history_coverage_unknown"})
+            receipt["observed_operations"]=[{
+                "operation_id":op.operation_id,"kind":op.kind,"quantity":str(op.quantity),
+                "net_quote_amount":str(op.quote_amount),**detail}
+                for op,detail in ordered]
+            receipt["sha256"]=_hash({k:v for k,v in receipt.items() if k!="sha256"})
             return receipt

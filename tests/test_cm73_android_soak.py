@@ -350,6 +350,17 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(rejected["accepted_offline"])
         self.assertIn("invalid offline report JSON", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_missing_report(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "report.json").unlink()
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("invalid offline report JSON", rejected["issues"])
+        self.assertFalse(rejected["physical_android_verified"])
+        self.assertFalse(rejected["autonomy_24h_verified"])
+
     def test_offline_evidence_gate_rejects_missing_progress_journal(self):
         process = self.start(2.0)
         self.report(process, 0)

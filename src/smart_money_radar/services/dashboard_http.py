@@ -20,7 +20,7 @@ _DASHBOARD_HTML = """<!doctype html>
 html{scroll-behavior:smooth}h2{font-size:1.08rem}h3{font-size:.92rem}.brand{display:flex;align-items:center;gap:12px;margin:14px 0}.brand img{width:52px;height:52px}.brand h1{margin:0}.brand p{margin:4px 0}.nav{display:flex;overflow:auto;gap:8px;padding:8px 0;position:sticky;top:0;background:#0b1018;z-index:2}.nav a{white-space:nowrap;color:#bce0f8;text-decoration:none;background:#172638;border:1px solid #314763;border-radius:10px;padding:10px;font-size:.8rem}.panel{scroll-margin-top:68px;min-width:0}.scope{font-size:.75rem;color:#f2c36d;letter-spacing:.05em}.grid>section{min-width:0}#freshness{font-size:.82rem;color:#f2c36d}.unavailable{color:#a5b4c6}@media(max-width:600px){body{padding:11px}.grid{grid-template-columns:minmax(0,1fr)}.panel{padding:11px}input{min-width:0;width:100%;flex:1 1 100%}button{min-height:44px}.brand h1{font-size:1.12rem}.nav a{padding:12px 10px}.tablewrap{max-width:100%}}
 </style></head><body>
 <header class="brand"><img src="/smr-icon.svg" alt=""><div><h1>SMART MONEY RADAR</h1><p class="muted">CENTRAL DE INTELIGÊNCIA SOLANA · somente leitura</p></div></header><nav class="nav" aria-label="Navegação principal"><a href="#patrimonio">Patrimônio</a><a href="#radares">Radares</a><a href="#oportunidades">Oportunidades</a><a href="#negociacoes">Negociações</a><a href="#capital">Capital e risco</a><a href="#carteiras">Carteiras</a><a href="#alertas">Alertas</a><a href="#supervisor">Supervisor</a><a href="#configuracoes">Configurações</a></nav><p id="freshness" role="status">Sem consulta autenticada · indicadores indisponíveis.</p>
-<section class="panel"><div class="row"><input id="token" type="password" autocomplete="off" placeholder="Token local SMR_API_TOKEN"><button id="connect">Conectar</button><button id="refresh" disabled>Atualizar</button></div><p id="message" role="status" aria-live="polite"></p><p class="muted">O token permanece somente na memória desta página e não é salvo no navegador. Abra no mesmo dispositivo onde o SMR está executando.</p></section>
+<section class="panel"><div class="row"><input id="token" type="password" autocomplete="off" placeholder="Token local SMR_API_TOKEN"><button id="connect">Conectar</button><button id="refresh" disabled>Atualizar</button></div><p id="message" role="status" aria-live="polite">JavaScript ainda não inicializado. Se esta mensagem persistir, recarregue a página no Chrome.</p><noscript>JavaScript desativado: habilite para conectar.</noscript><p class="muted">O token permanece somente na memória desta página e não é salvo no navegador. Abra no mesmo dispositivo onde o SMR está executando.</p></section>
 <section class="panel" id="patrimonio"><h2>Patrimônio</h2><p class="scope">SIMULAÇÃO SINTÉTICA · NÃO É SALDO REAL</p><p class="muted">Apenas histórico sintético verificado no journal local; não representa rentabilidade real. Contas e moedas não são somadas.</p><div id="equityCards" class="grid"><p class="unavailable">Aguardando dados persistidos.</p></div><div id="equityHistory" aria-label="Histórico patrimonial sintético"></div><p class="muted">Filtros abaixo se aplicam a posições e negociações, não ao saldo global.</p><div class="row"><label>Radar <select id="filterRadar"><option value="">Todos</option><option value="launch">Launch</option><option value="smart_money">Smart Money</option></select></label><label>Estratégia <select id="filterStrategy"><option value="">Todas</option><option value="immediate">Imediata</option><option value="confirmed">Confirmada</option></select></label><label>Histórico desde <input type="date" id="filterSince"></label><label>Até <input type="date" id="filterUntil"></label></div><div id="filteredPositions"></div></section><section class="panel"><h2>Visão geral</h2><div class="grid" id="metrics"></div><h3>Status de reconciliação</h3><div class="grid" id="statuses"></div></section>
 <section class="panel" id="radares"><h2>Estado dos coletores</h2><p class="muted">Status live: UNKNOWN quando não há telemetria autenticada. A última data de arquivo não demonstra coletor ativo.</p><div class="grid" id="radarCollectors"></div></section>
 <section class="panel"><h2>Motivos recorrentes</h2><div id="reasons" class="muted">Aguardando conexão.</div></section>
@@ -34,9 +34,20 @@ html{scroll-behavior:smooth}h2{font-size:1.08rem}h3{font-size:.92rem}.brand{disp
 <section class="panel"><h2>Últimos eventos</h2><div class="tablewrap"><table><thead><tr><th>Data</th><th>Carteira</th><th>Ativo</th><th>Direção</th><th>Quantidade</th></tr></thead><tbody id="events"></tbody></table></div></section>
 <section class="panel"><div class="row"><h2 style="flex:1">Auditoria de swaps</h2><select id="statusFilter"><option value="">Todos os status</option><option>MATCHED</option><option>INCOMPLETE</option><option>AMBIGUOUS</option><option>UNRESOLVED</option></select><button id="loadAttempts" disabled>Consultar</button></div><div class="tablewrap"><table><thead><tr><th>Data</th><th>Status</th><th>Operação</th><th>Instrução</th><th>Motivo</th></tr></thead><tbody id="attempts"></tbody></table></div></section>
 <section class="panel" id="configuracoes"><h2>Configurações e controle</h2><p class="scope">COMANDOS EXTERNOS BLOQUEADOS</p><p>Iniciar, pausar, configurar risco, stop-loss, take-profit, capital virtual e parada emergencial: disponíveis somente após homologação administrativa. Nenhuma ordem real autorizada.</p></section><script>
-let token="";
+window.addEventListener("error",function(){document.getElementById("message").textContent="Falha de JavaScript. Recarregue a página.";});
+</script><script>
+let token="",busy=false;
 const el=id=>document.getElementById(id), val=v=>v===null||v===undefined||v===""?"—":String(v), short=v=>{v=val(v);return v.length>18?v.slice(0,8)+"…"+v.slice(-6):v};
-async function api(path){const r=await fetch(path,{headers:{Authorization:"Bearer "+token},cache:"no-store"});if(!r.ok){if(r.status===401)throw Error("Token inválido ou ausente.");throw Error("Falha HTTP "+r.status);}return r.json();}
+async function api(path){
+ const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),12000);
+ try {
+  const r=await fetch(path,{headers:{Authorization:"Bearer "+token},cache:"no-store",credentials:"omit",redirect:"error",signal:controller.signal});
+  if(r.status===401){token="";throw Error("Token inválido ou expirado. Copie o token do servidor atual.");}
+  if(!r.ok)throw Error("Servidor respondeu HTTP "+r.status+".");
+  return await r.json();
+ }catch(e){if(e.name==="AbortError")throw Error("Servidor indisponível: tempo de resposta excedido.");if(e instanceof TypeError)throw Error("Falha de comunicação. Confira se o servidor Termux está ativo.");throw e;}
+ finally{clearTimeout(timer);}
+}
 function td(tr,v){const x=document.createElement("td");x.textContent=val(v);tr.append(x);return x;}
 function rowEmpty(target,cols,msg){const tr=document.createElement("tr"),x=document.createElement("td");x.colSpan=cols;x.textContent=msg;tr.append(x);target.replaceChildren(tr);}
 let lastOverview=null;
@@ -130,12 +141,28 @@ function render(data){
  const sup=data.supervisor||{},supPanel=el("supervisorStatus"),supAlerts=el("supervisorAlerts");supPanel.replaceChildren();supAlerts.replaceChildren();const supHeader=document.createElement("p");supHeader.textContent=(sup.status||"NOT_STARTED")+" · geração "+(sup.generation??"-")+" · heartbeat "+(sup.last_heartbeat||"-");supPanel.append(supHeader);Object.entries(sup.radars||{}).forEach(([r,t])=>{const p=document.createElement("p");p.textContent=r+" · "+t.status+" · checkpoint "+(t.checkpoint||"-")+" · conexão "+t.connection+" · falhas "+t.failures+" · última atividade "+(t.last_activity||"-");supPanel.append(p);});(sup.alerts||[]).forEach(a=>{const p=document.createElement("p");p.textContent=a.at+" · "+a.radar+" · "+a.kind;supAlerts.append(p);});
  const events=el("events");events.replaceChildren();(data.recent_events||[]).forEach(x=>{const tr=document.createElement("tr");td(tr,x.occurred_at);td(tr,short(x.wallet_address));td(tr,short(x.token_mint));td(tr,x.direction);td(tr,x.amount);events.append(tr);});if(!events.children.length)rowEmpty(events,5,"Nenhum evento persistido.");
 }
-async function refresh(){el("message").textContent="Consultando banco local…";try{render(await api("/api/v1/dashboard"));el("message").textContent="Conectado · dados atualizados · somente leitura";}catch(e){el("message").textContent=e.message;lastOverview=null;for(const id of ["equityCards","equityHistory","filteredPositions","capitalAccounts","launchSynthetic","smartSynthetic","launchOpportunities","smartOpportunities","walletDiscovery","events","attempts","metrics","statuses","radarCollectors","launchEvents","smartEvents","operationalState","operationalAlerts","supervisorStatus","supervisorAlerts","reasons"]){const node=el(id);if(node)node.replaceChildren();}el("freshness").textContent="Dados indisponíveis · falha de atualização. Nenhum resultado atual confirmado.";}}
+function unavailable(){lastOverview=null;for(const id of ["equityCards","equityHistory","filteredPositions","capitalAccounts","launchSynthetic","smartSynthetic","launchOpportunities","smartOpportunities","walletDiscovery","events","attempts","metrics","statuses","radarCollectors","launchEvents","smartEvents","operationalState","operationalAlerts","supervisorStatus","supervisorAlerts","reasons"]){const node=el(id);if(node)node.replaceChildren();}el("freshness").textContent="Dados indisponíveis · nenhum resultado atual confirmado.";}
+async function refresh(){
+ if(busy)return;busy=true;el("connect").disabled=true;el("refresh").disabled=true;el("loadAttempts").disabled=true;
+ el("message").textContent="Verificando autenticação no servidor local…";
+ let authenticated=false;
+ try{
+  const health=await api("/health");
+  if(health.status!=="ok"||health.mode!=="read_only")throw Error("Resposta de saúde inesperada.");
+  authenticated=true;el("message").textContent="Autenticação aprovada · consultando banco…";
+  const data=await api("/api/v1/dashboard");
+  try{render(data);}catch(e){throw Error("Falha de apresentação dos dados.");}
+  el("message").textContent="Conexão aprovada · dados atualizados · somente leitura";
+ }catch(e){unavailable();el("message").textContent=(authenticated&&token?"Autenticação aprovada, mas consulta falhou: ":"")+e.message;}
+ finally{busy=false;el("connect").disabled=false;el("refresh").disabled=!token;el("loadAttempts").disabled=!token;}
+}
 async function attempts(){el("message").textContent="Consultando auditoria…";try{const q=new URLSearchParams({limit:"100"});if(el("statusFilter").value)q.set("status",el("statusFilter").value);const data=await api("/api/v1/reconciliation/attempts?"+q),body=el("attempts");body.replaceChildren();(data.items||[]).forEach(x=>{const tr=document.createElement("tr"),s=td(tr,x.attempted_at),status=td(tr,x.status);status.className=x.status==="MATCHED"?"good":x.status==="INCOMPLETE"?"warn":"bad";td(tr,short(x.operation_id));td(tr,x.instruction_index);td(tr,x.reason);body.append(tr);});if(!body.children.length)rowEmpty(body,5,"Nenhuma tentativa encontrada.");el("message").textContent="Auditoria atualizada.";}catch(e){el("message").textContent=e.message;}}
-el("connect").addEventListener("click",async()=>{token=el("token").value.trim();el("token").value="";if(token.length<32){token="";el("message").textContent="Informe o token completo (mínimo 32 caracteres).";return;}el("refresh").disabled=false;el("loadAttempts").disabled=false;await refresh();});
+el("connect").addEventListener("click",async()=>{if(busy)return;token=el("token").value.trim();el("token").value="";if(token.length<32||!(/^[!-~]+$/).test(token)){token="";unavailable();el("message").textContent="Token inválido: cole somente o código completo, sem espaços internos.";el("refresh").disabled=true;el("loadAttempts").disabled=true;return;}await refresh();});
+el("token").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();el("connect").click();}});
 for(const id of ["filterRadar","filterStrategy","filterSince","filterUntil"])el(id).addEventListener("change",()=>{if(lastOverview)renderScoped(lastOverview);});
 el("refresh").addEventListener("click",refresh);el("loadAttempts").addEventListener("click",attempts);
-if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/smr-sw.js").catch(()=>{});
+el("message").textContent="Interface pronta. Cole o token temporário e toque em Conectar. · revisão Android 1";
+if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/smr-sw.js",{updateViaCache:"none"}).catch(()=>{});
 </script></body></html>"""
 
 
@@ -177,7 +204,7 @@ class _SMRRequestHandler(BaseHTTPRequestHandler):
         expected = f"Bearer {self.server.auth_token}"
         # Constant-time comparison avoids leaking token-prefix timing.
         import hmac
-        if not hmac.compare_digest(supplied, expected):
+        if len(self.headers.get_all("Authorization") or []) != 1 or not hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
             self._send_json(401, {"error": "unauthorized"})
             return False
         return True

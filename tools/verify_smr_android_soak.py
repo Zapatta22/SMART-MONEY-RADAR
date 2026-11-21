@@ -1,5 +1,6 @@
 """Offline CM74 soak evidence gate; never grants live or financial authorization."""
 import argparse
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -66,12 +67,27 @@ def verify(workspace):
             if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 issues.append("SQLite integrity check failed")
             try:
-                rows = conn.execute("SELECT radar,payload FROM cm36_supervisor_tasks").fetchall()
-                persisted = {radar: json.loads(payload).get("cycles") for radar, payload in rows}
+                rows = conn.execute("SELECT radar,payload,payload_sha FROM cm36_supervisor_tasks").fetchall()
+                persisted = {}
+                for radar, payload, digest in rows:
+                    if hashlib.sha256(payload.encode()).hexdigest() != digest:
+                        issues.append(f"{radar} persisted checkpoint hash mismatch")
+                    task = json.loads(payload)
+                    if task.get("radar") != radar:
+                        issues.append(f"{radar} persisted checkpoint identity mismatch")
+                    if radar in persisted:
+                        issues.append(f"{radar} duplicate persisted checkpoint")
+                    persisted[radar] = task
                 if set(persisted) != {"launch", "smart_money"}:
                     issues.append("missing persisted radar checkpoints")
-                elif any(persisted[name] != tasks.get(name, {}).get("cycles") for name in persisted):
-                    issues.append("persisted cycles disagree with final report")
+                else:
+                    for name in persisted:
+                        if persisted[name].get("cycles") != tasks.get(name, {}).get("cycles"):
+                            issues.append(f"{name} persisted cycles disagree with final report")
+                        if persisted[name].get("status") != tasks.get(name, {}).get("status"):
+                            issues.append(f"{name} persisted status disagrees with final report")
+                        if persisted[name].get("failures") != tasks.get(name, {}).get("failures"):
+                            issues.append(f"{name} persisted failures disagree with final report")
             except (sqlite3.Error, ValueError, TypeError):
                 issues.append("invalid persisted radar checkpoints")
     return {"accepted_offline": not issues, "physical_android_verified": False,

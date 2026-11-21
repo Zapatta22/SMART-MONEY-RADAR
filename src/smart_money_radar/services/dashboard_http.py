@@ -21,6 +21,7 @@ _DASHBOARD_HTML = """<!doctype html>
 <section class="panel"><div class="row"><input id="token" type="password" autocomplete="off" placeholder="Token local SMR_API_TOKEN"><button id="connect">Conectar</button><button id="refresh" disabled>Atualizar</button></div><p id="message" role="status" aria-live="polite"></p><p class="muted">O token permanece somente na memória desta página e não é salvo no navegador. Abra no mesmo dispositivo onde o SMR está executando.</p></section>
 <section class="panel"><h2>Visão geral</h2><div class="grid" id="metrics"></div><h3>Status de reconciliação</h3><div class="grid" id="statuses"></div></section>
 <section class="panel"><h2>Motivos recorrentes</h2><div id="reasons" class="muted">Aguardando conexão.</div></section>
+<section class="panel"><h2>Eventos dos radares · evidências</h2><p class="muted">Lançamentos e Smart Money são independentes. Arquivo histórico/fixture não significa captura live; cobertura e autorização permanecem desconhecidas ou bloqueadas.</p><div class="grid"><section><h3>Launch Radar</h3><div id="launchEvents" class="tablewrap muted">Nenhuma evidência arquivada disponível.</div></section><section><h3>Smart Money Radar</h3><div id="smartEvents" class="tablewrap muted">Nenhuma evidência arquivada disponível.</div></section></div></section>
 <section class="panel"><h2>Últimos eventos</h2><div class="tablewrap"><table><thead><tr><th>Data</th><th>Carteira</th><th>Ativo</th><th>Direção</th><th>Quantidade</th></tr></thead><tbody id="events"></tbody></table></div></section>
 <section class="panel"><div class="row"><h2 style="flex:1">Auditoria de swaps</h2><select id="statusFilter"><option value="">Todos os status</option><option>MATCHED</option><option>INCOMPLETE</option><option>AMBIGUOUS</option><option>UNRESOLVED</option></select><button id="loadAttempts" disabled>Consultar</button></div><div class="tablewrap"><table><thead><tr><th>Data</th><th>Status</th><th>Operação</th><th>Instrução</th><th>Motivo</th></tr></thead><tbody id="attempts"></tbody></table></div></section>
 <script>
@@ -34,6 +35,16 @@ function render(data){
  nums.forEach((n,i)=>{const box=document.createElement("div"),l=document.createElement("span"),b=document.createElement("b");box.className="metric";l.className="muted";l.textContent=labels[i];b.textContent=val(n);box.append(l,b);m.append(box);});
  const s=el("statuses");s.replaceChildren();Object.entries(st).forEach(([k,n])=>{const box=document.createElement("div"),l=document.createElement("span"),b=document.createElement("b");box.className="metric";l.className="muted";l.textContent=k;b.textContent=val(n);b.className=k==="MATCHED"?"good":k==="INCOMPLETE"?"warn":"bad";box.append(l,b);s.append(box);});
  const reasons=el("reasons");reasons.replaceChildren();(d.top_reasons||[]).forEach(x=>{const p=document.createElement("p");p.textContent=val(x.reason)+" · "+val(x.count)+" ocorrência(s)";reasons.append(p);});if(!reasons.children.length)reasons.textContent="Nenhum motivo registrado.";
+ const radarChannels=data.radar_events||{};
+ [["launch","launchEvents"],["smart_money","smartEvents"]].forEach(([name,id])=>{
+  const panel=el(id),items=radarChannels[name]||[];panel.replaceChildren();
+  if(!items.length){panel.textContent="Nenhum evento arquivado disponível.";return;}
+  const table=document.createElement("table"),head=document.createElement("thead"),tr=document.createElement("tr");
+  ["Tipo / ID","Proveniência / evidência","Disponível","Sinal / bloqueio"].forEach(h=>{const th=document.createElement("th");th.textContent=h;tr.append(th);});
+  head.append(tr);table.append(head);const body=document.createElement("tbody");
+  items.forEach(x=>{const r=document.createElement("tr");td(r,x.event_type+" · "+short(x.id));td(r,(x.origin||"UNKNOWN")+" · "+(x.evidence_quality||"UNKNOWN")+" · "+(x.coverage||"UNKNOWN")+" · "+short(x.raw_sha256));td(r,x.available_at);td(r,(x.direction||x.verdict||"UNKNOWN")+" · "+((x.reasons||[]).slice(0,3).join(", ")||"sem justificativa"));body.append(r);});
+  table.append(body);panel.append(table);
+ });
  const events=el("events");events.replaceChildren();(data.recent_events||[]).forEach(x=>{const tr=document.createElement("tr");td(tr,x.occurred_at);td(tr,short(x.wallet_address));td(tr,short(x.token_mint));td(tr,x.direction);td(tr,x.amount);events.append(tr);});if(!events.children.length)rowEmpty(events,5,"Nenhum evento persistido.");
 }
 async function refresh(){el("message").textContent="Consultando banco local…";try{render(await api("/api/v1/dashboard"));el("message").textContent="Conectado · dados atualizados · somente leitura";}catch(e){el("message").textContent=e.message;}}

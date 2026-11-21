@@ -93,6 +93,31 @@ class StrictPaperCliTests(unittest.TestCase):
         self.assertEqual(report["strict_evidence"]["verified_ticks"], 2)
         self.assertEqual(report["strict_evidence"]["rejected_risk_ticks"], 0)
         self.assertEqual(report["immediate"]["fills"][0]["side"], "BUY")
+        manifest = self.root / "manifest.json"
+        manifest.write_text(json.dumps({
+            "schema": "smr-paper-quote-manifest-v1",
+            "pool": "pool-a",
+            "quotes": {
+                qid: records[0]["raw_capture_sha256"]
+                for qid, records in self.payload["evidence_by_quote"].items()
+            },
+        }))
+        expected = hashlib.sha256(manifest.read_bytes()).hexdigest()
+        options = ("--strict-quote-manifest", str(manifest), "--strict-quote-manifest-sha256")
+        pinned = self.run_cli(*options, expected)
+        self.assertEqual(pinned["strict_evidence"]["quote_manifest_sha256"], expected)
+        self.assertEqual(pinned["immediate"]["fills"], report["immediate"]["fills"])
+        with self.assertRaisesRegex(SystemExit, "SHA-256"):
+            self.run_cli(*options, "0" * 64)
+
+        record = self.payload["evidence_by_quote"]["q1"][0]
+        original_capture = record.copy()
+        different_bytes = base64.b64decode(record["raw_capture_base64"]) + b" "
+        record["raw_capture_base64"] = base64.b64encode(different_bytes).decode()
+        record["raw_capture_sha256"] = hashlib.sha256(different_bytes).hexdigest()
+        with self.assertRaisesRegex(SystemExit, "manifesto"):
+            self.run_cli(*options, expected)
+        record.update(original_capture)
         cutoff = self.run_cli("--as-of", "2026-11-19T00:00:00+00:00")
         self.assertEqual(cutoff["strict_evidence"]["verified_ticks"], 1)
         self.assertEqual(cutoff["immediate"]["fills"], [])

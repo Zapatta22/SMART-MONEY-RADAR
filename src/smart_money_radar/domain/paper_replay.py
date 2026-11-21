@@ -64,6 +64,7 @@ class PaperConfig:
     stop_loss: Decimal = Decimal("0.10")
     take_profit: Decimal = Decimal("0.20")
     max_entry_deviation_bps: Decimal | None = None
+    max_quote_staleness_seconds: Decimal | None = None
 
     def __post_init__(self) -> None:
         fields = (
@@ -81,6 +82,11 @@ class PaperConfig:
             raise ValueError("desvio máximo de entrada inválido")
         if not ZERO < self.stop_loss < ONE or self.take_profit <= 0:
             raise ValueError("limites de saída inválidos")
+        staleness = self.max_quote_staleness_seconds
+        if staleness is not None and (
+            not isinstance(staleness, Decimal) or not staleness.is_finite() or staleness < ZERO
+        ):
+            raise ValueError("atraso máximo da cotação inválido")
 
 
 @dataclass(frozen=True)
@@ -120,6 +126,7 @@ class PaperReport:
     average_fill_delay_seconds: Decimal | None
     average_decision_to_market_seconds: Decimal | None
     average_market_to_availability_seconds: Decimal | None
+    stale_quote_count: int = 0
 
 
 def compare_paper_reports(immediate: PaperReport, confirmed: PaperReport) -> dict:
@@ -191,6 +198,7 @@ def _replay(
     opened_at: datetime | None = None
     fills: list[PaperFill] = []
     rejected_entries = 0
+    stale_quote_count = 0
     decisions: list[PaperDecision] = []
     realized_pnl = ZERO
     current_day: date | None = None
@@ -205,9 +213,29 @@ def _replay(
             current_day = tick.at.date()
             day_start_equity = equity
             day_start_realized_pnl = realized_pnl
-        sell_price = (tick.bid or tick.price) * (ONE - slippage)
-
         market_at = tick.market_at or tick.at
+        staleness_limit = config.max_quote_staleness_seconds
+        if staleness_limit is not None and (
+            tick.market_at is None or _seconds(tick.at - market_at) > staleness_limit
+        ):
+            stale_quote_count += 1
+            reason = "missing_market_time" if tick.market_at is None else "stale_quote"
+            decisions.append(PaperDecision(tick.at, "skip_quote", reason))
+            pending_buy = pending is not None and pending.side == "BUY"
+            if pending_buy or confirmation is not None or (not quantity and tick.signal == "BUY"):
+                rejected_entries += 1
+                decisions.append(PaperDecision(tick.at, "reject", reason))
+            if pending_buy:
+                pending = None
+            confirmation = None
+            # Exit controls may request liquidation, but old prices cannot set a
+            # valuation, trigger price-based exits or execute any orders.
+            if quantity and pending is None and (tick.halted or tick.signal == "SELL"):
+                pending = _Order("SELL", tick, "kill_switch" if tick.halted else "sell_signal")
+                decisions.append(PaperDecision(tick.at, "schedule_sell", pending.reason))
+            continue
+
+        sell_price = (tick.bid or tick.price) * (ONE - slippage)
         cancel_entry = pending is not None and pending.side == "BUY" and (
             tick.halted or not tick.entry_allowed or tick.signal == "SELL"
         )
@@ -311,6 +339,7 @@ def _replay(
         (market_delay + availability_delay) / len(fills) if fills else None,
         market_delay / len(fills) if fills else None,
         availability_delay / len(fills) if fills else None,
+        stale_quote_count,
     )
 
 

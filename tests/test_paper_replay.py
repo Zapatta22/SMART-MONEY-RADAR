@@ -168,6 +168,63 @@ class PaperReplayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ordem temporal"):
             ticks_from_quote_archive([quote, quote], signals, signal_ttl_seconds=3)
 
+    def quote_at(self, available, market, price, volume, signal="NONE", halted=False):
+        tick = self.tick(available, price, volume, signal, halted=halted)
+        return replace(tick, market_at=self.start + timedelta(seconds=market))
+
+    def test_freshness_blocks_old_or_missing_signals_in_both_modes(self):
+        config = replace(self.config, max_quote_staleness_seconds=Decimal(1))
+        for mode in ("immediate", "confirmed"):
+            with self.subTest(mode=mode):
+                result = replay_paper([
+                    self.quote_at(2, 0, 10, 10, "BUY"), self.tick(3, 11, 11, "BUY"),
+                    self.quote_at(4, 4, 12, 12), self.quote_at(5, 5, 13, 13),
+                ], config=config, mode=mode)
+                self.assertEqual(result.stale_quote_count, 2)
+                self.assertEqual(result.fills, ())
+                self.assertEqual(result.rejected_entries, 2)
+                self.assertEqual([d.reason for d in result.decisions if d.action == "reject"],
+                                 ["stale_quote", "missing_market_time"])
+
+    def test_stale_quote_cancels_confirmation_and_pending_buy(self):
+        config = replace(self.config, max_quote_staleness_seconds=Decimal(1))
+        first = self.quote_at(1, 0, 10, 10, "BUY")  # Exactly at the limit.
+        second = self.quote_at(2, 2, 11, 11)
+        stale = self.quote_at(4, 2, 12, 12)
+        last = self.quote_at(5, 5, 13, 13)
+        for mode, history in (
+            ("immediate", [first, stale, last]),
+            ("confirmed", [first, stale, last]),
+            ("confirmed", [first, second, stale, last]),
+        ):
+            with self.subTest(mode=mode, ticks=len(history)):
+                result = replay_paper(history, config=config, mode=mode)
+                self.assertEqual(result.fills, ())
+                self.assertEqual(result.rejected_entries, 1)
+                self.assertIsNone(result.pending_side)
+                self.assertFalse(result.awaiting_confirmation)
+
+    def test_stale_quote_cannot_mark_or_fill_exit_but_preserves_kill_switch(self):
+        config = replace(self.config, max_quote_staleness_seconds=Decimal(1))
+        entry = [self.quote_at(0, 0, 10, 10, "BUY"), self.quote_at(1, 1, 10, 10)]
+        stale_price = self.quote_at(3, 1, 1, 10)
+        stale_halt = self.quote_at(4, 2, 1, 10, halted=True)
+        stale_after_halt = self.quote_at(6, 3, 1, 10)
+        fresh = self.quote_at(7, 7, 10, 10)
+        prefix = replay_paper(
+            [*entry, stale_price, stale_halt, stale_after_halt], config=config, mode="immediate",
+        )
+        self.assertEqual(prefix.stale_quote_count, 3)
+        self.assertEqual(prefix.final_equity, Decimal(1000))
+        self.assertEqual(prefix.pending_side, "SELL")
+        self.assertEqual(prefix.max_drawdown, 0)
+        complete = replay_paper(
+            [*entry, stale_price, stale_halt, stale_after_halt, fresh], config=config, mode="immediate",
+        )
+        _, sell = complete.fills
+        self.assertEqual((sell.decision_at, sell.filled_at), (stale_halt.at, fresh.at))
+        self.assertEqual(sell.reason, "kill_switch")
+
     def test_cli_runs_both_modes_without_network(self):
         scenario = {"config": {"initial_cash": "1000", "max_entry_cash": "100", "max_exposure": "0.1"},
                     "ticks": [{"at": self.start.isoformat(), "price": "10", "volume": "1",

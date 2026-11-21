@@ -6,7 +6,11 @@ from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
 
-from smart_money_radar.domain.paper_evidence_gate import gate_paper_evidence, verify_paper_quote_tick
+from smart_money_radar.domain.paper_evidence_gate import (
+    gate_paper_evidence,
+    load_pinned_paper_quote_manifest,
+    verify_paper_quote_tick,
+)
 from smart_money_radar.domain.paper_replay import ReplayTick
 
 
@@ -103,6 +107,56 @@ class PaperRawQuoteTests(unittest.TestCase):
         record = self._record()
         self.assertEqual(verify_paper_quote_tick(self.tick, [record], "pool-a"),
                          record["raw_capture_sha256"])
+
+    def _manifest_bytes(self, *, pool="pool-a", quote_id="q0", quote_hash=None):
+        return json.dumps({
+            "schema": "smr-paper-quote-manifest-v1",
+            "pool": pool,
+            "quotes": {quote_id: quote_hash or self._record()["raw_capture_sha256"]},
+        }).encode()
+
+    def test_pinned_manifest_accepts_matching_bytes_and_quote(self):
+        raw = self._manifest_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        manifest = load_pinned_paper_quote_manifest(raw, expected_sha256=digest)
+        record = self._record()
+        self.assertEqual(manifest.sha256, digest)
+        self.assertEqual(verify_paper_quote_tick(self.tick, [record], "pool-a", manifest=manifest),
+                         record["raw_capture_sha256"])
+        with self.assertRaises(TypeError):
+            manifest.quote_digests["q0"] = "a" * 64
+
+    def test_pinned_manifest_rejects_rehashed_quote_and_manifest(self):
+        initial = self._manifest_bytes()
+        digest = hashlib.sha256(initial).hexdigest()
+        manifest = load_pinned_paper_quote_manifest(initial, expected_sha256=digest)
+        updated_quote = self._record(changes={"price": "9.1"})
+        updated_tick = replace(self.tick, price=Decimal("9.1"))
+        self.assertEqual(verify_paper_quote_tick(updated_tick, [updated_quote], "pool-a"),
+                         updated_quote["raw_capture_sha256"])
+        with self.assertRaisesRegex(ValueError, "diverge do manifesto fixado"):
+            verify_paper_quote_tick(updated_tick, [updated_quote], "pool-a", manifest=manifest)
+        forged_manifest = self._manifest_bytes(quote_hash=updated_quote["raw_capture_sha256"])
+        with self.assertRaisesRegex(ValueError, "diverge do valor fixado"):
+            load_pinned_paper_quote_manifest(forged_manifest, expected_sha256=digest)
+
+    def test_pinned_manifest_rejects_wrong_pool_and_missing_quote(self):
+        for raw, error in (
+            (self._manifest_bytes(pool="pool-b"), "fora do pool"),
+            (self._manifest_bytes(quote_id="q1"), "ausente do manifesto"),
+        ):
+            with self.subTest(error=error), self.assertRaisesRegex(ValueError, error):
+                manifest = load_pinned_paper_quote_manifest(raw, expected_sha256=hashlib.sha256(raw).hexdigest())
+                verify_paper_quote_tick(self.tick, [self._record()], "pool-a", manifest=manifest)
+
+    def test_pinned_manifest_validates_schema_and_rejects_duplicate_fields(self):
+        for raw, error in (
+            (b'{"schema":"smr-unknown"}', "schema"),
+            (b'{"schema":"smr-paper-quote-manifest-v1","pool":"p","pool":"q"}', "JSON"),
+            (self._manifest_bytes(quote_hash="unknown"), "identidades ou hashes"),
+        ):
+            with self.subTest(error=error), self.assertRaisesRegex(ValueError, error):
+                load_pinned_paper_quote_manifest(raw, expected_sha256=hashlib.sha256(raw).hexdigest())
 
     def test_rejects_mutated_prices_depth_and_availability(self):
         for field, value in (

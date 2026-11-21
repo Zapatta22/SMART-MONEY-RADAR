@@ -83,6 +83,8 @@ def _parser() -> argparse.ArgumentParser:
     paper.add_argument("--archive", type=Path, help="lê swaps concluídos de um banco SQLite local")
     paper.add_argument("--mode", choices=("immediate", "confirmed", "both"), default="both")
     paper.add_argument("--strict-evidence", type=Path, help="JSON de evidências e risco para replay protegido local")
+    paper.add_argument("--strict-quote-manifest", type=Path, help="manifesto independente das cotações RAW")
+    paper.add_argument("--strict-quote-manifest-sha256", help="SHA-256 do manifesto obtido de fonte confiável")
     snapshot = subparsers.add_parser("cpmm-snapshot-audit", help="confere uma captura local do pool CPMM")
     snapshot.add_argument("request", type=Path)
     snapshot.add_argument("response", type=Path)
@@ -148,6 +150,10 @@ def _paper_replay(args: argparse.Namespace) -> None:
 
     scenario_bytes = args.scenario.read_bytes()
     scenario = json.loads(scenario_bytes, parse_float=Decimal)
+    if args.strict_quote_manifest is not None or args.strict_quote_manifest_sha256 is not None:
+        if (args.strict_evidence is None or args.strict_quote_manifest is None
+                or args.strict_quote_manifest_sha256 is None):
+            raise ValueError("manifesto de cotação exige replay protegido, arquivo e SHA-256 independente")
     if args.strict_evidence is not None and args.archive is not None:
         raise ValueError("--strict-evidence ainda não suporta --archive")
     if args.archive is None and args.quotes is not None:
@@ -246,7 +252,14 @@ def _paper_replay(args: argparse.Namespace) -> None:
     strict_metadata = None
     if args.strict_evidence is not None:
         from smart_money_radar.domain.paper_entry_risk_policy import EntryRiskLimits, EntryRiskSnapshot
+        from smart_money_radar.domain.paper_evidence_gate import load_pinned_paper_quote_manifest
         from smart_money_radar.domain.paper_evidence_replay import replay_with_required_risk
+
+        manifest = None
+        if args.strict_quote_manifest is not None:
+            manifest = load_pinned_paper_quote_manifest(
+                args.strict_quote_manifest.read_bytes(), expected_sha256=args.strict_quote_manifest_sha256,
+            )
         raw = json.loads(args.strict_evidence.read_bytes(), parse_float=Decimal)
         try:
             limits = EntryRiskLimits(**{k: decimal(v) for k, v in raw["risk_limits"].items()})
@@ -267,11 +280,13 @@ def _paper_replay(args: argparse.Namespace) -> None:
                 )
             strict = replay_with_required_risk(
                 ticks, raw["evidence_by_quote"], config=config, expected_pool=raw["pool"],
-                risk_limits=limits, risk_by_quote=snapshots, as_of=as_of,
+                risk_limits=limits, risk_by_quote=snapshots, as_of=as_of, quote_manifest=manifest,
             )
         except (AttributeError, KeyError, TypeError, InvalidOperation) as exc:
             raise ValueError("arquivo de evidência ou risco inválido no replay protegido") from exc
         strict["excluded_after_cutoff"] += excluded_strict_ticks
+        if args.strict_quote_manifest is not None:
+            strict["quote_manifest_sha256"] = args.strict_quote_manifest_sha256
         results = {mode: strict[mode] for mode in modes}
         strict_metadata = {k: v for k, v in strict.items()
                            if k not in ("immediate", "confirmed", "comparison")}

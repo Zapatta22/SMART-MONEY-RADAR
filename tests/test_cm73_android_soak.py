@@ -343,7 +343,7 @@ class AndroidSoakTests(unittest.TestCase):
         worker.poll.return_value = None
         worker.wait.return_value = 0
         self.assertFalse(soak._stop_worker(worker))
-        worker.wait.assert_called_once_with(timeout=1.0)
+        worker.wait.assert_called_once_with(timeout=3.0)
         worker.terminate.assert_not_called()
         worker.kill.assert_not_called()
 
@@ -352,7 +352,7 @@ class AndroidSoakTests(unittest.TestCase):
 
         worker = Mock()
         worker.poll.return_value = None
-        worker.wait.side_effect = [subprocess.TimeoutExpired("worker", 1.0), 0]
+        worker.wait.side_effect = [subprocess.TimeoutExpired("worker", 3.0), 0]
         self.assertFalse(soak._stop_worker(worker))
         worker.terminate.assert_called_once_with()
         worker.kill.assert_not_called()

@@ -43,7 +43,7 @@ fi
 command -v curl >/dev/null 2>&1 || { echo "ERRO: curl não encontrado" >&2; exit 2; }
 if command -v termux-wake-lock >/dev/null 2>&1; then termux-wake-lock || true; fi
 nohup env SMR_DB_PATH="$DB" bash "$ROOT/tools/run_smr_dashboard_android.sh" \
-  --host 127.0.0.1 --port 8765 >"$LOG" 2>&1 </dev/null &
+  --host 127.0.0.1 --port 8765 >"$LOG" 2>&1 </dev/null 9>&- &
 pid=$!
 printf '%s\n' "$pid" > "$PIDFILE"
 for attempt in 1 2 3 4 5 6 7 8 9 10; do

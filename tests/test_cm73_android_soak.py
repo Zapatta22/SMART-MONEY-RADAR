@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 from smart_money_radar.storage.event_store import SQLiteEventStore
 from tools import smr_android_soak as soak
+from tools.verify_smr_android_soak import verify as verify_soak
 
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "tools" / "run_smr_android_soak.sh"
@@ -110,6 +111,22 @@ class AndroidSoakTests(unittest.TestCase):
         ]
         self.assertEqual(progress[0]["event"], "started")
         self.assertEqual(progress[-1]["event"], "finished")
+
+    def test_offline_evidence_gate_accepts_completed_soak_and_rejects_tampering(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        accepted = verify_soak(workspace)
+        self.assertTrue(accepted["accepted_offline"], accepted["issues"])
+        self.assertFalse(accepted["physical_android_verified"])
+        self.assertFalse(accepted["autonomy_24h_verified"])
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["supervisor"]["radars"]["launch"]["cycles"] += 1
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("persisted cycles disagree with final report", rejected["issues"])
 
     def test_worker_crash_reopens_same_archive_after_fenced_lease_expires(self):
         process = self.start(4.5, max_restarts=2)

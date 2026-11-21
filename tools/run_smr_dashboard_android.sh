@@ -63,6 +63,12 @@ PY
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 export SMR_DB_PATH="$DB_PATH"
 export SMR_API_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+# Private token file for authenticated local health probes.
+STATE="${SMR_DASHBOARD_STATE_DIR:-$HOME/.local/state/smr-dashboard}"
+mkdir -p "$STATE"
+chmod 700 "$STATE"
+printf '%s\\n' "$SMR_API_TOKEN" > "$STATE/health.token"
+chmod 600 "$STATE/health.token"
 
 echo
 echo "SMART MONEY RADAR — painel local somente leitura"

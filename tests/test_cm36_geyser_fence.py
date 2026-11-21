@@ -96,3 +96,46 @@ class CM36GeyserFence(unittest.TestCase):
         fresh=self.sup.bind_collector_store(self.raw,"launch")
         fresh.ingest(self.event(),self.delivery())
         self.assertEqual(self.raw.counts()["geyser_raw_deliveries"],1)
+
+
+    def test_successor_recovers_revoked_capture_in_same_live_process(self):
+        self.bound.acquire_capture_source_lease(source_id="source",owner_id="old")
+        self.bound.register_frame_stream("source","old-stream","old-domain",0)
+        self.bound.start_capture_session("source","old-stream")
+        self.bound.append_wire_frame(source_id="source",stream_id="old-stream",
+            ordering_domain_id="old-domain",stream_sequence=0,payload=b"old",frame_kind="account")
+        self.now+=11
+        successor=self.owner();successor.acquire()
+        fresh=self.raw.bind_collector(successor.collector_authority("launch"))
+        recovered=fresh.recover_incomplete_capture_sessions(source_id="source",owner_id="new")
+        self.assertEqual(recovered,["old-stream"])
+        self.assertEqual(self.raw.get_capture_source_lease(source_id="source")["owner_id"],"new")
+        old=self.raw.get_capture_session("source","old-stream")
+        self.assertEqual(old["outcome"],"process_interrupted_unknown")
+        self.assertEqual(old["frame_count"],1)
+        with self.assertRaises(AuthorityLost):
+            self.bound.release_capture_source_lease(source_id="source",owner_id="old")
+        with self.assertRaises(ValueError):
+            fresh.append_wire_frame(source_id="source",stream_id="old-stream",ordering_domain_id="old-domain",
+                stream_sequence=1,payload=b"late",frame_kind="account")
+        self.assertEqual(self.raw.get_capture_session("source","old-stream")["frame_count"],1)
+
+    def test_active_capture_and_other_radar_cannot_be_reclaimed(self):
+        self.bound.acquire_capture_source_lease(source_id="source",owner_id="old")
+        with self.assertRaises(ValueError):
+            self.bound.recover_incomplete_capture_sessions(source_id="source",owner_id="new")
+        wallet=self.raw.bind_collector(self.sup.collector_authority("smart_money"))
+        with self.assertRaises(AuthorityLost):
+            wallet.recover_incomplete_capture_sessions(source_id="source",owner_id="wallet")
+        self.assertEqual(self.raw.get_capture_source_lease(source_id="source")["owner_id"],"old")
+
+    def test_pause_resume_revokes_capture_even_in_same_generation(self):
+        self.bound.acquire_capture_source_lease(source_id="source",owner_id="old")
+        for event,action in (("pause","PAUSE"),("resume","START")):
+            self.controls.apply(capability=self.key,event_id=event,action=action,actor="test",
+                reason="offline",radar="launch",at=datetime.fromtimestamp(self.now,timezone.utc))
+        fresh=self.raw.bind_collector(self.sup.collector_authority("launch"))
+        fresh.recover_incomplete_capture_sessions(source_id="source",owner_id="new")
+        self.assertEqual(self.raw.get_capture_source_lease(source_id="source")["owner_id"],"new")
+        with self.assertRaises(AuthorityLost):
+            self.bound.ingest(self.event(),self.delivery())

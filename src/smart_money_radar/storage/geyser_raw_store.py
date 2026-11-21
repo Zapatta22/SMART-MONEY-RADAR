@@ -359,6 +359,60 @@ class SQLiteGeyserRawStore:
                     COMMIT;
                 """)
 
+    @staticmethod
+    def _capture_authority_table(connection):
+        connection.execute("""CREATE TABLE IF NOT EXISTS cm36_capture_authority (
+            source_id TEXT PRIMARY KEY REFERENCES geyser_capture_source_leases(source_id) ON DELETE CASCADE,
+            capture_owner TEXT NOT NULL, generation INTEGER NOT NULL,
+            supervisor_owner TEXT NOT NULL, radar TEXT NOT NULL,
+            revision INTEGER NOT NULL, digest TEXT NOT NULL)""")
+
+    @staticmethod
+    def _capture_authority_digest(source_id,owner_id,generation,supervisor_owner,radar,revision):
+        import json
+        return hashlib.sha256(json.dumps([source_id,owner_id,generation,supervisor_owner,radar,revision],
+            separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+
+    def _record_capture_authority(self,connection,source_id,owner_id):
+        authority=getattr(self,"_collector_authority",None)
+        if authority is None:
+            return
+        self._capture_authority_table(connection)
+        values=(source_id,owner_id,authority.generation,authority.owner,authority.radar,authority.control_revision)
+        connection.execute("INSERT INTO cm36_capture_authority VALUES(?,?,?,?,?,?,?)",
+                           (*values,self._capture_authority_digest(*values)))
+
+    def _recover_revoked_capture_owner(self,connection,source_id,owner_id):
+        """Same transaction, only a provably revoked managed lease may be reclaimed.
+        Legacy (unbound) ownership still requires proof of process death.
+        """
+        from smart_money_radar.storage.collector_authority import AuthorityLost,collector_control_revision
+        authority=getattr(self,"_collector_authority",None)
+        if authority is None:
+            return False
+        self._capture_authority_table(connection)
+        row=connection.execute(
+            "SELECT capture_owner,generation,supervisor_owner,radar,revision,digest FROM cm36_capture_authority WHERE source_id=?",
+            (source_id,)).fetchone()
+        if row is None:
+            return False
+        old_owner,generation,supervisor_owner,radar,revision,digest=row
+        if (old_owner!=owner_id or radar not in ("launch","smart_money")
+                or digest!=self._capture_authority_digest(source_id,*row[:-1])):
+            raise AuthorityLost("capture authority metadata inconsistent")
+        if radar!=authority.radar:
+            raise AuthorityLost("capture belongs to independent radar")
+        revoked=(generation<authority.generation or
+                 (generation==authority.generation and supervisor_owner==authority.owner
+                  and revision<collector_control_revision(connection,radar)))
+        if not revoked:
+            return False
+        removed=connection.execute("DELETE FROM geyser_capture_source_leases WHERE source_id=? AND owner_id=?",
+                                   (source_id,owner_id))
+        if removed.rowcount!=1:
+            raise AuthorityLost("capture owner changed")
+        return True
+
     def acquire_capture_source_lease(self, *, source_id: str, owner_id: str) -> None:
         """Exclusive same-source ownership, held in the existing SQLite transaction layer.
 
@@ -381,6 +435,7 @@ class SQLiteGeyserRawStore:
                 (source_id, owner_id, datetime.now(timezone.utc).isoformat(),
                  os.getpid(), self.local_process_start_ticks(os.getpid())),
             )
+            self._record_capture_authority(connection,source_id,owner_id)
 
     def release_capture_source_lease(self, *, source_id: str, owner_id: str) -> None:
         _text(source_id, "source_id")
@@ -436,6 +491,8 @@ class SQLiteGeyserRawStore:
             ).fetchone()
             if row is None or row[0] != owner_id:
                 raise ValueError("capture ownership changed")
+            if self._recover_revoked_capture_owner(connection,source_id,owner_id):
+                return True
             pid, start_ticks = row[1:]
             if type(pid) is not int or type(start_ticks) is not int:
                 raise ValueError("legacy lease without process identity; operator review")
@@ -497,10 +554,11 @@ class SQLiteGeyserRawStore:
         """
         _text(source_id, "source_id")
         with self._connection() as connection, collector_write(connection, getattr(self, "_collector_authority", None)):
-            if connection.execute(
-                "SELECT 1 FROM geyser_capture_source_leases WHERE source_id = ?",
+            prior=connection.execute(
+                "SELECT owner_id FROM geyser_capture_source_leases WHERE source_id = ?",
                 (source_id,),
-            ).fetchone():
+            ).fetchone()
+            if prior and (owner_id is None or not self._recover_revoked_capture_owner(connection,source_id,prior[0])):
                 raise ValueError("cannot recover incomplete sessions while source leased")
             if owner_id is not None:
                 _text(owner_id, "owner_id")
@@ -511,6 +569,7 @@ class SQLiteGeyserRawStore:
                     (source_id, owner_id, datetime.now(timezone.utc).isoformat(),
                      os.getpid(), self.local_process_start_ticks(os.getpid())),
                 )
+                self._record_capture_authority(connection,source_id,owner_id)
             # Also recover a kill between registering the stream and creating
             # its session metadata: both operations were previously separate.
             orphaned = connection.execute(

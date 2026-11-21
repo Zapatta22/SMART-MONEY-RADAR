@@ -57,8 +57,8 @@ class CpmmRecoveryRunner:
         deadline=self.clock()+self.duration_seconds
         source=self.recovery.source_id
         owner_id=str(uuid.uuid4())
-        # Only a conclusively dead previous Linux process may be replaced.
-        # A live/ambiguous owner blocks all new capture and RAW recovery.
+        # A verified revoked supervisor generation/revision or conclusively
+        # dead legacy process permits recovery. Active/ambiguous owners block.
         prior=self.recovery.store.get_capture_source_lease(source_id=source)
         if prior is not None:
             self.recovery.store.release_dead_capture_source_lease(
@@ -374,6 +374,9 @@ class CpmmRecoveryRunner:
             check_collector(self.recovery.store,"launch")
             return self.manifest
         finally:
+            # Old authority must never finalize a successor session or release
+            # its lease. Its orphan is recovered by the replacement owner.
+            check_collector(self.recovery.store,"launch")
             try:
                 self.recovery.finalize("runner_end")
             finally:

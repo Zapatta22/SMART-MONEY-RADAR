@@ -78,6 +78,7 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
     market_result=None
     volume_result=None
     archived_market=None
+    launch_economics=None
     qualified_consensus=None
     risk_reasons=[]
     risk_status="UNKNOWN"
@@ -114,6 +115,18 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
             evidence_ids.extend(market_result.evidence_ids+volume_result.evidence_ids)
             if market_result.mandatory_blocks or volume_result.risk_flags:
                 verdict="REJECTED"
+            if isinstance(store, SQLiteEventStore):
+                from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
+                launch_economics = {mode: launch_metric_receipts(
+                    token_mint=scope.token_mint, pool=event["pool"], quote_mint=scope.quote_mint,
+                    at=point, strategy=mode, safety=market.safety, liquidity=market.liquidity,
+                    swaps=market.swaps, min_liquidity_quote=scope.min_liquidity_quote,
+                    max_concentration_fraction=scope.max_concentration_fraction,
+                    volume_window=scope.window, rpc_store=store)["economic_qualification"]
+                    for mode in ("immediate", "confirmed")}
+                if any(x["rpc_archive"]["status"] == "CONFLICTED" for x in launch_economics.values()):
+                    verdict="REJECTED"
+                    reasons.add("launch_persisted_rpc_conflict")
             # A creation instruction is not a current tradable reserve or a quote.
             reasons.add("initialization_not_executable_price")
         else:
@@ -192,6 +205,8 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
         "paper_modes":{"immediate":"BLOCKED","confirmed":"BLOCKED"},
         "operational_authorized":False,
     }
+    if radar == "launch":
+        result["economic_qualification"] = launch_economics
     # Stable decision identifier: includes as_of, policy output, scope and exact evidence.
     result["id"]="decision:"+_id([result,asdict(scope) if scope else None,
                                    asdict(risk_limits) if risk_limits else None,

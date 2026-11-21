@@ -40,7 +40,7 @@ class RpcObservationJournal:
         self.store=store
 
     def append(self,*,radar,signature,source_id,endpoint_host,raw_payload,
-               observed_at,available_at,expected_slot=None):
+               observed_at,available_at,expected_slot=None,commitment_requested="finalized"):
         if self.store.read_only: raise PermissionError("read-only")
         if radar not in RADARS: raise ValueError("invalid radar")
         if not isinstance(raw_payload,bytes) or not 0<len(raw_payload)<=2_000_000:
@@ -51,14 +51,14 @@ class RpcObservationJournal:
         _strict_json(raw_payload)
         ev=verify_transaction_rpc_response(raw_payload=raw_payload,signature=signature,
             source_id=source_id,endpoint_host=endpoint_host,observed_at=observed,
-            available_at=available,expected_slot=expected_slot,requested_commitment="finalized")
+            available_at=available,expected_slot=expected_slot,requested_commitment=commitment_requested)
         # Stable identity excludes a later retry timestamp; the original
         # observation record is immutable. A different RAW digest is retained.
-        identity=sha256(_canonical([radar,signature,source_id,endpoint_host,ev.raw_sha256]).encode()).hexdigest()
+        identity=sha256(_canonical([radar,signature,source_id,endpoint_host,ev.raw_sha256,commitment_requested]).encode()).hexdigest()
         meta={"radar":radar,"signature":signature,"source_id":source_id,"endpoint_host":endpoint_host,
               "raw_sha256":ev.raw_sha256,"expected_slot":expected_slot,
               "observed_at":observed.isoformat(),"available_at":available.isoformat(),
-              "status":ev.status,"slot":ev.slot,"commitment_requested":"finalized"}
+              "status":ev.status,"slot":ev.slot,"commitment_requested":commitment_requested,"identity_version":2}
         payload=_canonical(meta)
         # Use the same transaction/generation fence as the existing collectors.
         with self.store._connection_scope() as conn,collector_write(conn,getattr(self.store,"_collector_authority",None),radar):
@@ -82,7 +82,9 @@ class RpcObservationJournal:
         if sha256(payload.encode()).hexdigest()!=digest: raise ValueError("metadata integrity conflict")
         meta=json.loads(payload)
         if sha256(raw).hexdigest()!=meta["raw_sha256"]: raise ValueError("RAW integrity conflict")
-        identity=sha256(_canonical([meta["radar"],meta["signature"],meta["source_id"],meta["endpoint_host"],meta["raw_sha256"]]).encode()).hexdigest()
+        parts=[meta["radar"],meta["signature"],meta["source_id"],meta["endpoint_host"],meta["raw_sha256"]]
+        if meta.get("identity_version")==2: parts.append(meta["commitment_requested"])
+        identity=sha256(_canonical(parts).encode()).hexdigest()
         if eid!=identity: raise ValueError("evidence identity conflict")
         _strict_json(raw)
         ev=verify_transaction_rpc_response(raw_payload=raw,signature=meta["signature"],

@@ -1,6 +1,7 @@
 """Monitor WebSocket de carteiras com reconexão exponencial."""
 
 from smart_money_radar.storage.collector_authority import AuthorityLost, check_collector, await_authorized
+from smart_money_radar.services.rpc_capture_bridge import collect_transaction_with_evidence
 import asyncio
 import json
 import logging
@@ -216,8 +217,9 @@ class WalletMonitor:
                 return False
             try:
                 check_collector(self.event_store,"smart_money")
-                transaction = await await_authorized(self.event_store,"smart_money",
-                    lambda:self.data_source.get_transaction_async(signature))
+                transaction = await collect_transaction_with_evidence(self.event_store,self.data_source,
+                    radar="smart_money",signature=signature,source_id="helius-wallet-rpc",commitment="confirmed",
+                    legacy=lambda:self.data_source.get_transaction_async(signature))
                 check_collector(self.event_store,"smart_money")
             except AuthorityLost:
                 raise

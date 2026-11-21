@@ -13,6 +13,7 @@ from typing import Any, Protocol
 
 from smart_money_radar.storage.event_store import SQLiteEventStore
 from smart_money_radar.storage.collector_authority import check_collector, await_authorized
+from smart_money_radar.services.rpc_capture_bridge import collect_transaction_with_evidence
 
 
 class SolanaLaunchRPC(Protocol):
@@ -137,7 +138,9 @@ class FinalizedLaunchBackfill:
                 raise LaunchBackfillGap("coleta interrompida; cursor preservado")
             sig = entry["signature"]
             check_collector(self.store,"launch")
-            transaction = await await_authorized(self.store,"launch",lambda:self.rpc.get_finalized_transaction_async(sig))
+            transaction = await collect_transaction_with_evidence(self.store,self.rpc,radar="launch",signature=sig,
+                source_id=source,commitment="finalized",expected_slot=entry["slot"],
+                legacy=lambda:self.rpc.get_finalized_transaction_async(sig))
             check_collector(self.store,"launch")
             if transaction is None or not isinstance(transaction, dict):
                 raise LaunchBackfillGap("transação indisponível; cursor preservado")

@@ -19,6 +19,52 @@ def _time(value):
     return t.astimezone(timezone.utc)
 
 
+WSOL = "So11111111111111111111111111111111111111112"
+
+
+def additional_network_cost(tx, wallet, quote):
+    """Return proven incremental quote cost, or None. Never re-charge SPL/DEX fees."""
+    meta = tx["meta"]
+    fee = meta.get("fee")
+    keys = tx["transaction"]["message"].get("accountKeys", [])
+    if type(fee) is not int or fee < 0 or not keys:
+        return None
+    payer = keys[0] if isinstance(keys[0], str) else keys[0].get("pubkey")
+    if not isinstance(payer, str) or not payer:
+        return None
+    if payer != wallet or fee == 0:
+        return Decimal(0)
+    # Only WSOL token deltas, with no native SOL conversion or account closure.
+    # A wrapped/native reconciliation could already contain the network debit.
+    if quote != WSOL:
+        return None
+    for key in ("preTokenBalances", "postTokenBalances"):
+        if not any(x.get("mint")==WSOL and x.get("owner")==wallet
+                   for x in meta.get(key, [])):
+            return None
+    pre = meta.get("preBalances", [])
+    post = meta.get("postBalances", [])
+    if not pre or not post or type(pre[0]) is not int or type(post[0]) is not int or pre[0]-post[0]!=fee:
+        return None
+    return Decimal(fee).scaleb(-9)
+
+
+def fifo_metric_receipts(receipt):
+    from smart_money_radar.services.cm38k_fifo_reconstruction import verify_fifo_receipt
+    from smart_money_radar.services.cm38j_metric_provenance import describe_metric
+    verify_fifo_receipt(receipt)
+    point = _time(receipt["as_of"])
+    ids = tuple(x["evidence_id"] for x in receipt["lineage"])
+    return [describe_metric(name=name,value=None,evidence_ids=ids,
+            source_id="CM38K_PERSISTED_FIFO",start=min(
+                (_time(x["available_at"]) for x in receipt["lineage"]),default=point),
+            end=point,available_at=point,decision_at=point,quality="UNKNOWN",
+            unavailable_reason="coverage_or_independent_attestation_missing",
+            radar="smart_money",unit=receipt["quote_mint"] if name!="win_rate" else "fraction",
+            method=receipt["method"],source_integrity_sha256=receipt["sha256"])
+            for name in ("realized_pnl","acquisition_cost","fees","unrealized_pnl","win_rate")]
+
+
 def _derive(conn, operation_id, cutoff, *, operation_only=False):
     cur = conn.execute("""
       SELECT a.*, s.signature, s.chain, s.wallet_address AS swap_wallet,
@@ -128,12 +174,14 @@ def _derive(conn, operation_id, cutoff, *, operation_only=False):
     # Gross wallet debit and spendable net credit already contain DEX and
     # token transfer costs. Do not subtract them again. Network costs are
     # explicitly unknown in quote units; no zero-cost claim is made.
+    extra = additional_network_cost(tx, d["wallet"], quote)
     op = EconomicOperation(operation_id, d["wallet"], token, d["side"],
         credit if buy else debit, occurred, available, meta["source_id"], eid,
         meta["raw_sha256"], quote_mint=quote, quote_amount=debit if buy else credit,
+        fee_mint=quote if extra is not None else None, fee_amount=extra,
         independently_attested=False, history_complete=False)
     if operation_only:
-        return op, {"slot": d["slot"], "signature": d["signature"], "network_fee_lamports": tx["meta"].get("fee")}
+        return op, {"slot": d["slot"], "signature": d["signature"], "network_fee_lamports": tx["meta"].get("fee"), "additional_quote_cost":str(extra) if extra is not None else None}
     receipt = reconstruct_fifo((op,), wallet=d["wallet"], token=token,
                                quote_mint=quote, as_of=cutoff)
     receipt["reasons"] = sorted(set(receipt["reasons"]) | {"network_fee_quote_cost_unproven"})
@@ -143,6 +191,7 @@ def _derive(conn, operation_id, cutoff, *, operation_only=False):
         "input_mint": d["input_mint"], "output_mint": d["output_mint"],
         "wallet_debit": str(debit), "wallet_credit_net": str(credit),
         "network_fee_lamports": tx["meta"].get("fee"),
+        "additional_quote_cost":str(extra) if extra is not None else None,
         "fee_policy": "NET_DELTAS_NO_SECOND_DEDUCTION",
         "coverage": "UNKNOWN", "authenticity": "UNATTESTED"}
     receipt["sha256"] = _hash({k:v for k,v in receipt.items() if k!="sha256"})

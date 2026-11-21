@@ -19,7 +19,7 @@ from smart_money_radar.services.cm38j_metric_provenance import (
     describe_metric, qualify_metric_set, SMART_MONEY_INDICATORS,
 )
 from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
-from smart_money_radar.services.cm38k_persisted_fifo import reconstruct_persisted_wallet
+from smart_money_radar.services.cm38k_persisted_fifo import reconstruct_persisted_wallet, fifo_metric_receipts
 
 def _cutoff(value):
     if not isinstance(value,datetime) or value.utcoffset() is None:
@@ -146,6 +146,7 @@ def qualify_smart_money_at(store,*,as_of,policy:WalletDiscoveryPolicy=WalletDisc
                 radar="smart_money",method="CM35_DISCOVERY_WITH_CM38_RAW_LINK_AUDIT")
                 for name in SMART_MONEY_INDICATORS]
             profile.update({"fifo_observed_inventory":fifo_receipts,
+                            "fifo_metric_receipts":[m for receipt in fifo_receipts for m in fifo_metric_receipts(receipt)],
                             "economic_receipts":economic_receipts,
                             "economic_receipt_audit":qualify_metric_set(
                                 radar="smart_money",metrics=economic_receipts),

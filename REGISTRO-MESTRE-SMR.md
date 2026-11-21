@@ -4390,3 +4390,8 @@ CM48 cb0790a: CI 44897891126, 1323 testes Python aprovados, 2 ignorados. CM49 36
 ## CM52 — FIFO e qualificação Smart Money
 
 CM50: CI 44898206511, 1327 testes aprovados e 2 ignorados. CM51: CI 44898449157, assinatura sintética Base58 inválida, não homologado. CM52 corrige assinatura sem enfraquecer validação e conecta inventário FIFO observado ao qualificador, na mesma leitura SQLite. Indicadores oficiais continuam UNKNOWN/NOT_COMPUTABLE; não há autorização prospectiva, alteração de capital ou validação live. Homologação offline exige CI verde, testes de custos líquidos/adicionais e associação causal CM38I/J; live exige cobertura e autenticidade independentes. Retornar repositório a privado após validações.
+
+
+## CM53 — custos adicionais e proveniência econômica
+
+CM52 homologado CI 44898584810: 1328 Python aprovados, 2 ignorados. CM53 implementa custo de rede separado somente quando demonstrável em WSOL ou pago por terceiro; não duplica taxas embutidas. Recibos CM38J indisponíveis vinculados ao hash FIFO; associação retrospectiva CM38I reconstruída no cutoff original, não prova uso causal. Testes sintéticos de PnL e custos; CI pendente. Cobertura/autenticidade independentes continuam UNKNOWN, capital e CM39 bloqueados. Retornar repositório a privado após validações.

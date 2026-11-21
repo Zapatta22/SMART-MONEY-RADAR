@@ -106,3 +106,24 @@ def audit_fifo_decision_link(store,request_id):
         return {"link_id":row[0],"economic_sha256":row[4],
                 "status":"BLOCKED","prospective_authorized":False,
                 "economic_status":receipt["status"]}
+
+
+def link_persisted_fifo_to_blocked_decision(store, *, request_id, wallet, token, quote_mint):
+    """Recompute from the durable archive at the original decision cutoff.
+
+    This is a retrospective association, not proof the historical decision used
+    the indicator. Existing immutable decisions are never changed.
+    """
+    from datetime import datetime
+    from smart_money_radar.services.cm38k_persisted_fifo import reconstruct_persisted_wallet
+    audited = audit_blocked_entry(store,request_id)
+    if audited is None or audited["radar"]!="smart_money":
+        raise ValueError("Smart Money blocked decision required")
+    with store._connection_scope() as conn:
+        row=conn.execute("SELECT decision_at FROM cm38i_opportunities WHERE opportunity_id=?",
+                         (audited["opportunity_id"],)).fetchone()
+    receipt=reconstruct_persisted_wallet(store,wallet=wallet,token=token,
+        quote_mint=quote_mint,as_of=datetime.fromisoformat(row[0]))
+    if audited["evidence_id"] not in {line["evidence_id"] for line in receipt["lineage"]}:
+        raise ValueError("decision RAW absent from economic lineage")
+    return link_fifo_to_blocked_decision(store,request_id=request_id,receipt=receipt)

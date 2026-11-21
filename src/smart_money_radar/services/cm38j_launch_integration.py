@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from decimal import Decimal
+from hashlib import sha256
+import json
 
 from smart_money_radar.domain.cpmm_reserve_snapshot import (
     validate_snapshot, estimate_from_snapshot,
@@ -49,6 +51,9 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
     if amount_in is not None and (not isinstance(amount_in, Decimal)
                                 or not amount_in.is_finite() or amount_in <= 0):
         raise ValueError("positive finite estimate amount required")
+    swaps = tuple(swaps)
+    if liquidity is not None and liquidity.quote_mint != quote_mint:
+        raise ValueError("liquidity quote mint mismatch")
     safety_audit = assess_token_liquidity(
         token=safety, liquidity=liquidity, token_mint=token_mint,
         pool=pool, as_of=at, min_liquidity_quote=min_liquidity_quote,
@@ -91,7 +96,44 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
             estimate = estimate_from_snapshot(reserve, amount_in)
             if estimate.is_observed_quote or estimate.pool != pool:
                 raise ValueError("model estimate cannot be observed quote")
+    # Local hashes prove byte integrity only, not independent RPC authenticity.
+    links = []
+    for kind, item in (("token_safety", safety), ("reserves", liquidity)):
+        if item is not None:
+            env = item.envelope
+            links.append({"kind": kind, "evidence_id": env.evidence_id,
+                          "source_id": env.source_id, "raw_sha256": env.integrity_sha256,
+                          "slot": env.slot, "observed_at": env.observed_at.isoformat(),
+                          "available_at": env.available_at.isoformat(),
+                          "commitment": env.commitment})
+    for swap in swaps:
+        if start <= swap.occurred_at <= at:
+            links.append({"kind": "swap", "evidence_id": swap.evidence_id,
+                          "source_id": swap.source_id, "raw_sha256": swap.raw_sha256,
+                          "signature": swap.signature, "side": swap.side,
+                          "slot": swap.slot, "observed_at": swap.occurred_at.isoformat(),
+                          "available_at": swap.available_at.isoformat(),
+                          "commitment": swap.commitment})
+    economic = {
+        "radar": "launch", "strategy": strategy, "pool": pool,
+        "token_mint": token_mint, "quote_mint": quote_mint,
+        "window_start": start.isoformat(), "cutoff": at.isoformat(),
+        "status": "NOT_COMPUTABLE", "quality": "UNKNOWN",
+        "reserve_quote": str(safety_audit.liquidity_quote) if safety_audit.liquidity_quote is not None else None,
+        "volume_quote": str(volume_audit.quote_volume) if volume_audit.quote_volume is not None and volume_audit.quality != "CONFLICTED" else None,
+        "observation_kind": "LOCAL_UNATTESTED",
+        "estimated_impact_fraction": str(estimate.price_impact_fraction) if estimate else None,
+        "impact_kind": "MODEL_ESTIMATE" if estimate else "UNAVAILABLE",
+        "safety_blocks": list(safety_audit.mandatory_blocks),
+        "risk_flags": list(volume_audit.risk_flags),
+        "reasons": sorted(set(safety_audit.reasons + volume_audit.reasons)),
+        "evidence": sorted(links, key=lambda link: (link["kind"], link["evidence_id"])),
+        "operational_authorized": False,
+        "prospective_paper_authorized": False,
+    }
+    economic["sha256"] = sha256(json.dumps(economic, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     return {
+        "economic_qualification": economic,
         "radar": "launch", "strategy": strategy, "pool": pool,
         "cutoff": at.isoformat(), "metrics": metrics,
         "metric_audit": qualify_metric_set(radar="launch", metrics=metrics),

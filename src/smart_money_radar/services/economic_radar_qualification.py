@@ -52,6 +52,7 @@ def qualify_launch_at(store,*,signature,base:OpportunityEvidence,consensus:Walle
     safe_consensus=replace(consensus,independence_verified=False,
                            actionable=False,
                            reasons=tuple(sorted(set(consensus.reasons)|{"independence_not_attested"})))
+    swaps=tuple(swaps)
     audit=classify_with_market_evidence(
         base=safe_base,consensus=safe_consensus,safety=safety,liquidity=liquidity,
         swaps=tuple(swaps),quote_mint=quote_mint,
@@ -68,8 +69,21 @@ def qualify_launch_at(store,*,signature,base:OpportunityEvidence,consensus:Walle
         pool=base.pool, quote_mint=quote_mint, at=point,
         strategy="immediate", safety=safety, liquidity=liquidity,
         swaps=tuple(swaps), min_liquidity_quote=min_liquidity_quote,
-        max_concentration_fraction=max_concentration_fraction)
+        max_concentration_fraction=max_concentration_fraction, rpc_store=store)
+    economic=receipt_bundle["economic_qualification"]
+    if economic["rpc_archive"]["status"]=="CONFLICTED":
+        reasons.add("launch_persisted_rpc_conflict")
+        # Reuse the existing classifier with an explicit mandatory blocker.
+        audit=classify_with_market_evidence(
+            base=replace(safe_base, source_status="CONFLICTED",
+                mandatory_blocks=tuple(sorted(set(safe_base.mandatory_blocks)|{"launch_persisted_rpc_conflict"}))),
+            consensus=safe_consensus,safety=safety,liquidity=liquidity,
+            swaps=swaps,quote_mint=quote_mint,
+            min_liquidity_quote=min_liquidity_quote,
+            max_concentration_fraction=max_concentration_fraction)
+        reasons.update(audit.classification.reasons)
     return {"radar":"launch","signature":signature,"cutoff":point.isoformat(),
+            "economic_qualification":economic,
             "economic_receipts":receipt_bundle["metrics"],
             "economic_receipt_audit":receipt_bundle["metric_audit"],
             "estimated_impact_fraction":receipt_bundle["estimated_impact_fraction"],

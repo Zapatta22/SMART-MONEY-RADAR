@@ -341,6 +341,23 @@ class SQLiteEventStore:
                     PRIMARY KEY(run_id,sequence), UNIQUE(run_id,quote_id),
                     UNIQUE(run_id,signal_id))""")
 
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm34_capital_accounts (
+                    account_id TEXT PRIMARY KEY, metadata TEXT NOT NULL, metadata_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm34_capital_journal (
+                    account_id TEXT NOT NULL REFERENCES cm34_capital_accounts(account_id),
+                    seq INTEGER NOT NULL CHECK(seq>=0), event_id TEXT NOT NULL,
+                    payload TEXT NOT NULL, payload_sha TEXT NOT NULL,
+                    previous_sha TEXT NOT NULL, chain_sha TEXT NOT NULL,
+                    PRIMARY KEY(account_id,seq), UNIQUE(account_id,event_id))""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm34_capital_runs (
+                    account_id TEXT NOT NULL REFERENCES cm34_capital_accounts(account_id),
+                    run_id TEXT PRIMARY KEY REFERENCES cm33_paper_runs(run_id),
+                    binding TEXT NOT NULL, binding_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm34_operational_journal (
+                    seq INTEGER PRIMARY KEY CHECK(seq>=0), event_id TEXT NOT NULL UNIQUE,
+                    payload TEXT NOT NULL, payload_sha TEXT NOT NULL,
+                    previous_sha TEXT NOT NULL, chain_sha TEXT NOT NULL)""")
+
     def archive_cpmm_launches(
         self, payloads: list[bytes], *,
         source_id: str | None = None, first_sequence: int | None = None,

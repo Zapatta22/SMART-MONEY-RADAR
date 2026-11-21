@@ -146,6 +146,13 @@ class SyntheticPaperLedger:
                 conn.execute("INSERT INTO cm33_paper_runs VALUES(?,?,?,?,?,?)",
                     (run_id,radar,meta,_hash(meta),result,_hash(result)))
     def append(self,run_id,*,tick: ReplayTick,signal_id=None):
+        """Standalone synthetic runs only; allocated runs require the CM34 coordinator."""
+        if self.store.read_only: raise ValueError("read-only store")
+        return self._append(run_id,tick=tick,signal_id=signal_id)
+
+    def _append(self,run_id,*,tick: ReplayTick,signal_id=None,connection=None):
+        """Internal transactional adapter; caller-owned transaction only for coordinator."""
+        from contextlib import nullcontext
         if self.store.read_only: raise ValueError("read-only store")
         _validate_tick(tick)
         if tick.signal!="NONE" and (not isinstance(signal_id,str) or not signal_id.strip()):
@@ -154,9 +161,12 @@ class SyntheticPaperLedger:
             raise ValueError("unexpected signal id")
         payload=_encode({"tick":asdict(tick),"signal_id":signal_id})
         digest=_hash(payload)
-        with self.store._connection_scope() as conn:
-            with conn:
-                conn.execute("BEGIN IMMEDIATE")
+        with (self.store._connection_scope() if connection is None else nullcontext(connection)) as conn:
+            with (conn if connection is None else nullcontext()):
+                if connection is None:
+                    conn.execute("BEGIN IMMEDIATE")
+                    if conn.execute("SELECT 1 FROM cm34_capital_runs WHERE run_id=?",(run_id,)).fetchone():
+                        raise ValueError("allocated run requires capital coordinator")
                 row=conn.execute("SELECT metadata,metadata_sha,report,report_sha FROM cm33_paper_runs WHERE run_id=?",(run_id,)).fetchone()
                 if row is None: raise ValueError("unknown synthetic run")
                 meta=_verify_record(row[:2])

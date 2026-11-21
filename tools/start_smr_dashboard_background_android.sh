@@ -28,7 +28,7 @@ fi
 LOG="$STATE/dashboard.log"
 PIDFILE="$STATE/dashboard.pid"
 URL="http://127.0.0.1:8765/"
-if command -v curl >/dev/null 2>&1 && curl --silent --max-time 2 --output /dev/null --fail "$URL"; then
+if python "$ROOT/tools/check_smr_dashboard_health.py"; then
   echo "Painel já responde em $URL. Nenhuma nova instância foi iniciada."
   exit 0
 fi
@@ -47,7 +47,7 @@ nohup env SMR_DB_PATH="$DB" bash "$ROOT/tools/run_smr_dashboard_android.sh" \
 pid=$!
 printf '%s\n' "$pid" > "$PIDFILE"
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  if curl --silent --max-time 2 --output /dev/null --fail "$URL"; then
+  if python "$ROOT/tools/check_smr_dashboard_health.py"; then
     echo "Painel disponível em $URL (PID $pid)."
     echo "Token privado no arquivo $LOG; não compartilhe seu conteúdo."
     echo "Execução em segundo plano; persistência após reinício do Android não garantida."

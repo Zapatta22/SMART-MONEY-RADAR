@@ -1349,6 +1349,76 @@ class SQLiteEventStore:
                                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                             delta_rows,
                         )
+                # New CM38H derived-state receipt: preserve every reparse as an
+                # immutable, hash-chained decision bound to original RPC RAW
+                # when available, without moving wallet checkpoints.
+                from hashlib import sha256 as cm38_sha256
+                import uuid as cm38_uuid
+                parent=connection.execute(
+                    "SELECT payload_json,slot FROM observed_transactions WHERE wallet_address=? AND signature=?",
+                    (wallet_address,signature)
+                ).fetchone()
+                old_rpc=connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cm38_rpc_observations'"
+                ).fetchone()
+                linked=None
+                if old_rpc:
+                    linked=connection.execute(
+                        """SELECT evidence_id FROM cm38_economic_evidence_links WHERE
+                           radar='smart_money' AND wallet_address=? AND signature=?
+                           AND entity_type='wallet_transaction' AND entity_id=?""",
+                        (wallet_address,signature,signature)
+                    ).fetchone() if connection.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cm38_economic_evidence_links'"
+                    ).fetchone() else None
+                    captured=connection.execute(
+                        "SELECT 1 FROM cm38_rpc_observations WHERE radar='smart_money' AND signature=?",
+                        (signature,)
+                    ).fetchone()
+                    if captured and linked is None:
+                        raise ValueError("reprocessing captured transaction requires an existing RPC link")
+                    if linked is not None:
+                        self._cm38_link_in_connection(
+                            connection,radar="smart_money",wallet_address=wallet_address,
+                            signature=signature,evidence_id=linked[0],kind="wallet_transaction",
+                            operation_id=signature,slot=parent[1],commitment="confirmed",
+                            source_id="helius-wallet-rpc",
+                        )
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm38_reprocessing_history(
+                    receipt_id TEXT PRIMARY KEY,wallet_address TEXT NOT NULL,
+                    signature TEXT NOT NULL,evidence_id TEXT,
+                    parser_version TEXT NOT NULL,parse_status TEXT NOT NULL,
+                    derived_sha256 TEXT NOT NULL,previous_sha256 TEXT,
+                    receipt_sha256 TEXT NOT NULL,created_at TEXT NOT NULL,
+                    FOREIGN KEY(evidence_id) REFERENCES cm38_rpc_observations(evidence_id))""")
+                derived=json.dumps({
+                    "wallet":wallet_address,"signature":signature,"parser_version":parser_version,
+                    "parse_status":parse_status,"parse_error":parse_error,
+                    "events":rows,
+                    "deltas":sorted([
+                        (d.wallet_address,d.signature,d.token_mint,d.direction,str(d.amount),d.decimals)
+                        for d in normalized_observation.token_deltas
+                    ]) if normalized_observation else [],
+                    "payload_hash":cm38_sha256((parent[0] or "").encode()).hexdigest(),
+                },sort_keys=True,separators=(",",":"))
+                previous=connection.execute(
+                    """SELECT receipt_sha256 FROM cm38_reprocessing_history
+                       WHERE wallet_address=? AND signature=? ORDER BY rowid DESC LIMIT 1""",
+                    (wallet_address,signature)
+                ).fetchone()
+                prev_hash=previous[0] if previous else None
+                derived_hash=cm38_sha256(derived.encode()).hexdigest()
+                receipt=cm38_uuid.uuid4().hex
+                timestamp=datetime.now(timezone.utc).isoformat()
+                receipt_hash=cm38_sha256(json.dumps([
+                    receipt,wallet_address,signature,linked[0] if linked else None,
+                    parser_version,parse_status,derived_hash,prev_hash,timestamp,
+                ],separators=(",",":")).encode()).hexdigest()
+                connection.execute(
+                    "INSERT INTO cm38_reprocessing_history VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (receipt,wallet_address,signature,linked[0] if linked else None,
+                     parser_version,parse_status,derived_hash,prev_hash,receipt_hash,timestamp)
+                )
                 return len(rows)
 
     def get_token_deltas(

@@ -68,6 +68,23 @@ class DashboardReadServiceTests(unittest.TestCase):
         self.assertEqual(result["reconciliation"], {"total_attempts": 0})
         diagnostics.get_report.assert_called_once_with(wallet_address=None)
 
+    def test_independent_radars_default_to_unknown_and_never_authorize_trades(self):
+        store = Mock()
+        store.get_reconciliation_diagnostics.return_value = {
+            "total_attempts": 0, "statuses": {}, "top_reasons": [],
+            "pending_transactions_count": 0, "pending_transactions": [],
+        }
+        store.storage_stats.return_value = {}
+        store.get_events.return_value = []
+        result = DashboardReadService(store).get_overview()
+        self.assertEqual(set(result["radars"]), {"launch", "smart_money"})
+        for radar in result["radars"].values():
+            self.assertEqual(radar["status"], "UNKNOWN")
+            self.assertEqual(radar["evidence_coverage"], "UNKNOWN")
+            self.assertFalse(radar["operational_authorized"])
+            self.assertEqual(radar["paper_modes"],
+                             {"immediate": "BLOCKED", "confirmed": "BLOCKED"})
+
     def test_no_network_or_mutation_methods_are_exposed(self):
         service = DashboardReadService(Mock())
         self.assertFalse(hasattr(service, "submit_transaction"))

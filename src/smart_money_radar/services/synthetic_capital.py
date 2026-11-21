@@ -99,7 +99,10 @@ def _load(conn,account):
         if last is not None and at<last: raise ValueError("capital chronology conflict")
         last=at
         rid=ev["run_id"]
-        if ev["type"]=="POLICY":
+        if ev["type"]=="CREATE":
+            if ev is not events[0] or rid!="__capital_policy__" or Decimal(ev["equity"])!=cash:
+                raise ValueError("invalid administrative genesis")
+        elif ev["type"]=="POLICY":
             if rid!="__capital_policy__" or active:
                 raise ValueError("policy change with active reservations")
             candidate=CapitalLimits(**{k:Decimal(v) for k,v in ev["limits"].items()})
@@ -205,7 +208,7 @@ class SyntheticCapitalCoordinator:
     def __init__(self,store):
         if not isinstance(store,SQLiteEventStore): raise TypeError("SQLiteEventStore required")
         self.store=store
-    def create(self,*,account_id,initial:Decimal,currency,radars,limits:CapitalLimits):
+    def create(self,*,account_id,initial:Decimal,currency,radars,limits:CapitalLimits,admin_event_id=None,admin_at=None):
         if self.store.read_only: raise ValueError("read-only")
         _identity(account_id); _identity(currency); _decimal(initial)
         if not isinstance(limits,CapitalLimits) or not isinstance(radars,tuple) or not radars or set(radars)-set(RADARS) or len(set(radars))!=len(radars):
@@ -217,8 +220,13 @@ class SyntheticCapitalCoordinator:
             old=conn.execute("SELECT metadata,metadata_sha FROM cm34_capital_accounts WHERE account_id=?",(account_id,)).fetchone()
             if old:
                 if old!=(meta,_hash(meta)): raise ValueError("account conflict")
+                if admin_event_id is not None: raise ValueError("administrative account already exists")
                 return
             conn.execute("INSERT INTO cm34_capital_accounts VALUES(?,?,?)",(account_id,meta,_hash(meta)))
+            if admin_event_id is not None:
+                _identity(admin_event_id)
+                _append_event(conn,account_id,[],GENESIS,{"type":"CREATE","id":admin_event_id,"run_id":"__capital_policy__","at":_time(admin_at).isoformat(),"equity":str(initial)})
+                _load(conn,account_id)
     def update_future_policy(self,account_id,*,event_id,limits:CapitalLimits,config:PaperConfig,risk_limits:EntryRiskLimits,at):
         """Change future synthetic risk only; never touch principal or reserves.
         Fully settled accounts only; historical replay stays immutable.

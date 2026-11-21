@@ -35,7 +35,7 @@ class IsolatedAdminEvaluation:
     def confirm(self,*args,**kwargs):
         return self.security.confirm(*args,**kwargs)
 
-    def execute(self,token,csrf,*,request_id,action,radar=None,confirmation=None):
+    def execute(self,token,csrf,*,request_id,action,radar=None,confirmation=None,policy=None):
         """Consume authorization once, use the established control transition.
 
         Authorization and operational journals are distinct files. A crash
@@ -43,10 +43,14 @@ class IsolatedAdminEvaluation:
         execution. Query the actual local journal to resolve the outcome.
         """
         receipt=self.security.authorize(token,csrf,request_id=request_id,action=action,
-            radar=radar,confirmation=confirmation)
+            radar=radar,confirmation=confirmation,policy=policy)
         event_id="cm37-eval-"+hashlib.sha256(request_id.encode()).hexdigest()
         at=datetime.fromtimestamp(self._clock(),timezone.utc)
         try:
+            if action in ("CAPITAL_CREATE","CAPITAL_POLICY"):
+                from smart_money_radar.services.admin_capital_policy import apply_capital_command
+                state=apply_capital_command(self.store,action,policy,event_id,at)
+                return {"event_id":event_id,"request_id":request_id,"status":"APPLIED","executed":True,"state":state,"remote_writes_enabled":False}
             state=self._controls.apply(capability=self._capability,event_id=event_id,
                 action=receipt["action"],radar=receipt["radar"],actor="admin-evaluation",
                 at=at,reason="isolated authenticated command")
@@ -66,6 +70,9 @@ class IsolatedAdminEvaluation:
             conn.execute("BEGIN")
             state,events,_=_load(conn)
             event=next((e for e in events if e["id"]==eid),None)
+            if event is None:
+                from smart_money_radar.services.admin_capital_policy import read_capital_command
+                event=read_capital_command(conn,eid)
             return {"status":"APPLIED" if event else "NO_COMMITTED_TRANSITION",
                     "event":event,"state":state,"remote_writes_enabled":False}
 

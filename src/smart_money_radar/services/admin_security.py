@@ -19,8 +19,8 @@ N=2**15
 R=8
 P=1
 MAXMEM=64*1024*1024
-COMMANDS={"START","PAUSE","PAUSE_ENTRIES","RESUME_ENTRIES","EMERGENCY_HALT"}
-CRITICAL={"START","RESUME_ENTRIES","EMERGENCY_HALT"}
+COMMANDS={"START","PAUSE","PAUSE_ENTRIES","RESUME_ENTRIES","EMERGENCY_HALT","CAPITAL_CREATE","CAPITAL_POLICY"}
+CRITICAL={"START","RESUME_ENTRIES","EMERGENCY_HALT","CAPITAL_CREATE","CAPITAL_POLICY"}
 RADARS={"launch","smart_money"}
 
 def _sha(value):
@@ -133,15 +133,21 @@ class AdminSecurity:
         return sid
 
     @staticmethod
-    def _command(action,radar):
-        if action not in COMMANDS: raise ValueError("unsupported command")
+    def _command(action,radar,policy=None):
+        if not isinstance(action,str) or action not in COMMANDS: raise ValueError("unsupported command")
+        if action in ("CAPITAL_CREATE","CAPITAL_POLICY"):
+            if radar is not None or not isinstance(policy,dict): raise ValueError("capital policy required")
+            encoded=_json(policy)
+            if len(encoded)>3000: raise ValueError("policy too large")
+            return _json({"action":action,"radar":None,"policy":policy})
+        if policy is not None: raise ValueError("unexpected policy")
         if action in ("START","PAUSE"):
             if radar not in RADARS: raise ValueError("explicit radar required")
         elif radar is not None: raise ValueError("global action has no radar")
         return _json({"action":action,"radar":radar})
 
-    def confirm(self,token,csrf,*,action,radar=None):
-        command=self._command(action,radar);now=self._now()
+    def confirm(self,token,csrf,*,action,radar=None,policy=None):
+        command=self._command(action,radar,policy);now=self._now()
         conn=self._connect();result=None
         try:
             with conn:
@@ -157,8 +163,8 @@ class AdminSecurity:
         if result is None: raise PermissionError("confirmation denied")
         return result
 
-    def authorize(self,token,csrf,*,request_id,action,radar=None,confirmation=None):
-        command=self._command(action,radar);now=self._now()
+    def authorize(self,token,csrf,*,request_id,action,radar=None,confirmation=None,policy=None):
+        command=self._command(action,radar,policy);now=self._now()
         if not isinstance(request_id,str) or not 16<=len(request_id)<=128 or not request_id.isascii():
             raise ValueError("invalid request id")
         conn=self._connect();result=None
@@ -176,12 +182,12 @@ class AdminSecurity:
                     if not allowed and isinstance(confirmation,str) and 20<=len(confirmation)<=128:
                         key=_sha(confirmation)
                         row=conn.execute("SELECT session_hash,command,expires FROM confirmations WHERE token_hash=?",(key,)).fetchone()
-                        allowed=bool(row and row[0]==sid and row[1]==command and now<row[2])
+                        allowed=bool(row and row[0]==sid and row[1]==command and now<row[2] and now>=row[2]-60)
                         if allowed: conn.execute("DELETE FROM confirmations WHERE token_hash=?",(key,))
                     if allowed:
                         conn.execute("INSERT INTO receipts VALUES(?,?,?,?)",(request_id,sid,command,now))
                         self._audit(conn,"AUTHORIZATION_ONLY",now,command)
-                        result={"request_id":request_id,"action":action,"radar":radar,"authorized_for_review":True,"executed":False,"remote_writes_enabled":False}
+                        result={"request_id":request_id,"action":action,"radar":radar,"policy":policy,"authorized_for_review":True,"executed":False,"remote_writes_enabled":False}
                     else: self._audit(conn,"CONFIRMATION_DENIED",now,command)
         finally: conn.close()
         if result is None: raise PermissionError("command denied")

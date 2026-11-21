@@ -32,9 +32,9 @@ _ADMIN_PANEL="""<section class="panel" id="adminEval"><h2>Administração · ava
 <button id="adminLogin" type="button">Entrar</button>
 <button id="adminLogout" type="button" disabled>Sair</button>
 <p id="adminStatus" role="status">Sessão indisponível.</p>
-<label>Comando <select id="adminAction"><option value="START">Iniciar radar</option><option value="PAUSE">Pausar radar</option><option value="PAUSE_ENTRIES">Bloquear entradas</option><option value="RESUME_ENTRIES">Retomar entradas</option><option value="EMERGENCY_HALT">Parada emergencial</option></select></label>
+<label>Comando <select id="adminAction"><option value="START">Iniciar radar</option><option value="PAUSE">Pausar radar</option><option value="PAUSE_ENTRIES">Bloquear entradas</option><option value="RESUME_ENTRIES">Retomar entradas</option><option value="EMERGENCY_HALT">Parada emergencial</option><option value="CAPITAL_CREATE">Criar conta virtual independente</option><option value="CAPITAL_POLICY">Configurar risco futuro</option></select></label>
 <label>Radar <select id="adminRadar"><option value="launch">Launch Radar</option><option value="smart_money">Smart Money Radar</option></select></label>
-<button id="adminExecute" type="button" disabled>Executar no ambiente isolado</button>
+<details><summary>Configuração de capital (JSON validado no servidor)</summary><p>Escopo sintético; use valores decimais em texto. Configuração futura exige ausência de reservas.</p><textarea id="adminPolicy" rows="8" style="width:100%;box-sizing:border-box" placeholder="Configuração da conta e dos limites"></textarea></details><button id="adminExecute" type="button" disabled>Executar no ambiente isolado</button>
 <button id="adminHistory" type="button" disabled>Consultar histórico</button>
 <pre id="adminResult" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></section>
 <script>
@@ -48,10 +48,11 @@ el("adminLogin").onclick=()=>run(async()=>{const password=el("adminPassword").va
 el("adminLogout").onclick=()=>run(async()=>{try{await request("logout");}finally{clear();el("adminStatus").textContent="Sessão encerrada localmente."; }});
 el("adminExecute").onclick=()=>run(async()=>{if(Date.now()/1000>=expires){clear();throw Error("Sessão expirada.");}const action=el("adminAction").value,radar=action==="START"||action==="PAUSE"?el("adminRadar").value:null;
 if(!window.confirm("Confirmar "+action+(radar?" — "+radar:"")+" apenas na avaliação?"))return;
-const nonce=(await request("confirm",{action,radar})).confirmation;
+const command={action,radar};if(action==="CAPITAL_CREATE"||action==="CAPITAL_POLICY"){command.policy=JSON.parse(el("adminPolicy").value);}
+const nonce=(await request("confirm",command)).confirmation;
 const request_id=Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>b.toString(16).padStart(2,"0")).join("");
 el("adminResult").textContent="Solicitação: "+request_id+" · aguardando confirmação do journal.";
-const receipt=await request("execute",{request_id,action,radar,confirmation:nonce});const outcome=await request("outcome",{request_id});el("adminResult").textContent=JSON.stringify({receipt,outcome},null,2);});
+const receipt=await request("execute",{request_id,...command,confirmation:nonce});const outcome=await request("outcome",{request_id});el("adminResult").textContent=JSON.stringify({receipt,outcome},null,2);});
 el("adminHistory").onclick=()=>run(async()=>{const history=await request("session");el("adminResult").textContent=JSON.stringify(history,null,2);});
 setInterval(()=>{if(session&&Date.now()/1000>=expires){clear();el("adminStatus").textContent="Sessão expirada.";}},1000);
 window.addEventListener("pagehide",clear);controls();})();
@@ -122,6 +123,8 @@ class _EvaluationHandler(_SMRRequestHandler):
         try:
             data=self._body()
             fields={"login":{"password"},"logout":set(),"session":set(),"confirm":{"action","radar"},"execute":{"action","radar","request_id","confirmation"},"outcome":{"request_id"}}
+            if route in ("confirm","execute") and data.get("action") in ("CAPITAL_CREATE","CAPITAL_POLICY"):
+                fields[route]=fields[route]|{"policy"}
             if set(data)!=fields[route]: raise ValueError("unexpected fields")
             if route in ("outcome","execute") and (not isinstance(data["request_id"],str) or not _REQUEST_ID.fullmatch(data["request_id"])):
                 raise ValueError("invalid request id")

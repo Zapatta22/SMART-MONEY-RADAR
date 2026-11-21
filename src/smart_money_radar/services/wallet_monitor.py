@@ -1,6 +1,6 @@
 """Monitor WebSocket de carteiras com reconexão exponencial."""
 
-from smart_money_radar.storage.collector_authority import AuthorityLost, check_collector
+from smart_money_radar.storage.collector_authority import AuthorityLost, check_collector, await_authorized
 import asyncio
 import json
 import logging
@@ -80,7 +80,8 @@ class WalletMonitor:
             started_at = time.monotonic()
             try:
                 check_collector(self.event_store,"smart_money")
-                await self._listen_once(addresses, stop_event)
+                await await_authorized(self.event_store,"smart_money",
+                    lambda:self._listen_once(addresses, stop_event))
                 check_collector(self.event_store,"smart_money")
                 if stop_event.is_set():
                     return
@@ -101,7 +102,8 @@ class WalletMonitor:
                     type(exc).__name__,
                 )
                 check_collector(self.event_store,"smart_money")
-                if await self._wait_or_stop(stop_event, delay):
+                if await await_authorized(self.event_store,"smart_money",
+                        lambda:self._wait_or_stop(stop_event, delay)):
                     return
                 check_collector(self.event_store,"smart_money")
                 delay = min(delay * 2, self.maximum_backoff_seconds)
@@ -214,7 +216,8 @@ class WalletMonitor:
                 return False
             try:
                 check_collector(self.event_store,"smart_money")
-                transaction = await self.data_source.get_transaction_async(signature)
+                transaction = await await_authorized(self.event_store,"smart_money",
+                    lambda:self.data_source.get_transaction_async(signature))
                 check_collector(self.event_store,"smart_money")
             except AuthorityLost:
                 raise

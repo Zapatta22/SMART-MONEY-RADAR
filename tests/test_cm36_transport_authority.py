@@ -48,3 +48,46 @@ class TerminalTransport(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AuthorityLost):
             await monitor.run(asyncio.Event())
         self.assertEqual(len(attempts),1)
+
+
+    async def test_pending_io_cancelled_and_joined_after_revocation(self):
+        from smart_money_radar.storage.collector_authority import await_authorized
+        store=ExpiringStore()
+        store._force_authority_poll=True
+        entered=asyncio.Event()
+        cleaned=asyncio.Event()
+        async def pending():
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleaned.set()
+        task=asyncio.create_task(await_authorized(store,"launch",pending,poll_seconds=.005))
+        await entered.wait()
+        store.valid=False
+        with self.assertRaises(AuthorityLost):
+            await asyncio.wait_for(task,1)
+        self.assertTrue(cleaned.is_set())
+
+    async def test_revoked_handle_never_starts_io(self):
+        from smart_money_radar.storage.collector_authority import await_authorized
+        store=ExpiringStore()
+        store.valid=False
+        called=[]
+        async def operation(): called.append(True)
+        with self.assertRaises(AuthorityLost):
+            await await_authorized(store,"smart_money",operation)
+        self.assertEqual(called,[])
+
+    async def test_operator_cancellation_joins_pending_task(self):
+        from smart_money_radar.storage.collector_authority import await_authorized
+        store=ExpiringStore();store._force_authority_poll=True
+        entered=asyncio.Event();cleaned=asyncio.Event()
+        async def pending():
+            entered.set()
+            try: await asyncio.Event().wait()
+            finally: cleaned.set()
+        t=asyncio.create_task(await_authorized(store,"launch",pending))
+        await entered.wait();t.cancel()
+        with self.assertRaises(asyncio.CancelledError): await t
+        self.assertTrue(cleaned.is_set())

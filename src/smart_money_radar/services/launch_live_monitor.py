@@ -6,7 +6,7 @@ bounded finalized RPC reconciliation, and reconnect always starts with backfill.
 """
 from __future__ import annotations
 
-from smart_money_radar.storage.collector_authority import AuthorityLost, check_collector
+from smart_money_radar.storage.collector_authority import AuthorityLost, check_collector, await_authorized
 import asyncio
 import json
 import logging
@@ -168,7 +168,7 @@ class LaunchLiveMonitor:
             started = self.clock()
             try:
                 check_collector(getattr(self.backfill,"store",None),"launch")
-                await self._listen(stop)
+                await await_authorized(getattr(self.backfill,"store",None),"launch",lambda:self._listen(stop))
                 check_collector(getattr(self.backfill,"store",None),"launch")
             except asyncio.CancelledError:
                 raise
@@ -188,7 +188,8 @@ class LaunchLiveMonitor:
             jitter_value = self.jitter()
             if not 0 <= jitter_value <= 1:
                 raise ValueError("jitter fora de [0,1]")
-            await self._sleep_or_stop(stop, delay * (1 + jitter_value * 0.2))
+            await await_authorized(getattr(self.backfill,"store",None),"launch",
+                lambda:self._sleep_or_stop(stop, delay * (1 + jitter_value * 0.2)))
             check_collector(getattr(self.backfill,"store",None),"launch")
             delay = min(delay * 2, self.max_backoff)
 

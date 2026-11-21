@@ -6,7 +6,7 @@ subscriptions -> one fresh RPC baseline. A gap is never closed by reconnecting.
 """
 from __future__ import annotations
 
-from smart_money_radar.storage.collector_authority import AuthorityLost, check_collector
+from smart_money_radar.storage.collector_authority import AuthorityLost, check_collector, await_authorized
 import asyncio
 import base64
 from datetime import datetime,timezone
@@ -50,6 +50,9 @@ class CpmmRecoveryRunner:
             "backfill_or_continuity_proven":False}
 
     async def run(self)->dict:
+        return await await_authorized(self.recovery.store,"launch",self._run_authorized)
+
+    async def _run_authorized(self)->dict:
         check_collector(self.recovery.store,"launch")
         deadline=self.clock()+self.duration_seconds
         source=self.recovery.source_id
@@ -192,9 +195,18 @@ class CpmmRecoveryRunner:
                         connection_healthy=True
                 except asyncio.CancelledError:
                     self.manifest["stop_reason"]="operator_cancelled"
+                    if baseline_task is not None:
+                        baseline_task.cancel()
+                        await asyncio.gather(baseline_task,return_exceptions=True)
+                        baseline_task=None
                     self.recovery.finalize("cancelled")
                     raise
                 except AuthorityLost:
+                    self.manifest["stop_reason"]="authority_lost_no_retry"
+                    if baseline_task is not None:
+                        baseline_task.cancel()
+                        await asyncio.gather(baseline_task,return_exceptions=True)
+                        baseline_task=None
                     raise
                 except Exception as exc:
                     err=disconnect_record(session_id=session.session_id,exc=exc,

@@ -100,3 +100,30 @@ def check_collector(store, radar=None):
     method=getattr(store,"assert_collector_authority",None)
     if method is not None:
         method(radar)
+
+
+async def await_authorized(store, radar, operation, *, poll_seconds=0.25):
+    """Race bounded authority checks against pending I/O.
+
+    operation is a factory, so an expired handle never starts the I/O.
+    On authority loss or caller cancellation, cancel and join the asyncio
+    task. Thread-backed RPC may finish in its worker; its result is discarded
+    and all writes still require the transactional generation fence.
+    """
+    import asyncio
+    check_collector(store,radar)
+    if getattr(store,"_collector_authority",None) is None and not getattr(store,"_force_authority_poll",False):
+        result=await operation()
+        check_collector(store,radar)
+        return result
+    task=asyncio.ensure_future(operation())
+    try:
+        while True:
+            done,_=await asyncio.wait((task,),timeout=poll_seconds)
+            check_collector(store,radar)
+            if done:
+                return task.result()
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task,return_exceptions=True)

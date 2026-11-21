@@ -233,6 +233,11 @@ def _monitor(workspace, store, journal, worker_log, stop, duration, interval, ma
     try:
         while not stop.is_set() and _now() < deadline:
             snapshot = _runtime_snapshot(store)
+            # A concurrent SQLite writer can transiently block a read-only probe.
+            # Retry once before fencing; persistent conflicts still fail closed.
+            if snapshot["lease"] == "CONFLICTED":
+                stop.wait(min(0.1, max(0, deadline - _now())))
+                snapshot = _runtime_snapshot(store)
             now = _now()
             maximum_sample_gap = max(maximum_sample_gap, now - last_sample)
             last_sample = now

@@ -102,6 +102,11 @@ def _parser() -> argparse.ArgumentParser:
     watch_live.add_argument("--source-id", required=True, help="identificador estável do endpoint e cluster")
     watch_live.add_argument("--page-size", type=int, default=100)
     watch_live.add_argument("--max-pages", type=int, default=10)
+    supervisor = subparsers.add_parser("supervisor-offline", help="coordena arquivos locais sem RPC nem execução financeira")
+    supervisor.add_argument("database", type=Path)
+    supervisor.add_argument("--cycles", type=int, default=1)
+    supervisor.add_argument("--reference-mint", action="append", default=[])
+    supervisor.add_argument("--interval", type=float, default=5.0)
     return parser
 
 
@@ -116,6 +121,26 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
+        if args.command == "supervisor-offline":
+            from threading import Event
+            from smart_money_radar.services.persistent_supervisor import PersistentSupervisor, SupervisorPolicy
+            from smart_money_radar.services.wallet_discovery import WalletDiscoveryPolicy
+            store=SQLiteEventStore(args.database)
+            try:
+                runner=PersistentSupervisor(store,policy=SupervisorPolicy(interval_seconds=args.interval,
+                    lease_seconds=max(30.0,args.interval*3),max_backoff_seconds=max(60.0,args.interval)),
+                    discovery_policy=WalletDiscoveryPolicy(quote_mints=tuple(args.reference_mint)))
+                stop=Event()
+                previous={}
+                try:
+                    for name in (signal.SIGINT,signal.SIGTERM):
+                        previous[name]=signal.signal(name,lambda *_:stop.set())
+                    runner.run(stop,max_cycles=args.cycles)
+                finally:
+                    for name,handler in previous.items():signal.signal(name,handler)
+            finally:
+                store.close()
+            return
         if args.command == "geyser-evidence":
             _inspect_geyser_evidence(args)
             return

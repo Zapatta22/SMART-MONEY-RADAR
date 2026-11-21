@@ -205,15 +205,19 @@ def persist_wallet_snapshot(store,*,as_of,policy=WalletDiscoveryPolicy()):
     """Append immutable point-in-time snapshot; no network/operational writes."""
     if store.read_only: raise ValueError("read-only")
     report=discover_wallets(store,as_of=as_of,policy=policy)
-    payload=_encode(report);digest=_hash(payload);policy_sha=_hash(_encode(report["policy"]))
     with store._connection_scope() as conn,conn:
         conn.execute("BEGIN IMMEDIATE")
-        old=conn.execute("SELECT payload,payload_sha FROM cm35_wallet_profiles WHERE snapshot_id=?",
-            (report["snapshot_id"],)).fetchone()
-        if old is not None and old!=(payload,digest):raise ValueError("wallet snapshot conflict")
-        conn.execute("INSERT OR IGNORE INTO cm35_wallet_profiles VALUES(?,?,?,?,?)",
-            (report["snapshot_id"],report["as_of"],policy_sha,payload,digest))
+        _write_wallet_snapshot(conn,report)
     return report
+
+def _write_wallet_snapshot(conn,report):
+    """Internal helper: the caller owns the transaction and any fencing checks."""
+    payload=_encode(report);digest=_hash(payload);policy_sha=_hash(_encode(report["policy"]))
+    old=conn.execute("SELECT payload,payload_sha FROM cm35_wallet_profiles WHERE snapshot_id=?",
+        (report["snapshot_id"],)).fetchone()
+    if old is not None and old!=(payload,digest):raise ValueError("wallet snapshot conflict")
+    conn.execute("INSERT OR IGNORE INTO cm35_wallet_profiles VALUES(?,?,?,?,?)",
+        (report["snapshot_id"],report["as_of"],policy_sha,payload,digest))
 
 def read_wallet_snapshots(store,*,limit=10):
     if not isinstance(store,SQLiteEventStore):return []

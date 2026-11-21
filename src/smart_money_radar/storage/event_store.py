@@ -364,6 +364,21 @@ class SQLiteEventStore:
                 connection.execute("""CREATE INDEX IF NOT EXISTS idx_cm35_wallet_cutoff
                     ON cm35_wallet_profiles(cutoff)""")
 
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm36_supervisor_lease (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1), generation INTEGER NOT NULL,
+                    owner TEXT NOT NULL, heartbeat REAL NOT NULL, expires REAL NOT NULL,
+                    status TEXT NOT NULL, payload_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm36_supervisor_tasks (
+                    radar TEXT PRIMARY KEY CHECK(radar IN ('launch','smart_money')),
+                    payload TEXT NOT NULL, payload_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm36_decision_journal (
+                    radar TEXT NOT NULL, event_id TEXT NOT NULL, event_sha TEXT NOT NULL,
+                    payload TEXT NOT NULL, payload_sha TEXT NOT NULL,
+                    PRIMARY KEY(radar,event_id,event_sha))""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm36_supervisor_alerts (
+                    id TEXT PRIMARY KEY, radar TEXT NOT NULL, payload TEXT NOT NULL,
+                    payload_sha TEXT NOT NULL)""")
+
     def archive_cpmm_launches(
         self, payloads: list[bytes], *,
         source_id: str | None = None, first_sequence: int | None = None,

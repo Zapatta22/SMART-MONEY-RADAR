@@ -56,6 +56,11 @@ class PeriodicDashboardWatchdogTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 3, result.stderr)
                 self.assertIn("já ativo", result.stderr)
 
+    def test_child_processes_do_not_inherit_watchdog_lock(self):
+        source = SCRIPT.read_text()
+        self.assertIn('watch_smr_dashboard_android.sh" 8>&-', source)
+        self.assertIn('sleep "$INTERVAL" 8>&-', source)
+
     def test_missing_database_does_not_create_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp) / "state"

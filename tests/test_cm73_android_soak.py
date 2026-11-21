@@ -458,6 +458,51 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(report["supervisor"]["live_authorized"])
         self.assertFalse(report["supervisor"]["execution_enabled"])
 
+    def test_monitor_rechecks_transient_probe_error_once(self):
+        store = SQLiteEventStore(self.output / "transient-probe.sqlite")
+        self.addCleanup(store.close)
+        calls = []
+        def snapshot(_store):
+            calls.append(1)
+            if len(calls) == 1:
+                return {"lease": "CONFLICTED", "radars": {},
+                        "probe_error": "database is locked",
+                        "live_authorized": False, "execution_enabled": False}
+            return {"lease": "CONFLICTED", "radars": {},
+                    "live_authorized": False, "execution_enabled": False}
+        with (self.output / "progress.jsonl").open("w") as journal, (
+            self.output / "worker.log"
+        ).open("ab") as worker_log, patch.object(
+            soak, "_runtime_snapshot", side_effect=snapshot
+        ):
+            report = soak._monitor(
+                self.output, store, journal, worker_log, Event(), 1, 0.1, 0
+            )
+        self.assertEqual(len(calls), 3)  # initial, bounded retry, final report
+        self.assertEqual(report["outcome"], "FAILED")
+        self.assertEqual(report["failure"], "unsafe supervisor state: CONFLICTED")
+        self.assertFalse(report["supervisor"]["live_authorized"])
+
+    def test_monitor_does_not_retry_persisted_integrity_conflict(self):
+        store = SQLiteEventStore(self.output / "integrity-conflict.sqlite")
+        self.addCleanup(store.close)
+        calls = []
+        def snapshot(_store):
+            calls.append(1)
+            return {"lease": "CONFLICTED", "radars": {},
+                    "live_authorized": False, "execution_enabled": False}
+        with (self.output / "progress.jsonl").open("w") as journal, (
+            self.output / "worker.log"
+        ).open("ab") as worker_log, patch.object(
+            soak, "_runtime_snapshot", side_effect=snapshot
+        ):
+            report = soak._monitor(
+                self.output, store, journal, worker_log, Event(), 1, 0.1, 0
+            )
+        self.assertEqual(len(calls), 2)  # initial and final report only
+        self.assertEqual(report["outcome"], "FAILED")
+        self.assertEqual(report["failure"], "unsafe supervisor state: CONFLICTED")
+
     def test_exhausted_restart_budget_precedes_conflicted_snapshot(self):
         """A dead worker with zero restarts must fail without reacquiring a lease."""
         class DeadWorker:

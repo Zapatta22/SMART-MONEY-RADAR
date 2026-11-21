@@ -153,3 +153,22 @@ Radar é conectar o journal ao consumidor Solana, com cursor próprio e
 replay retomável. A próxima validação da Simulação depende de uma série
 contemporânea, auditável, com cotações de origem verificável e swaps
 finalizados do mesmo pool. Nenhuma PR foi mesclada.
+
+### Simulação protegida com manifesto de cotações
+
+O PR #114 adiciona verificação opcional do SHA-256 do manifesto
+fornecido por uma fonte independente, associa cada cotação ao seu
+registro RAW e bloqueia novas decisões e execuções de compra com
+cotações vencidas quando o limite de idade está configurado.
+O commit `236a0c9` passou com 750 testes locais, compilação e
+`git diff --check`. O CI geral e o de simulação protegida passaram
+para esse commit.
+[PR #114](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/114)
+
+A integração do replay de eventos dos dois radares e da recuperação
+WebSocket persistente está em outra linha de desenvolvimento nos PRs
+#111 e #112. O #114 foi validado na base do #67. A integração entre
+essas linhas e o replay com cotações e swaps reais do mesmo pool
+seguem pendentes.
+[PR #111](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/111) ·
+[PR #112](https://github.com/Zapatta22/SMART-MONEY-RADAR/pull/112)

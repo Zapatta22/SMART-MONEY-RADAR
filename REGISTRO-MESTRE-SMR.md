@@ -1,5 +1,5 @@
 # SMART MONEY RADAR (SMR) — REGISTRO MESTRE
-Última atualização: 2026-11-19 — continuidade e integração bank-aware da PR #23 em validação isolada
+Última atualização: 2026-11-21 — integração offline do estimador inteiro CPMM no Launch Radar
 
 ## 1. Estado executivo
 
@@ -4472,3 +4472,15 @@ Seleção causal de capturas por pool e cutoff (b02fbec), testes de reinício e 
 CI observada: 441823f: 44910181707 in_progress/null; dd36f01: 44910120152 completed/success; 2fa6b68: 44910050654 completed/success; 5f2f2d7: 44909840922 completed/success; b02fbec: 44909805802 completed/success; 5de5704: 44909424050 completed/success.
 
 Pendente: origem automática persistida do RAW e manifesto, integração radar_intelligence/supervisor, normalização decimal, reconciliação econômica e testes de rollback. A captura posterior ao swap não comprova estado histórico anterior. Sem autorização operacional. CM38 85%, Launch 55%, Smart Money 76%, CM39 24% bloqueado; estimativas mantidas. Main e PRs 111/113 não alteradas nesta etapa.
+
+## CM70 — estimador inteiro Raydium CPMM e integração Launch offline
+
+O commit [6b5b394](https://github.com/Zapatta22/SMART-MONEY-RADAR/commit/6b5b394bda62a4f212409eef3f5b25c1b2cacc72) publica o estimador inteiro independente com denominador 1.000.000, Exact Input, Exact Output e testes de paridade contra uma referência racional baseada na revisão Raydium `3d69122790e97cd6aff24e8ba95940793773f58c`. O estimador decimal permanece disponível. A suíte local executou 1.374 testes, com 2 ignorados e nenhuma falha. Os dois jobs da [CI 44917467814](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44917467814) passaram.
+
+O commit [5d433d1](https://github.com/Zapatta22/SMART-MONEY-RADAR/commit/5d433d1cc7955ef5bbbfaaa5ad79378df98b5340) conecta o modelo ao supervisor persistente nas estratégias Launch Immediate e Confirmed. Em cada direção, os recibos usam reservas efetivas e decimais da captura elegível pelo cutoff, taxas do AmmConfig e a política de cobrança do criador do PoolState. São estimativas locais prospectivas em unidades brutas, sem atestação independente nem prova do estado histórico anterior ao swap. O Smart Money Radar mantém seu fluxo independente e o supervisor preserva as decisões já registradas.
+
+O comando `supervisor-offline DATABASE --launch-history PATH --launch-scope POOL TOKEN_MINT QUOTE_MINT` abre o histórico CPMM em modo somente leitura. Os argumentos opcionais `--launch-buy-in`, `--launch-sell-in`, `--launch-buy-out` e `--launch-sell-out` configuram quantidades em unidades humanas do mint correspondente. Os testes cobrem os dois sentidos, as duas estratégias, ambos os modos de cálculo, reinício, isolamento entre radares e supressão de estimativas para evidências futuras ou conflitantes.
+
+CM39 permanece bloqueado. Sem captura live, execução de ordens ou alteração de capital. As referências CM38 85%, Launch 55%, Smart Money 76% e CM39 24% permanecem como estimativas de desenvolvimento.
+
+A [CI 44918363298](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44918363298) do commit de integração passou nos jobs `test` e `python314-evaluation`. A suíte principal executou 1.378 testes, com 2 ignorados e nenhuma falha. A compilação e o benchmark offline do supervisor também passaram.

@@ -174,6 +174,13 @@ def _spawn_worker(workspace, deadline, interval, output):
 def _stop_worker(process):
     if process.poll() is not None:
         return False
+    # The worker independently observes the same deadline. Give its supervisor
+    # time to persist STOPPED and exit normally before sending SIGTERM.
+    try:
+        process.wait(timeout=3.0)
+        return False
+    except subprocess.TimeoutExpired:
+        pass
     process.terminate()
     try:
         process.wait(timeout=5)
@@ -226,6 +233,11 @@ def _monitor(workspace, store, journal, worker_log, stop, duration, interval, ma
     try:
         while not stop.is_set() and _now() < deadline:
             snapshot = _runtime_snapshot(store)
+            # Retry only a read/probe error. A verified persisted integrity
+            # conflict has no probe_error and must fence immediately.
+            if snapshot["lease"] == "CONFLICTED" and "probe_error" in snapshot:
+                stop.wait(min(0.1, max(0, deadline - _now())))
+                snapshot = _runtime_snapshot(store)
             now = _now()
             maximum_sample_gap = max(maximum_sample_gap, now - last_sample)
             last_sample = now
@@ -241,8 +253,20 @@ def _monitor(workspace, store, journal, worker_log, stop, duration, interval, ma
             if now - last_written_progress >= 30:
                 log("sample", **snapshot)
                 last_written_progress = now
+            # Exhausted restart budget is terminal after the worker has exited.
+            # Do not attempt to reacquire a lease or restart a fenced worker.
+            if (process is not None and process.poll() is not None
+                    and children_started > max_restarts):
+                worker_exit_codes.append(process.returncode)
+                log("worker_exit", pid=process.pid, code=process.returncode, expected=False)
+                process = None
+                raise RuntimeError("worker restart limit reached")
             if snapshot["lease"] in ("CLOCK_CONFLICT", "CONFLICTED"):
                 detail = snapshot.get("probe_error", snapshot["lease"])
+                log("unsafe_supervisor_state", lease=snapshot["lease"],
+                    probe_error=snapshot.get("probe_error"),
+                    worker_pid=process.pid if process is not None else None,
+                    worker_exit_code=process.poll() if process is not None else None)
                 raise ValueError(f"unsafe supervisor state: {detail}")
             if process is not None and process.poll() is None and any(
                 now - last_advance[radar] >= stall_limit for radar in RADARS

@@ -4527,3 +4527,44 @@ O commit `3427c4f` fornece o comando `bash tools/run_smr_android_soak.sh`. A exe
 Estimativas de desenvolvimento, usando a média simples do CM72. Launch Radar **60%** (57% de referência mais reconciliação causal de um swap legado arquivado), Smart Money Radar **81%** (77% mais paginação e checkpoint transacional), infraestrutura **67%** (ensaios host e verificador disponíveis, autonomia Android física pendente) e CM39 **24%**, bloqueado. Global **58,00%**, ante 56,25% de referência. As porcentagens são estimativas de planejamento. Main, PR #111 e PR #113 preservadas. Sem merge, captura live, operação financeira ou gasto adicional.
 
 A [CI 44920426901](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44920426901) verificou o commit `faf4c08d891f3a115b523f6e85e341f10c1bedaa`. Os dois jobs passaram. A suíte principal executou 1.411 testes, com 2 ignorados e zero falhas. Compilação, benchmark offline e verificações Python 3.14/Android passaram.
+
+## CM74 — painel Android e continuidade offline dos dois radares (21/11/2026)
+
+Branch de trabalho: `codex/cm74-android-dashboard-lifecycle`; PR #115 Draft, sem merge na main. Preservar PR #111, PR #113 e o bloqueio CM39. O painel local permanece somente leitura, autenticado e vinculado a loopback. A execução física prolongada no Android e a conectividade live não estão homologadas.
+
+A CI [44935119381](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44935119381) aprovou os jobs principais do commit `75ec6cc` após corrigir a consulta de checkpoints SQLite no teste de recuperação. A CI [44935271263](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44935271263) aprovou `30275ec`, que acrescentou ao resumo JSON os estados e ciclos persistidos independentes dos dois radares, mantendo status live e cobertura UNKNOWN. A CI [44935310537](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44935310537) aprovou `af068af`, que exibe esses dados no painel Android. A CI [44935320390](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44935320390) aprovou `e7001b6`, com teste de renderização. A CI [44935361918](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44935361918) aprovou `1899ff1`, com teste de integração supervisor/SQLite/painel após retomada de geração.
+
+O teste curto de soak falhou de forma intermitente em uma CI intermediária, sem diagnóstico suficiente no log externo. O commit `d59ac0c` ampliou a duração curta e acrescentou o relatório interno ao erro. O commit `ba5ed02` introduziu teste de corrupção de geração SQLite, exigindo fail-closed no painel. Estes commits exigem validação de CI específica antes de homologação. Nenhuma execução física de 24 horas foi alegada.
+
+Estimativas mantidas: Launch 60%; Smart Money 81%; infraestrutura 67%; CM39 24% (bloqueado); global 58%. São estimativas de escopo, não prontidão operacional. Próximos bloqueios: validar o HEAD atual da PR #115; resolver eventuais falhas do soak com base no relatório interno; ensaio físico Android com evidências e sem operações financeiras; integrar caminhos de coleta live somente após autorização e prova independente.
+
+### CM74 — gate de evidência offline (continuidade)
+
+O commit `d04eae9` acrescentou `tools/verify_smr_android_soak.py`, verificador independente e somente leitura do relatório, journal, integridade SQLite e checkpoints persistidos de Launch e Smart Money. O commit `5bfd002` adicionou teste de adulteração do contador do relatório; a [CI 44935576211](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44935576211) aprovou esse código e seus testes. O commit `974e453` adicionou rejeição explícita de artefatos ausentes; `4cf7325` documentou o uso no Termux. A aprovação de CI destes últimos commits deve ser conferida separadamente. O gate somente atesta consistência de evidências offline, nunca execução física prolongada nem autorização live.
+
+
+### CM75 — integridade do painel offline (21/11/2026)
+
+A CI [44939377450](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44939377450) aprovou o commit CM74 `2de2915`, incluindo testes principais, compilação, benchmark offline e avaliação Python 3.14. A homologação automatizada CM74 não constitui homologação física Android de 24 horas.
+
+CM75 iniciou com `0f73cf3` e `078b3ac`: o dashboard em modo somente leitura descarta progresso offline quando o mapa de tarefas do supervisor estiver malformado, contiver tarefas não estruturadas, contadores negativos ou booleanos em lugar de inteiros. Testes adversariais verificam bloqueio de autorização e cobertura UNKNOWN. A CI específica destes commits permanece pendente de confirmação.
+
+Permanecem como estimativas conservadoras: Launch 60%, Smart Money 81%, infraestrutura 67%, CM39 24% bloqueado, global 58%. Sem merge, captura live, negociação ou gastos adicionais. Próxima prioridade: CI CM75, recuperação e watchdog físico Android com evidências auditáveis, mantendo o painel separado da autorização operacional.
+
+
+### CM76 — histórico auditável do watchdog no painel Android (21/11/2026)
+
+Na PR #115 Draft, os commits `1f6c39b`, `59644e3` e `29f4774` integram o journal já existente de alertas do supervisor ao dashboard autenticado e somente leitura. O resumo distingue geração, heartbeat, expiração, eventos WATCHDOG_EXPIRED, STARTED e STOPPED, disponibilidade local e obsolescência. Alertas vêm da leitura SQLite com verificação de identidade e SHA-256 existente; divergência de hash ou inconsistência temporal suprime o histórico confiável. Os dois radares mantêm painéis e estados independentes; conexão live, cobertura e autorização financeira não são inferidas.
+
+Os testes adicionados cobrem retomada após expiração de geração, isolamento dos radares, adulteração do digest de alerta e expiração anterior ao heartbeat. A CI dos novos commits precisa ser confirmada antes de declarar CM76 validado. As CIs CM75 #44939674125 e #44939671549 foram informadas como aprovadas, sujeitas a confirmação no GitHub.
+
+Estimativas conservadoras mantidas até homologação da integração: Launch 60%; Smart Money 81%; infraestrutura 67%; CM39 24% bloqueado; global 58%. Homologação física Android 24 horas pendente. Main e PRs #111/#113 preservadas; sem merge, ordens reais, captura live ou custos adicionais.
+
+
+### CM77 — classificação de recuperação persistente (21/11/2026)
+
+CI CM76 #44940138110: SUCCESS no commit `29f4774`; validação automatizada da integração do histórico local do watchdog aprovada. O HEAD da PR #115 continuou Draft e a main não foi alterada.
+
+Implementação CM77 publicada em `af279ae`, `86dc7a3`, `58ef20e` e `1d44df7`: o dashboard read-only classifica início inicial, retomada após expiração e reinício após parada registrada usando exclusivamente os eventos SHA-256 já verificados; exibe contador e estado de heartbeat. Testes cobrem expiração, reinício limpo, duplicidade de supervisor impedida por fencing e indisponibilidade por heartbeat expirado. A classificação identifica a sequência persistida; não prova se o reinício foi iniciado por operador ou watchdog externo sem evidência específica desse acionador.
+
+CI CM77 pendente de resultado definitivo. Percentuais estimativos mantidos: Launch 60%; Smart Money 81%; infraestrutura 67%; CM39 24% bloqueado; global 58%. Sem homologação física de 24 horas, captura live, operações financeiras, merge ou gastos adicionais.

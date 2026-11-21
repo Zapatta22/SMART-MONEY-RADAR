@@ -30,7 +30,7 @@ html{scroll-behavior:smooth}h2{font-size:1.08rem}h3{font-size:.92rem}.brand{disp
 <section class="panel" id="capital"><h2>Capital multipool · sintético</h2><div id="capitalAccounts" class="muted"></div></section>
 <section class="panel" id="alertas"><h2>Controles locais e alertas</h2><p class="muted">Somente leitura; sem autorização remota ou operação financeira.</p><div id="operationalState"></div><div id="operationalAlerts"></div></section>
 <section class="panel" id="carteiras"><h2>Smart Money · carteiras descobertas</h2><p class="muted">Ranking observacional local, não ranking de rentabilidade. Candidatas não qualificadas não votam no consenso automático.</p><div id="walletDiscovery" class="tablewrap muted"></div></section>
-<section class="panel" id="supervisor"><h2>Supervisor · arquivo local</h2><p class="muted">Heartbeat local não comprova conexão à Solana nem execução financeira.</p><div id="supervisorStatus"></div><div id="supervisorAlerts"></div></section>
+<section class="panel" id="supervisor"><h2>Supervisor · arquivo local</h2><p class="muted">Heartbeat local não comprova conexão à Solana nem execução financeira.</p><div id="supervisorStatus"></div><div id="supervisorHistory" aria-live="polite"></div><div id="supervisorAlerts"></div></section>
 <section class="panel"><h2>Últimos eventos</h2><div class="tablewrap"><table><thead><tr><th>Data</th><th>Carteira</th><th>Ativo</th><th>Direção</th><th>Quantidade</th></tr></thead><tbody id="events"></tbody></table></div></section>
 <section class="panel"><div class="row"><h2 style="flex:1">Auditoria de swaps</h2><select id="statusFilter"><option value="">Todos os status</option><option>MATCHED</option><option>INCOMPLETE</option><option>AMBIGUOUS</option><option>UNRESOLVED</option></select><button id="loadAttempts" disabled>Consultar</button></div><div class="tablewrap"><table><thead><tr><th>Data</th><th>Status</th><th>Operação</th><th>Instrução</th><th>Motivo</th></tr></thead><tbody id="attempts"></tbody></table></div></section>
 <section class="panel" id="configuracoes"><h2>Configurações e controle</h2><p class="scope">COMANDOS EXTERNOS BLOQUEADOS</p><p>Iniciar, pausar, configurar risco, stop-loss, take-profit, capital virtual e parada emergencial: disponíveis somente após homologação administrativa. Nenhuma ordem real autorizada.</p></section><script>
@@ -105,7 +105,9 @@ function render(data){
    const box=document.createElement("div"),title=document.createElement("b"),detail=document.createElement("p");
    box.className="metric";title.textContent=name==="launch"?"Launch Radar":"Smart Money Radar";
    detail.className="muted";detail.textContent="Coletor: "+val(state.status)+" · Cobertura: "+val(state.evidence_coverage)+" · Último arquivo: "+val(state.last_archived_event_at);
-   box.append(title,detail);collectors.append(box);
+   const offline=state.offline_supervisor||{},progress=document.createElement("p");
+   progress.className="muted";progress.textContent="Supervisor offline: "+val(offline.lease_status)+" · Tarefa: "+val(offline.task_status)+" · Ciclos persistidos: "+val(offline.cycles)+" · Última atividade local: "+val(offline.last_activity);
+   box.append(title,detail,progress);collectors.append(box);
  });
  const reasons=el("reasons");reasons.replaceChildren();(d.top_reasons||[]).forEach(x=>{const p=document.createElement("p");p.textContent=val(x.reason)+" · "+val(x.count)+" ocorrência(s)";reasons.append(p);});if(!reasons.children.length)reasons.textContent="Nenhum motivo registrado.";
  const radarChannels=data.radar_events||{};
@@ -138,7 +140,28 @@ function render(data){
  const walletPanel=el("walletDiscovery");walletPanel.replaceChildren();
  (data.wallet_discovery||[]).forEach(s=>{const head=document.createElement("p");head.textContent=(s.status||s.coverage||"UNKNOWN")+" · "+(s.as_of||"")+" · Qualificadas "+(s.qualified_count??"UNKNOWN");walletPanel.append(head);(s.profiles||[]).forEach(w=>{const line=document.createElement("p");line.textContent=w.wallet+" · "+w.status+" · Score local "+(w.score??"UNKNOWN")+" · Confiança "+w.confidence+" · "+w.local_distinct_transactions+" transações locais · "+(w.reasons||[]).join(", ")+" · "+(w.indicators||[]).join(", ");walletPanel.append(line);});});
  if(!walletPanel.children.length)walletPanel.textContent="Nenhum snapshot de descoberta publicado.";
- const sup=data.supervisor||{},supPanel=el("supervisorStatus"),supAlerts=el("supervisorAlerts");supPanel.replaceChildren();supAlerts.replaceChildren();const supHeader=document.createElement("p");supHeader.textContent=(sup.status||"NOT_STARTED")+" · geração "+(sup.generation??"-")+" · heartbeat "+(sup.last_heartbeat||"-");supPanel.append(supHeader);Object.entries(sup.radars||{}).forEach(([r,t])=>{const p=document.createElement("p");p.textContent=r+" · "+t.status+" · checkpoint "+(t.checkpoint||"-")+" · conexão "+t.connection+" · falhas "+t.failures+" · última atividade "+(t.last_activity||"-");supPanel.append(p);});(sup.alerts||[]).forEach(a=>{const p=document.createElement("p");p.textContent=a.at+" · "+a.radar+" · "+a.kind;supAlerts.append(p);});
+ const sup=data.supervisor||{},supPanel=el("supervisorStatus"),supAlerts=el("supervisorAlerts");supPanel.replaceChildren();supAlerts.replaceChildren();const supHeader=document.createElement("p");supHeader.textContent=(sup.status||"NOT_STARTED")+" · geração "+(sup.generation??"-")+" · heartbeat "+(sup.last_heartbeat||"-");supPanel.append(supHeader);
+ const hist=data.supervisor_history||{},historyPanel=el("supervisorHistory");historyPanel.replaceChildren();
+ const summary=document.createElement("p");
+ summary.textContent="Watchdog local · integridade "+val(hist.integrity)+" · disponibilidade "+val(hist.availability)+" · dados "+val(hist.freshness)+" · expiração "+val(hist.expires_at)+" · expirações registradas "+val(hist.restart_events)+" · recuperações após expiração "+val(hist.recovery_count)+" · estado "+val(hist.watchdog_state);
+ historyPanel.append(summary);
+ if(hist.integrity==="VERIFIED_LOCAL"){
+  for(const entry of hist.recovery_history||[]){
+   const line=document.createElement("p");
+   line.textContent="Ciclo · "+val(entry.kind)+" · "+val(entry.at)+" · geração "+val(entry.generation);
+   historyPanel.append(line);
+  }
+ }
+ if(hist.integrity==="VERIFIED_LOCAL"){
+  for(const entry of hist.watchdog_history||[]){
+   const line=document.createElement("p");
+   line.textContent=val(entry.at)+" · "+val(entry.radar)+" · "+val(entry.kind)+" · "+val(entry.identity);
+   historyPanel.append(line);
+  }
+ }else{
+  const warning=document.createElement("p");warning.textContent="Histórico indisponível: integridade não verificada.";historyPanel.append(warning);
+ }
+ Object.entries(sup.radars||{}).forEach(([r,t])=>{const p=document.createElement("p");p.textContent=r+" · "+t.status+" · checkpoint "+(t.checkpoint||"-")+" · conexão "+t.connection+" · falhas "+t.failures+" · última atividade "+(t.last_activity||"-");supPanel.append(p);});(sup.alerts||[]).forEach(a=>{const p=document.createElement("p");p.textContent=a.at+" · "+a.radar+" · "+a.kind;supAlerts.append(p);});
  const events=el("events");events.replaceChildren();(data.recent_events||[]).forEach(x=>{const tr=document.createElement("tr");td(tr,x.occurred_at);td(tr,short(x.wallet_address));td(tr,short(x.token_mint));td(tr,x.direction);td(tr,x.amount);events.append(tr);});if(!events.children.length)rowEmpty(events,5,"Nenhum evento persistido.");
 }
 function unavailable(){lastOverview=null;for(const id of ["equityCards","equityHistory","filteredPositions","capitalAccounts","launchSynthetic","smartSynthetic","launchOpportunities","smartOpportunities","walletDiscovery","events","attempts","metrics","statuses","radarCollectors","launchEvents","smartEvents","operationalState","operationalAlerts","supervisorStatus","supervisorAlerts","reasons"]){const node=el(id);if(node)node.replaceChildren();}el("freshness").textContent="Dados indisponíveis · nenhum resultado atual confirmado.";}

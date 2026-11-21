@@ -111,6 +111,137 @@ class CM36Tests(unittest.TestCase):
         self.assertFalse(data["supervisor"]["execution_enabled"])
         self.assertFalse(data["supervisor"]["autonomy_24h_verified"])
         self.assertEqual(data["radar_events"]["launch"],[])
+        self.assertEqual(set(data["radars"]), {"launch", "smart_money"})
+        self.assertEqual(data["radars"]["launch"]["offline_supervisor"]["cycles"], 1)
+        self.assertEqual(data["radars"]["smart_money"]["offline_supervisor"]["cycles"], 2)
+        for radar in data["radars"].values():
+            self.assertEqual(radar["status"], "UNKNOWN")
+            self.assertEqual(radar["evidence_coverage"], "UNKNOWN")
+            self.assertFalse(radar["operational_authorized"])
+    def test_dashboard_fails_closed_after_supervisor_lease_corruption(self):
+        supervisor = self.runner()
+        supervisor.acquire()
+        supervisor.cycle()
+        with sqlite3.connect(self.db) as connection:
+            connection.execute(
+                "UPDATE cm36_supervisor_lease SET generation = generation + 1"
+            )
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        data = DashboardReadService(reader).get_overview()
+        self.assertEqual(data["supervisor"]["status"], "CONFLICTED")
+        self.assertEqual(set(data["radars"]), {"launch", "smart_money"})
+        for radar in data["radars"].values():
+            self.assertEqual(radar["status"], "UNKNOWN")
+            self.assertEqual(radar["offline_supervisor"]["task_status"], "UNKNOWN")
+            self.assertEqual(radar["offline_supervisor"]["cycles"], 0)
+            self.assertFalse(radar["operational_authorized"])
+
+    def test_dashboard_malformed_supervisor_tasks_fail_closed(self):
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        for tasks in (None, [], {"launch": None},
+                      {"launch": {"status": "READY", "cycles": True}},
+                      {"launch": {"status": "READY", "cycles": -1}}):
+            with self.subTest(tasks=tasks), patch(
+                "smart_money_radar.services.dashboard_read.read_supervisor_status",
+                return_value={"status": "ACTIVE", "radars": tasks,
+                              "live_authorized": False, "execution_enabled": False},
+            ):
+                data = DashboardReadService(reader).get_overview()
+                for radar in data["radars"].values():
+                    self.assertEqual(radar["offline_supervisor"]["cycles"], 0)
+                    self.assertEqual(radar["offline_supervisor"]["task_status"], "UNKNOWN")
+                    self.assertFalse(radar["operational_authorized"])
+                    self.assertEqual(radar["evidence_coverage"], "UNKNOWN")
+
+    def test_cm76_watchdog_history_recovery_and_radar_isolation(self):
+        a = self.runner()
+        a.acquire()
+        a.cycle()
+        self.now += 10
+        b = self.runner()
+        self.assertEqual(b.acquire(), 2)
+        b.cycle()
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        data = DashboardReadService(reader).get_overview()
+        history = data["supervisor_history"]
+        self.assertEqual(history["integrity"], "VERIFIED_LOCAL")
+        self.assertEqual(history["restart_events"], 1)
+        self.assertTrue(any(item["kind"] == "WATCHDOG_EXPIRED"
+                            for item in history["watchdog_history"]))
+        self.assertEqual(set(data["radars"]), {"launch", "smart_money"})
+        self.assertFalse(history["execution_enabled"])
+        self.assertFalse(history["live_authorized"])
+
+    def test_cm76_corrupt_alert_digest_fences_history(self):
+        a = self.runner()
+        a.acquire()
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE cm36_supervisor_alerts SET payload_sha='invalid'")
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        data = DashboardReadService(reader).get_overview()
+        self.assertEqual(data["supervisor_history"]["integrity"], "CONFLICTED")
+        self.assertEqual(data["supervisor_history"]["watchdog_history"], [])
+        self.assertEqual(data["supervisor_history"]["availability"], "UNAVAILABLE")
+        for radar in data["radars"].values():
+            self.assertEqual(radar["status"], "UNKNOWN")
+            self.assertFalse(radar["operational_authorized"])
+
+    def test_cm76_invalid_heartbeat_temporal_order_fails_closed(self):
+        history = DashboardReadService._supervisor_history({
+            "status": "ACTIVE", "last_heartbeat": "2026-11-21T10:00:00+00:00",
+            "expires_at": "2026-11-21T09:00:00+00:00",
+            "alerts": [{"kind": "STARTED", "at": "2026-11-21T09:00:00+00:00"}],
+        })
+        self.assertEqual(history["integrity"], "CONFLICTED")
+        self.assertEqual(history["watchdog_history"], [])
+        self.assertEqual(history["availability"], "UNAVAILABLE")
+
+    def test_cm77_recovery_after_expiry_and_clean_restart_are_distinct(self):
+        a = self.runner()
+        a.acquire()
+        self.now += 10
+        b = self.runner()
+        b.acquire()
+        b.stop()
+        self.now += 1
+        c = self.runner()
+        c.acquire()
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        history = DashboardReadService(reader).get_overview()["supervisor_history"]
+        self.assertEqual(history["integrity"], "VERIFIED_LOCAL")
+        self.assertEqual(history["recovery_count"], 1)
+        self.assertIn(history["watchdog_state"], ("RUNNING_LOCAL", "HEARTBEAT_LOST"))
+        kinds = [event["kind"] for event in history["recovery_history"]]
+        self.assertEqual(kinds, ["INITIAL_START", "AUTOMATIC_AFTER_EXPIRY",
+                                 "RESTART_AFTER_STOP"])
+
+    def test_cm77_duplicate_owner_cannot_create_false_recovery(self):
+        a = self.runner()
+        a.acquire()
+        with self.assertRaises(AuthorityLost):
+            self.runner().acquire()
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        history = DashboardReadService(reader).get_overview()["supervisor_history"]
+        self.assertEqual(history["recovery_count"], 0)
+        self.assertEqual(len(history["recovery_history"]), 1)
+
+    def test_cm77_expired_heartbeat_is_not_live_readiness(self):
+        a = self.runner()
+        a.acquire()
+        self.now += 10
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        history = DashboardReadService(reader).get_overview()["supervisor_history"]
+        self.assertIn(history["watchdog_state"], ("HEARTBEAT_LOST", "UNAVAILABLE"))
+        self.assertFalse(history["live_authorized"])
+        self.assertFalse(history["execution_enabled"])
+
     def test_corrupt_lease_fails_closed(self):
         a=self.runner();a.acquire()
         with sqlite3.connect(self.db) as c:c.execute("UPDATE cm36_supervisor_lease SET generation=99")

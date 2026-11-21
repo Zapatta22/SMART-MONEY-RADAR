@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 from smart_money_radar.storage.event_store import SQLiteEventStore
 from tools import smr_android_soak as soak
+from tools.verify_smr_android_soak import verify as verify_soak
 
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "tools" / "run_smr_android_soak.sh"
@@ -61,8 +62,12 @@ class AndroidSoakTests(unittest.TestCase):
         return workspace
 
     def report(self, process, exit_code):
-        stdout, stderr = process.communicate(timeout=8)
-        self.assertEqual(process.returncode, exit_code, (stdout, stderr))
+        # CI contention and lease fencing may outlast the short soak duration.
+        stdout, stderr = process.communicate(timeout=20)
+        if process.returncode != exit_code:
+            reports = list(self.output.glob("smr-soak-*/report.json"))
+            diagnostics = [p.read_text() for p in reports]
+            self.fail(f"soak exit {process.returncode}, expected {exit_code}: {(stdout, stderr)}; reports={diagnostics}")
         workspace = self.workspace()
         self.assertEqual(workspace.stat().st_mode & 0o777, 0o700)
         self.assertEqual(self.production.read_bytes(), self.original)
@@ -93,10 +98,11 @@ class AndroidSoakTests(unittest.TestCase):
         self.fail("offline soak worker did not start")
 
     def test_short_run_produces_local_report_and_progress_for_both_radars(self):
-        process = self.start(0.9)
+        # Allow the CI runner to initialize Python/SQLite before the deadline.
+        process = self.start(2.0)
         report = self.report(process, 0)
         self.assertEqual(report["outcome"], "COMPLETED")
-        self.assertGreaterEqual(report["elapsed_seconds"], 0.9)
+        self.assertGreaterEqual(report["elapsed_seconds"], 2.0)
         self.assertEqual(report["sqlite_integrity"], ["ok"])
         self.assertEqual(report["supervisor"]["lease"], "STOPPED")
         self.assertEqual(set(report["supervisor"]["radars"]), {"launch", "smart_money"})
@@ -106,6 +112,283 @@ class AndroidSoakTests(unittest.TestCase):
         ]
         self.assertEqual(progress[0]["event"], "started")
         self.assertEqual(progress[-1]["event"], "finished")
+
+    def test_offline_evidence_gate_accepts_completed_soak_and_rejects_tampering(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        accepted = verify_soak(workspace)
+        self.assertTrue(accepted["accepted_offline"], accepted["issues"])
+        self.assertFalse(accepted["physical_android_verified"])
+        self.assertFalse(accepted["autonomy_24h_verified"])
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["supervisor"]["radars"]["launch"]["cycles"] += 1
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("launch persisted cycles disagree with final report", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_journal_report_disagreement(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        journal = workspace / "progress.jsonl"
+        entries = [json.loads(line) for line in journal.read_text().splitlines()]
+        entries[-1]["radars"]["launch"]["cycles"] += 1
+        journal.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("journal radar checkpoints disagree with report", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_unhealthy_radar_and_short_duration(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["supervisor"]["radars"]["launch"]["failures"] = 1
+        report["elapsed_seconds"] = 0.5
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("launch final state is not healthy", rejected["issues"])
+        self.assertIn("offline soak target duration not reached", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_malformed_progress_json(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "progress.jsonl").write_text('{"event": "started"}\\n{bad-json\\n')
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("invalid progress journal JSON", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_empty_worker_log(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "worker.log").write_text("")
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("empty offline worker log", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_artifact_manifest_tampering(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["artifacts"]["sqlite"] = "../outside.sqlite"
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("unexpected offline artifact manifest", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_false_24h_completion(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["target_24h_reached"] = True
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("inconsistent 24-hour target claim", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_checkpoint_hash_tampering(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        import sqlite3
+        with sqlite3.connect(workspace / "offline-soak.sqlite") as conn:
+            conn.execute("UPDATE cm36_supervisor_tasks SET payload_sha=? WHERE radar=?",
+                         ("0" * 64, "launch"))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("launch persisted checkpoint hash mismatch", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_lease_digest_tampering(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        import sqlite3
+        with sqlite3.connect(workspace / "offline-soak.sqlite") as conn:
+            conn.execute("UPDATE cm36_supervisor_lease SET payload_sha=? WHERE singleton=1",
+                         ("0" * 64,))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("persisted supervisor lease hash mismatch", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_validly_hashed_wrong_lease_generation(self):
+        import hashlib
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        with sqlite3.connect(workspace / "offline-soak.sqlite") as conn:
+            generation, owner, heartbeat, expires, state = conn.execute(
+                "SELECT generation,owner,heartbeat,expires,status "
+                "FROM cm36_supervisor_lease WHERE singleton=1"
+            ).fetchone()
+            altered = generation + 1
+            payload = json.dumps(
+                [altered, owner, heartbeat, expires, state],
+                sort_keys=True, separators=(",", ":"),
+            )
+            conn.execute(
+                "UPDATE cm36_supervisor_lease SET generation=?,payload_sha=? "
+                "WHERE singleton=1",
+                (altered, hashlib.sha256(payload.encode()).hexdigest()),
+            )
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("persisted supervisor lease disagrees with report", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_validly_hashed_wrong_radar_status(self):
+        import hashlib
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        with sqlite3.connect(workspace / "offline-soak.sqlite") as conn:
+            payload = conn.execute(
+                "SELECT payload FROM cm36_supervisor_tasks WHERE radar='launch'"
+            ).fetchone()[0]
+            task = json.loads(payload)
+            task["status"] = "FAULTED"
+            changed = json.dumps(task, sort_keys=True, separators=(",", ":"))
+            conn.execute(
+                "UPDATE cm36_supervisor_tasks SET payload=?,payload_sha=? WHERE radar='launch'",
+                (changed, hashlib.sha256(changed.encode()).hexdigest()),
+            )
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("launch persisted status disagrees with final report", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_validly_hashed_wrong_radar_cycles(self):
+        import hashlib
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        with sqlite3.connect(workspace / "offline-soak.sqlite") as conn:
+            payload = conn.execute(
+                "SELECT payload FROM cm36_supervisor_tasks WHERE radar='smart_money'"
+            ).fetchone()[0]
+            task = json.loads(payload)
+            task["cycles"] += 1
+            changed = json.dumps(task, sort_keys=True, separators=(",", ":"))
+            conn.execute(
+                "UPDATE cm36_supervisor_tasks SET payload=?,payload_sha=? WHERE radar='smart_money'",
+                (changed, hashlib.sha256(changed.encode()).hexdigest()),
+            )
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("smart_money persisted cycles disagree with final report", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_validly_hashed_radar_failure_count(self):
+        import hashlib
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        with sqlite3.connect(workspace / "offline-soak.sqlite") as conn:
+            payload = conn.execute(
+                "SELECT payload FROM cm36_supervisor_tasks WHERE radar='launch'"
+            ).fetchone()[0]
+            task = json.loads(payload)
+            task["failures"] = 1
+            changed = json.dumps(task, sort_keys=True, separators=(",", ":"))
+            conn.execute(
+                "UPDATE cm36_supervisor_tasks SET payload=?,payload_sha=? WHERE radar='launch'",
+                (changed, hashlib.sha256(changed.encode()).hexdigest()),
+            )
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("launch persisted failures disagree with final report", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_malformed_supervisor_structure(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["supervisor"] = ["invalid"]
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("invalid supervisor report structure", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_malformed_radar_structure(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["supervisor"]["radars"]["launch"] = ["invalid"]
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("launch invalid radar state structure", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_malformed_radar_map(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["supervisor"]["radars"] = ["launch", "smart_money"]
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("invalid radar report structure", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_corrupt_report_json(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "report.json").write_text("{invalid json")
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("invalid offline report JSON", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_missing_report(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "report.json").unlink()
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("invalid offline report JSON", rejected["issues"])
+        self.assertFalse(rejected["physical_android_verified"])
+        self.assertFalse(rejected["autonomy_24h_verified"])
+
+    def test_offline_evidence_gate_rejects_corrupt_sqlite_archive(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "offline-soak.sqlite").write_bytes(b"not a sqlite database")
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("invalid or unreadable SQLite archive", rejected["issues"])
+        self.assertFalse(rejected["live_authorized"])
+        self.assertFalse(rejected["execution_enabled"])
+
+    def test_offline_evidence_gate_rejects_missing_progress_journal(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "progress.jsonl").unlink()
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("missing progress journal", rejected["issues"])
+
+    def test_offline_evidence_gate_rejects_missing_sqlite_archive(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "offline-soak.sqlite").unlink()
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("missing offline SQLite archive", rejected["issues"])
 
     def test_worker_crash_reopens_same_archive_after_fenced_lease_expires(self):
         process = self.start(4.5, max_restarts=2)
@@ -127,6 +410,14 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertEqual(report["supervisor"]["generation"], 2)
         self.assertTrue(all(r["cycles"] > 1 for r in report["supervisor"]["radars"].values()))
         self.assertEqual(report["sqlite_integrity"], ["ok"])
+        # The resumed generation must persist progress for both independent radars
+        # in the same archive, not merely return a successful process exit.
+        with closing(sqlite3.connect(self.workspace() / "offline-soak.sqlite")) as db:
+            rows = db.execute(
+                "SELECT radar, payload FROM cm36_supervisor_tasks"
+            ).fetchall()
+        self.assertEqual({radar for radar, _ in rows}, {"launch", "smart_money"})
+        self.assertTrue(all(json.loads(payload)["cycles"] > 1 for _, payload in rows))
 
     def test_controller_termination_writes_interrupted_report(self):
         process = self.start(5)
@@ -156,6 +447,8 @@ class AndroidSoakTests(unittest.TestCase):
                 {"status": "ACTIVE", "radars": [], "live_authorized": False,
                  "execution_enabled": False},
                 sqlite3.DatabaseError("fixture probe failed"),
+                # Final report probes independently after the monitoring failure.
+                sqlite3.DatabaseError("fixture probe failed"),
             ],
         ):
             report = soak._monitor(self.output, store, journal, worker_log, Event(), 1, 0.1, 0)
@@ -166,6 +459,103 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertEqual(report["supervisor"]["probe_error"], "fixture probe failed")
         self.assertFalse(report["supervisor"]["live_authorized"])
         self.assertFalse(report["supervisor"]["execution_enabled"])
+
+    def test_monitor_rechecks_transient_probe_error_once(self):
+        store = SQLiteEventStore(self.output / "transient-probe.sqlite")
+        self.addCleanup(store.close)
+        calls = []
+        def snapshot(_store):
+            calls.append(1)
+            if len(calls) == 1:
+                return {"lease": "CONFLICTED", "radars": {},
+                        "probe_error": "database is locked",
+                        "live_authorized": False, "execution_enabled": False}
+            return {"lease": "CONFLICTED", "radars": {},
+                    "live_authorized": False, "execution_enabled": False}
+        with (self.output / "progress.jsonl").open("w") as journal, (
+            self.output / "worker.log"
+        ).open("ab") as worker_log, patch.object(
+            soak, "_runtime_snapshot", side_effect=snapshot
+        ):
+            report = soak._monitor(
+                self.output, store, journal, worker_log, Event(), 1, 0.1, 0
+            )
+        self.assertEqual(len(calls), 3)  # initial, bounded retry, final report
+        self.assertEqual(report["outcome"], "FAILED")
+        self.assertEqual(report["failure"], "unsafe supervisor state: CONFLICTED")
+        self.assertFalse(report["supervisor"]["live_authorized"])
+
+    def test_monitor_does_not_retry_persisted_integrity_conflict(self):
+        store = SQLiteEventStore(self.output / "integrity-conflict.sqlite")
+        self.addCleanup(store.close)
+        calls = []
+        def snapshot(_store):
+            calls.append(1)
+            return {"lease": "CONFLICTED", "radars": {},
+                    "live_authorized": False, "execution_enabled": False}
+        with (self.output / "progress.jsonl").open("w") as journal, (
+            self.output / "worker.log"
+        ).open("ab") as worker_log, patch.object(
+            soak, "_runtime_snapshot", side_effect=snapshot
+        ):
+            report = soak._monitor(
+                self.output, store, journal, worker_log, Event(), 1, 0.1, 0
+            )
+        self.assertEqual(len(calls), 2)  # initial and final report only
+        self.assertEqual(report["outcome"], "FAILED")
+        self.assertEqual(report["failure"], "unsafe supervisor state: CONFLICTED")
+
+    def test_exhausted_restart_budget_precedes_conflicted_snapshot(self):
+        """A dead worker with zero restarts must fail without reacquiring a lease."""
+        class DeadWorker:
+            pid = 43210
+            returncode = -signal.SIGKILL
+
+            def poll(self):
+                return self.returncode
+
+        store = SQLiteEventStore(self.output / "race.sqlite")
+        self.addCleanup(store.close)
+        snapshot = {"lease": "CONFLICTED", "radars": {},
+                    "live_authorized": False, "execution_enabled": False}
+        with (self.output / "progress.jsonl").open("w") as journal, (
+            self.output / "worker.log"
+        ).open("ab") as worker_log, patch.object(
+            soak, "_spawn_worker", return_value=DeadWorker()
+        ), patch.object(soak, "_runtime_snapshot", side_effect=[
+            {"lease": "NOT_STARTED", "radars": {},
+             "live_authorized": False, "execution_enabled": False},
+            snapshot, snapshot,
+        ]):
+            report = soak._monitor(
+                self.output, store, journal, worker_log, Event(), 1, 0.1, 0
+            )
+        self.assertEqual(report["outcome"], "FAILED")
+        self.assertEqual(report["failure"], "worker restart limit reached")
+        self.assertEqual(report["worker_exit_codes"], [-signal.SIGKILL])
+        self.assertEqual(report["worker_restarts"], 0)
+
+    def test_worker_shutdown_waits_for_graceful_exit(self):
+        from unittest.mock import Mock
+
+        worker = Mock()
+        worker.poll.return_value = None
+        worker.wait.return_value = 0
+        self.assertFalse(soak._stop_worker(worker))
+        worker.wait.assert_called_once_with(timeout=3.0)
+        worker.terminate.assert_not_called()
+        worker.kill.assert_not_called()
+
+    def test_worker_shutdown_signals_after_grace_period(self):
+        from unittest.mock import Mock
+
+        worker = Mock()
+        worker.poll.return_value = None
+        worker.wait.side_effect = [subprocess.TimeoutExpired("worker", 3.0), 0]
+        self.assertFalse(soak._stop_worker(worker))
+        worker.terminate.assert_called_once_with()
+        worker.kill.assert_not_called()
+        self.assertEqual(worker.wait.call_count, 2)
 
     def test_internal_worker_rejects_nonfinite_deadline_before_opening_sqlite(self):
         with self.assertRaisesRegex(ValueError, "invalid offline soak deadline"):

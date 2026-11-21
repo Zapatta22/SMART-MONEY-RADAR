@@ -3,7 +3,7 @@
 import unittest
 from datetime import datetime, timezone
 from decimal import Decimal
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from smart_money_radar.services.dashboard_read import DashboardReadService
 from smart_money_radar.services.reconciliation_diagnostics import (
@@ -107,6 +107,37 @@ class DashboardReadServiceTests(unittest.TestCase):
         self.assertIsNone(response["radars"]["smart_money"]["last_archived_event_at"])
         store.list_cpmm_launch_archived_event_inputs.assert_called_once_with(limit=20)
         store.list_smr_archived_event_inputs.assert_called_once_with(limit=20)
+
+    def test_offline_supervisor_progress_is_independent_of_live_authorization(self):
+        store = Mock()
+        store.get_reconciliation_diagnostics.return_value = {"total_attempts": 0}
+        store.storage_stats.return_value = {}
+        store.get_events.return_value = []
+        store.list_cpmm_launch_archived_event_inputs.return_value = []
+        store.list_smr_archived_event_inputs.return_value = []
+        status = {
+            "status": "ACTIVE",
+            "radars": {
+                "launch": {"status": "READY", "cycles": 7, "last_activity": "2026-11-21T18:00:00+00:00"},
+                "smart_money": {"status": "BACKOFF", "cycles": 3, "last_activity": None},
+            },
+            "live_authorized": False, "execution_enabled": False,
+        }
+        with patch("smart_money_radar.services.dashboard_read.read_supervisor_status", return_value=status):
+            result = DashboardReadService(store).get_overview()
+        self.assertEqual(result["supervisor"], status)
+        self.assertEqual(result["radars"]["launch"]["offline_supervisor"]["cycles"], 7)
+        self.assertEqual(result["radars"]["smart_money"]["offline_supervisor"]["cycles"], 3)
+        for radar in result["radars"].values():
+            self.assertEqual(radar["status"], "UNKNOWN")
+            self.assertEqual(radar["evidence_coverage"], "UNKNOWN")
+            self.assertFalse(radar["operational_authorized"])
+
+        status["status"] = "CONFLICTED"
+        with patch("smart_money_radar.services.dashboard_read.read_supervisor_status", return_value=status):
+            conflicted = DashboardReadService(store).get_overview()
+        self.assertEqual(conflicted["radars"]["launch"]["offline_supervisor"]["task_status"], "UNKNOWN")
+        self.assertEqual(conflicted["radars"]["launch"]["offline_supervisor"]["cycles"], 0)
 
     def test_no_network_or_mutation_methods_are_exposed(self):
         service = DashboardReadService(Mock())

@@ -1,6 +1,6 @@
 """Serviço de leitura para alimentar o resumo do futuro painel do SMR."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from smart_money_radar.services.reconciliation_diagnostics import (
@@ -51,6 +51,94 @@ class DashboardReadService:
                   for row in items if row.get("available_at")]
         return max(stamps).isoformat() if stamps else None
 
+    @staticmethod
+    def _supervisor_history(supervisor: dict) -> dict:
+        """Verified local journal only; never infer live connectivity from a lease."""
+        state = supervisor.get("status", "NOT_STARTED")
+        unsafe = state in ("CONFLICTED", "CLOCK_CONFLICT")
+        alerts = supervisor.get("alerts", []) if not unsafe else []
+        if not isinstance(alerts, list):
+            alerts, unsafe = [], True
+        heartbeat = supervisor.get("last_heartbeat")
+        expires = supervisor.get("expires_at")
+        now = datetime.now(timezone.utc)
+        try:
+            heartbeat_at = datetime.fromisoformat(heartbeat) if heartbeat else None
+            expires_at = datetime.fromisoformat(expires) if expires else None
+            if heartbeat_at and heartbeat_at.tzinfo is None:
+                raise ValueError("naive heartbeat")
+            if expires_at and expires_at.tzinfo is None:
+                raise ValueError("naive expiry")
+            if heartbeat_at and expires_at and expires_at < heartbeat_at:
+                raise ValueError("expiry precedes heartbeat")
+            # An active lease without a complete time window cannot prove
+            # freshness. Reject future-dated heartbeats as clock conflicts.
+            if state == "ACTIVE" and (heartbeat_at is None or expires_at is None):
+                raise ValueError("active lease missing heartbeat or expiry")
+            if heartbeat_at and heartbeat_at > now:
+                raise ValueError("heartbeat is in the future")
+        except (TypeError, ValueError):
+            unsafe = True
+            heartbeat_at = expires_at = None
+        stale = bool(expires_at and expires_at <= now)
+        unavailable = state not in ("ACTIVE",) or stale or unsafe
+        if unsafe:
+            alerts = []
+        kinds = ("WATCHDOG_EXPIRED", "STARTED", "STOPPED")
+        history = []
+        for item in alerts:
+            if not isinstance(item, dict) or not isinstance(item.get("kind"), str):
+                unsafe = True
+                history = []
+                break
+            if item["kind"] in kinds:
+                history.append({key: item.get(key) for key in ("id", "at", "radar", "kind", "identity")})
+        if unsafe:
+            history = []
+        # A restart is automatic only when the verified journal proves that
+        # an expired generation was replaced. A clean STOPPED -> STARTED
+        # transition is not evidence of automatic recovery.
+        ordered = list(reversed(history))
+        recoveries = []
+        last_start = None
+        pending_expiry = None
+        for item in ordered:
+            kind = item["kind"]
+            if kind == "WATCHDOG_EXPIRED":
+                pending_expiry = item
+            elif kind == "STARTED":
+                recovery = "AUTOMATIC_AFTER_EXPIRY" if pending_expiry else (
+                    "RESTART_AFTER_STOP" if last_start is not None else "INITIAL_START")
+                recoveries.append({"kind": recovery, "at": item["at"],
+                                   "generation": item["identity"]})
+                pending_expiry = None
+                last_start = item
+            elif kind == "STOPPED":
+                pending_expiry = None
+        if unsafe:
+            recoveries = []
+        watchdog_state = ("INTEGRITY_CONFLICT" if unsafe else
+                          "HEARTBEAT_LOST" if state == "EXPIRED" or stale else
+                          "STOPPED" if state == "STOPPED" else
+                          "RUNNING_LOCAL" if state == "ACTIVE" else
+                          "UNAVAILABLE")
+        return {
+            "watchdog_state": watchdog_state,
+            "recovery_history": recoveries,
+            "recovery_count": sum(x["kind"] == "AUTOMATIC_AFTER_EXPIRY"
+                                  for x in recoveries),
+            "integrity": "CONFLICTED" if unsafe else "VERIFIED_LOCAL",
+            "availability": "UNAVAILABLE" if unavailable or unsafe else "LOCAL_ACTIVE",
+            "freshness": "UNKNOWN" if not heartbeat else "STALE" if stale else "LOCAL_ONLY",
+            "generation": None if unsafe else supervisor.get("generation"),
+            "last_heartbeat": None if unsafe else heartbeat,
+            "expires_at": None if unsafe else expires,
+            "watchdog_history": history,
+            "restart_events": sum(item["kind"] == "WATCHDOG_EXPIRED" for item in history),
+            "live_authorized": False,
+            "execution_enabled": False,
+        }
+
     def get_overview(self, *, wallet_address: str | None = None) -> dict:
         """Retorna resumo de persistência e reconciliação em formato serializável."""
         report = self._diagnostics.get_report(wallet_address=wallet_address)
@@ -68,6 +156,21 @@ class DashboardReadService:
         } for event in recent_events]
         radar_events = read_archived_radar_events(self._event_store, limit=20)
         intelligence = read_intelligence_reports(self._event_store, radar_events, scopes=self._intelligence_scopes)
+        supervisor = read_supervisor_status(self._event_store)
+        # Offline task progress is distinct from live Solana connectivity.
+        # An invalid or absent supervisor snapshot must never imply readiness.
+        supervisor_tasks = supervisor.get("radars", {})
+        if (supervisor.get("status") in ("CONFLICTED", "CLOCK_CONFLICT")
+                or not isinstance(supervisor_tasks, dict)
+                or any(not isinstance(task, dict) for task in supervisor_tasks.values())):
+            supervisor_tasks = {}
+        # Malformed snapshots cannot fabricate offline progress.
+        supervisor_tasks = {
+            name: task for name, task in supervisor_tasks.items()
+            if name in ("launch", "smart_money")
+            and type(task.get("cycles")) is int and task["cycles"] >= 0
+            and isinstance(task.get("status"), str)
+        }
         return {
             "mode": "read_only",
             "wallet_address": wallet_address,
@@ -80,7 +183,8 @@ class DashboardReadService:
             "capital_accounts": read_capital_accounts(self._event_store),
             "operational_controls": read_operational_status(self._event_store),
             "wallet_discovery": read_wallet_snapshots(self._event_store,limit=1),
-            "supervisor": read_supervisor_status(self._event_store),
+            "supervisor": supervisor,
+            "supervisor_history": self._supervisor_history(supervisor),
             "paper_preflight": {radar: [paper_preflight(d,kind="HISTORICAL_REPLAY")
                 for d in decisions] for radar,decisions in intelligence.items()},
             # Separate radar channels are observational until independently
@@ -91,6 +195,12 @@ class DashboardReadService:
                     "name": name, "status": "UNKNOWN",
                     "last_archived_event_at": self._last_archived_event_at(radar_events[name]),
                     "evidence_coverage": "UNKNOWN",
+                    "offline_supervisor": {
+                        "lease_status": supervisor.get("status", "NOT_STARTED"),
+                        "task_status": supervisor_tasks.get(name, {}).get("status", "UNKNOWN"),
+                        "cycles": supervisor_tasks.get(name, {}).get("cycles", 0),
+                        "last_activity": supervisor_tasks.get(name, {}).get("last_activity"),
+                    },
                     "operational_authorized": False,
                     "paper_modes": {
                         "immediate": "BLOCKED", "confirmed": "BLOCKED",

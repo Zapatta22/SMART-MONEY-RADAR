@@ -33,3 +33,17 @@ de cadeia de custódia verificável. O indicador `evidence_verified` do
 snapshot de risco é uma declaração do operador. A opção
 `--strict-evidence` com `--archive` continua indisponível até integrar
 as duas trilhas com proveniência validada.
+
+Para verificar a cotação contra um registro independente, forneça
+`--strict-quote-manifest quotes-manifest.json --strict-quote-manifest-sha256 HASH`.
+Obtenha o hash por uma via confiável e separada do arquivo de replay. O
+manifesto tem schema `smr-paper-quote-manifest-v1`, `pool` e `quotes`
+mapeando cada identificador ao SHA-256 dos bytes RAW. Um tick ausente ou
+com hash divergente não entra no replay. O manifesto atesta apenas o que
+sua fonte validou. O caminho sem manifesto mantém as checagens locais.
+
+Configure `max_quote_staleness_seconds` para bloquear cotações cuja
+disponibilidade exceda a idade máxima medida desde `market_at`. Nesse
+modo, uma cotação sem horário de mercado também é ignorada para fins de
+preço. Uma venda pendente aguarda uma observação fresca e o relatório
+contabiliza os ticks rejeitados por idade.

@@ -1384,6 +1384,13 @@ class SQLiteEventStore:
                             operation_id=signature,slot=parent[1],commitment="confirmed",
                             source_id="helius-wallet-rpc",
                         )
+                # SQLite requires the referenced table to exist even in
+                # archives predating the CM38 RPC collector.
+                if not old_rpc:
+                    connection.execute("""CREATE TABLE IF NOT EXISTS cm38_rpc_observations(
+                        evidence_id TEXT PRIMARY KEY,radar TEXT NOT NULL,
+                        signature TEXT NOT NULL,available_at TEXT NOT NULL,
+                        metadata TEXT NOT NULL,metadata_sha TEXT NOT NULL,raw BLOB NOT NULL)""")
                 connection.execute("""CREATE TABLE IF NOT EXISTS cm38_reprocessing_history(
                     receipt_id TEXT PRIMARY KEY,wallet_address TEXT NOT NULL,
                     signature TEXT NOT NULL,evidence_id TEXT,

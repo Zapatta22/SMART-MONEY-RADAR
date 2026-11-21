@@ -48,7 +48,8 @@ class CheckpointEntrypointGates(unittest.TestCase):
 
     def test_reprocessing_does_not_advance_cursor(self):
         self.store.save_observation(self.wallet,self.sig,self.tx,[],parse_status="ok",advance_checkpoint=False)
-        self.store.reprocess_observation(self.wallet,self.sig,[],parse_status="ok",parser_version="2")
+        with self.assertRaises(ValueError):
+            self.store.reprocess_observation(self.wallet,self.sig,[],parse_status="ok",parser_version="2")
         self.assertIsNone(self.store.get_checkpoint(self.wallet))
     def test_failure_after_link_rolls_back(self):
         self.store.save_observation(self.wallet,self.sig,self.tx,[],parse_status="ok",advance_checkpoint=False)

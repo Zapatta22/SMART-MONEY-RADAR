@@ -93,5 +93,17 @@ class CM32Tests(unittest.TestCase):
                 self.assertEqual(report["origin"],"ARCHIVED_UNATTESTED")
                 self.assertEqual(report["verdict"],"UNKNOWN")
                 self.assertEqual(payload["radar_opportunities"]["smart_money"],[])
+                economic=report["economic_qualification"]
+                self.assertEqual(set(economic),{"immediate","confirmed"})
+                for mode, receipt in economic.items():
+                    self.assertEqual(receipt["strategy"],mode)
+                    self.assertEqual(receipt["status"],"NOT_COMPUTABLE")
+                    self.assertEqual(receipt["token_mint"],a)
+                    self.assertEqual(receipt["quote_mint"],b)
+                    self.assertFalse(receipt["operational_authorized"])
+                reopened=evaluate_archived_event(ev,store=store,
+                    as_of=datetime.fromisoformat(report["as_of"]),
+                    scope=scope(token_mint=a,quote_mint=b,wallets=()))
+                self.assertEqual(reopened["economic_qualification"],economic)
             finally:
                 store.close()

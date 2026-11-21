@@ -177,7 +177,7 @@ def _stop_worker(process):
     # The worker independently observes the same deadline. Give its supervisor
     # time to persist STOPPED and exit normally before sending SIGTERM.
     try:
-        process.wait(timeout=1.0)
+        process.wait(timeout=3.0)
         return False
     except subprocess.TimeoutExpired:
         pass

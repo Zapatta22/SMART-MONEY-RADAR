@@ -7,6 +7,7 @@ from smart_money_radar.services.reconciliation_diagnostics import (
     ReconciliationDiagnosticsService,
 )
 from smart_money_radar.storage.event_store import SQLiteEventStore
+from smart_money_radar.services.radar_event_bridge import read_archived_radar_events
 
 
 class DashboardReadService:
@@ -50,12 +51,14 @@ class DashboardReadService:
             "direction": event.direction,
             "amount": self._json_value(event.amount),
         } for event in recent_events]
+        radar_events = read_archived_radar_events(self._event_store, limit=20)
         return {
             "mode": "read_only",
             "wallet_address": wallet_address,
             "storage": self._json_value(storage),
             "reconciliation": self._json_value(report),
             "recent_events": events,
+            "radar_events": self._json_value(radar_events),
             # Separate radar channels are observational until independently
             # attested evidence is supplied. Database events do not prove
             # launch detection or Smart Money signal completeness.

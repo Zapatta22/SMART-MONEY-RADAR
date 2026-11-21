@@ -32,7 +32,9 @@ def _cutoff(value):
 def qualify_launch_at(store,*,signature,base:OpportunityEvidence,consensus:WalletConsensusReport,
                       safety=None,liquidity=None,swaps=(),quote_mint,
                       min_liquidity_quote=Decimal("100"),
-                      max_concentration_fraction=Decimal("0.4")):
+                      max_concentration_fraction=Decimal("0.4"),
+                      cpmm_history=None, capture_id=None,
+                      original_transaction_raw=None, original_manifest=None):
     """Reuse the existing safety, liquidity, volume and opportunity classifier.
 
     A source claim from the caller cannot upgrade an incomplete observation.
@@ -69,9 +71,12 @@ def qualify_launch_at(store,*,signature,base:OpportunityEvidence,consensus:Walle
         pool=base.pool, quote_mint=quote_mint, at=point,
         strategy="immediate", safety=safety, liquidity=liquidity,
         swaps=tuple(swaps), min_liquidity_quote=min_liquidity_quote,
-        max_concentration_fraction=max_concentration_fraction, rpc_store=store)
+        max_concentration_fraction=max_concentration_fraction, rpc_store=store,
+        cpmm_history=cpmm_history, capture_id=capture_id,
+        original_transaction_raw=original_transaction_raw, original_manifest=original_manifest)
     economic=receipt_bundle["economic_qualification"]
-    if economic["rpc_archive"]["status"]=="CONFLICTED":
+    if (economic["rpc_archive"]["status"]=="CONFLICTED" or
+            economic["account_archive"]["status"]=="CONFLICTED"):
         reasons.add("launch_persisted_rpc_conflict")
         # Reuse the existing classifier with an explicit mandatory blocker.
         audit=classify_with_market_evidence(

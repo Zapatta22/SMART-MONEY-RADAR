@@ -56,6 +56,38 @@ class AuthenticatedHealthProbeTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=3)
 
+    def test_authenticated_health_rejects_wrong_payload(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                payload = json.dumps({"status": "ok", "mode": "trading"}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *args):
+                pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "state"
+            state.mkdir(mode=0o700)
+            token = state / "health.token"
+            token.write_text("a" * 64)
+            token.chmod(0o600)
+            try:
+                server = ThreadingHTTPServer(("127.0.0.1", 8765), Handler)
+            except OSError as exc:
+                self.skipTest(f"port 8765 unavailable: {exc}")
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                self.assertEqual(self.run_probe(state).returncode, 1)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=3)
+
     def test_missing_token_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(self.run_probe(Path(tmp)).returncode, 1)

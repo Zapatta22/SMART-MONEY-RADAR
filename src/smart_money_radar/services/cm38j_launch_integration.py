@@ -139,6 +139,23 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
     economic["account_archive"] = _resolve_launch_accounts(
         cpmm_history, capture_id, original_transaction_raw, original_manifest,
         pool, token_mint, quote_mint, at)
+    archive = economic["account_archive"]
+    if amount_in is not None and archive["status"] == "LOCAL_PROSPECTIVE_BYTES_LINKED":
+        from smart_money_radar.domain.cpmm_reserve_estimator import estimate_exact_input
+        # Generic trade-fee-only scenario; creator fee allocation/rounding
+        # is not established by this model. Never present as total cost.
+        q = Decimal(archive["quote_reserve_normalized"])
+        t = Decimal(archive["token_reserve_normalized"])
+        fee = Decimal(archive["trade_fee_rate"]) / Decimal(100)
+        if q > 0 and t > 0:
+            model = estimate_exact_input(pool=pool, slot=archive["slot"],
+                reserve_in=q, reserve_out=t, amount_in=amount_in, fee_bps=fee)
+            archive["buy_model"] = {
+                "input_quote": str(amount_in), "estimated_output_token": str(model.estimated_output),
+                "fee_inclusive_impact_fraction": str(model.price_impact_fraction),
+                "trade_fee_bps": str(fee), "creator_fee_included": False,
+                "kind": "GENERIC_TRADE_FEE_ONLY_NOT_EXECUTABLE",
+                "operational_authorized": False}
     if economic["account_archive"]["status"] == "CONFLICTED":
         economic["safety_blocks"] = sorted(set(economic["safety_blocks"] + ["cpmm_account_archive_conflict"]))
     economic["sha256"] = sha256(json.dumps(economic, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()

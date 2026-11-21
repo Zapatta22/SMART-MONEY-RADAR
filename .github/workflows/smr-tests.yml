@@ -36,4 +36,8 @@ jobs:
       - name: Compile source and tests
         run: python -m compileall -q src tests
       - name: Benchmark offline CM36 supervisor
-        run: PYTHONPATH=src python tools/benchmark_cm36_supervisor.py
+        run: |
+          for sample in 1 2 3; do
+            echo "CM36_BENCHMARK_SAMPLE $sample/3 (fresh process and database)"
+            PYTHONPATH=src python tools/benchmark_cm36_supervisor.py
+          done

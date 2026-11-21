@@ -50,3 +50,10 @@ class PwaReadOnly(unittest.TestCase):
                 self.assertIn('id="'+section+'"',html)
             self.assertIn("SIMULAÇÃO SINTÉTICA",html)
             self.assertIn("COMANDOS EXTERNOS BLOQUEADOS",html)
+
+    def test_equity_history_has_explicit_synthetic_scope(self):
+        with urlopen(self.base+"/dashboard",timeout=5) as r:
+            html=r.read().decode()
+            self.assertIn('id="equityHistory"',html)
+            self.assertIn("não é taxa de trades",html)
+            self.assertIn("Histórico insuficiente",html)

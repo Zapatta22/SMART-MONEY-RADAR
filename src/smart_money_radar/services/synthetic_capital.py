@@ -332,7 +332,21 @@ def read_capital_accounts(store):
         result=[]
         for (aid,) in conn.execute("SELECT account_id FROM cm34_capital_accounts ORDER BY account_id LIMIT 100"):
             try:
-                result.append(_snapshot(_load(conn,aid)))
+                state=_load(conn,aid)
+                snapshot=_snapshot(state)
+                # Only integrity-verified journal rows; no interpolation, price
+                # lookup, invented timestamps or cross-currency aggregation.
+                journal=state[2]
+                snapshot["equity_history"]=[
+                    {"at":e["at"],"equity":e["equity"],"type":e["type"],"run_id":e["run_id"]}
+                    for e in journal[-500:]]
+                snapshot["history_truncated"]=len(journal)>500
+                settled=state[5]
+                wins=sum(Decimal(e["pnl"])>0 for e in settled.values())
+                snapshot["settled_winning_runs"]=wins
+                snapshot["settled_win_rate"]=str(Decimal(wins)/len(settled)) if settled else None
+                snapshot["win_rate_unit"]="SETTLED_SYNTHETIC_RUNS_NOT_TRADES"
+                result.append(snapshot)
             except (ValueError,TypeError,KeyError,ArithmeticError):
                 result.append({"account_id":aid,"kind":KIND,"status":"CONFLICTED","operational_authorized":False})
         return result

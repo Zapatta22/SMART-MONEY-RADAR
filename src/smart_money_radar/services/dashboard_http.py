@@ -21,7 +21,7 @@ html{scroll-behavior:smooth}h2{font-size:1.08rem}h3{font-size:.92rem}.brand{disp
 </style></head><body>
 <header class="brand"><img src="/smr-icon.svg" alt=""><div><h1>SMART MONEY RADAR</h1><p class="muted">CENTRAL DE INTELIGÊNCIA SOLANA · somente leitura</p></div></header><nav class="nav" aria-label="Navegação principal"><a href="#patrimonio">Patrimônio</a><a href="#radares">Radares</a><a href="#oportunidades">Oportunidades</a><a href="#negociacoes">Negociações</a><a href="#capital">Capital e risco</a><a href="#carteiras">Carteiras</a><a href="#alertas">Alertas</a><a href="#supervisor">Supervisor</a><a href="#configuracoes">Configurações</a></nav><p id="freshness" role="status">Sem consulta autenticada · indicadores indisponíveis.</p>
 <section class="panel"><div class="row"><input id="token" type="password" autocomplete="off" placeholder="Token local SMR_API_TOKEN"><button id="connect">Conectar</button><button id="refresh" disabled>Atualizar</button></div><p id="message" role="status" aria-live="polite"></p><p class="muted">O token permanece somente na memória desta página e não é salvo no navegador. Abra no mesmo dispositivo onde o SMR está executando.</p></section>
-<section class="panel" id="patrimonio"><h2>Patrimônio</h2><p class="scope">SIMULAÇÃO SINTÉTICA · NÃO É SALDO REAL</p><p class="muted">Histórico patrimonial autenticado indisponível. Contas e moedas não são somadas.</p><div id="equityCards" class="grid"><p class="unavailable">Aguardando dados persistidos.</p></div></section><section class="panel"><h2>Visão geral</h2><div class="grid" id="metrics"></div><h3>Status de reconciliação</h3><div class="grid" id="statuses"></div></section>
+<section class="panel" id="patrimonio"><h2>Patrimônio</h2><p class="scope">SIMULAÇÃO SINTÉTICA · NÃO É SALDO REAL</p><p class="muted">Apenas histórico sintético verificado no journal local; não representa rentabilidade real. Contas e moedas não são somadas.</p><div id="equityCards" class="grid"><p class="unavailable">Aguardando dados persistidos.</p></div><div id="equityHistory" aria-label="Histórico patrimonial sintético"></div></section><section class="panel"><h2>Visão geral</h2><div class="grid" id="metrics"></div><h3>Status de reconciliação</h3><div class="grid" id="statuses"></div></section>
 <section class="panel" id="radares"><h2>Estado dos coletores</h2><p class="muted">Status live: UNKNOWN quando não há telemetria autenticada. A última data de arquivo não demonstra coletor ativo.</p><div class="grid" id="radarCollectors"></div></section>
 <section class="panel"><h2>Motivos recorrentes</h2><div id="reasons" class="muted">Aguardando conexão.</div></section>
 <section class="panel"><h2>Eventos dos radares · evidências</h2><p class="muted">Lançamentos e Smart Money são independentes. Arquivo histórico/fixture não significa captura live; cobertura e autorização permanecem desconhecidas ou bloqueadas.</p><div class="grid"><section><h3>Launch Radar</h3><div id="launchEvents" class="tablewrap muted">Nenhuma evidência arquivada disponível.</div></section><section><h3>Smart Money Radar</h3><div id="smartEvents" class="tablewrap muted">Nenhuma evidência arquivada disponível.</div></section></div></section>
@@ -39,7 +39,32 @@ const el=id=>document.getElementById(id), val=v=>v===null||v===undefined||v===""
 async function api(path){const r=await fetch(path,{headers:{Authorization:"Bearer "+token},cache:"no-store"});if(!r.ok){if(r.status===401)throw Error("Token inválido ou ausente.");throw Error("Falha HTTP "+r.status);}return r.json();}
 function td(tr,v){const x=document.createElement("td");x.textContent=val(v);tr.append(x);return x;}
 function rowEmpty(target,cols,msg){const tr=document.createElement("tr"),x=document.createElement("td");x.colSpan=cols;x.textContent=msg;tr.append(x);target.replaceChildren(tr);}
+function appendEquityHistory(data){
+ const target=el("equityHistory");target.replaceChildren();
+ const ns="http://www.w3.org/2000/svg";
+ for(const a of (data.capital_accounts||[])){
+  const group=document.createElement("section"),heading=document.createElement("h3"),note=document.createElement("p");
+  heading.textContent=val(a.account_id)+" · "+val(a.currency);group.append(heading);
+  const points=(a.equity_history||[]);
+  const numbers=points.map(p=>Number(p.equity));
+  if(a.status==="CONFLICTED"||points.length<2||numbers.some(n=>!Number.isFinite(n))){
+    note.textContent="Histórico insuficiente ou indisponível para gráfico.";group.append(note);target.append(group);continue;
+  }
+  const min=Math.min(...numbers),max=Math.max(...numbers),range=max-min;
+  const svg=document.createElementNS(ns,"svg");svg.setAttribute("viewBox","0 0 360 138");svg.setAttribute("width","100%");svg.setAttribute("role","img");svg.setAttribute("aria-label","Patrimônio sintético ao longo dos eventos registrados");
+  const poly=document.createElementNS(ns,"polyline");
+  poly.setAttribute("points",numbers.map((v,i)=>(12+336*i/(numbers.length-1))+","+(range?122-106*(v-min)/range:69)).join(" "));
+  poly.setAttribute("fill","none");poly.setAttribute("stroke","#27d5ab");poly.setAttribute("stroke-width","2.5");svg.append(poly);group.append(svg);
+  note.className="muted";note.textContent=points.length+" eventos locais · "+points[0].at+" → "+points[points.length-1].at+(a.history_truncated?" · janela limitada aos últimos 500 eventos":"")+" · eixo X: ordem dos eventos · mínimo "+val(min)+" · máximo "+val(max);group.append(note);
+  const stats=document.createElement("p");
+  const ratio=a.settled_win_rate===null||a.settled_win_rate===undefined?null:Number(a.settled_win_rate);
+  stats.textContent="PnL realizado "+val(a.realized_pnl)+" · não realizado "+val(a.unrealized_pnl)+" · Execuções sintéticas encerradas "+val(a.settled_runs)+" · Execuções lucrativas "+(ratio===null?"indisponível":(100*ratio).toLocaleString("pt-BR",{maximumFractionDigits:2})+"%")+" (não é taxa de trades)";
+  group.append(stats);target.append(group);
+ }
+ if(!target.children.length)target.textContent="Histórico patrimonial indisponível.";
+}
 function render(data){
+ appendEquityHistory(data);
  const cards=el("equityCards");cards.replaceChildren();for(const a of (data.capital_accounts||[])){const c=document.createElement("section");c.className="metric";const title=document.createElement("span"),value=document.createElement("b"),detail=document.createElement("p");title.textContent="Conta sintética "+val(a.account_id)+" · "+val(a.currency);value.textContent=val(a.equity);detail.textContent="Disponível "+val(a.capital_available)+" · Reserva "+val(a.capital_reserved)+" · PnL "+val(a.realized_pnl)+" · Drawdown "+val(a.drawdown)+" · Estado "+val(a.status||a.risk_status);c.append(title,value,detail);cards.append(c);}if(!cards.children.length)cards.textContent="Nenhuma conta sintética persistida; patrimônio real indisponível.";
  el("freshness").textContent="Consulta local concluída em "+new Date().toLocaleString("pt-BR")+" · não comprova atualização de mercado.";
 
@@ -89,7 +114,7 @@ function render(data){
 }
 async function refresh(){el("message").textContent="Consultando banco local…";try{render(await api("/api/v1/dashboard"));el("message").textContent="Conectado · dados atualizados · somente leitura";}catch(e){el("message").textContent=e.message;el("freshness").textContent="Dados não atualizados · última visualização pode estar desatualizada. Não operar com estes dados.";}}
 async function attempts(){el("message").textContent="Consultando auditoria…";try{const q=new URLSearchParams({limit:"100"});if(el("statusFilter").value)q.set("status",el("statusFilter").value);const data=await api("/api/v1/reconciliation/attempts?"+q),body=el("attempts");body.replaceChildren();(data.items||[]).forEach(x=>{const tr=document.createElement("tr"),s=td(tr,x.attempted_at),status=td(tr,x.status);status.className=x.status==="MATCHED"?"good":x.status==="INCOMPLETE"?"warn":"bad";td(tr,short(x.operation_id));td(tr,x.instruction_index);td(tr,x.reason);body.append(tr);});if(!body.children.length)rowEmpty(body,5,"Nenhuma tentativa encontrada.");el("message").textContent="Auditoria atualizada.";}catch(e){el("message").textContent=e.message;}}
-el("connect").addEventListener("click",async()=>{token=el("token").value.trim();if(token.length<32){token="";el("message").textContent="Informe o token completo (mínimo 32 caracteres).";return;}el("refresh").disabled=false;el("loadAttempts").disabled=false;await refresh();});
+el("connect").addEventListener("click",async()=>{token=el("token").value.trim();el("token").value="";if(token.length<32){token="";el("message").textContent="Informe o token completo (mínimo 32 caracteres).";return;}el("refresh").disabled=false;el("loadAttempts").disabled=false;await refresh();});
 el("refresh").addEventListener("click",refresh);el("loadAttempts").addEventListener("click",attempts);
 if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/smr-sw.js").catch(()=>{});
 </script></body></html>"""

@@ -8,7 +8,19 @@ from pathlib import Path
 
 def verify(workspace):
     workspace = Path(workspace)
-    report = json.loads((workspace / "report.json").read_text())
+    try:
+        report = json.loads((workspace / "report.json").read_text())
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        report = None
+    if not isinstance(report, dict):
+        return {
+            "accepted_offline": False,
+            "physical_android_verified": False,
+            "autonomy_24h_verified": False,
+            "live_authorized": False,
+            "execution_enabled": False,
+            "issues": ["invalid offline report JSON"],
+        }
     issues = []
     if report.get("schema_version") != 1 or report.get("scope") != "EMPTY_ARCHIVE_OFFLINE":
         issues.append("unexpected report schema or scope")

@@ -1,6 +1,6 @@
 """Monitor WebSocket de carteiras com reconexão exponencial."""
 
-from smart_money_radar.storage.collector_authority import AuthorityLost
+from smart_money_radar.storage.collector_authority import AuthorityLost, check_collector
 import asyncio
 import json
 import logging
@@ -79,7 +79,9 @@ class WalletMonitor:
         while not stop_event.is_set():
             started_at = time.monotonic()
             try:
+                check_collector(self.event_store,"smart_money")
                 await self._listen_once(addresses, stop_event)
+                check_collector(self.event_store,"smart_money")
                 if stop_event.is_set():
                     return
                 raise ConnectionError("A sessão WebSocket terminou inesperadamente.")
@@ -98,8 +100,10 @@ class WalletMonitor:
                     delay,
                     type(exc).__name__,
                 )
+                check_collector(self.event_store,"smart_money")
                 if await self._wait_or_stop(stop_event, delay):
                     return
+                check_collector(self.event_store,"smart_money")
                 delay = min(delay * 2, self.maximum_backoff_seconds)
 
     async def _listen_once(
@@ -144,6 +148,7 @@ class WalletMonitor:
                 await self._backfill_wallet(address, stop_event)
             while not stop_event.is_set():
                 raw_message = await self._receive_or_stop(websocket, stop_event)
+                check_collector(self.event_store,"smart_money")
                 if raw_message is None:
                     return
                 try:
@@ -199,6 +204,7 @@ class WalletMonitor:
         self, wallet_address: str, signature: str, stop_event: asyncio.Event | None = None
     ) -> bool:
         """Busca, interpreta e persiste; só avança o cursor após sucesso."""
+        check_collector(self.event_store,"smart_money")
         if self.event_store.has_processed_signature(wallet_address, signature):
             self._logger.debug("Assinatura já processada; notificação duplicada ignorada.")
             return True
@@ -207,7 +213,9 @@ class WalletMonitor:
             if stop_event is not None and stop_event.is_set():
                 return False
             try:
+                check_collector(self.event_store,"smart_money")
                 transaction = await self.data_source.get_transaction_async(signature)
+                check_collector(self.event_store,"smart_money")
             except AuthorityLost:
                 raise
             except Exception as exc:
@@ -254,6 +262,7 @@ class WalletMonitor:
                 )
                 if delay > 0:
                     await self._sleep(delay)
+                    check_collector(self.event_store,"smart_money")
                     delay *= 2
         self._logger.warning(
             "Transação não processada após %d tentativas; checkpoint preservado para recuperação.",

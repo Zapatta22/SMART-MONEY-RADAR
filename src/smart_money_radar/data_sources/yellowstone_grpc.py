@@ -13,6 +13,7 @@ from smart_money_radar.data_sources.yellowstone_receiver import (
     load_yellowstone_decoder,
 )
 from smart_money_radar.storage.geyser_raw_store import SQLiteGeyserRawStore
+from smart_money_radar.storage.collector_authority import check_collector
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ def capture_yellowstone(
 ) -> YellowstoneCapture:
     """Capture one TLS connection. A later call gets a fresh ordering domain."""
     import grpc
+    check_collector(store)
 
     if not 1 <= max_frames <= 100_000 or not 0 < timeout <= 600:
         raise ValueError("limites de captura Yellowstone inválidos")
@@ -119,5 +121,7 @@ def capture_yellowstone_sessions(
         backoff = 2**attempt
         if monotonic() + backoff >= deadline:
             break
+        check_collector(store)
         sleep(backoff)
+        check_collector(store)
     return tuple(attempts)

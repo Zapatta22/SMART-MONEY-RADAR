@@ -6,7 +6,7 @@ subscriptions -> one fresh RPC baseline. A gap is never closed by reconnecting.
 """
 from __future__ import annotations
 
-from smart_money_radar.storage.collector_authority import AuthorityLost
+from smart_money_radar.storage.collector_authority import AuthorityLost, check_collector
 import asyncio
 import base64
 from datetime import datetime,timezone
@@ -50,6 +50,7 @@ class CpmmRecoveryRunner:
             "backfill_or_continuity_proven":False}
 
     async def run(self)->dict:
+        check_collector(self.recovery.store,"launch")
         deadline=self.clock()+self.duration_seconds
         source=self.recovery.source_id
         owner_id=str(uuid.uuid4())
@@ -80,7 +81,10 @@ class CpmmRecoveryRunner:
                     if self.clock()+delay>=deadline:
                         self.manifest["stop_reason"]="deadline_before_reconnect"
                         break
+                    check_collector(self.recovery.store,"launch")
                     await self.sleep(delay)
+                    check_collector(self.recovery.store,"launch")
+                check_collector(self.recovery.store,"launch")
                 session=self.recovery.new_connection(recovered_from=prev_failure)
                 scope=session.session_id
                 report={"session_id":scope,"previous_session_id":
@@ -355,6 +359,7 @@ class CpmmRecoveryRunner:
             # These values never change source/ledger coverage:
             # a reconnect still leaves a potentially unfilled gap.
             self.manifest["coverage"]="UNKNOWN"
+            check_collector(self.recovery.store,"launch")
             return self.manifest
         finally:
             try:

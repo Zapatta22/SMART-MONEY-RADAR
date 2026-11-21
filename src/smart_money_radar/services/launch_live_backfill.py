@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from smart_money_radar.storage.event_store import SQLiteEventStore
+from smart_money_radar.storage.collector_authority import check_collector
 
 
 class SolanaLaunchRPC(Protocol):
@@ -70,6 +71,7 @@ class FinalizedLaunchBackfill:
         return f"{self.source_id}:{address}"
 
     async def synchronize(self, address: str, *, stop_event: asyncio.Event | None = None) -> LaunchBackfillResult:
+        check_collector(self.store,"launch")
         address = self._address(address)
         source = self._source(address)
         cursor = self.store.get_cpmm_launch_rpc_cursor(source)
@@ -86,6 +88,7 @@ class FinalizedLaunchBackfill:
             page = await self.rpc.get_finalized_signatures_for_address_async(
                 address, limit=self.page_size, before=before,
             )
+            check_collector(self.store,"launch")
             if not isinstance(page, list) or len(page) > self.page_size:
                 raise LaunchBackfillGap("página de assinaturas inválida")
             if not page:
@@ -133,7 +136,9 @@ class FinalizedLaunchBackfill:
             if stop_event is not None and stop_event.is_set():
                 raise LaunchBackfillGap("coleta interrompida; cursor preservado")
             sig = entry["signature"]
+            check_collector(self.store,"launch")
             transaction = await self.rpc.get_finalized_transaction_async(sig)
+            check_collector(self.store,"launch")
             if transaction is None or not isinstance(transaction, dict):
                 raise LaunchBackfillGap("transação indisponível; cursor preservado")
             tx_body = transaction.get("transaction")

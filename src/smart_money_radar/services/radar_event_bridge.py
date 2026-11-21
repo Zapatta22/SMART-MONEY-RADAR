@@ -211,9 +211,15 @@ def smart_money_events_from_archive(
         if raw is not None:
             try:
                 obj = json.loads(raw)
-                payload = obj.get("result", obj)
-                chain_slot = payload.get("slot") if isinstance(payload, dict) else None
-                chain_sig = payload.get("transaction", {}).get("signatures", [None])[0]
+                payload = obj.get("result", obj) if isinstance(obj, dict) else None
+                if not isinstance(payload, dict):
+                    raise ValueError("RAW transaction must be a JSON object")
+                chain_slot = payload.get("slot")
+                transaction = payload.get("transaction")
+                chain_signatures = (
+                    transaction.get("signatures") if isinstance(transaction, dict) else None
+                )
+                chain_sig = chain_signatures[0] if isinstance(chain_signatures, list) and chain_signatures else None
                 if chain_sig is not None and chain_sig != sig:
                     reasons.append("source_identity_conflict")
                     sig = None

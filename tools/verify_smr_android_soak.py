@@ -36,6 +36,21 @@ def verify(workspace):
         entries = [json.loads(line) for line in progress.read_text().splitlines() if line.strip()]
         if not entries or entries[0].get("event") != "started" or entries[-1].get("event") != "finished":
             issues.append("incomplete progress journal")
+        else:
+            first, last = entries[0], entries[-1]
+            if first.get("scope") != report.get("scope"):
+                issues.append("journal scope disagrees with report")
+            if last.get("outcome") != report.get("outcome"):
+                issues.append("journal outcome disagrees with report")
+            if last.get("lease") != supervisor.get("lease"):
+                issues.append("journal lease disagrees with report")
+            if last.get("radars") != tasks:
+                issues.append("journal radar checkpoints disagree with report")
+            elapsed = [entry.get("elapsed_seconds") for entry in entries]
+            if any(type(value) not in (int, float) or value < 0 for value in elapsed):
+                issues.append("invalid journal elapsed time")
+            elif any(a > b for a, b in zip(elapsed, elapsed[1:])):
+                issues.append("journal elapsed time regressed")
     db = workspace / "offline-soak.sqlite"
     if not db.is_file():
         issues.append("missing offline SQLite archive")

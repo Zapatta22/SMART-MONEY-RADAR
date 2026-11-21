@@ -92,7 +92,8 @@ def _alert(conn,radar,kind,identity,now):
 class PersistentSupervisor:
     """One owner per database, fenced generations; no takeover of live adapters."""
     def __init__(self,store,*,policy=SupervisorPolicy(),discovery_policy=WalletDiscoveryPolicy(),
-                 scopes=None,clock=time.time,economic_account_id=None,economic_notional=None):
+                 scopes=None,clock=time.time,economic_account_id=None,economic_notional=None,
+                 launch_history=None):
         if not isinstance(store,SQLiteEventStore) or store.read_only or not isinstance(policy,SupervisorPolicy):
             raise ValueError("writable SQLite store and policy required")
         if str(store.database_path)==":memory:":raise ValueError("persistent database required")
@@ -101,6 +102,7 @@ class PersistentSupervisor:
         self.owner=uuid.uuid4().hex;self.generation=None
         self.economic_account_id=economic_account_id
         self.economic_notional=economic_notional
+        self.launch_history=launch_history
         if (economic_account_id is None)!=(economic_notional is None):
             raise ValueError("explicit offline economic account and notional required")
     def acquire(self):
@@ -167,7 +169,8 @@ class PersistentSupervisor:
             profile=discover_wallets(self.store,as_of=point,policy=self.discovery_policy)
         from dataclasses import asdict
         source=[asdict(e) for e in events]
-        data=read_intelligence_reports(self.store,{radar:source},scopes=self.scopes,as_of=point)[radar]
+        data=read_intelligence_reports(self.store,{radar:source},scopes=self.scopes,as_of=point,
+            cpmm_history=self.launch_history if radar=="launch" else None)[radar]
         lookup={e["id"]:e for e in source}
         results=[]
         for decision in data:

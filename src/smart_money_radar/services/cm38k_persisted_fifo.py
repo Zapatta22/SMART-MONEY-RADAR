@@ -179,15 +179,18 @@ def persist_fifo_swap(store, *, operation_id, as_of):
             return receipt
 
 
-def reconstruct_persisted_wallet(store, *, wallet, token, quote_mint, as_of):
+def reconstruct_persisted_wallet(store, *, wallet, token, quote_mint, as_of, _connection=None):
     """Rebuild a local observed inventory in one read snapshot, never attest coverage."""
     cutoff = _time(as_of)
     if cutoff > datetime.now(timezone.utc) or token == quote_mint:
         raise ValueError("invalid wallet reconstruction scope")
     with localcontext() as ctx:
         ctx.prec = 100
-        with store._connection_scope() as conn, conn:
-            conn.execute("BEGIN")
+        from contextlib import nullcontext
+        scope = store._connection_scope() if _connection is None else nullcontext(_connection)
+        with scope as conn, (conn if _connection is None else nullcontext()):
+            if _connection is None:
+                conn.execute("BEGIN")
             rows = conn.execute("""
                 SELECT operation_id,available_at FROM swap_replay_archive
                 WHERE wallet_address=? AND ((input_mint=? AND output_mint=?)

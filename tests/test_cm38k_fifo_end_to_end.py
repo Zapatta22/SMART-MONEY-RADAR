@@ -77,7 +77,7 @@ class PersistedEconomicFixture(unittest.TestCase):
         from smart_money_radar.services.rpc_observation_journal import RpcObservationJournal
         from smart_money_radar.services.cm38k_persisted_fifo import reconstruct_persisted_wallet
         import json
-        sig="2"*64
+        sig="1"*63+"2"
         at=self.at+timedelta(seconds=1)
         tx=json.loads(json.dumps(self.tx))
         tx["slot"]=43

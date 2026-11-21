@@ -19,6 +19,7 @@ from smart_money_radar.services.cm38j_metric_provenance import (
     describe_metric, qualify_metric_set, SMART_MONEY_INDICATORS,
 )
 from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
+from smart_money_radar.services.cm38k_persisted_fifo import reconstruct_persisted_wallet
 
 def _cutoff(value):
     if not isinstance(value,datetime) or value.utcoffset() is None:
@@ -93,7 +94,7 @@ def qualify_smart_money_at(store,*,as_of,policy:WalletDiscoveryPolicy=WalletDisc
     point=_cutoff(as_of)
     discovery=discover_wallets(store,as_of=point,policy=policy)
     profiles=[]
-    with store._connection_scope() as conn:
+    with store._connection_scope() as conn, conn:
         conn.execute("BEGIN")
         has_links=bool(conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cm38_economic_evidence_links'").fetchone())
         for original in discovery["profiles"]:
@@ -131,13 +132,21 @@ def qualify_smart_money_at(store,*,as_of,policy:WalletDiscoveryPolicy=WalletDisc
             reasons.update(("realized_pnl_unverified","fees_and_costs_unverified",
                             "drawdown_unverified","wallet_owner_independence_unverified",
                             "historical_coverage_unknown"))
+            fifo_receipts=[]
+            for token,quote in sorted({(op["token"],op["quote_mint"]) for op in original["evidence"]}):
+                try:
+                    fifo_receipts.append(reconstruct_persisted_wallet(store,wallet=original["wallet"],
+                        token=token,quote_mint=quote,as_of=point,_connection=conn))
+                except (ValueError,KeyError,TypeError,ArithmeticError):
+                    reasons.add("fifo_persisted_evidence_incomplete_or_conflicting")
             economic_receipts=[describe_metric(name=name,value=None,
                 start=point-timedelta(days=30),end=point,available_at=point,
                 decision_at=point,quality="UNKNOWN",
                 unavailable_reason="economic_cost_basis_or_attestation_missing",
                 radar="smart_money",method="CM35_DISCOVERY_WITH_CM38_RAW_LINK_AUDIT")
                 for name in SMART_MONEY_INDICATORS]
-            profile.update({"economic_receipts":economic_receipts,
+            profile.update({"fifo_observed_inventory":fifo_receipts,
+                            "economic_receipts":economic_receipts,
                             "economic_receipt_audit":qualify_metric_set(
                                 radar="smart_money",metrics=economic_receipts),
                             "rpc_linked_operations":linked,

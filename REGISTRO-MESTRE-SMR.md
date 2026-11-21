@@ -4385,3 +4385,8 @@ Próxima tarefa: criar trilha econômica por operação com política de custo d
 ## CM50 — validação do adaptador persistente
 
 CM48 cb0790a: CI 44897891126, 1323 testes Python aprovados, 2 ignorados. CM49 36fd9c0: CI 44898025121, erro de identidade na fixture, não homologado. CM50 ajusta metadados da fixture legada, identifica motivo RAW explicitamente e testa reabertura. CI pendente; PnL e cobertura permanecem indisponíveis. Main e PRs 111/113 preservadas; sem merge, live ou execução financeira. Retornar repositório a privado após validações.
+
+
+## CM52 — FIFO e qualificação Smart Money
+
+CM50: CI 44898206511, 1327 testes aprovados e 2 ignorados. CM51: CI 44898449157, assinatura sintética Base58 inválida, não homologado. CM52 corrige assinatura sem enfraquecer validação e conecta inventário FIFO observado ao qualificador, na mesma leitura SQLite. Indicadores oficiais continuam UNKNOWN/NOT_COMPUTABLE; não há autorização prospectiva, alteração de capital ou validação live. Homologação offline exige CI verde, testes de custos líquidos/adicionais e associação causal CM38I/J; live exige cobertura e autenticidade independentes. Retornar repositório a privado após validações.

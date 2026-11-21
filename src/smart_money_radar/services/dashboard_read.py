@@ -68,6 +68,10 @@ class DashboardReadService:
         } for event in recent_events]
         radar_events = read_archived_radar_events(self._event_store, limit=20)
         intelligence = read_intelligence_reports(self._event_store, radar_events, scopes=self._intelligence_scopes)
+        supervisor = read_supervisor_status(self._event_store)
+        # Offline task progress is distinct from live Solana connectivity.
+        # An invalid or absent supervisor snapshot must never imply readiness.
+        supervisor_tasks = supervisor.get("radars", {}) if supervisor.get("status") not in ("CONFLICTED", "CLOCK_CONFLICT") else {}
         return {
             "mode": "read_only",
             "wallet_address": wallet_address,
@@ -80,7 +84,7 @@ class DashboardReadService:
             "capital_accounts": read_capital_accounts(self._event_store),
             "operational_controls": read_operational_status(self._event_store),
             "wallet_discovery": read_wallet_snapshots(self._event_store,limit=1),
-            "supervisor": read_supervisor_status(self._event_store),
+            "supervisor": supervisor,
             "paper_preflight": {radar: [paper_preflight(d,kind="HISTORICAL_REPLAY")
                 for d in decisions] for radar,decisions in intelligence.items()},
             # Separate radar channels are observational until independently
@@ -91,6 +95,12 @@ class DashboardReadService:
                     "name": name, "status": "UNKNOWN",
                     "last_archived_event_at": self._last_archived_event_at(radar_events[name]),
                     "evidence_coverage": "UNKNOWN",
+                    "offline_supervisor": {
+                        "lease_status": supervisor.get("status", "NOT_STARTED"),
+                        "task_status": supervisor_tasks.get(name, {}).get("status", "UNKNOWN"),
+                        "cycles": supervisor_tasks.get(name, {}).get("cycles", 0),
+                        "last_activity": supervisor_tasks.get(name, {}).get("last_activity"),
+                    },
                     "operational_authorized": False,
                     "paper_modes": {
                         "immediate": "BLOCKED", "confirmed": "BLOCKED",

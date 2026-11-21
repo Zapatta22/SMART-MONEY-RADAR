@@ -127,6 +127,14 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertEqual(report["supervisor"]["generation"], 2)
         self.assertTrue(all(r["cycles"] > 1 for r in report["supervisor"]["radars"].values()))
         self.assertEqual(report["sqlite_integrity"], ["ok"])
+        # The resumed generation must persist progress for both independent radars
+        # in the same archive, not merely return a successful process exit.
+        with closing(sqlite3.connect(self.workspace() / "offline-soak.sqlite")) as db:
+            rows = db.execute(
+                "SELECT radar, cycles FROM cm36_supervisor_tasks"
+            ).fetchall()
+        self.assertEqual({radar for radar, _ in rows}, {"launch", "smart_money"})
+        self.assertTrue(all(cycles > 1 for _, cycles in rows))
 
     def test_controller_termination_writes_interrupted_report(self):
         process = self.start(5)

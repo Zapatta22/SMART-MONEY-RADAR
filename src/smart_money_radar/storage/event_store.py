@@ -16,6 +16,7 @@ from smart_money_radar.domain.models import (
 )
 from smart_money_radar.domain.normalization import NormalizedObservation
 from smart_money_radar.domain.swap_bundle_builder import SwapDomainBundle
+from smart_money_radar.storage.collector_authority import collector_write
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,18 @@ class SQLiteEventStore:
         else:
             self.database_path.parent.mkdir(parents=True, exist_ok=True)
             self._initialize()
+
+    def bind_collector(self, authority):
+        """Bind a new handle to an immutable generation, without migrations."""
+        from smart_money_radar.storage.collector_authority import CollectorAuthority, AuthorityLost
+        if not isinstance(authority, CollectorAuthority) or self.read_only:
+            raise ValueError("writable store and collector authority required")
+        if str(self.database_path)==":memory:" or not Path(self.database_path).samefile(authority.database_path):
+            raise AuthorityLost("collector database mismatch")
+        bound = object.__new__(type(self))
+        bound.__dict__ = self.__dict__.copy()
+        bound._collector_authority = authority
+        return bound
 
     def _connect(self) -> sqlite3.Connection:
         if self._memory_connection is not None:
@@ -426,8 +439,7 @@ class SQLiteEventStore:
             records.append((digest, raw, identities))
 
         with self._connection_scope() as connection:
-            with connection:
-                connection.execute("BEGIN IMMEDIATE")
+            with collector_write(connection, getattr(self, "_collector_authority", None), "launch"):
                 return self._archive_cpmm_launches_prepared(
                     connection, inputs, frames, candidates, records,
                     source_id=source_id, first_sequence=first_sequence,
@@ -606,8 +618,7 @@ class SQLiteEventStore:
         if last_signature != latest_signature:
             raise ValueError("checkpoint RPC não corresponde ao último RAW")
         with self._connection_scope() as connection:
-            with connection:
-                connection.execute("BEGIN IMMEDIATE")
+            with collector_write(connection, getattr(self, "_collector_authority", None), "launch"):
                 previous = connection.execute(
                     "SELECT signature, last_sequence FROM cpmm_launch_rpc_cursor "
                     "WHERE source_id = ?", (source_id,),
@@ -659,7 +670,7 @@ class SQLiteEventStore:
         if not rows:
             return 0
         with self._connection_scope() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 before = connection.total_changes
                 connection.executemany(
                     """
@@ -724,7 +735,7 @@ class SQLiteEventStore:
             for event in events
         ]
         with self._connection_scope() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 connection.execute(
                     """
                     INSERT INTO observed_transactions
@@ -803,8 +814,7 @@ class SQLiteEventStore:
         if not wallet_address.strip() or not signature.strip():
             raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
         with self._connection_scope() as connection:
-            with connection:
-                connection.execute("BEGIN IMMEDIATE")
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 parent = connection.execute(
                     """SELECT slot, observed_at FROM observed_transactions
                        WHERE wallet_address = ? AND signature = ?""",
@@ -895,8 +905,7 @@ class SQLiteEventStore:
         if observation.chain.strip().lower() != "solana":
             raise ValueError("Esta versão do EventStore aceita swaps apenas da chain Solana.")
         with self._connection_scope() as connection:
-            with connection:
-                connection.execute("BEGIN IMMEDIATE")
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 parent = connection.execute(
                     """SELECT 1 FROM observed_transactions
                        WHERE wallet_address = ? AND signature = ?""",
@@ -1190,7 +1199,7 @@ class SQLiteEventStore:
             for event in events
         ]
         with self._connection_scope() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 exists = connection.execute(
                     """SELECT 1 FROM observed_transactions
                        WHERE wallet_address = ? AND signature = ? AND payload_json IS NOT NULL""",
@@ -1310,7 +1319,7 @@ class SQLiteEventStore:
             ))
         attempt_id = uuid.uuid4().hex
         with self._connection_scope() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 parent = connection.execute(
                     "SELECT 1 FROM observed_transactions WHERE wallet_address = ? AND signature = ?",
                     (wallet_address, signature),
@@ -1562,7 +1571,7 @@ class SQLiteEventStore:
         if not wallet_address.strip() or not signature.strip():
             raise ValueError("Carteira e assinatura do checkpoint são obrigatórias.")
         with self._connection_scope() as connection:
-            with connection:
+            with collector_write(connection, getattr(self, "_collector_authority", None), "smart_money"):
                 connection.execute(
                     """
                     INSERT OR IGNORE INTO processed_signatures (wallet_address, signature)

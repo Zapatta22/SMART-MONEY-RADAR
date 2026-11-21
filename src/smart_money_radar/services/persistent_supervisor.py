@@ -25,8 +25,7 @@ from smart_money_radar.services.radar_intelligence import read_intelligence_repo
 from smart_money_radar.services.wallet_discovery import WalletDiscoveryPolicy, discover_wallets, _write_wallet_snapshot
 from smart_money_radar.services.synthetic_capital import read_capital_accounts
 
-class AuthorityLost(RuntimeError):
-    pass
+from smart_money_radar.storage.collector_authority import AuthorityLost, CollectorAuthority
 
 @dataclass(frozen=True)
 class SupervisorPolicy:
@@ -119,6 +118,17 @@ class PersistentSupervisor:
             or lease[4]!="ACTIVE" or now<lease[2] or now>=lease[3]):
             raise AuthorityLost("supervisor generation expired or replaced")
         return now
+    def collector_authority(self, radar):
+        """Capture the current generation, not a mutable supervisor reference."""
+        if radar not in RADARS:
+            raise ValueError("invalid radar")
+        with self.store._connection_scope() as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            self._fence(conn)
+            token = CollectorAuthority(str(self.store.database_path.resolve()),
+                                       self.generation,self.owner,radar,self.clock)
+        return token
+
     def heartbeat(self):
         with self.store._connection_scope() as conn,conn:
             conn.execute("BEGIN IMMEDIATE");now=self._fence(conn)

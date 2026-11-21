@@ -129,6 +129,14 @@ class SupervisorRecoveryTests(unittest.TestCase):
                 self.runner.run(Event(), max_cycles=1)
         self.assertIn("supervisor shutdown SQLite error: shutdown failed", raised.exception.__notes__)
 
+    def test_cleanup_error_propagates_inside_unrelated_exception_handler(self):
+        with patch.object(self.runner, "stop", side_effect=sqlite3.OperationalError("shutdown failed")):
+            try:
+                raise ValueError("unrelated caller error")
+            except ValueError:
+                with self.assertRaisesRegex(sqlite3.OperationalError, "shutdown failed"):
+                    self.runner.run(Event(), max_cycles=1)
+
 
 class SupervisorSoakTests(unittest.TestCase):
     def test_accelerated_soak_reopens_one_archive_and_preserves_each_radar_count(self):

@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from math import isfinite
 import json
 import sqlite3
-import sys
 import time
 import uuid
 
@@ -328,6 +327,7 @@ class PersistentSupervisor:
         if self._retry_busy(self.acquire, stop_event) is None:
             return 0
         count=0
+        run_error = None
         try:
             while not stop_event.is_set():
                 if self.cycle(stop_event=stop_event) is None:
@@ -336,16 +336,18 @@ class PersistentSupervisor:
                 if max_cycles is not None and count>=max_cycles:break
                 # Event wait permits immediate controlled shutdown without spin.
                 stop_event.wait(self.policy.interval_seconds)
+        except BaseException as exc:
+            run_error = exc
+            raise
         finally:
-            active_error = sys.exception()
             try:
                 self._retry_busy(self.stop)
             except AuthorityLost:
                 pass
             except sqlite3.Error as cleanup_error:
-                if active_error is None:
+                if run_error is None:
                     raise
-                active_error.add_note(f"supervisor shutdown SQLite error: {cleanup_error}")
+                run_error.add_note(f"supervisor shutdown SQLite error: {cleanup_error}")
         return count
 
 def read_supervisor_status(store,*,now=None):

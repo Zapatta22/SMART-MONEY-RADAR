@@ -77,6 +77,14 @@ class AdminSecurity:
             raise PermissionError("invalid security clock")
         return float(now)
 
+    def _verify_audit_connection(self,conn):
+        prev="0"*64;expected=1
+        for seq,previous,payload,digest in conn.execute("SELECT seq,previous,payload,digest FROM audit ORDER BY seq"):
+            if seq!=expected or previous!=prev or not hmac.compare_digest(digest,_sha(_json([seq,prev,payload]))):
+                raise PermissionError("audit chain conflict")
+            prev=digest;expected+=1
+        return expected-1
+
     def _audit(self,conn,kind,at,scope):
         row=conn.execute("SELECT seq,digest FROM audit ORDER BY seq DESC LIMIT 1").fetchone()
         seq,prev=(row[0]+1,row[1]) if row else (1,"0"*64)
@@ -98,6 +106,7 @@ class AdminSecurity:
         try:
             with conn:
                 conn.execute("BEGIN IMMEDIATE")
+                self._verify_audit_connection(conn)
                 if not self._rate(conn,"login",now,5,60):
                     self._audit(conn,"LOGIN_RATE_LIMIT",now,"admin")
                 else:
@@ -137,6 +146,7 @@ class AdminSecurity:
         try:
             with conn:
                 conn.execute("BEGIN IMMEDIATE")
+                self._verify_audit_connection(conn)
                 sid=self._session(conn,token,csrf,now)
                 if self._rate(conn,"confirm:"+sid,now,10,60):
                     nonce=secrets.token_urlsafe(32)
@@ -155,6 +165,7 @@ class AdminSecurity:
         try:
             with conn:
                 conn.execute("BEGIN IMMEDIATE")
+                self._verify_audit_connection(conn)
                 sid=self._session(conn,token,csrf,now)
                 if not self._rate(conn,"command:"+sid,now,20,60):
                     self._audit(conn,"COMMAND_RATE_LIMIT",now,command)
@@ -181,6 +192,7 @@ class AdminSecurity:
         try:
             with conn:
                 conn.execute("BEGIN IMMEDIATE")
+                self._verify_audit_connection(conn)
                 sid=self._session(conn,token,csrf,now)
                 conn.execute("UPDATE sessions SET revoked=1 WHERE token_hash=?",(sid,))
                 conn.execute("DELETE FROM confirmations WHERE session_hash=?",(sid,))

@@ -128,6 +128,18 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(rejected["accepted_offline"])
         self.assertIn("persisted cycles disagree with final report", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_journal_report_disagreement(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        journal = workspace / "progress.jsonl"
+        entries = [json.loads(line) for line in journal.read_text().splitlines()]
+        entries[-1]["radars"]["launch"]["cycles"] += 1
+        journal.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("journal radar checkpoints disagree with report", rejected["issues"])
+
     def test_offline_evidence_gate_rejects_missing_progress_journal(self):
         process = self.start(2.0)
         self.report(process, 0)

@@ -126,3 +126,24 @@ class EconomicRadarQualifiers(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.mark_processed(wallet,signature,evidence_id=eid)
         self.assertIsNone(self.store.get_checkpoint(wallet))
+
+
+    def test_launch_qualification_exposes_archive_and_stays_blocked(self):
+        result=self.fake_launch()
+        economic=result["economic_qualification"]
+        self.assertEqual(economic["radar"],"launch")
+        self.assertEqual(economic["token_mint"],"token")
+        self.assertEqual(economic["pool"],"pool")
+        self.assertEqual(economic["quote_mint"],"wsol")
+        self.assertEqual(economic["rpc_archive"],{"status":"UNKNOWN","links":[]})
+        self.assertEqual(economic["status"],"NOT_COMPUTABLE")
+        self.assertFalse(result["operational_authorized"])
+
+    def test_launch_persisted_conflict_blocks_existing_classifier(self):
+        from unittest.mock import patch
+        with patch("smart_money_radar.services.cm38j_launch_integration._resolve_launch_rpc",
+                   return_value={"status":"CONFLICTED","links":[]}):
+            result=self.fake_launch()
+        self.assertIn("launch_persisted_rpc_conflict",result["reasons"])
+        self.assertEqual(result["classification"].verdict,"REJECTED")
+        self.assertFalse(result["prospective_paper_authorized"])

@@ -199,6 +199,32 @@ class AdminSecurity:
                 self._audit(conn,"SESSION_REVOKED",now,"admin")
         finally: conn.close()
 
+    def inspect_session(self,token,csrf):
+        """Authenticated, bounded receipt history; never return credentials."""
+        conn=self._connect()
+        try:
+            with conn:
+                conn.execute("BEGIN")
+                self._verify_audit_connection(conn)
+                sid=self._session(conn,token,csrf,self._now())
+                rows=conn.execute("SELECT request_id,command,issued FROM receipts WHERE session_hash=? ORDER BY issued DESC,request_id DESC LIMIT 100",(sid,)).fetchall()
+                return [{"request_id":rid,"command":json.loads(command),"issued":issued} for rid,command,issued in rows]
+        finally:
+            conn.close()
+
+    def inspect_receipt(self,token,csrf,request_id):
+        conn=self._connect()
+        try:
+            with conn:
+                conn.execute("BEGIN")
+                self._verify_audit_connection(conn)
+                sid=self._session(conn,token,csrf,self._now())
+                row=conn.execute("SELECT command FROM receipts WHERE request_id=? AND session_hash=?",(request_id,sid)).fetchone()
+                if row is None: raise PermissionError("receipt denied")
+                return json.loads(row[0])
+        finally:
+            conn.close()
+
     def verify_audit(self):
         conn=self._connect()
         try:

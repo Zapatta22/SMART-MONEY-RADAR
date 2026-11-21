@@ -1,6 +1,6 @@
 """CM37D: isolated, in-process operational command evaluation.
 
-No HTTP route imports this module. The caller must create a new private
+The isolated evaluation HTTP adapter may import this module. The caller must create a new private
 evaluation directory. Existing production databases cannot be supplied.
 The existing local control journal remains the source of truth.
 """

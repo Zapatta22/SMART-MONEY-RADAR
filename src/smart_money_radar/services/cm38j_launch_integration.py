@@ -40,7 +40,8 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
                            volume_window=timedelta(minutes=5),
                            amount_in: Decimal | None = None, rpc_store=None,
                            cpmm_history=None, capture_id=None,
-                           original_transaction_raw=None, original_manifest=None):
+                           original_transaction_raw=None, original_manifest=None,
+                           sell_amount_in: Decimal | None = None):
     """Reconcile one pool and a bounded interval, never other-pool quotes.
 
     The safety/volume contracts validate RAW hashes and time. A model impact
@@ -53,6 +54,9 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
     if amount_in is not None and (not isinstance(amount_in, Decimal)
                                 or not amount_in.is_finite() or amount_in <= 0):
         raise ValueError("positive finite estimate amount required")
+    if sell_amount_in is not None and (not isinstance(sell_amount_in, Decimal)
+                                      or not sell_amount_in.is_finite() or sell_amount_in <= 0):
+        raise ValueError("positive finite sell estimate amount required")
     swaps = tuple(swaps)
     if liquidity is not None and liquidity.quote_mint != quote_mint:
         raise ValueError("liquidity quote mint mismatch")
@@ -152,6 +156,20 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
                 reserve_in=q, reserve_out=t, amount_in=amount_in, fee_bps=fee)
             archive["buy_model"] = {
                 "input_quote": str(amount_in), "estimated_output_token": str(model.estimated_output),
+                "fee_inclusive_impact_fraction": str(model.price_impact_fraction),
+                "trade_fee_bps": str(fee), "creator_fee_included": False,
+                "kind": "GENERIC_TRADE_FEE_ONLY_NOT_EXECUTABLE",
+                "operational_authorized": False}
+    if sell_amount_in is not None and archive["status"] == "LOCAL_PROSPECTIVE_BYTES_LINKED":
+        from smart_money_radar.domain.cpmm_reserve_estimator import estimate_exact_input
+        q = Decimal(archive["quote_reserve_normalized"])
+        t = Decimal(archive["token_reserve_normalized"])
+        fee = Decimal(archive["trade_fee_rate"]) / Decimal(100)
+        if q > 0 and t > 0:
+            model = estimate_exact_input(pool=pool, slot=archive["slot"],
+                reserve_in=t, reserve_out=q, amount_in=sell_amount_in, fee_bps=fee)
+            archive["sell_model"] = {
+                "input_token": str(sell_amount_in), "estimated_output_quote": str(model.estimated_output),
                 "fee_inclusive_impact_fraction": str(model.price_impact_fraction),
                 "trade_fee_bps": str(fee), "creator_fee_included": False,
                 "kind": "GENERIC_TRADE_FEE_ONLY_NOT_EXECUTABLE",

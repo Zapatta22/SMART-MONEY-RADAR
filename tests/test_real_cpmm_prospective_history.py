@@ -418,6 +418,167 @@ class RealCpmmHistoryTests(unittest.TestCase):
                     self.assertFalse(r["operational_authorized"])
             db.close()
 
+    def test_cm72_local_liquidity_threshold_requires_fresh_capture(self):
+        from decimal import Decimal
+        from smart_money_radar.services.cm38j_launch_integration import (
+            CPMM_LOCAL_LIQUIDITY_BLOCK, launch_metric_receipts,
+        )
+
+        capture, args = self._cm72_liquidity_capture()
+        archive = launch_metric_receipts(
+            **args, at=capture.observation.available_at, strategy="immediate",
+        )["economic_qualification"]["account_archive"]
+        reserve = Decimal(archive["quote_reserve_normalized"])
+        boundary = capture.observation.observed_at + timedelta(minutes=5)
+        cases = (
+            ("immediate", boundary, reserve, "LOCAL_MEETS_MINIMUM", False),
+            ("confirmed", boundary, reserve * 2, "LOCAL_BELOW_MINIMUM", True),
+            ("confirmed", boundary + timedelta(microseconds=1), reserve * 2, "STALE", False),
+        )
+        for strategy, at, minimum, status, should_block in cases:
+            with self.subTest(strategy=strategy, status=status):
+                receipt = launch_metric_receipts(
+                    **args, at=at, strategy=strategy, min_liquidity_quote=minimum,
+                )
+                economic = receipt["economic_qualification"]
+                check = economic["account_archive"]["liquidity_check"]
+                self.assertEqual(check["status"], status)
+                self.assertEqual(check["reconciliation"], "DECLARATION_MISSING")
+                self.assertFalse(check["independently_authenticated"])
+                self.assertEqual(CPMM_LOCAL_LIQUIDITY_BLOCK in receipt["safety_blocks"], should_block)
+                self.assertIsNone(receipt["observed_reserve_quote"])
+                self.assertEqual(economic["quality"], "UNKNOWN")
+                self.assertFalse(economic["operational_authorized"])
+
+    def test_cm72_compares_declared_reserves_and_decimals_only_at_same_slot(self):
+        from decimal import Decimal
+        from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
+        from smart_money_radar.services.market_safety_liquidity import (
+            LiquiditySnapshot, MarketEvidenceEnvelope,
+        )
+
+        capture, args = self._cm72_liquidity_capture()
+        obs = capture.observation
+        archive = launch_metric_receipts(
+            **args, at=obs.available_at, strategy="immediate",
+        )["economic_qualification"]["account_archive"]
+        raw = b"local declared reserve fixture"
+        digest = hashlib.sha256(raw).hexdigest()
+        token_reserve = Decimal(archive["token_reserve_normalized"])
+        quote_reserve = Decimal(archive["quote_reserve_normalized"])
+        cases = (
+            (obs.slot, quote_reserve, archive["token_decimals"], "SAME_SLOT_MATCH", []),
+            (obs.slot - 1, quote_reserve * 2, archive["token_decimals"], "DIFFERENT_SLOT", []),
+            (obs.slot, quote_reserve * 2, archive["token_decimals"], "SAME_SLOT_CONFLICT", ["quote_reserve"]),
+            (obs.slot, quote_reserve, archive["token_decimals"] + 1, "SAME_SLOT_CONFLICT", ["token_decimals"]),
+        )
+        for slot, quote_claim, token_decimals, expected, mismatches in cases:
+            with self.subTest(reconciliation=expected, mismatches=mismatches):
+                envelope = MarketEvidenceEnvelope(
+                    evidence_id="declared-cpmm", source_id="declared-provider",
+                    token_mint=args["token_mint"], pool=args["pool"], slot=slot,
+                    observed_at=obs.observed_at, available_at=obs.available_at,
+                    commitment="finalized", integrity_sha256=digest, raw_payload=raw,
+                )
+                declared = LiquiditySnapshot(
+                    envelope=envelope, quote_mint=args["quote_mint"],
+                    quote_reserve=quote_claim, base_reserve=token_reserve,
+                    reserve_snapshot={
+                        "pool": args["pool"], "slot": slot, "commitment": "finalized",
+                        "captured_at": obs.observed_at.isoformat(),
+                        "available_at": obs.available_at.isoformat(), "raw_sha256": digest,
+                        "reserve_in": quote_claim, "reserve_out": token_reserve,
+                        "fee_bps": "25", "input_mint": args["quote_mint"],
+                        "output_mint": args["token_mint"],
+                        "input_decimals": archive["quote_decimals"],
+                        "output_decimals": token_decimals,
+                    },
+                    verified_raw_reserves=raw, depth_quote=None,
+                    depth_audited=False, withdrawal_risk_audited=False,
+                )
+                receipt = launch_metric_receipts(
+                    **args, at=obs.available_at, strategy="confirmed", liquidity=declared,
+                    amount_in=Decimal("1"),
+                )
+                economic = receipt["economic_qualification"]
+                linked = economic["account_archive"]
+                check = linked["liquidity_check"]
+                self.assertEqual(check["reconciliation"], expected)
+                self.assertEqual(check["mismatches"], mismatches)
+                if mismatches:
+                    self.assertEqual(linked["status"], "CONFLICTED")
+                    self.assertEqual(receipt["observed_reserve_quality"], "CONFLICTED")
+                    self.assertIsNone(receipt["observed_reserve_quote"])
+                    self.assertIsNone(receipt["estimated_output"])
+                    self.assertNotIn("buy_integer_model", linked)
+                    self.assertNotIn("buy_model", linked)
+                    self.assertIn("cpmm_account_archive_conflict", receipt["safety_blocks"])
+                else:
+                    self.assertEqual(linked["status"], "LOCAL_PROSPECTIVE_BYTES_LINKED")
+                    self.assertIn("buy_integer_model", linked)
+                    self.assertIn("buy_model", linked)
+                self.assertFalse(receipt["operational_authorized"])
+
+        future = obs.available_at + timedelta(seconds=1)
+        future_claim = replace(
+            declared,
+            envelope=replace(declared.envelope, available_at=future),
+            reserve_snapshot={**declared.reserve_snapshot, "available_at": future.isoformat()},
+        )
+        with self.assertRaisesRegex(ValueError, "evidência futura"):
+            launch_metric_receipts(
+                **args, at=obs.available_at, strategy="confirmed", liquidity=future_claim,
+            )
+
+    def test_cm72_standalone_qualifier_rejects_fresh_local_shortfall(self):
+        from decimal import Decimal
+        from smart_money_radar.services.cm38j_launch_integration import CPMM_LOCAL_LIQUIDITY_BLOCK
+        from smart_money_radar.services.economic_radar_qualification import qualify_launch_at
+        from smart_money_radar.services.opportunity_classifier import OpportunityEvidence
+        from smart_money_radar.services.wallet_consensus import WalletConsensusReport
+        from smart_money_radar.storage.event_store import SQLiteEventStore
+
+        capture, args = self._cm72_liquidity_capture()
+        store = SQLiteEventStore(":memory:")
+        self.addCleanup(store.close)
+        base = OpportunityEvidence(
+            token_mint=args["token_mint"], pool=args["pool"], chain="solana",
+            as_of=capture.observation.available_at, source_id=capture.observation.source_id,
+            source_status="UNKNOWN", history_coverage="UNKNOWN", token_safety="UNKNOWN",
+            liquidity_quote=None, volume_quote=None, liquidity_verified=False,
+            volume_verified=False, price_confirmation=None, volume_confirmation=None,
+        )
+        result = qualify_launch_at(
+            store, signature=SIG, base=base,
+            consensus=WalletConsensusReport("INSUFFICIENT", 0, 0, (), (), False, False, ()),
+            quote_mint=args["quote_mint"], cpmm_history=args["cpmm_history"],
+            min_liquidity_quote=Decimal("10") ** 30,
+        )
+        self.assertEqual(result["classification"].verdict, "REJECTED")
+        self.assertEqual(result["classification"].data_quality, "UNKNOWN")
+        self.assertIn(CPMM_LOCAL_LIQUIDITY_BLOCK, result["reasons"])
+        self.assertEqual(dict(result["modes"]), {"immediate": "BLOCKED", "confirmed": "BLOCKED"})
+        self.assertFalse(result["prospective_paper_authorized"])
+
+    def _cm72_liquidity_capture(self):
+        from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+
+        capture = self.capture()
+        account = next(x.accounts for x in decode_raydium_cpmm_swaps(json.loads(self.old))
+                       if x.accounts.pool_state == capture.observation.pool)
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        db = SQLiteCpmmProspectiveHistory(Path(folder.name) / "cm72-liquidity.sqlite")
+        self.addCleanup(db.close)
+        db.append_capture_with_original(
+            capture, manifest_raw=self.bundles[0][0], original_transaction_raw=self.old,
+            original_manifest=self.old_manifest, cutoff=CUTOFF,
+        )
+        return capture, {
+            "pool": account.pool_state, "token_mint": account.input_token_mint,
+            "quote_mint": account.output_token_mint, "cpmm_history": db,
+        }
+
 
 if __name__=="__main__":
     unittest.main()

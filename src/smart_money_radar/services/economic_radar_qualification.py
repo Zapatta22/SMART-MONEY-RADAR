@@ -18,7 +18,9 @@ from smart_money_radar.storage.event_store import SQLiteEventStore
 from smart_money_radar.services.cm38j_metric_provenance import (
     describe_metric, qualify_metric_set, SMART_MONEY_INDICATORS,
 )
-from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
+from smart_money_radar.services.cm38j_launch_integration import (
+    CPMM_LOCAL_LIQUIDITY_BLOCK, launch_metric_receipts,
+)
 from smart_money_radar.services.cm38k_persisted_fifo import reconstruct_persisted_wallet, fifo_metric_receipts
 
 def _cutoff(value):
@@ -55,13 +57,7 @@ def qualify_launch_at(store,*,signature,base:OpportunityEvidence,consensus:Walle
                            actionable=False,
                            reasons=tuple(sorted(set(consensus.reasons)|{"independence_not_attested"})))
     swaps=tuple(swaps)
-    audit=classify_with_market_evidence(
-        base=safe_base,consensus=safe_consensus,safety=safety,liquidity=liquidity,
-        swaps=tuple(swaps),quote_mint=quote_mint,
-        min_liquidity_quote=min_liquidity_quote,
-        max_concentration_fraction=max_concentration_fraction)
-    reasons=set(audit.classification.reasons)
-    reasons.update(rpc["reasons"])
+    reasons=set(rpc["reasons"])
     reasons.add("independent_finalization_unverified")
     reasons.add("holder_ownership_independence_unknown")
     if safety is None: reasons.add("mint_freeze_token2022_safety_missing")
@@ -70,23 +66,25 @@ def qualify_launch_at(store,*,signature,base:OpportunityEvidence,consensus:Walle
     receipt_bundle=launch_metric_receipts(token_mint=base.token_mint,
         pool=base.pool, quote_mint=quote_mint, at=point,
         strategy="immediate", safety=safety, liquidity=liquidity,
-        swaps=tuple(swaps), min_liquidity_quote=min_liquidity_quote,
+        swaps=swaps, min_liquidity_quote=min_liquidity_quote,
         max_concentration_fraction=max_concentration_fraction, rpc_store=store,
         cpmm_history=cpmm_history, capture_id=capture_id,
         original_transaction_raw=original_transaction_raw, original_manifest=original_manifest)
     economic=receipt_bundle["economic_qualification"]
+    blocks = set(safe_base.mandatory_blocks)
     if (economic["rpc_archive"]["status"]=="CONFLICTED" or
             economic["account_archive"]["status"]=="CONFLICTED"):
-        reasons.add("launch_persisted_rpc_conflict")
-        # Reuse the existing classifier with an explicit mandatory blocker.
-        audit=classify_with_market_evidence(
-            base=replace(safe_base, source_status="CONFLICTED",
-                mandatory_blocks=tuple(sorted(set(safe_base.mandatory_blocks)|{"launch_persisted_rpc_conflict"}))),
-            consensus=safe_consensus,safety=safety,liquidity=liquidity,
-            swaps=swaps,quote_mint=quote_mint,
-            min_liquidity_quote=min_liquidity_quote,
-            max_concentration_fraction=max_concentration_fraction)
-        reasons.update(audit.classification.reasons)
+        blocks.add("launch_persisted_rpc_conflict")
+        safe_base = replace(safe_base, source_status="CONFLICTED")
+    if CPMM_LOCAL_LIQUIDITY_BLOCK in economic.get("safety_blocks", ()):
+        blocks.add(CPMM_LOCAL_LIQUIDITY_BLOCK)
+    audit=classify_with_market_evidence(
+        base=replace(safe_base, mandatory_blocks=tuple(sorted(blocks))),
+        consensus=safe_consensus,safety=safety,liquidity=liquidity,
+        swaps=swaps,quote_mint=quote_mint,
+        min_liquidity_quote=min_liquidity_quote,
+        max_concentration_fraction=max_concentration_fraction)
+    reasons.update(audit.classification.reasons)
     return {"radar":"launch","signature":signature,"cutoff":point.isoformat(),
             "economic_qualification":economic,
             "economic_receipts":receipt_bundle["metrics"],

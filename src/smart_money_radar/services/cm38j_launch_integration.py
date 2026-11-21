@@ -30,6 +30,9 @@ from smart_money_radar.services.cm38j_metric_provenance import (
     describe_metric, qualify_metric_set,
 )
 
+_MAX_RESERVE_AGE = timedelta(minutes=5)
+CPMM_LOCAL_LIQUIDITY_BLOCK = "cpmm_local_quote_reserve_below_minimum"
+
 def _missing(*, name, at, start, source=None, ids=(), reason, strategy=None,
              pool=None, unit=None, method=None, kind="UNAVAILABLE"):
     return describe_metric(
@@ -78,6 +81,7 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
         token=safety, liquidity=liquidity, token_mint=token_mint,
         pool=pool, as_of=at, min_liquidity_quote=min_liquidity_quote,
         max_concentration_fraction=max_concentration_fraction,
+        max_age=_MAX_RESERVE_AGE,
     )
     volume_audit = audit_swap_volume(
         tuple(swaps), pool=pool, token_mint=token_mint,
@@ -166,8 +170,17 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
     economic["account_archive"] = _resolve_launch_accounts(
         cpmm_history, capture_id, original_transaction_raw, original_manifest,
         pool, token_mint, quote_mint, at,
-        tuple(scenario for scenario in integer_scenarios if scenario[-1] is not None))
+        tuple(scenario for scenario in integer_scenarios if scenario[-1] is not None),
+        declared_reserve=reserve, min_liquidity_quote=min_liquidity_quote,
+    )
     archive = economic["account_archive"]
+    liquidity_check = archive.get("liquidity_check", {})
+    reserve_conflict = liquidity_check.get("reconciliation") == "SAME_SLOT_CONFLICT"
+    if liquidity_check.get("status") == "LOCAL_BELOW_MINIMUM":
+        economic["safety_blocks"].append(CPMM_LOCAL_LIQUIDITY_BLOCK)
+    if reserve_conflict:
+        estimate = None
+        economic.update(reserve_quote=None, estimated_impact_fraction=None, impact_kind="UNAVAILABLE")
     if (archive["status"] == "LOCAL_PROSPECTIVE_BYTES_LINKED"
             and (amount_in is not None or sell_amount_in is not None)):
         # Generic trade-fee-only scenario; creator fee allocation/rounding
@@ -193,17 +206,17 @@ def launch_metric_receipts(*, token_mint: str, pool: str, quote_mint: str,
                 "trade_fee_bps": str(fee), "creator_fee_included": False,
                 "kind": "GENERIC_TRADE_FEE_ONLY_NOT_EXECUTABLE",
                 "operational_authorized": False}
-    if economic["account_archive"]["status"] == "CONFLICTED":
-        economic["safety_blocks"] = sorted(set(economic["safety_blocks"] + ["cpmm_account_archive_conflict"]))
+    if archive["status"] == "CONFLICTED":
+        economic["safety_blocks"].append("cpmm_account_archive_conflict")
+    economic["safety_blocks"].sort()
     economic["sha256"] = sha256(json.dumps(economic, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     return {
         "economic_qualification": economic,
         "radar": "launch", "strategy": strategy, "pool": pool,
         "cutoff": at.isoformat(), "metrics": metrics,
         "metric_audit": qualify_metric_set(radar="launch", metrics=metrics),
-        "observed_reserve_quote": str(safety_audit.liquidity_quote)
-          if safety_audit.liquidity_quote is not None else None,
-        "observed_reserve_quality": safety_audit.token_safety,
+        "observed_reserve_quote": economic["reserve_quote"],
+        "observed_reserve_quality": "CONFLICTED" if reserve_conflict else safety_audit.token_safety,
         "observed_volume_quote": str(volume_audit.quote_volume)
           if volume_audit.quote_volume is not None else None,
         "observed_volume_quality": volume_audit.quality,
@@ -260,7 +273,8 @@ def _resolve_launch_rpc(store, links, cutoff):
 
 
 def _resolve_launch_accounts(history, capture_id, original_raw, original_manifest,
-                             pool, token_mint, quote_mint, cutoff, integer_scenarios):
+                             pool, token_mint, quote_mint, cutoff, integer_scenarios,
+                             *, declared_reserve, min_liquidity_quote):
     """Expose decoded raw reserves only as local point-in-time observations."""
     result = {"status": "UNKNOWN", "independently_authenticated": False,
               "historical_pre_swap_proven": False, "operational_authorized": False}
@@ -324,6 +338,15 @@ def _resolve_launch_accounts(history, capture_id, original_raw, original_manifes
                           estimated_spot_quote_per_token=str(quote/token) if token>0 and quote>0 else None,
                           estimated_pool_value_quote=str(quote*2) if token>0 and quote>0 else None,
                           normalized_values_status="LOCAL_ESTIMATE_NOT_EXECUTABLE")
+        check = _check_archive_liquidity(
+            declared_reserve=declared_reserve, observation=obs, cutoff=cutoff,
+            min_quote=min_liquidity_quote, quote=quote, token=token,
+            quote_decimals=decimals[quote_mint], token_decimals=decimals[token_mint],
+        )
+        result["liquidity_check"] = check
+        if check["reconciliation"] == "SAME_SLOT_CONFLICT":
+            result["status"] = "CONFLICTED"
+            return result
         if integer_scenarios:
             config = decode_amm_config(base64.b64decode(accounts[1]["data"][0], validate=True))
             reserves = {
@@ -338,6 +361,43 @@ def _resolve_launch_accounts(history, capture_id, original_raw, original_manifes
     except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
         result["status"] = "CONFLICTED"
     return result
+
+
+def _check_archive_liquidity(*, declared_reserve, observation, cutoff, min_quote,
+                             quote, token, quote_decimals, token_decimals):
+    reconciliation = "DECLARATION_MISSING"
+    mismatches = []
+    if declared_reserve is not None:
+        if declared_reserve.slot != observation.slot:
+            reconciliation = "DIFFERENT_SLOT"
+        else:
+            # Same-slot comparisons detect disagreement in the declared state.
+            # They cannot establish intra-slot ordering or independent attestation.
+            mismatches = [name for name, archived, declared in (
+                ("quote_reserve", quote, declared_reserve.reserve_in),
+                ("token_reserve", token, declared_reserve.reserve_out),
+                ("quote_decimals", quote_decimals, declared_reserve.input_decimals),
+                ("token_decimals", token_decimals, declared_reserve.output_decimals),
+            ) if archived != declared]
+            reconciliation = "SAME_SLOT_CONFLICT" if mismatches else "SAME_SLOT_MATCH"
+
+    if mismatches:
+        status = "CONFLICTED"
+    elif cutoff - observation.observed_at > _MAX_RESERVE_AGE:
+        status = "STALE"
+    elif quote < min_quote:
+        status = "LOCAL_BELOW_MINIMUM"
+    else:
+        status = "LOCAL_MEETS_MINIMUM"
+    return {
+        "status": status,
+        "reconciliation": reconciliation,
+        "mismatches": mismatches,
+        "observed_at": observation.observed_at.isoformat(),
+        "declared_slot": declared_reserve.slot if declared_reserve is not None else None,
+        "minimum_quote_reserve": str(min_quote),
+        "independently_authenticated": False,
+    }
 
 
 def _raw_amount(amount: Decimal, decimals: int) -> int:

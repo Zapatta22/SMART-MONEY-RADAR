@@ -139,7 +139,9 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
             if market_result.mandatory_blocks or volume_result.risk_flags:
                 verdict="REJECTED"
             if isinstance(store, SQLiteEventStore):
-                from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
+                from smart_money_radar.services.cm38j_launch_integration import (
+                    CPMM_LOCAL_LIQUIDITY_BLOCK, launch_metric_receipts,
+                )
                 capture_id = None
                 history = cpmm_history
                 if history is not None:
@@ -173,6 +175,10 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
                        x["account_archive"]["status"] == "CONFLICTED" for x in launch_economics.values()):
                     verdict="REJECTED"
                     reasons.add("launch_persisted_rpc_conflict")
+                if any(CPMM_LOCAL_LIQUIDITY_BLOCK in mode["safety_blocks"]
+                       for mode in launch_economics.values()):
+                    verdict = "REJECTED"
+                    reasons.add(CPMM_LOCAL_LIQUIDITY_BLOCK)
             # A creation instruction is not a current tradable reserve or a quote.
             reasons.add("initialization_not_executable_price")
         else:

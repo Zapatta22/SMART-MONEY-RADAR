@@ -4400,3 +4400,8 @@ CM52 homologado CI 44898584810: 1328 Python aprovados, 2 ignorados. CM53 impleme
 ## CM54 — vínculo causal econômico offline
 
 CM53 CI 44901794243: 1330 Python aprovados, 2 ignorados. CM54 adiciona escopo econômico opcional às novas decisões Smart Money: reconstrução FIFO e recibos na mesma transação, digest vinculado às razões imutáveis e snapshot causal persistido atomicamente. Decisões legadas intactas; associação retrospectiva não causal. Testes de replay, capital, escopo, futuro e adulteração publicados, CI pendente. CM39 bloqueado; cobertura e autenticação independentes pendentes. Retornar repositório a privado após validações.
+
+
+## CM55 — inferência automática de escopo causal
+
+CM54 CI 44902234771: 1333 Python aprovados, 2 ignorados; vínculo causal explícito homologado nos cenários testados. CM55 deriva escopo único dos vínculos RPC de replay para novas decisões Smart Money sem escopo explícito; ambiguidade rejeitada; ausência marcada como bloqueio. Launch preservado. Testes de reabertura e falha injetada durante INSERT causal publicados. CI pendente. Não representa integração do supervisor live nem homologação econômica integral. CM39 bloqueado; retornar repositório a privado após validações.

@@ -192,6 +192,22 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
                         "real_execution_authorized": False, "idempotent_replay": True}
 
         economic = None
+        if economic_scope is None and radar=="smart_money":
+            has_links=conn.execute("SELECT 1 FROM sqlite_master WHERE name='cm38_economic_evidence_links'").fetchone()
+            if has_links:
+                candidates=conn.execute("""
+                    SELECT DISTINCT a.wallet_address,a.side,a.input_mint,a.output_mint
+                    FROM swap_replay_archive a JOIN cm38_economic_evidence_links l
+                      ON l.entity_id=a.operation_id AND l.wallet_address=a.wallet_address
+                    WHERE l.radar='smart_money' AND l.entity_type='replay_opportunity'
+                      AND l.evidence_id=? AND a.available_at<=?
+                    """,(evidence_id,at.isoformat())).fetchall()
+                scopes={(w,o,i) if side=="BUY" else (w,i,o)
+                        for w,side,i,o in candidates if side in ("BUY","SELL")}
+                if len(scopes)==1:
+                    economic_scope=next(iter(scopes))
+                elif candidates:
+                    raise ValueError("ambiguous automatic economic scope")
         if economic_scope is not None:
             from smart_money_radar.services.cm38k_persisted_fifo import reconstruct_persisted_wallet, fifo_metric_receipts
             from smart_money_radar.services.cm38j_metric_provenance import qualify_metric_set
@@ -279,6 +295,8 @@ def record_blocked_virtual_entry(store: SQLiteEventStore, *, request_id: str,
             "SELECT 1 FROM cm38i_opportunities WHERE opportunity_id=?", (op_id,)
         ).fetchone():
             raise ValueError("duplicate opportunity: distinct request denied")
+        if radar=="smart_money" and economic is None:
+            reasons.add("causal_economic_evidence_missing")
         if economic is not None:
             reasons.add("causal_economic_sha256:"+_hash(economic))
             reasons.add("causal_economics_not_computable")

@@ -51,3 +51,35 @@ class CausalEconomics(unittest.TestCase):
             c.execute("UPDATE cm38i_causal_economics SET payload='{}'")
         with self.assertRaises(ValueError):
             audit_blocked_entry(self.store,"causal")
+
+
+    def test_automatic_scope_reopen_and_replay(self):
+        from smart_money_radar.storage.event_store import SQLiteEventStore
+        args={k:v for k,v in self.args.items() if k!="economic_scope"}
+        first=record_blocked_virtual_entry(self.store,**args)
+        self.assertIn("causal_economics_not_computable",first["reasons"])
+        with self.store._connection_scope() as c:
+            path=c.execute("PRAGMA database_list").fetchone()[2]
+        self.store.close()
+        reopened=SQLiteEventStore(path)
+        try:
+            self.assertTrue(record_blocked_virtual_entry(reopened,**args)["idempotent_replay"])
+            self.assertEqual(SyntheticCapitalCoordinator(reopened).snapshot("virtual"),self.before)
+            self.assertFalse(audit_blocked_entry(reopened,"causal")["prospective_authorized"])
+        finally:
+            reopened.close()
+
+    def test_causal_insert_failure_rolls_back_all_rows(self):
+        import sqlite3
+        self.record()
+        with self.store._connection_scope() as c,c:
+            c.execute("CREATE TRIGGER force_causal_failure BEFORE INSERT ON cm38i_causal_economics BEGIN SELECT RAISE(ABORT,'injected failure'); END")
+            counts=[c.execute("SELECT COUNT(*) FROM "+table).fetchone()[0] for table in
+                    ("cm38i_opportunities","cm38i_risk_decisions","cm38i_virtual_entry_attempts","cm38i_causal_economics")]
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.record(request_id="rollback",strategy="immediate",economic_scope=None)
+        with self.store._connection_scope() as c:
+            self.assertEqual(counts,[c.execute("SELECT COUNT(*) FROM "+table).fetchone()[0] for table in
+                    ("cm38i_opportunities","cm38i_risk_decisions","cm38i_virtual_entry_attempts","cm38i_causal_economics")])
+        self.assertIsNone(audit_blocked_entry(self.store,"rollback"))
+        self.assertEqual(self.cap.snapshot("virtual"),self.before)

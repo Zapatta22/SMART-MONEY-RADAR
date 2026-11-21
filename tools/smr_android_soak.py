@@ -241,6 +241,14 @@ def _monitor(workspace, store, journal, worker_log, stop, duration, interval, ma
             if now - last_written_progress >= 30:
                 log("sample", **snapshot)
                 last_written_progress = now
+            # Exhausted restart budget is terminal after the worker has exited.
+            # Do not attempt to reacquire a lease or restart a fenced worker.
+            if (process is not None and process.poll() is not None
+                    and children_started > max_restarts):
+                worker_exit_codes.append(process.returncode)
+                log("worker_exit", pid=process.pid, code=process.returncode, expected=False)
+                process = None
+                raise RuntimeError("worker restart limit reached")
             if snapshot["lease"] in ("CLOCK_CONFLICT", "CONFLICTED"):
                 detail = snapshot.get("probe_error", snapshot["lease"])
                 log("unsafe_supervisor_state", lease=snapshot["lease"],

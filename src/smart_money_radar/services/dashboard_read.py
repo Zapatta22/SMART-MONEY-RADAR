@@ -71,7 +71,18 @@ class DashboardReadService:
         supervisor = read_supervisor_status(self._event_store)
         # Offline task progress is distinct from live Solana connectivity.
         # An invalid or absent supervisor snapshot must never imply readiness.
-        supervisor_tasks = supervisor.get("radars", {}) if supervisor.get("status") not in ("CONFLICTED", "CLOCK_CONFLICT") else {}
+        supervisor_tasks = supervisor.get("radars", {})
+        if (supervisor.get("status") in ("CONFLICTED", "CLOCK_CONFLICT")
+                or not isinstance(supervisor_tasks, dict)
+                or any(not isinstance(task, dict) for task in supervisor_tasks.values())):
+            supervisor_tasks = {}
+        # Malformed snapshots cannot fabricate offline progress.
+        supervisor_tasks = {
+            name: task for name, task in supervisor_tasks.items()
+            if name in ("launch", "smart_money")
+            and type(task.get("cycles")) is int and task["cycles"] >= 0
+            and isinstance(task.get("status"), str)
+        }
         return {
             "mode": "read_only",
             "wallet_address": wallet_address,

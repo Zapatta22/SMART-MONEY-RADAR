@@ -4435,3 +4435,8 @@ CM59 CI 44904659326: 1342 aprovados, 2 ignorados. CM61 acrescenta journal imutá
 ## CM62 — agrupamento por assinatura e custo de rede
 
 CM61 CI 44905171190: 1344 aprovados, 2 ignorados. CM62 adiciona grupos transitivos determinísticos por assinaturas compartilhadas no consenso, mantendo independência verificada em zero; discrimina total de taxa RPC sem duplicar prioridade, cuja decomposição permanece desconhecida. Testes publicados, CI pendente. Financiamento, transferências, sincronização, persistência de grupos e custo histórico completo pendentes. CM39 bloqueado. Retornar a privado após validações.
+
+
+## CM64 — persistência de agrupamentos
+
+CM62 CI 44905752804: 1347 aprovados, 2 ignorados. CM64 publica snapshots SQLite imutáveis por escopo e corte, reconstruídos de vínculos RPC Smart Money, com hash, versão e evidências, sem presumir independência. CI pendente. Correlação por financiamento/transferências/sincronização, integração causal, Launch e homologação integral pendentes. CM39 bloqueado; retornar a privado após validações.

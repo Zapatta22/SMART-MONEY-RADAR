@@ -133,14 +133,15 @@ class FinalizedLaunchBackfill:
         # Fetch every transaction BEFORE any checkpoint update. The archive
         # operation is atomic, including when a transaction fails on-chain.
         raws = []
+        evidence_ids = []
         for entry in reversed(collected):
             if stop_event is not None and stop_event.is_set():
                 raise LaunchBackfillGap("coleta interrompida; cursor preservado")
             sig = entry["signature"]
             check_collector(self.store,"launch")
-            transaction = await collect_transaction_with_evidence(self.store,self.rpc,radar="launch",signature=sig,
+            transaction, evidence_id = await collect_transaction_with_evidence(self.store,self.rpc,radar="launch",signature=sig,
                 source_id=source,commitment="finalized",expected_slot=entry["slot"],
-                legacy=lambda:self.rpc.get_finalized_transaction_async(sig))
+                legacy=lambda:self.rpc.get_finalized_transaction_async(sig),return_evidence=True)
             check_collector(self.store,"launch")
             if transaction is None or not isinstance(transaction, dict):
                 raise LaunchBackfillGap("transação indisponível; cursor preservado")
@@ -158,15 +159,19 @@ class FinalizedLaunchBackfill:
             raws.append(json.dumps(
                 {"result": transaction}, sort_keys=True, separators=(",", ":"),
             ).encode("utf-8"))
+            evidence_ids.append(evidence_id)
 
         if stop_event is not None and stop_event.is_set():
             raise LaunchBackfillGap("coleta interrompida; cursor preservado")
+        if any(x is not None for x in evidence_ids) and not all(x is not None for x in evidence_ids):
+            raise LaunchBackfillGap("mixed captured and uncaptured RPC transactions")
         start_sequence = cursor["last_sequence"] + 1 if cursor is not None else 0
         # An existing cursor and an RPC signature are updated in one transaction.
         self.store.archive_cpmm_launch_rpc_batch(
             raws, source_id=source, first_sequence=start_sequence,
             expected_signature=checkpoint,
             latest_signature=collected[0]["signature"],
+            evidence_ids=evidence_ids if any(x is not None for x in evidence_ids) else None,
         )
         return LaunchBackfillResult(address, len(raws), collected[0]["signature"],
                                     cursor is None, "UNKNOWN")

@@ -61,6 +61,7 @@ def process_raydium_cpmm_observation(
     signature: str,
     reference_mints: tuple[str, ...] | list[str] = (),
     observed_at: datetime | None = None,
+    evidence_id: str | None = None,
 ) -> RaydiumCpmmPipelineResult:
     """Arquiva, reconcilia e persiste uma transação Solana observada.
 
@@ -119,7 +120,7 @@ def process_raydium_cpmm_observation(
 
     meta = payload.get("meta")
     if isinstance(meta, dict) and meta.get("err") is not None:
-        store.mark_processed(wallet_address, signature)
+        store.mark_processed(wallet_address, signature, evidence_id=evidence_id)
         return RaydiumCpmmPipelineResult(
             "failed_on_chain", signature, 0, 0, 0, 0, True
         )
@@ -225,6 +226,7 @@ def process_raydium_cpmm_observation(
 
         store.mark_processed(
             wallet_address, signature,
+            evidence_id=evidence_id,
             replay_bundles=tuple(bundles) if normalized.transaction.occurred_at is not None else (),
         )
         return RaydiumCpmmPipelineResult(

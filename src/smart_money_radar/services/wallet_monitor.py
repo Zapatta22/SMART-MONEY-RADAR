@@ -217,9 +217,9 @@ class WalletMonitor:
                 return False
             try:
                 check_collector(self.event_store,"smart_money")
-                transaction = await collect_transaction_with_evidence(self.event_store,self.data_source,
+                transaction, evidence_id = await collect_transaction_with_evidence(self.event_store,self.data_source,
                     radar="smart_money",signature=signature,source_id="helius-wallet-rpc",commitment="confirmed",
-                    legacy=lambda:self.data_source.get_transaction_async(signature))
+                    legacy=lambda:self.data_source.get_transaction_async(signature),return_evidence=True)
                 check_collector(self.event_store,"smart_money")
             except AuthorityLost:
                 raise
@@ -237,6 +237,7 @@ class WalletMonitor:
                         wallet_address=wallet_address,
                         signature=signature,
                         reference_mints=self.reference_mints,
+                        evidence_id=evidence_id,
                     )
                 except AuthorityLost:
                     raise

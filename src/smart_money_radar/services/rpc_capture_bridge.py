@@ -7,14 +7,15 @@ authority can publish, after the async transport has returned.
 from smart_money_radar.storage.collector_authority import await_authorized,check_collector
 from smart_money_radar.services.rpc_observation_journal import RpcObservationJournal
 
-async def collect_transaction_with_evidence(store,adapter,*,radar,signature,source_id,commitment,legacy,expected_slot=None):
+async def collect_transaction_with_evidence(store,adapter,*,radar,signature,source_id,commitment,legacy,expected_slot=None,return_evidence=False):
     method=getattr(adapter,"capture_transaction_async",None)
     if not callable(method):
-        return await await_authorized(store,radar,legacy)
+        value=await await_authorized(store,radar,legacy)
+        return (value,None) if return_evidence else value
     capture=await await_authorized(store,radar,lambda:method(signature,commitment=commitment))
     check_collector(store,radar)
     if capture.commitment!=commitment: raise ValueError("RPC commitment mismatch")
-    RpcObservationJournal(store).append(radar=radar,signature=signature,source_id=source_id,
+    evidence_id=RpcObservationJournal(store).append(radar=radar,signature=signature,source_id=source_id,
         endpoint_host=capture.endpoint_host,raw_payload=capture.raw,observed_at=capture.observed_at,
         available_at=capture.available_at,expected_slot=expected_slot,commitment_requested=commitment)
-    return capture.result
+    return (capture.result,evidence_id) if return_evidence else capture.result

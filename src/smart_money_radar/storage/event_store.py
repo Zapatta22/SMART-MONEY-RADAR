@@ -565,6 +565,7 @@ class SQLiteEventStore:
     def archive_cpmm_launch_rpc_batch(
         self, payloads: list[bytes], *, source_id: str, first_sequence: int,
         expected_signature: str | None, latest_signature: str,
+        evidence_ids: list[str] | None = None,
     ) -> dict:
         """Archive all raw transactions and move RPC signature cursor atomically."""
         from smart_money_radar.data_sources.raydium_cpmm_launch import detect_cpmm_pool_initializations
@@ -624,6 +625,8 @@ class SQLiteEventStore:
 
         if last_signature != latest_signature:
             raise ValueError("checkpoint RPC não corresponde ao último RAW")
+        if evidence_ids is not None and (len(evidence_ids)!=len(payloads) or not all(isinstance(e,str) for e in evidence_ids)):
+            raise ValueError("incomplete evidence batch")
         with self._connection_scope() as connection:
             with collector_write(connection, getattr(self, "_collector_authority", None), "launch"):
                 previous = connection.execute(
@@ -650,6 +653,13 @@ class SQLiteEventStore:
                     connection, inputs, frames, candidates, records,
                     source_id=source_id, first_sequence=first_sequence,
                 )
+                for index,raw in enumerate(payloads):
+                    tx=json.loads(raw)["result"]
+                    sig=tx["transaction"]["signatures"][0]
+                    self._cm38_link_in_connection(connection,radar="launch",wallet_address=source_id,
+                        signature=sig,evidence_id=evidence_ids[index] if evidence_ids is not None else None,
+                        kind="launch_transaction",operation_id=sig,slot=tx["slot"],
+                        commitment="finalized",source_id=source_id)
                 connection.execute(
                     """INSERT INTO cpmm_launch_rpc_cursor VALUES (?, ?, ?, ?)
                        ON CONFLICT(source_id) DO UPDATE SET
@@ -814,8 +824,70 @@ class SQLiteEventStore:
             (wallet_address, signature),
         )
 
+    @staticmethod
+    def _cm38_link_in_connection(connection, *, radar, wallet_address, signature,
+                                  evidence_id, kind, operation_id, slot=None, commitment=None,
+                                  source_id=None):
+        """Verify true RPC RAW and bind economics in the checkpoint transaction.
+
+        Empty evidence is compatible only with previously uncaptured legacy
+        observations; never permit an existing captured signature to bypass.
+        """
+        from smart_money_radar.services.rpc_observation_journal import RpcObservationJournal
+        from smart_money_radar.storage.collector_authority import AuthorityLost
+        exists=connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cm38_rpc_observations'"
+        ).fetchone()
+        if evidence_id is None:
+            if exists and connection.execute(
+                "SELECT 1 FROM cm38_rpc_observations WHERE radar=? AND signature=?",
+                (radar,signature)
+            ).fetchone():
+                raise ValueError("captured transaction requires an explicit evidence link")
+            return
+        if not isinstance(evidence_id,str) or len(evidence_id)!=64 or not exists:
+            raise ValueError("missing original RPC evidence")
+        row=connection.execute(
+            "SELECT metadata,metadata_sha,raw FROM cm38_rpc_observations WHERE evidence_id=?",
+            (evidence_id,)
+        ).fetchone()
+        if row is None: raise ValueError("original RPC evidence missing")
+        record=RpcObservationJournal._read(evidence_id,row)
+        meta=record["metadata"]
+        if meta["radar"]!=radar or meta["signature"]!=signature:
+            raise ValueError("RPC source radar or signature mismatch")
+        if commitment is not None and meta["commitment_requested"]!=commitment:
+            raise ValueError("confirmed/finalized commitment mismatch")
+        if source_id is not None and meta["source_id"]!=source_id:
+            raise ValueError("RPC source identity mismatch")
+        if slot is not None and meta["slot"]!=slot:
+            raise ValueError("RPC slot mismatch")
+        available=datetime.fromisoformat(meta["available_at"])
+        if available.tzinfo is None or available>datetime.now(timezone.utc):
+            raise ValueError("future or non-timezoned evidence")
+        connection.execute("""CREATE TABLE IF NOT EXISTS cm38_economic_evidence_links (
+            radar TEXT NOT NULL, wallet_address TEXT NOT NULL, signature TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, evidence_id TEXT NOT NULL,
+            linked_at TEXT NOT NULL,
+            PRIMARY KEY(radar,wallet_address,signature,entity_type,entity_id),
+            FOREIGN KEY(evidence_id) REFERENCES cm38_rpc_observations(evidence_id))""")
+        old=connection.execute(
+            """SELECT evidence_id FROM cm38_economic_evidence_links WHERE
+               radar=? AND wallet_address=? AND signature=? AND entity_type=? AND entity_id=?""",
+            (radar,wallet_address,signature,kind,operation_id)
+        ).fetchone()
+        if old is not None and old[0]!=evidence_id:
+            raise ValueError("conflicting RPC evidence for derived economics")
+        if old is None:
+            connection.execute(
+                "INSERT INTO cm38_economic_evidence_links VALUES (?,?,?,?,?,?,?)",
+                (radar,wallet_address,signature,kind,operation_id,evidence_id,
+                 datetime.now(timezone.utc).isoformat())
+            )
+
     def mark_processed(
         self, wallet_address: str, signature: str, *, replay_bundles: tuple[SwapDomainBundle, ...] = (),
+        evidence_id: str | None = None,
     ) -> None:
         """Marca a transação como concluída sem regredir o checkpoint por replay antigo."""
         if not wallet_address.strip() or not signature.strip():
@@ -830,6 +902,21 @@ class SQLiteEventStore:
                 if parent is None:
                     raise KeyError("A transação observada deve existir antes de marcar como processada.")
 
+                self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
+                    signature=signature,evidence_id=evidence_id,kind="wallet_transaction",
+                    operation_id=signature,slot=parent[0],commitment="confirmed")
+                for opid, in connection.execute(
+                    "SELECT operation_id FROM swap_observations WHERE wallet_address=? AND signature=?",
+                    (wallet_address,signature)):
+                    self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
+                        signature=signature,evidence_id=evidence_id,kind="swap_and_classification",
+                        operation_id=opid,slot=parent[0],commitment="confirmed")
+                for opid, in connection.execute(
+                    "SELECT DISTINCT operation_id FROM swap_reconciliation_attempts WHERE wallet_address=? AND signature=?",
+                    (wallet_address,signature)):
+                    self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
+                        signature=signature,evidence_id=evidence_id,kind="economic_reconciliation",
+                        operation_id=opid,slot=parent[0],commitment="confirmed")
                 if replay_bundles:
                     available_at = datetime.now(timezone.utc).isoformat()
                     receipts = []
@@ -843,6 +930,9 @@ class SQLiteEventStore:
                             if record.startswith("pool_state:") and record.removeprefix("pool_state:").strip()
                         }
                         pool_address = next(iter(pools)) if len(pools) == 1 else None
+                        self._cm38_link_in_connection(connection,radar="smart_money",wallet_address=wallet_address,
+                            signature=signature,evidence_id=evidence_id,kind="replay_opportunity",
+                            operation_id=observation.operation_id,slot=parent[0],commitment="confirmed")
                         receipts.append((
                             observation.operation_id, wallet_address, item.evidence.program_id, pool_address,
                             observation.input_mint, observation.output_mint,

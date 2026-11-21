@@ -48,3 +48,20 @@ class LaunchEconomicQualificationTests(unittest.TestCase):
         self.assertIsNone(q["volume_quote"])
         self.assertIn("contradictory_duplicate_signature",q["risk_flags"])
         self.assertFalse(q["operational_authorized"])
+
+
+class LaunchArchiveTests(unittest.TestCase):
+    def test_empty_archive_does_not_attest(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        from smart_money_radar.storage.event_store import SQLiteEventStore
+        from smart_money_radar.services.cm38j_launch_integration import _resolve_launch_rpc
+        with TemporaryDirectory() as tmp:
+            store = SQLiteEventStore(Path(tmp) / "test.sqlite")
+            try:
+                result = _resolve_launch_rpc(store, [{"kind":"swap","evidence_id":"absent"}],
+                    datetime(2025,1,1,tzinfo=timezone.utc))
+                self.assertEqual(result["status"],"UNKNOWN")
+                self.assertEqual(result["links"],[{"evidence_id":"absent","status":"UNKNOWN"}])
+            finally:
+                store.close()

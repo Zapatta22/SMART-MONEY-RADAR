@@ -1,5 +1,6 @@
 """CM74 periodic Android watchdog safety tests."""
 import os
+import fcntl
 import shutil
 import subprocess
 import tempfile
@@ -39,6 +40,21 @@ class PeriodicDashboardWatchdogTests(unittest.TestCase):
             result = self.run_script(env)
             self.assertEqual(result.returncode, 2)
             self.assertFalse(state.exists())
+
+    @unittest.skipUnless(shutil.which("flock"), "flock required")
+    def test_second_watchdog_is_rejected_by_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "state"
+            state.mkdir()
+            database = Path(tmp) / "existing.sqlite"
+            database.touch()
+            with (state / "watchdog.lock").open("w") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                env = os.environ.copy()
+                env.update(SMR_DB_PATH=str(database), SMR_DASHBOARD_STATE_DIR=str(state))
+                result = self.run_script(env)
+                self.assertEqual(result.returncode, 3, result.stderr)
+                self.assertIn("já ativo", result.stderr)
 
     def test_missing_database_does_not_create_state(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -52,6 +53,32 @@ class BackgroundDashboardLauncherTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("SMR_DB_PATH", result.stderr)
             self.assertFalse(Path(tmp, "state").exists())
+
+
+    def test_incomplete_database_does_not_start_dashboard_or_migrate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = Path(tmp) / "incomplete.sqlite"
+            state = Path(tmp) / "state"
+            with sqlite3.connect(database) as connection:
+                connection.execute("CREATE TABLE unrelated (id INTEGER)")
+            env = os.environ.copy()
+            env.update(SMR_DB_PATH=str(database), SMR_DASHBOARD_STATE_DIR=str(state))
+            result = subprocess.run(
+                ["bash", str(SCRIPT)],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("ERRO", (state / "dashboard.log").read_text())
+            self.assertNotIn("TOKEN TEMPORÁRIO", result.stdout)
+            with sqlite3.connect(database) as connection:
+                tables = {row[0] for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )}
+            self.assertEqual(tables, {"unrelated"})
 
 
 if __name__ == "__main__":

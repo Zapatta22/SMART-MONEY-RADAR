@@ -175,3 +175,19 @@ class SQLiteCpmmProspectiveHistory:
         if actual != expected:
             raise ValueError("archived capture metadata conflict")
         return capture
+
+    def candidate_capture_ids(self, *, pool: str, cutoff: datetime, limit: int = 20):
+        """Bounded causal inventory; candidates still require RAW reconstruction."""
+        if not isinstance(pool, str) or not pool.strip():
+            raise ValueError("pool required")
+        if not isinstance(cutoff, datetime) or cutoff.utcoffset() is None:
+            raise ValueError("aware cutoff required")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("invalid candidate limit")
+        point = cutoff.astimezone(timezone.utc).isoformat()
+        rows = self.connection.execute(
+            "SELECT capture_id FROM prospective_cpmm_captures "
+            "WHERE pool=? AND available_at<=? "
+            "ORDER BY available_at DESC, slot DESC, capture_id ASC LIMIT ?",
+            (pool, point, limit)).fetchall()
+        return tuple(row[0] for row in rows)

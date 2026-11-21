@@ -1,0 +1,75 @@
+"""Offline CM74 soak evidence gate; never grants live or financial authorization."""
+import argparse
+import json
+import sqlite3
+from pathlib import Path
+
+
+def verify(workspace):
+    workspace = Path(workspace)
+    report = json.loads((workspace / "report.json").read_text())
+    issues = []
+    if report.get("schema_version") != 1 or report.get("scope") != "EMPTY_ARCHIVE_OFFLINE":
+        issues.append("unexpected report schema or scope")
+    if report.get("outcome") != "COMPLETED":
+        issues.append("offline soak not completed")
+    if report.get("sqlite_integrity") != ["ok"]:
+        issues.append("reported SQLite integrity not ok")
+    supervisor = report.get("supervisor", {})
+    if supervisor.get("lease") != "STOPPED":
+        issues.append("supervisor did not stop cleanly")
+    if supervisor.get("live_authorized") is not False or supervisor.get("execution_enabled") is not False:
+        issues.append("unexpected financial or live authorization")
+    tasks = supervisor.get("radars", {})
+    if set(tasks) != {"launch", "smart_money"}:
+        issues.append("missing independent radar progress")
+    else:
+        for name, task in tasks.items():
+            if type(task.get("cycles")) is not int or task["cycles"] < 1:
+                issues.append(f"{name} has no completed offline cycles")
+    if report.get("physical_android_verified") is not False or report.get("autonomy_24h_verified") is not False:
+        issues.append("untrusted physical/autonomy verification claim")
+    progress = workspace / "progress.jsonl"
+    if not progress.is_file():
+        issues.append("missing progress journal")
+    else:
+        entries = [json.loads(line) for line in progress.read_text().splitlines() if line.strip()]
+        if not entries or entries[0].get("event") != "started" or entries[-1].get("event") != "finished":
+            issues.append("incomplete progress journal")
+    db = workspace / "offline-soak.sqlite"
+    if not db.is_file():
+        issues.append("missing offline SQLite archive")
+    else:
+        with sqlite3.connect(f"file:{db.resolve()}?mode=ro", uri=True) as conn:
+            if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                issues.append("SQLite integrity check failed")
+            try:
+                rows = conn.execute("SELECT radar,payload FROM cm36_supervisor_tasks").fetchall()
+                persisted = {radar: json.loads(payload).get("cycles") for radar, payload in rows}
+                if set(persisted) != {"launch", "smart_money"}:
+                    issues.append("missing persisted radar checkpoints")
+                elif any(persisted[name] != tasks.get(name, {}).get("cycles") for name in persisted):
+                    issues.append("persisted cycles disagree with final report")
+            except (sqlite3.Error, ValueError, TypeError):
+                issues.append("invalid persisted radar checkpoints")
+    return {"accepted_offline": not issues, "physical_android_verified": False,
+            "autonomy_24h_verified": False, "live_authorized": False,
+            "execution_enabled": False, "issues": issues}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("workspace", type=Path)
+    args = parser.parse_args()
+    try:
+        result = verify(args.workspace)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, sqlite3.Error) as exc:
+        result = {"accepted_offline": False, "physical_android_verified": False,
+                  "autonomy_24h_verified": False, "live_authorized": False,
+                  "execution_enabled": False, "issues": [type(exc).__name__]}
+    print(json.dumps(result, sort_keys=True))
+    return 0 if result["accepted_offline"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

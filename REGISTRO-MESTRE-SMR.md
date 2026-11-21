@@ -4550,3 +4550,12 @@ A CI [44939377450](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/4
 CM75 iniciou com `0f73cf3` e `078b3ac`: o dashboard em modo somente leitura descarta progresso offline quando o mapa de tarefas do supervisor estiver malformado, contiver tarefas não estruturadas, contadores negativos ou booleanos em lugar de inteiros. Testes adversariais verificam bloqueio de autorização e cobertura UNKNOWN. A CI específica destes commits permanece pendente de confirmação.
 
 Permanecem como estimativas conservadoras: Launch 60%, Smart Money 81%, infraestrutura 67%, CM39 24% bloqueado, global 58%. Sem merge, captura live, negociação ou gastos adicionais. Próxima prioridade: CI CM75, recuperação e watchdog físico Android com evidências auditáveis, mantendo o painel separado da autorização operacional.
+
+
+### CM76 — histórico auditável do watchdog no painel Android (21/11/2026)
+
+Na PR #115 Draft, os commits `1f6c39b`, `59644e3` e `29f4774` integram o journal já existente de alertas do supervisor ao dashboard autenticado e somente leitura. O resumo distingue geração, heartbeat, expiração, eventos WATCHDOG_EXPIRED, STARTED e STOPPED, disponibilidade local e obsolescência. Alertas vêm da leitura SQLite com verificação de identidade e SHA-256 existente; divergência de hash ou inconsistência temporal suprime o histórico confiável. Os dois radares mantêm painéis e estados independentes; conexão live, cobertura e autorização financeira não são inferidas.
+
+Os testes adicionados cobrem retomada após expiração de geração, isolamento dos radares, adulteração do digest de alerta e expiração anterior ao heartbeat. A CI dos novos commits precisa ser confirmada antes de declarar CM76 validado. As CIs CM75 #44939674125 e #44939671549 foram informadas como aprovadas, sujeitas a confirmação no GitHub.
+
+Estimativas conservadoras mantidas até homologação da integração: Launch 60%; Smart Money 81%; infraestrutura 67%; CM39 24% bloqueado; global 58%. Homologação física Android 24 horas pendente. Main e PRs #111/#113 preservadas; sem merge, ordens reais, captura live ou custos adicionais.

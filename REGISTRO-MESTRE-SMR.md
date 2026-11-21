@@ -4541,3 +4541,12 @@ Estimativas mantidas: Launch 60%; Smart Money 81%; infraestrutura 67%; CM39 24% 
 ### CM74 — gate de evidência offline (continuidade)
 
 O commit `d04eae9` acrescentou `tools/verify_smr_android_soak.py`, verificador independente e somente leitura do relatório, journal, integridade SQLite e checkpoints persistidos de Launch e Smart Money. O commit `5bfd002` adicionou teste de adulteração do contador do relatório; a [CI 44935576211](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44935576211) aprovou esse código e seus testes. O commit `974e453` adicionou rejeição explícita de artefatos ausentes; `4cf7325` documentou o uso no Termux. A aprovação de CI destes últimos commits deve ser conferida separadamente. O gate somente atesta consistência de evidências offline, nunca execução física prolongada nem autorização live.
+
+
+### CM75 — integridade do painel offline (21/11/2026)
+
+A CI [44939377450](https://github.com/Zapatta22/SMART-MONEY-RADAR/actions/runs/44939377450) aprovou o commit CM74 `2de2915`, incluindo testes principais, compilação, benchmark offline e avaliação Python 3.14. A homologação automatizada CM74 não constitui homologação física Android de 24 horas.
+
+CM75 iniciou com `0f73cf3` e `078b3ac`: o dashboard em modo somente leitura descarta progresso offline quando o mapa de tarefas do supervisor estiver malformado, contiver tarefas não estruturadas, contadores negativos ou booleanos em lugar de inteiros. Testes adversariais verificam bloqueio de autorização e cobertura UNKNOWN. A CI específica destes commits permanece pendente de confirmação.
+
+Permanecem como estimativas conservadoras: Launch 60%, Smart Money 81%, infraestrutura 67%, CM39 24% bloqueado, global 58%. Sem merge, captura live, negociação ou gastos adicionais. Próxima prioridade: CI CM75, recuperação e watchdog físico Android com evidências auditáveis, mantendo o painel separado da autorização operacional.

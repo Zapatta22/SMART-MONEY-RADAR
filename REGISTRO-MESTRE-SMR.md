@@ -4450,3 +4450,8 @@ Código 86a33c2c07f25fbf6e7ffa523596144e792bb1a9 e testes bcc365ebbe0faaca055d72
 ## CM67 — resolução local de referências RPC Launch
 
 Código 3d4021bbef9a03e253de145c32d6778a5accc0f8; teste de arquivo ausente 42176580c27a85c6c5c93aecf75715170e3dc25a. Consulta opcional somente leitura ao journal RPC existente, verifica identidade/hash/metadados/slot/commitment solicitado/corte e rejeita radar divergente. LOCAL_BYTES_LINKED não prova valor econômico, token/pool ou finalização independente. Integração automática com oportunidades, evidências de contas/reservas, classificações persistidas e testes positivos/corrupção ainda pendentes. CI CM66 sem resultados na consulta de runs PR; nenhuma nova suíte homologada. CM38 85%, Launch 50% referências mantidas. CM39 bloqueado. Main e PRs 111/113 não alteradas; sem live, ordens, merge, force push, gastos ou Android. Retornar repositório a privado após validações autorizadas.
+
+
+## CM68 — procedimento permanente de recuperação da CI
+
+Consultar GET https://api.github.com/repos/Zapatta22/SMART-MONEY-RADAR/actions/runs?branch=codex%2Fcm38j-economic-evidence-audit (eventos push e pull_request), conferir head_sha, status, conclusion, workflow e jobs/logs. Não usar ausência de resultados em fetch_commit_workflow_runs (filtra PR) como ausência de CI. Referências SUCCESS informadas na recuperação: 86a33c2/44907435848, bcc365e/44907446833, 3d4021b/44907861364, 4217658/44907870799; test e python314-evaluation da última execução aprovados segundo recuperação. Não inferir contagem de testes sem logs. CM39 BLOCKED; preservar main, PR111/113, sem live/merge/force push/gastos; retornar a privado após validações.

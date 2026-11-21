@@ -61,4 +61,5 @@ jobs:
           PYTHONPATH=src python -m unittest discover -s tests -p 'test_dashboard_android_background_launcher.py' -v
           PYTHONPATH=src python -m unittest discover -s tests -p 'test_dashboard_android_watchdog.py' -v
           PYTHONPATH=src python -m unittest discover -s tests -p 'test_dashboard_android_periodic_watchdog.py' -v
+          PYTHONPATH=src python -m unittest discover -s tests -p 'test_dashboard_android_authenticated_health.py' -v
           PYTHONPATH=src python -m unittest discover -s tests -p 'test_android_eval_installer.py' -v

@@ -67,6 +67,10 @@ export SMR_API_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(32))'
 STATE="${SMR_DASHBOARD_STATE_DIR:-$HOME/.local/state/smr-dashboard}"
 mkdir -p "$STATE"
 chmod 700 "$STATE"
+if [[ -L "$STATE/health.token" ]]; then
+  echo "ERRO: health.token não pode ser link simbólico." >&2
+  exit 2
+fi
 printf '%s\\n' "$SMR_API_TOKEN" > "$STATE/health.token"
 chmod 600 "$STATE/health.token"
 

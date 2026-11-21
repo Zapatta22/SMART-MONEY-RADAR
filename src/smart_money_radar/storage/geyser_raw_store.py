@@ -122,7 +122,7 @@ class SQLiteGeyserRawStore:
     def bind_collector(self, authority):
         """Capture an immutable generation on the same SQLite file."""
         from smart_money_radar.storage.collector_authority import CollectorAuthority, AuthorityLost
-        if not isinstance(authority, CollectorAuthority) or self.read_only:
+        if not isinstance(authority, CollectorAuthority) or self._read_only:
             raise ValueError("writable store and collector authority required")
         if str(self.database_path)==":memory:" or not Path(self.database_path).samefile(authority.database_path):
             raise AuthorityLost("collector database mismatch")

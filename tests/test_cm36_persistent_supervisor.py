@@ -155,6 +155,51 @@ class CM36Tests(unittest.TestCase):
                     self.assertFalse(radar["operational_authorized"])
                     self.assertEqual(radar["evidence_coverage"], "UNKNOWN")
 
+    def test_cm76_watchdog_history_recovery_and_radar_isolation(self):
+        a = self.runner()
+        a.acquire()
+        a.cycle()
+        self.now += 10
+        b = self.runner()
+        self.assertEqual(b.acquire(), 2)
+        b.cycle()
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        data = DashboardReadService(reader).get_overview()
+        history = data["supervisor_history"]
+        self.assertEqual(history["integrity"], "VERIFIED_LOCAL")
+        self.assertEqual(history["restart_events"], 1)
+        self.assertTrue(any(item["kind"] == "WATCHDOG_EXPIRED"
+                            for item in history["watchdog_history"]))
+        self.assertEqual(set(data["radars"]), {"launch", "smart_money"})
+        self.assertFalse(history["execution_enabled"])
+        self.assertFalse(history["live_authorized"])
+
+    def test_cm76_corrupt_alert_digest_fences_history(self):
+        a = self.runner()
+        a.acquire()
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE cm36_supervisor_alerts SET payload_sha='invalid'")
+        reader = SQLiteEventStore(self.db, read_only=True)
+        self.addCleanup(reader.close)
+        data = DashboardReadService(reader).get_overview()
+        self.assertEqual(data["supervisor_history"]["integrity"], "CONFLICTED")
+        self.assertEqual(data["supervisor_history"]["watchdog_history"], [])
+        self.assertEqual(data["supervisor_history"]["availability"], "UNAVAILABLE")
+        for radar in data["radars"].values():
+            self.assertEqual(radar["status"], "UNKNOWN")
+            self.assertFalse(radar["operational_authorized"])
+
+    def test_cm76_invalid_heartbeat_temporal_order_fails_closed(self):
+        history = DashboardReadService._supervisor_history({
+            "status": "ACTIVE", "last_heartbeat": "2026-11-21T10:00:00+00:00",
+            "expires_at": "2026-11-21T09:00:00+00:00",
+            "alerts": [{"kind": "STARTED", "at": "2026-11-21T09:00:00+00:00"}],
+        })
+        self.assertEqual(history["integrity"], "CONFLICTED")
+        self.assertEqual(history["watchdog_history"], [])
+        self.assertEqual(history["availability"], "UNAVAILABLE")
+
     def test_corrupt_lease_fails_closed(self):
         a=self.runner();a.acquire()
         with sqlite3.connect(self.db) as c:c.execute("UPDATE cm36_supervisor_lease SET generation=99")

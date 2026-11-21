@@ -154,6 +154,18 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertIn("launch final state is not healthy", rejected["issues"])
         self.assertIn("offline soak target duration not reached", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_checkpoint_hash_tampering(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        import sqlite3
+        with sqlite3.connect(workspace / "offline-soak.sqlite") as conn:
+            conn.execute("UPDATE cm36_supervisor_tasks SET payload_sha=? WHERE radar=?",
+                         ("0" * 64, "launch"))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("launch persisted checkpoint hash mismatch", rejected["issues"])
+
     def test_offline_evidence_gate_rejects_missing_progress_journal(self):
         process = self.start(2.0)
         self.report(process, 0)

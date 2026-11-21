@@ -1,0 +1,6 @@
+# CM27 public mainnet READ ONLY, validated linux x86_64 CPython 3.12 wheels
+# Hashes measured on GitHub Actions run 44892709440, retrieved from PyPI.
+# Never upgrade an unreviewed wheel or use sdist during the live gate.
+python-dotenv==1.1.1 --hash=sha256:31f23644fe2602f88ff55e1f5c79ba497e01224ee7737937930c448e4d0e24dc
+websockets==15.0.1 --hash=sha256:64dee438fed052b52e4f98f76c5790513235efaa1ef7f3f2192c392cd7c91b65
+protobuf==6.32.1 --hash=sha256:b1864818300c297265c83a4982fd3169f97122c299f56a56e2445c3698d34710

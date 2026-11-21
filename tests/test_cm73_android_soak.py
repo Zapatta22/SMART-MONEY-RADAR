@@ -336,6 +336,28 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertEqual(report["worker_exit_codes"], [-signal.SIGKILL])
         self.assertEqual(report["worker_restarts"], 0)
 
+    def test_worker_shutdown_waits_for_graceful_exit(self):
+        from unittest.mock import Mock
+
+        worker = Mock()
+        worker.poll.return_value = None
+        worker.wait.return_value = 0
+        self.assertFalse(soak._stop_worker(worker))
+        worker.wait.assert_called_once_with(timeout=1.0)
+        worker.terminate.assert_not_called()
+        worker.kill.assert_not_called()
+
+    def test_worker_shutdown_signals_after_grace_period(self):
+        from unittest.mock import Mock
+
+        worker = Mock()
+        worker.poll.return_value = None
+        worker.wait.side_effect = [subprocess.TimeoutExpired("worker", 1.0), 0]
+        self.assertFalse(soak._stop_worker(worker))
+        worker.terminate.assert_called_once_with()
+        worker.kill.assert_not_called()
+        self.assertEqual(worker.wait.call_count, 2)
+
     def test_internal_worker_rejects_nonfinite_deadline_before_opening_sqlite(self):
         with self.assertRaisesRegex(ValueError, "invalid offline soak deadline"):
             soak._worker(self.output, os.getppid(), float("nan"), 0.1)

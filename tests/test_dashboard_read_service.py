@@ -62,6 +62,8 @@ class DashboardReadServiceTests(unittest.TestCase):
         diagnostics.get_report.return_value = {"total_attempts": 0}
         store.storage_stats.return_value = {}
         store.get_events.return_value = []
+        store.list_cpmm_launch_archived_event_inputs.return_value = []
+        store.list_smr_archived_event_inputs.return_value = []
 
         result = DashboardReadService(store, diagnostics).get_overview()
 
@@ -76,6 +78,8 @@ class DashboardReadServiceTests(unittest.TestCase):
         }
         store.storage_stats.return_value = {}
         store.get_events.return_value = []
+        store.list_cpmm_launch_archived_event_inputs.return_value = []
+        store.list_smr_archived_event_inputs.return_value = []
         result = DashboardReadService(store).get_overview()
         self.assertEqual(set(result["radars"]), {"launch", "smart_money"})
         for radar in result["radars"].values():

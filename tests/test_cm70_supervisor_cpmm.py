@@ -6,7 +6,7 @@ import sqlite3
 import unittest
 from contextlib import redirect_stderr
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -90,9 +90,10 @@ class CPMMSupervisorTests(unittest.TestCase):
                     launch, id="fixture-smart", radar="smart_money", event_type="SWAP",
                     direction="BUY", source_reference="fixture-smart",
                     input_mint=quote, output_mint=token,
+                    program="fixture-program", wallet_address="fixture-wallet",
                 )
                 scope = IntelligenceScope(
-                    token_mint=token, quote_mint=quote, min_liquidity_quote=Decimal("1"),
+                    token_mint=token, quote_mint=quote, min_liquidity_quote=Decimal("100000000"),
                     max_concentration_fraction=Decimal("0.4"),
                     launch_scenarios=LaunchModelScenarios(
                         buy_amount_in=Decimal("1"), sell_amount_in=Decimal("2"),
@@ -109,19 +110,47 @@ class CPMMSupervisorTests(unittest.TestCase):
                 ):
                     first = self.run_cycle(path, pool, scope, now, start=True)
                     self.assertEqual(self.run_cycle(path, pool, scope, now + 10, start=False), first)
+                    if quote == SOL:
+                        fresh_path = Path(self.temp.name) / "fresh.sqlite"
+                        fresh = self.run_cycle(fresh_path, pool, scope, at.timestamp() + 1, start=True)
+                        fresh_launch = json.loads(fresh["launch"][0])["decision"]
+                        fresh_smart = json.loads(fresh["smart_money"][0])["decision"]
+                        reason = "cpmm_local_quote_reserve_below_minimum"
+                        self.assertEqual(fresh_launch["verdict"], "REJECTED")
+                        self.assertIn(reason, fresh_launch["reasons"])
+                        for qualification in fresh_launch["economic_qualification"].values():
+                            self.assertIn(reason, qualification["safety_blocks"])
+                        self.assertNotIn(reason, fresh_smart["reasons"])
+                        self.assertNotEqual(fresh_smart["verdict"], "REJECTED")
+                        self.assertFalse(fresh_launch["operational_authorized"])
+                        self.assertFalse(fresh_smart["operational_authorized"])
 
                 self.assertEqual(set(first), {"launch", "smart_money"})
                 smart_decision = json.loads(first["smart_money"][0])["decision"]
                 self.assertNotIn("economic_qualification", smart_decision)
+                group_audit = smart_decision["qualified_consensus"]["wallet_group_audit"]
+                self.assertEqual(group_audit["status"], "UNKNOWN")
+                self.assertEqual(group_audit["reason"], "wallet_group_evidence_missing")
+                self.assertEqual(group_audit["independent_wallets"], 0)
+                self.assertFalse(group_audit["operational_authorized"])
                 self.assertFalse(smart_decision["operational_authorized"])
+                self.assertEqual(smart_decision["paper_modes"], {
+                    "immediate": "BLOCKED", "confirmed": "BLOCKED",
+                })
                 decision = json.loads(first["launch"][0])["decision"]
                 self.assertFalse(decision["operational_authorized"])
+                self.assertNotIn("cpmm_local_quote_reserve_below_minimum", decision["reasons"])
+                self.assertEqual(decision["paper_modes"], {
+                    "immediate": "BLOCKED", "confirmed": "BLOCKED",
+                })
                 modes = decision["economic_qualification"]
                 self.assertEqual(set(modes), {"immediate", "confirmed"})
                 for mode, qualification in modes.items():
                     with self.subTest(mode=mode):
                         archive = qualification["account_archive"]
                         self.assertEqual(archive["capture_id"], self.capture.capture_id)
+                        self.assertEqual(archive["liquidity_check"]["status"], "STALE")
+                        self.assertEqual(archive["liquidity_check"]["reconciliation"], "DECLARATION_MISSING")
                         self.assertIn("buy_model", archive)
                         self.assertIn("sell_model", archive)
                         for key, expected in EXPECTED[quote].items():
@@ -147,17 +176,23 @@ class CPMMSupervisorTests(unittest.TestCase):
                 for radar in ("launch", "smart_money"):
                     controls.apply(
                         capability=capability, event_id=f"start-{radar}", radar=radar,
-                        action="START", actor="fixture", at=archived.CUTOFF,
+                        action="START", actor="fixture", at=datetime.fromtimestamp(now, timezone.utc),
                         reason="offline fixture",
                     )
             runner = PersistentSupervisor(
                 store, clock=lambda: now, launch_history=history,
-                scopes={("launch", pool): scope},
+                scopes={
+                    ("launch", pool): scope,
+                    ("smart_money", pool): replace(
+                        scope, wallets=("fixture-wallet",), launch_scenarios=None,
+                    ),
+                },
             )
             runner.acquire()
             try:
                 result = runner.cycle()
                 self.assertFalse(result["execution_enabled"])
+                self.assertFalse(result["live_authorized"])
                 for task in result["tasks"].values():
                     self.assertEqual(task["status"], "READY")
                     self.assertEqual(task["processed_new"], int(start))

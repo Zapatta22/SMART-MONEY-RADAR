@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from math import isfinite
 import json
 import sqlite3
+import sys
 import time
 import uuid
 
@@ -50,6 +51,12 @@ def _number(value):
 
 def _stamp(now):
     return datetime.fromtimestamp(now,timezone.utc)
+
+def _transient_sqlite_lock(exc):
+    code = getattr(exc, "sqlite_errorcode", None)
+    return isinstance(exc, sqlite3.OperationalError) and isinstance(code, int) and (
+        code & 0xFF
+    ) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
 
 def _lease(conn):
     row=conn.execute("SELECT generation,owner,heartbeat,expires,status,payload_sha FROM cm36_supervisor_lease WHERE singleton=1").fetchone()
@@ -105,8 +112,15 @@ class PersistentSupervisor:
         self.launch_history=launch_history
         if (economic_account_id is None)!=(economic_notional is None):
             raise ValueError("explicit offline economic account and notional required")
+
+    def _connection_scope(self):
+        # Do not inherit the collector's long wait when competing for a lease.
+        return self.store._connection_scope(
+            busy_timeout_seconds=min(0.25, self.policy.interval_seconds / 4)
+        )
+
     def acquire(self):
-        with self.store._connection_scope() as conn,conn:
+        with self._connection_scope() as conn,conn:
             conn.execute("BEGIN IMMEDIATE");now=_number(self.clock());old=_lease(conn)
             if old and now<old[2]:raise AuthorityLost("clock regressed")
             if old and old[4]=="ACTIVE" and now<old[3]:
@@ -134,7 +148,7 @@ class PersistentSupervisor:
         """Capture the current generation, not a mutable supervisor reference."""
         if radar not in RADARS:
             raise ValueError("invalid radar")
-        with self.store._connection_scope() as conn, conn:
+        with self._connection_scope() as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
             self._fence(conn)
             token = CollectorAuthority(str(self.store.database_path.resolve()),
@@ -148,12 +162,12 @@ class PersistentSupervisor:
         return store.bind_collector(self.collector_authority(radar))
 
     def heartbeat(self):
-        with self.store._connection_scope() as conn,conn:
+        with self._connection_scope() as conn,conn:
             conn.execute("BEGIN IMMEDIATE");now=self._fence(conn)
             _write_lease(conn,self.generation,self.owner,now,now+self.policy.lease_seconds,"ACTIVE")
         return now
     def stop(self):
-        with self.store._connection_scope() as conn,conn:
+        with self._connection_scope() as conn,conn:
             conn.execute("BEGIN IMMEDIATE");now=self._fence(conn)
             _write_lease(conn,self.generation,self.owner,now,now,"STOPPED")
             _alert(conn,"supervisor","STOPPED",str(self.generation),now)
@@ -185,7 +199,7 @@ class PersistentSupervisor:
         return c["emergency_halt"] or c["radars"][radar]!="RUNNING"
     def step(self,radar):
         if radar not in RADARS:raise ValueError("invalid radar")
-        with self.store._connection_scope() as conn,conn:
+        with self._connection_scope() as conn,conn:
             conn.execute("BEGIN IMMEDIATE");now=self._fence(conn);task=_task(conn,radar)
             if self._blocked(conn,radar):
                 task.update(status="PAUSED",pending=True);_put_task(conn,task);return task
@@ -195,13 +209,13 @@ class PersistentSupervisor:
         try:
             profile,results=self._prepare(radar,now)
         except Exception as exc:
-            if isinstance(exc,AuthorityLost):raise
+            if isinstance(exc,AuthorityLost) or _transient_sqlite_lock(exc):raise
             return self._failure(radar,type(exc).__name__)
         try:
             economic_store=None
             if radar=="smart_money" and self.economic_account_id is not None:
                 economic_store=self.bind_collector_store(self.store,radar)
-            with self.store._connection_scope() as conn,conn:
+            with self._connection_scope() as conn,conn:
                 conn.execute("BEGIN IMMEDIATE");finished=self._fence(conn)
                 task=_task(conn,radar)
                 if self._blocked(conn,radar):
@@ -233,6 +247,7 @@ class PersistentSupervisor:
                 return task
         except AuthorityLost:raise
         except (sqlite3.Error,ValueError,TypeError,KeyError,ArithmeticError) as exc:
+            if _transient_sqlite_lock(exc):raise
             return self._failure(radar,type(exc).__name__)
     def _economic_attempt(self,conn,bound,event,point):
         """Reuse CM38I under the existing generation-fenced journal commit."""
@@ -260,7 +275,7 @@ class PersistentSupervisor:
             economic_scope=(event["wallet_address"],token,quote),_connection=conn)
 
     def _failure(self,radar,error):
-        with self.store._connection_scope() as conn,conn:
+        with self._connection_scope() as conn,conn:
             conn.execute("BEGIN IMMEDIATE");now=self._fence(conn);task=_task(conn,radar)
             n=task["failures"]+1
             task.update(status="FAULTED" if n>=self.policy.max_failures else "BACKOFF",failures=n,
@@ -268,30 +283,69 @@ class PersistentSupervisor:
             _put_task(conn,task)
             _alert(conn,radar,"TASK_FAILURE",str(self.generation)+":"+str(task["cycles"])+":"+str(n)+":"+error,now)
             return task
-    def cycle(self):
-        self.heartbeat()
+    def cycle(self, *, stop_event=None):
+        if self._retry_busy(self.heartbeat, stop_event) is None:
+            return None
         results={}
         for radar in RADARS:
-            results[radar]=self.step(radar)
-            self.heartbeat()
+            task = self._retry_busy(lambda: self.step(radar), stop_event)
+            if task is None or self._retry_busy(self.heartbeat, stop_event) is None:
+                return None
+            results[radar] = task
         # Existing capital replay validates restoration and consistency, not
         # execution. Failed reconciliation never authorizes new entries.
-        capital=read_capital_accounts(self.store)
+        capital = self._retry_busy(lambda: read_capital_accounts(self.store), stop_event)
+        if capital is None:
+            return None
         return {"tasks":results,"capital":capital,"live_authorized":False,
                 "execution_enabled":False}
+
+    def _retry_busy(self, operation, stop_event=None):
+        deadline = time.monotonic() + min(1.0, self.policy.interval_seconds)
+        max_wait = min(0.25, self.policy.interval_seconds / 4)
+        delay = 0.025
+        while stop_event is None or not stop_event.is_set():
+            try:
+                with self.store._bounded_lock_wait(seconds=max_wait, deadline=deadline):
+                    return operation()
+            except sqlite3.OperationalError as exc:
+                remaining = deadline - time.monotonic()
+                if not _transient_sqlite_lock(exc) or remaining <= 0:
+                    raise
+                wait = min(delay, remaining)
+                if stop_event is None:
+                    time.sleep(wait)
+                elif stop_event.wait(wait):
+                    return None
+                if time.monotonic() >= deadline:
+                    raise
+                delay *= 2
+        return None
+
     def run(self,stop_event,*,max_cycles=None):
         if max_cycles is not None and (type(max_cycles) is not int or max_cycles<1):
             raise ValueError("invalid cycle budget")
-        self.acquire();count=0
+        if self._retry_busy(self.acquire, stop_event) is None:
+            return 0
+        count=0
         try:
             while not stop_event.is_set():
-                self.cycle();count+=1
+                if self.cycle(stop_event=stop_event) is None:
+                    break
+                count+=1
                 if max_cycles is not None and count>=max_cycles:break
                 # Event wait permits immediate controlled shutdown without spin.
                 stop_event.wait(self.policy.interval_seconds)
         finally:
-            try:self.stop()
-            except AuthorityLost:pass
+            active_error = sys.exception()
+            try:
+                self._retry_busy(self.stop)
+            except AuthorityLost:
+                pass
+            except sqlite3.Error as cleanup_error:
+                if active_error is None:
+                    raise
+                active_error.add_note(f"supervisor shutdown SQLite error: {cleanup_error}")
         return count
 
 def read_supervisor_status(store,*,now=None):

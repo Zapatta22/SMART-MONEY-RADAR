@@ -5,10 +5,12 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from time import monotonic
 
 from smart_money_radar.domain.models import (
     ActivityEvent, SwapClassification, SwapEvidence, SwapObservation, TokenBalanceDelta,
@@ -17,6 +19,8 @@ from smart_money_radar.domain.models import (
 from smart_money_radar.domain.normalization import NormalizedObservation
 from smart_money_radar.domain.swap_bundle_builder import SwapDomainBundle
 from smart_money_radar.storage.collector_authority import collector_write, verify_collector_authority
+
+_sqlite_lock_limit = ContextVar("smr_sqlite_lock_limit", default=None)
 
 
 @dataclass(frozen=True)
@@ -78,21 +82,23 @@ class SQLiteEventStore:
             conn.execute("BEGIN")
             verify_collector_authority(conn,getattr(self,"_collector_authority",None),radar)
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self, *, busy_timeout_seconds: float = 15.0) -> sqlite3.Connection:
         if self._memory_connection is not None:
             self._memory_connection.execute("PRAGMA foreign_keys = ON")
             return self._memory_connection
         if self.read_only:
             uri = self.database_path.resolve().as_uri() + "?mode=ro"
-            connection = sqlite3.connect(uri, uri=True, timeout=15.0)
+            connection = sqlite3.connect(uri, uri=True, timeout=busy_timeout_seconds)
+        else:
+            connection = sqlite3.connect(self.database_path, timeout=busy_timeout_seconds)
+        try:
             connection.execute("PRAGMA foreign_keys = ON")
-            connection.execute("PRAGMA busy_timeout = 15000")
-            return connection
-        connection = sqlite3.connect(self.database_path, timeout=15.0)
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA busy_timeout = 15000")
-        connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute("PRAGMA synchronous = NORMAL")
+            if not self.read_only:
+                connection.execute("PRAGMA journal_mode = WAL")
+                connection.execute("PRAGMA synchronous = NORMAL")
+        except sqlite3.Error:
+            connection.close()
+            raise
         return connection
 
     def _validate_read_only_schema(self) -> None:
@@ -119,8 +125,26 @@ class SQLiteEventStore:
             )
 
     @contextmanager
-    def _connection_scope(self):
-        connection = self._connect()
+    def _bounded_lock_wait(self, *, seconds: float, deadline: float):
+        token = _sqlite_lock_limit.set((self, seconds, deadline))
+        try:
+            yield
+        finally:
+            _sqlite_lock_limit.reset(token)
+
+    @contextmanager
+    def _connection_scope(self, *, busy_timeout_seconds: float | None = None):
+        lock_limit = _sqlite_lock_limit.get()
+        if lock_limit is not None and lock_limit[0] is self:
+            _, maximum, deadline = lock_limit
+            busy_timeout_seconds = min(
+                15.0 if busy_timeout_seconds is None else busy_timeout_seconds,
+                maximum,
+                max(0.0, deadline - monotonic()),
+            )
+        connection = self._connect() if busy_timeout_seconds is None else self._connect(
+            busy_timeout_seconds=busy_timeout_seconds
+        )
         try:
             yield connection
         finally:

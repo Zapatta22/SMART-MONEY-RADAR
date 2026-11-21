@@ -46,6 +46,15 @@ def verify(workspace):
         and report["elapsed_seconds"] >= 86400
     ):
         issues.append("inconsistent 24-hour target claim")
+    artifacts = report.get("artifacts")
+    if artifacts != {
+        "progress": "progress.jsonl",
+        "worker": "worker.log",
+        "sqlite": "offline-soak.sqlite",
+    }:
+        issues.append("unexpected offline artifact manifest")
+    if not (workspace / "worker.log").is_file():
+        issues.append("missing offline worker log")
     progress = workspace / "progress.jsonl"
     if not progress.is_file():
         issues.append("missing progress journal")

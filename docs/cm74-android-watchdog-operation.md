@@ -4,7 +4,7 @@ Este mecanismo supervisiona exclusivamente o dashboard HTTP local `127.0.0.1:876
 
 ## Pré-requisitos
 
-- Termux com `bash`, `curl` e `flock` (normalmente disponibilizado por `util-linux`).
+- Termux com `bash`, `python` e `flock` (normalmente disponibilizado por `util-linux`).
 - Banco SQLite **já existente e compatível** com o dashboard.
 - Checkout local da branch contendo os scripts.
 
@@ -27,7 +27,7 @@ O script mantém um bloqueio exclusivo em `~/.local/state/smr-dashboard/watchdog
 ## Limites de homologação
 
 - A CI valida a lógica e a sintaxe em Linux; não comprova execução física no Android.
-- A verificação HTTP em `127.0.0.1:8765` confirma resposta, **não** autentica a identidade do serviço. Não trate uma resposta de outro processo como prova de saúde do dashboard.
+- A verificação de saúde exige token privado, resposta autenticada e payload exato `{"status":"ok","mode":"read_only"}`; uma resposta HTTP 200 isolada não é aceita.
 - O watchdog não encerra nem substitui processos existentes com PID ativo e endpoint indisponível; o inicializador falha fechado.
 - Android pode suspender ou encerrar o processo. O uso de wake lock pelo inicializador não garante execução contínua.
 - Logs e estado devem permanecer privados. Não publique tokens ou conteúdos do log.
@@ -35,5 +35,5 @@ O script mantém um bloqueio exclusivo em `~/.local/state/smr-dashboard/watchdog
 ## Próximos critérios de aceite
 
 1. Validar em Termux real: recuperação após término do dashboard, sem duplicação.
-2. Implementar verificação autenticada de saúde do serviço antes de considerar o endpoint saudável.
+2. Validar fisicamente no Termux a verificação autenticada já implementada e sua recuperação após queda.
 3. Definir supervisor persistente e recuperação após reboot, com confirmação do usuário antes de configurar o dispositivo.

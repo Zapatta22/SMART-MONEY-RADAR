@@ -7,7 +7,7 @@ PIN="671646c11a2aff479f1cf758583b177552be8d23"
 REPO="https://github.com/Zapatta22/SMART-MONEY-RADAR.git"
 command -v git >/dev/null || { echo "Instale primeiro: pkg install git python"; exit 2; }
 command -v python >/dev/null || { echo "Instale primeiro: pkg install git python"; exit 2; }
-python -c 'import sys,sqlite3; assert sys.version_info >= (3,10), "Python 3.10+ necessário"'
+python -c 'import sys,sqlite3; assert sys.version_info >= (3,11), "Python 3.11+ necessário"'
 BASE="$(mktemp -d "${HOME}/smr-eval.XXXXXXXX")"
 echo "Avaliação isolada em: $BASE"
 git init -q "$BASE/code"

@@ -4445,3 +4445,8 @@ CM62 CI 44905752804: 1347 aprovados, 2 ignorados. CM64 publica snapshots SQLite 
 ## CM66 — incremento de qualificação econômica Launch offline
 
 Código 86a33c2c07f25fbf6e7ffa523596144e792bb1a9 e testes bcc365ebbe0faaca055d72d8cd2378f4b612bb2c publicados. Adaptador retorna qualificação informativa com reservas, volume sem conflito, estimativa de impacto separada, referências RAW locais, fonte, slot, corte, direção e riscos. UNKNOWN/NOT_COMPUTABLE e ambos modos BLOCKED preservados. Hash local não prova autenticidade independente nem vínculo persistido ao arquivo RPC; integração persistente e cobertura permanecem pendentes. Quatro testes publicados, CI ainda não confirmada. Percentuais de referência CM38 85%, Launch 50% mantidos até validação. CM39 bloqueado, sem rede live, ordens, merge ou force push. main e PR111/113 não alteradas.
+
+
+## CM67 — resolução local de referências RPC Launch
+
+Código 3d4021bbef9a03e253de145c32d6778a5accc0f8; teste de arquivo ausente 42176580c27a85c6c5c93aecf75715170e3dc25a. Consulta opcional somente leitura ao journal RPC existente, verifica identidade/hash/metadados/slot/commitment solicitado/corte e rejeita radar divergente. LOCAL_BYTES_LINKED não prova valor econômico, token/pool ou finalização independente. Integração automática com oportunidades, evidências de contas/reservas, classificações persistidas e testes positivos/corrupção ainda pendentes. CI CM66 sem resultados na consulta de runs PR; nenhuma nova suíte homologada. CM38 85%, Launch 50% referências mantidas. CM39 bloqueado. Main e PRs 111/113 não alteradas; sem live, ordens, merge, force push, gastos ou Android. Retornar repositório a privado após validações autorizadas.

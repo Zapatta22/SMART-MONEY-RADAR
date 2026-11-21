@@ -89,7 +89,38 @@ class DashboardReadService:
                 history.append({key: item.get(key) for key in ("id", "at", "radar", "kind", "identity")})
         if unsafe:
             history = []
+        # A restart is automatic only when the verified journal proves that
+        # an expired generation was replaced. A clean STOPPED -> STARTED
+        # transition is not evidence of automatic recovery.
+        ordered = list(reversed(history))
+        recoveries = []
+        last_start = None
+        pending_expiry = None
+        for item in ordered:
+            kind = item["kind"]
+            if kind == "WATCHDOG_EXPIRED":
+                pending_expiry = item
+            elif kind == "STARTED":
+                recovery = "AUTOMATIC_AFTER_EXPIRY" if pending_expiry else (
+                    "RESTART_AFTER_STOP" if last_start is not None else "INITIAL_START")
+                recoveries.append({"kind": recovery, "at": item["at"],
+                                   "generation": item["identity"]})
+                pending_expiry = None
+                last_start = item
+            elif kind == "STOPPED":
+                pending_expiry = None
+        if unsafe:
+            recoveries = []
+        watchdog_state = ("INTEGRITY_CONFLICT" if unsafe else
+                          "HEARTBEAT_LOST" if state == "EXPIRED" or stale else
+                          "STOPPED" if state == "STOPPED" else
+                          "RUNNING_LOCAL" if state == "ACTIVE" else
+                          "UNAVAILABLE")
         return {
+            "watchdog_state": watchdog_state,
+            "recovery_history": recoveries,
+            "recovery_count": sum(x["kind"] == "AUTOMATIC_AFTER_EXPIRY"
+                                  for x in recoveries),
             "integrity": "CONFLICTED" if unsafe else "VERIFIED_LOCAL",
             "availability": "UNAVAILABLE" if unavailable or unsafe else "LOCAL_ACTIVE",
             "freshness": "UNKNOWN" if not heartbeat else "STALE" if stale else "LOCAL_ONLY",

@@ -40,7 +40,7 @@ if [[ -f "$PIDFILE" ]]; then
   fi
   rm -f "$PIDFILE"
 fi
-command -v curl >/dev/null 2>&1 || { echo "ERRO: curl não encontrado" >&2; exit 2; }
+command -v python >/dev/null 2>&1 || { echo "ERRO: python não encontrado" >&2; exit 2; }
 if command -v termux-wake-lock >/dev/null 2>&1; then termux-wake-lock || true; fi
 nohup env SMR_DB_PATH="$DB" bash "$ROOT/tools/run_smr_dashboard_android.sh" \
   --host 127.0.0.1 --port 8765 >"$LOG" 2>&1 </dev/null 9>&- &

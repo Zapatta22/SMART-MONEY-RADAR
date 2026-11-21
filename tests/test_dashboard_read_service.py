@@ -35,6 +35,8 @@ class DashboardReadServiceTests(unittest.TestCase):
             amount=Decimal("1.2500"),
         )]
 
+        store.list_cpmm_launch_archived_event_inputs.return_value = []
+        store.list_smr_archived_event_inputs.return_value = []
         service = DashboardReadService(store)
         result = service.get_overview(wallet_address="wallet-a")
 

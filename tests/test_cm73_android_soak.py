@@ -140,6 +140,20 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(rejected["accepted_offline"])
         self.assertIn("journal radar checkpoints disagree with report", rejected["issues"])
 
+    def test_offline_evidence_gate_rejects_unhealthy_radar_and_short_duration(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        report_path = workspace / "report.json"
+        report = json.loads(report_path.read_text())
+        report["supervisor"]["radars"]["launch"]["failures"] = 1
+        report["elapsed_seconds"] = 0.5
+        report_path.write_text(json.dumps(report))
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("launch final state is not healthy", rejected["issues"])
+        self.assertIn("offline soak target duration not reached", rejected["issues"])
+
     def test_offline_evidence_gate_rejects_missing_progress_journal(self):
         process = self.start(2.0)
         self.report(process, 0)

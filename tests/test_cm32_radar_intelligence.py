@@ -107,3 +107,20 @@ class CM32Tests(unittest.TestCase):
                 self.assertEqual(reopened["economic_qualification"],economic)
             finally:
                 store.close()
+
+    def test_cm69_rejects_original_swap_before_launch(self):
+        with TemporaryDirectory() as tmp:
+            store=SQLiteEventStore(Path(tmp)/"smr.sqlite")
+            try:
+                history=Mock()
+                history.candidate_capture_ids.return_value=["capture"]
+                history.get_original.return_value=(b"raw",{"slot_observed":99})
+                ev=event("launch",slot=100)
+                report,=read_intelligence_reports(store,{"launch":[ev]},
+                    scopes={("launch","p"):scope(wallets=())},
+                    as_of=AT,cpmm_history=history)["launch"]
+                self.assertEqual(report["verdict"],"REJECTED")
+                self.assertFalse(report["operational_authorized"])
+                history.get_original.assert_called_once_with("capture")
+            finally:
+                store.close()

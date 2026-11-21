@@ -363,5 +363,27 @@ class RealCpmmHistoryTests(unittest.TestCase):
             db.close()
 
 
+    def test_cm70_atomic_capture_original_rollback_and_restart(self):
+        a = self.capture(0)
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "atomic.sqlite"
+            db = SQLiteCpmmProspectiveHistory(path)
+            args = dict(manifest_raw=self.bundles[0][0],
+                        original_transaction_raw=self.old,
+                        original_manifest=self.old_manifest, cutoff=CUTOFF)
+            with self.assertRaises(ValueError):
+                db.append_capture_with_original(a, **dict(args, original_transaction_raw=self.old+b" "))
+            self.assertIsNone(db.get_capture(a.capture_id))
+            self.assertIsNone(db.get_original(a.capture_id))
+            self.assertTrue(db.append_capture_with_original(a, **args))
+            self.assertFalse(db.append_capture_with_original(a, **args))
+            db.close()
+            db = SQLiteCpmmProspectiveHistory(path)
+            self.assertIsNotNone(db.get_capture(a.capture_id))
+            self.assertEqual(db.get_original(a.capture_id), (self.old, self.old_manifest))
+            self.assertFalse(db.append_capture_with_original(a, **args))
+            db.close()
+
+
 if __name__=="__main__":
     unittest.main()

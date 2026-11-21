@@ -22,6 +22,8 @@ from smart_money_radar.services.market_opportunity_bridge import classify_with_m
 from smart_money_radar.services.opportunity_classifier import OpportunityEvidence
 from smart_money_radar.services.wallet_consensus import WalletConsensusService
 from smart_money_radar.services.wallet_signals import WalletSignalService
+from smart_money_radar.services.sqlite_market_history import archived_volume_at
+from smart_money_radar.storage.event_store import SQLiteEventStore
 
 @dataclass(frozen=True)
 class IntelligenceScope:
@@ -75,6 +77,7 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
     consensus=None
     market_result=None
     volume_result=None
+    archived_market=None
     risk_reasons=[]
     risk_status="UNKNOWN"
     market=market or MarketInputs()
@@ -82,6 +85,8 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
         raise ValueError("risk limits and snapshot must be supplied together")
     if publication is None or publication>point:
         reasons.add("event_unavailable_at_cutoff")
+        direction=None
+        evidence_ids=[]
     elif event.get("evidence_quality")=="CONFLICTED":
         verdict="REJECTED"
         reasons.add("event_evidence_conflicted")
@@ -125,6 +130,14 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
                     min_confidence=scope.min_confidence)
                 evidence_ids.extend("wallet-signature:"+s for m in consensus.members for s in m.signatures)
                 reasons.update(consensus.reasons)
+                if isinstance(store,SQLiteEventStore):
+                    archived_market=archived_volume_at(store,wallets=scope.wallets,
+                        program=event["program"],pool=event["pool"],token_mint=scope.token_mint,
+                        quote_mint=scope.quote_mint,as_of=point,window=scope.window,
+                        min_confidence=scope.min_confidence)
+                    reasons.update(archived_market.volume.reasons)
+                    if archived_market.excluded_receipts:
+                        reasons.add("archived_market_receipts_excluded")
                 base=OpportunityEvidence(scope.token_mint,"solana",event["pool"],point,
                     event["source_id"],"UNKNOWN","UNKNOWN","UNKNOWN",None,None,
                     False,False,None,None)
@@ -164,6 +177,7 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
         "reasons":sorted(reasons),"consensus":asdict(consensus) if consensus else None,
         "market":asdict(market_result) if market_result else None,
         "volume":asdict(volume_result) if volume_result else None,
+        "archived_market":asdict(archived_market) if archived_market else None,
         "paper_modes":{"immediate":"BLOCKED","confirmed":"BLOCKED"},
         "operational_authorized":False,
     }
@@ -189,6 +203,12 @@ def read_intelligence_reports(store, events: dict, *, scopes: dict | None = None
         for event in events.get(radar,()):
             if event.get("radar")!=radar or event.get("id") in seen:
                 continue
+            if point is not None and event.get("available_at"):
+                try:
+                    if _time(event["available_at"])>point:
+                        continue
+                except ValueError:
+                    pass
             seen.add(event.get("id"))
             try:
                 # Default decision time is the first publication, not wall-clock now.

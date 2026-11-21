@@ -9,6 +9,7 @@ from smart_money_radar.services.reconciliation_diagnostics import (
 from smart_money_radar.storage.event_store import SQLiteEventStore
 from smart_money_radar.services.radar_event_bridge import read_archived_radar_events
 from smart_money_radar.services.radar_intelligence import read_intelligence_reports
+from smart_money_radar.services.synthetic_paper_ledger import read_synthetic_paper, paper_preflight
 
 
 class DashboardReadService:
@@ -62,6 +63,7 @@ class DashboardReadService:
             "amount": self._json_value(event.amount),
         } for event in recent_events]
         radar_events = read_archived_radar_events(self._event_store, limit=20)
+        intelligence = read_intelligence_reports(self._event_store, radar_events, scopes=self._intelligence_scopes)
         return {
             "mode": "read_only",
             "wallet_address": wallet_address,
@@ -69,8 +71,10 @@ class DashboardReadService:
             "reconciliation": self._json_value(report),
             "recent_events": events,
             "radar_events": self._json_value(radar_events),
-            "radar_opportunities": self._json_value(read_intelligence_reports(
-                self._event_store, radar_events, scopes=self._intelligence_scopes)),
+            "radar_opportunities": self._json_value(intelligence),
+            "synthetic_paper": read_synthetic_paper(self._event_store),
+            "paper_preflight": {radar: [paper_preflight(d,kind="HISTORICAL_REPLAY")
+                for d in decisions] for radar,decisions in intelligence.items()},
             # Separate radar channels are observational until independently
             # attested evidence is supplied. Database events do not prove
             # launch detection or Smart Money signal completeness.

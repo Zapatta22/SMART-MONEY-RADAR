@@ -330,6 +330,17 @@ class SQLiteEventStore:
                        )"""
                 )
 
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm33_paper_runs (
+                    run_id TEXT PRIMARY KEY, radar TEXT NOT NULL CHECK(radar IN ('launch','smart_money')),
+                    metadata TEXT NOT NULL, metadata_sha TEXT NOT NULL,
+                    report TEXT NOT NULL, report_sha TEXT NOT NULL)""")
+                connection.execute("""CREATE TABLE IF NOT EXISTS cm33_paper_ticks (
+                    run_id TEXT NOT NULL REFERENCES cm33_paper_runs(run_id),
+                    sequence INTEGER NOT NULL CHECK(sequence>=0), quote_id TEXT NOT NULL,
+                    signal_id TEXT, payload TEXT NOT NULL, payload_sha TEXT NOT NULL,
+                    PRIMARY KEY(run_id,sequence), UNIQUE(run_id,quote_id),
+                    UNIQUE(run_id,signal_id))""")
+
     def archive_cpmm_launches(
         self, payloads: list[bytes], *,
         source_id: str | None = None, first_sequence: int | None = None,

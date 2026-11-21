@@ -28,7 +28,7 @@ class DashboardWatchdogTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertFalse(missing.exists())
 
-    def test_healthy_local_endpoint_does_not_restart(self):
+    def test_untrusted_http_response_does_not_count_as_healthy(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = Path(tmp) / "existing.sqlite"
             database.touch()
@@ -43,8 +43,8 @@ class DashboardWatchdogTests(unittest.TestCase):
                 ["bash", str(SCRIPT)], cwd=ROOT, env=env,
                 capture_output=True, text=True, timeout=10,
             )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("nenhuma ação", result.stdout)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("nenhuma ação", result.stdout)
 
 
 if __name__ == "__main__":

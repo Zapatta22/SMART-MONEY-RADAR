@@ -305,5 +305,27 @@ class RealCpmmHistoryTests(unittest.TestCase):
             db.close()
 
 
+
+    def test_cm69_original_binding_restart_and_integrity(self):
+        a = self.capture(0)
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "evidence.sqlite"
+            db = SQLiteCpmmProspectiveHistory(path)
+            db.append_capture(a, manifest_raw=self.bundles[0][0])
+            self.assertIsNone(db.get_original(a.capture_id))
+            args = dict(original_transaction_raw=self.old,
+                        original_manifest=self.old_manifest, cutoff=CUTOFF)
+            self.assertTrue(db.bind_original(a.capture_id, **args))
+            self.assertFalse(db.bind_original(a.capture_id, **args))
+            db.close()
+            db = SQLiteCpmmProspectiveHistory(path)
+            self.assertEqual(db.get_original(a.capture_id), (self.old,self.old_manifest))
+            with db.connection:
+                db.connection.execute("UPDATE prospective_cpmm_originals SET transaction_raw=?", (self.old+b" ",))
+            with self.assertRaisesRegex(ValueError, "hash conflict"):
+                db.get_original(a.capture_id)
+            db.close()
+
+
 if __name__=="__main__":
     unittest.main()

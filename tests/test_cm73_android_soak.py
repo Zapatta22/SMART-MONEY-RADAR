@@ -361,6 +361,17 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(rejected["physical_android_verified"])
         self.assertFalse(rejected["autonomy_24h_verified"])
 
+    def test_offline_evidence_gate_rejects_corrupt_sqlite_archive(self):
+        process = self.start(2.0)
+        self.report(process, 0)
+        workspace = self.workspace()
+        (workspace / "offline-soak.sqlite").write_bytes(b"not a sqlite database")
+        rejected = verify_soak(workspace)
+        self.assertFalse(rejected["accepted_offline"])
+        self.assertIn("invalid or unreadable SQLite archive", rejected["issues"])
+        self.assertFalse(rejected["live_authorized"])
+        self.assertFalse(rejected["execution_enabled"])
+
     def test_offline_evidence_gate_rejects_missing_progress_journal(self):
         process = self.start(2.0)
         self.report(process, 0)

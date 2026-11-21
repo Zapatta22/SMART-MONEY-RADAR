@@ -14,6 +14,8 @@ try:
         raise ValueError("missing token")
     if token_path.stat().st_mode & 0o077:
         raise ValueError("insecure token permissions")
+    if state.is_symlink() or state.stat().st_mode & 0o077:
+        raise ValueError("insecure state directory")
     token = token_path.read_text().strip()
     if len(token) < 32:
         raise ValueError("invalid token")

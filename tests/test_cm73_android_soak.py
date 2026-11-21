@@ -167,6 +167,36 @@ class AndroidSoakTests(unittest.TestCase):
         self.assertFalse(report["supervisor"]["live_authorized"])
         self.assertFalse(report["supervisor"]["execution_enabled"])
 
+    def test_exhausted_restart_budget_precedes_conflicted_snapshot(self):
+        """A dead worker with zero restarts must fail without reacquiring a lease."""
+        class DeadWorker:
+            pid = 43210
+            returncode = -signal.SIGKILL
+
+            def poll(self):
+                return self.returncode
+
+        store = SQLiteEventStore(self.output / "race.sqlite")
+        self.addCleanup(store.close)
+        snapshot = {"lease": "CONFLICTED", "radars": {},
+                    "live_authorized": False, "execution_enabled": False}
+        with (self.output / "progress.jsonl").open("w") as journal, (
+            self.output / "worker.log"
+        ).open("ab") as worker_log, patch.object(
+            soak, "_spawn_worker", return_value=DeadWorker()
+        ), patch.object(soak, "_runtime_snapshot", side_effect=[
+            {"lease": "NOT_STARTED", "radars": {},
+             "live_authorized": False, "execution_enabled": False},
+            snapshot, snapshot,
+        ]):
+            report = soak._monitor(
+                self.output, store, journal, worker_log, Event(), 1, 0.1, 0
+            )
+        self.assertEqual(report["outcome"], "FAILED")
+        self.assertEqual(report["failure"], "worker restart limit reached")
+        self.assertEqual(report["worker_exit_codes"], [-signal.SIGKILL])
+        self.assertEqual(report["worker_restarts"], 0)
+
     def test_internal_worker_rejects_nonfinite_deadline_before_opening_sqlite(self):
         with self.assertRaisesRegex(ValueError, "invalid offline soak deadline"):
             soak._worker(self.output, os.getppid(), float("nan"), 0.1)

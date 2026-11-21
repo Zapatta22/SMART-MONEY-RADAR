@@ -63,6 +63,15 @@ def _parser() -> argparse.ArgumentParser:
     evidence.add_argument("--block-sequence", type=int, help="comprova o índice usando o frame do bloco")
     evidence.add_argument("--epoch-schedule", type=Path, help="resposta getEpochSchedule da rede do journal")
     evidence.add_argument("--damm-wallet", help="reconcilia DAMM v2 para esta carteira Solana")
+    attestation = subparsers.add_parser(
+        "verify-rpc-attestation", help="verifica assinatura externa de uma observação RPC arquivada"
+    )
+    attestation.add_argument("database", type=Path)
+    attestation.add_argument("evidence_id")
+    attestation.add_argument("envelope", type=Path)
+    attestation.add_argument("--trust", type=Path, required=True)
+    attestation.add_argument("--radar", choices=("launch", "smart_money"), required=True)
+    attestation.add_argument("--network", required=True)
     capture = subparsers.add_parser(
         "geyser-capture", help="captura um fluxo Yellowstone TLS com limites de duração e frames"
     )
@@ -191,6 +200,31 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
         if args.command == "geyser-evidence":
             _inspect_geyser_evidence(args)
+            return
+        if args.command == "verify-rpc-attestation":
+            from datetime import datetime, timezone
+            from smart_money_radar.services.rpc_evidence_attestation import (
+                ATTESTATION_MAX_BYTES, verify_archived_rpc_attestation,
+            )
+
+            if not args.envelope.is_file() or not args.trust.is_file():
+                raise ValueError("informe arquivos regulares para a atestação e a política de confiança")
+            store = SQLiteEventStore(args.database, read_only=True)
+            try:
+                with args.envelope.open("rb") as envelope, args.trust.open("rb") as trust:
+                    envelope_raw = envelope.read(ATTESTATION_MAX_BYTES + 1)
+                    trust_raw = trust.read(ATTESTATION_MAX_BYTES + 1)
+                now = datetime.now(timezone.utc)
+                result = verify_archived_rpc_attestation(
+                    store, evidence_id=args.evidence_id, radar=args.radar, network=args.network,
+                    envelope_raw=envelope_raw, trust_raw=trust_raw,
+                    attestation_available_at=now, cutoff=now,
+                )
+            finally:
+                store.close()
+            print(json.dumps(result, sort_keys=True, ensure_ascii=False))
+            if not result["signer_authenticated"]:
+                raise SystemExit(1)
             return
         if args.command == "geyser-capture":
             _capture_geyser(args)

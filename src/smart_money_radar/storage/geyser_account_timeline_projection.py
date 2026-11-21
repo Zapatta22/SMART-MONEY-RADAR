@@ -15,6 +15,7 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+from smart_money_radar.storage.collector_authority import collector_write, bind_projection
 
 from smart_money_radar.data_sources.geyser_account_updates import NormalizedAccountUpdate
 from smart_money_radar.data_sources.geyser_account_timeline import AccountUpdateTimeline
@@ -147,6 +148,9 @@ class SQLiteGeyserAccountTimelineProjection:
                 );
             """)
 
+    def bind_collector(self, authority):
+        return bind_projection(self,authority)
+
     @contextmanager
     def _connect(self):
         connection = sqlite3.connect(self.database_path, timeout=30.0)
@@ -234,8 +238,7 @@ class SQLiteGeyserAccountTimelineProjection:
         return None
 
     def rebuild(self) -> dict[str, int | str]:
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connect() as connection, collector_write(connection,getattr(self,"_collector_authority",None)):
             rows = connection.execute("""
                 SELECT e.event_id,e.source_id,e.event_kind,e.schema_version,
                        e.payload_encoding,e.payload_bytes,e.payload_sha256,
@@ -409,12 +412,14 @@ class SQLiteGeyserAccountTimelineProjection:
                 transport_state[source_id] = (
                     checkpoint_rows, open_gaps, historical_anomalies
                 )
-            connection.commit()
 
         # The derived generation is durable before any recovery checkpoint moves.
         # If this second phase is interrupted, checkpoints safely lag and rebuild
         # can be repeated; they are never advanced ahead of the projection.
         recovery = SQLiteGeyserRecoveryStore(self.database_path)
+        authority=getattr(self,"_collector_authority",None)
+        if authority is not None:
+            recovery=recovery.bind_collector(authority)
         timeline_gap_counts = {
             source_id: len(timeline.gaps) for source_id, timeline in timelines.items()
         }
@@ -489,8 +494,7 @@ class SQLiteGeyserAccountTimelineProjection:
 
         timeline = receiver.rebuild_account_timeline()
         records = timeline.timeline_records()
-        with self._connect() as connection, connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connect() as connection, collector_write(connection,getattr(self,"_collector_authority",None)):
             if self._wire_watermark(connection, receiver.scope) != watermark:
                 raise RuntimeError("journal mudou durante reconstrução; repita o replay")
             prior = connection.execute(

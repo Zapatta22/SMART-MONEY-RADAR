@@ -127,3 +127,27 @@ async def await_authorized(store, radar, operation, *, poll_seconds=0.25):
         if not task.done():
             task.cancel()
         await asyncio.gather(task,return_exceptions=True)
+
+
+def bind_projection(store, authority):
+    """Bind a preinitialized file-backed projection/recovery store."""
+    if not isinstance(authority,CollectorAuthority) or not Path(store.database_path).samefile(authority.database_path):
+        raise AuthorityLost("projection database mismatch")
+    bound=object.__new__(type(store))
+    bound.__dict__=store.__dict__.copy()
+    bound._collector_authority=authority
+    return bound
+
+
+def managed_schema_guard(connection):
+    """Managed schemas must be prepared before the first supervisor lease.
+
+    Existing tables may be validated by a bound operation; reconstructing a
+    schema through an unbound constructor is not an operational writer.
+    """
+    exists=connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cm36_supervisor_lease'"
+    ).fetchone()
+    if exists and connection.execute("SELECT 1 FROM cm36_supervisor_lease").fetchone():
+        return True
+    return False

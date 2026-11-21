@@ -16,6 +16,7 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+from smart_money_radar.storage.collector_authority import collector_write, bind_projection
 
 
 PROJECTION_NAME = "geyser_account_writes"
@@ -85,6 +86,9 @@ class SQLiteGeyserAccountWriteProjection:
                 );
             """)
 
+    def bind_collector(self, authority):
+        return bind_projection(self,authority)
+
     @contextmanager
     def _connect(self):
         connection = sqlite3.connect(self.database_path, timeout=30.0)
@@ -148,8 +152,7 @@ class SQLiteGeyserAccountWriteProjection:
         are counted as skipped. Malformed normalized account records abort the
         transaction, preserving the previous complete projection/checkpoint.
         """
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._connect() as connection, collector_write(connection,getattr(self,"_collector_authority",None)):
             rows = connection.execute(
                 "SELECT event_id, source_id, schema_version, payload_bytes "
                 "FROM geyser_raw_events WHERE event_kind='account' "
@@ -192,7 +195,6 @@ class SQLiteGeyserAccountWriteProjection:
                 (PROJECTION_NAME, PROJECTION_VERSION, generation, source_count,
                  len(materialized), skipped_count, max_event_id, completed_at),
             )
-            connection.commit()
         return {
             "generation": generation,
             "source_event_count": source_count,

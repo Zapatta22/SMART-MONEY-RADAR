@@ -253,6 +253,27 @@ def _resolve_launch_accounts(history, capture_id, original_raw, original_manifes
                       token_reserve_raw=str(obs.effective_output_raw if input_is_quote else obs.effective_input_raw),
                       trade_fee_rate=obs.declared_trade_fee_rate,
                       creator_fee_rate=obs.declared_creator_fee_rate)
+        # Decimals declared by the validated pool account, not independent mint proof.
+        import base64
+        from decimal import localcontext
+        from smart_money_radar.domain.cpmm_binary_state import decode_pool_state
+        state = decode_pool_state(base64.b64decode(
+            json.loads(capture.response_raw)["result"]["value"][0]["data"][0], validate=True))
+        decimals = {state.token_0_mint: state.mint_0_decimals,
+                    state.token_1_mint: state.mint_1_decimals}
+        if set(decimals) != {token_mint, quote_mint}:
+            raise ValueError("pool decimals scope conflict")
+        with localcontext() as ctx:
+            ctx.prec = 50
+            token = Decimal(result["token_reserve_raw"]).scaleb(-decimals[token_mint])
+            quote = Decimal(result["quote_reserve_raw"]).scaleb(-decimals[quote_mint])
+            result.update(token_decimals=decimals[token_mint], quote_decimals=decimals[quote_mint],
+                          decimals_provenance="POOL_DECLARED_NOT_MINT_ATTESTED",
+                          token_reserve_normalized=str(token), quote_reserve_normalized=str(quote),
+                          estimated_spot_quote_per_token=str(quote/token) if token>0 and quote>0 else None,
+                          estimated_pool_value_quote=str(quote*2) if token>0 and quote>0 else None,
+                          normalized_values_status="LOCAL_ESTIMATE_NOT_EXECUTABLE")
+
     except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
         result["status"] = "CONFLICTED"
     return result

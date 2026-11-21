@@ -385,5 +385,39 @@ class RealCpmmHistoryTests(unittest.TestCase):
             db.close()
 
 
+    def test_cm70_bidirectional_trade_fee_model(self):
+        from decimal import Decimal
+        from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
+        from smart_money_radar.domain.cpmm_reserve_estimator import estimate_exact_input
+        from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
+        a = self.capture(0)
+        acc = next(x.accounts for x in decode_raydium_cpmm_swaps(json.loads(self.old))
+                   if x.accounts.pool_state == a.observation.pool)
+        with tempfile.TemporaryDirectory() as d:
+            db = SQLiteCpmmProspectiveHistory(Path(d) / "both.sqlite")
+            db.append_capture_with_original(a, manifest_raw=self.bundles[0][0],
+                original_transaction_raw=self.old, original_manifest=self.old_manifest, cutoff=CUTOFF)
+            for mode in ("immediate", "confirmed"):
+                for token, quote in ((acc.input_token_mint, acc.output_token_mint),
+                                     (acc.output_token_mint, acc.input_token_mint)):
+                    r = launch_metric_receipts(pool=a.observation.pool, token_mint=token,
+                        quote_mint=quote, cpmm_history=db, at=CUTOFF, strategy=mode,
+                        amount_in=Decimal("1"), sell_amount_in=Decimal("2"))
+                    ar = r["economic_qualification"]["account_archive"]
+                    q,t = Decimal(ar["quote_reserve_normalized"]),Decimal(ar["token_reserve_normalized"])
+                    fee = Decimal(ar["trade_fee_rate"])/100
+                    for key,x,y,amount,out in (
+                        ("buy_model",q,t,Decimal("1"),"estimated_output_token"),
+                        ("sell_model",t,q,Decimal("2"),"estimated_output_quote")):
+                        model = estimate_exact_input(pool=a.observation.pool,slot=ar["slot"],
+                            reserve_in=x,reserve_out=y,amount_in=amount,fee_bps=fee)
+                        self.assertEqual(Decimal(ar[key][out]),model.estimated_output)
+                        self.assertEqual(Decimal(ar[key]["fee_inclusive_impact_fraction"]),model.price_impact_fraction)
+                        self.assertFalse(ar[key]["creator_fee_included"])
+                        self.assertFalse(ar[key]["operational_authorized"])
+                    self.assertFalse(r["operational_authorized"])
+            db.close()
+
+
 if __name__=="__main__":
     unittest.main()

@@ -1,6 +1,6 @@
 """Serviço de leitura para alimentar o resumo do futuro painel do SMR."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from smart_money_radar.services.reconciliation_diagnostics import (
@@ -51,6 +51,57 @@ class DashboardReadService:
                   for row in items if row.get("available_at")]
         return max(stamps).isoformat() if stamps else None
 
+    @staticmethod
+    def _supervisor_history(supervisor: dict) -> dict:
+        """Verified local journal only; never infer live connectivity from a lease."""
+        state = supervisor.get("status", "NOT_STARTED")
+        unsafe = state in ("CONFLICTED", "CLOCK_CONFLICT")
+        alerts = supervisor.get("alerts", []) if not unsafe else []
+        if not isinstance(alerts, list):
+            alerts, unsafe = [], True
+        heartbeat = supervisor.get("last_heartbeat")
+        expires = supervisor.get("expires_at")
+        now = datetime.now(timezone.utc)
+        try:
+            heartbeat_at = datetime.fromisoformat(heartbeat) if heartbeat else None
+            expires_at = datetime.fromisoformat(expires) if expires else None
+            if heartbeat_at and heartbeat_at.tzinfo is None:
+                raise ValueError("naive heartbeat")
+            if expires_at and expires_at.tzinfo is None:
+                raise ValueError("naive expiry")
+            if heartbeat_at and expires_at and expires_at < heartbeat_at:
+                raise ValueError("expiry precedes heartbeat")
+        except (TypeError, ValueError):
+            unsafe = True
+            heartbeat_at = expires_at = None
+        stale = bool(expires_at and expires_at <= now)
+        unavailable = state not in ("ACTIVE",) or stale or unsafe
+        if unsafe:
+            alerts = []
+        kinds = ("WATCHDOG_EXPIRED", "STARTED", "STOPPED")
+        history = []
+        for item in alerts:
+            if not isinstance(item, dict) or not isinstance(item.get("kind"), str):
+                unsafe = True
+                history = []
+                break
+            if item["kind"] in kinds:
+                history.append({key: item.get(key) for key in ("id", "at", "radar", "kind", "identity")})
+        if unsafe:
+            history = []
+        return {
+            "integrity": "CONFLICTED" if unsafe else "VERIFIED_LOCAL",
+            "availability": "UNAVAILABLE" if unavailable or unsafe else "LOCAL_ACTIVE",
+            "freshness": "UNKNOWN" if not heartbeat else "STALE" if stale else "LOCAL_ONLY",
+            "generation": None if unsafe else supervisor.get("generation"),
+            "last_heartbeat": None if unsafe else heartbeat,
+            "expires_at": None if unsafe else expires,
+            "watchdog_history": history,
+            "restart_events": sum(item["kind"] == "WATCHDOG_EXPIRED" for item in history),
+            "live_authorized": False,
+            "execution_enabled": False,
+        }
+
     def get_overview(self, *, wallet_address: str | None = None) -> dict:
         """Retorna resumo de persistência e reconciliação em formato serializável."""
         report = self._diagnostics.get_report(wallet_address=wallet_address)
@@ -96,6 +147,7 @@ class DashboardReadService:
             "operational_controls": read_operational_status(self._event_store),
             "wallet_discovery": read_wallet_snapshots(self._event_store,limit=1),
             "supervisor": supervisor,
+            "supervisor_history": self._supervisor_history(supervisor),
             "paper_preflight": {radar: [paper_preflight(d,kind="HISTORICAL_REPLAY")
                 for d in decisions] for radar,decisions in intelligence.items()},
             # Separate radar channels are observational until independently

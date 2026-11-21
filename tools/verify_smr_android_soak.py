@@ -112,49 +112,52 @@ def verify(workspace):
     if not db.is_file():
         issues.append("missing offline SQLite archive")
     else:
-        with sqlite3.connect(f"file:{db.resolve()}?mode=ro", uri=True) as conn:
-            if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-                issues.append("SQLite integrity check failed")
-            try:
-                lease = conn.execute(
-                    "SELECT generation,owner,heartbeat,expires,status,payload_sha "
-                    "FROM cm36_supervisor_lease WHERE singleton=1"
-                ).fetchone()
-                if lease is None:
-                    issues.append("missing persisted supervisor lease")
-                else:
-                    generation, owner, heartbeat, expires, state, digest = lease
-                    lease_payload = json.dumps(
-                        [generation, owner, heartbeat, expires, state],
-                        sort_keys=True, separators=(",", ":"),
-                    )
-                    if hashlib.sha256(lease_payload.encode()).hexdigest() != digest:
-                        issues.append("persisted supervisor lease hash mismatch")
-                    if state != "STOPPED" or generation != supervisor.get("generation"):
-                        issues.append("persisted supervisor lease disagrees with report")
-                rows = conn.execute("SELECT radar,payload,payload_sha FROM cm36_supervisor_tasks").fetchall()
-                persisted = {}
-                for radar, payload, digest in rows:
-                    if hashlib.sha256(payload.encode()).hexdigest() != digest:
-                        issues.append(f"{radar} persisted checkpoint hash mismatch")
-                    task = json.loads(payload)
-                    if task.get("radar") != radar:
-                        issues.append(f"{radar} persisted checkpoint identity mismatch")
-                    if radar in persisted:
-                        issues.append(f"{radar} duplicate persisted checkpoint")
-                    persisted[radar] = task
-                if set(persisted) != {"launch", "smart_money"}:
-                    issues.append("missing persisted radar checkpoints")
-                else:
-                    for name in persisted:
-                        if persisted[name].get("cycles") != tasks.get(name, {}).get("cycles"):
-                            issues.append(f"{name} persisted cycles disagree with final report")
-                        if persisted[name].get("status") != tasks.get(name, {}).get("status"):
-                            issues.append(f"{name} persisted status disagrees with final report")
-                        if persisted[name].get("failures") != tasks.get(name, {}).get("failures"):
-                            issues.append(f"{name} persisted failures disagree with final report")
-            except (sqlite3.Error, ValueError, TypeError):
-                issues.append("invalid persisted radar checkpoints")
+        try:
+            with sqlite3.connect(f"file:{db.resolve()}?mode=ro", uri=True) as conn:
+                if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    issues.append("SQLite integrity check failed")
+                try:
+                    lease = conn.execute(
+                        "SELECT generation,owner,heartbeat,expires,status,payload_sha "
+                        "FROM cm36_supervisor_lease WHERE singleton=1"
+                    ).fetchone()
+                    if lease is None:
+                        issues.append("missing persisted supervisor lease")
+                    else:
+                        generation, owner, heartbeat, expires, state, digest = lease
+                        lease_payload = json.dumps(
+                            [generation, owner, heartbeat, expires, state],
+                            sort_keys=True, separators=(",", ":"),
+                        )
+                        if hashlib.sha256(lease_payload.encode()).hexdigest() != digest:
+                            issues.append("persisted supervisor lease hash mismatch")
+                        if state != "STOPPED" or generation != supervisor.get("generation"):
+                            issues.append("persisted supervisor lease disagrees with report")
+                    rows = conn.execute("SELECT radar,payload,payload_sha FROM cm36_supervisor_tasks").fetchall()
+                    persisted = {}
+                    for radar, payload, digest in rows:
+                        if hashlib.sha256(payload.encode()).hexdigest() != digest:
+                            issues.append(f"{radar} persisted checkpoint hash mismatch")
+                        task = json.loads(payload)
+                        if task.get("radar") != radar:
+                            issues.append(f"{radar} persisted checkpoint identity mismatch")
+                        if radar in persisted:
+                            issues.append(f"{radar} duplicate persisted checkpoint")
+                        persisted[radar] = task
+                    if set(persisted) != {"launch", "smart_money"}:
+                        issues.append("missing persisted radar checkpoints")
+                    else:
+                        for name in persisted:
+                            if persisted[name].get("cycles") != tasks.get(name, {}).get("cycles"):
+                                issues.append(f"{name} persisted cycles disagree with final report")
+                            if persisted[name].get("status") != tasks.get(name, {}).get("status"):
+                                issues.append(f"{name} persisted status disagrees with final report")
+                            if persisted[name].get("failures") != tasks.get(name, {}).get("failures"):
+                                issues.append(f"{name} persisted failures disagree with final report")
+                except (sqlite3.Error, ValueError, TypeError):
+                    issues.append("invalid persisted radar checkpoints")
+        except sqlite3.DatabaseError:
+            issues.append("invalid or unreadable SQLite archive")
     return {"accepted_offline": not issues, "physical_android_verified": False,
             "autonomy_24h_verified": False, "live_authorized": False,
             "execution_enabled": False, "issues": issues}

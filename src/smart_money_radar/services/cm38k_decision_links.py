@@ -39,6 +39,8 @@ def link_fifo_to_blocked_decision(store, *, request_id, receipt):
     if not isinstance(store,SQLiteEventStore) or store.read_only:
         raise PermissionError("writable existing evaluation store required")
     verify_fifo_receipt(receipt)
+    if receipt.get("wallet") is None or not isinstance(receipt["wallet"],str) or not receipt["wallet"]:
+        raise ValueError("wallet identity required")
     if receipt["status"] not in ("INFORMATION_ONLY","NOT_COMPUTABLE"):
         raise ValueError("unapproved economic receipt status")
     if not isinstance(request_id,str) or not request_id:
@@ -64,6 +66,9 @@ def link_fifo_to_blocked_decision(store, *, request_id, receipt):
                          (audited["opportunity_id"],)).fetchone()
         if op is None or op[0]!="smart_money":
             raise ValueError("economic decision scope conflict")
+        if not conn.execute("SELECT 1 FROM cm38_rpc_observations WHERE evidence_id=? AND radar='smart_money'",
+                            (audited["evidence_id"],)).fetchone():
+            raise ValueError("original RPC evidence missing")
         if receipt["as_of"]>op[2]:
             raise ValueError("future economic receipt")
         if any(line["available_at"]>op[2] for line in receipt["lineage"]):

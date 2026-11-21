@@ -90,6 +90,9 @@ class WalletConsensusService:
             reasons.append("conflicting_directions")
         if len(accepted) < min_wallets:
             reasons.append("insufficient_distinct_wallets")
+        # Shared transaction evidence is a dependency warning, not ownership proof.
+        if any(set(a[2]) & set(b[2]) for i,a in enumerate(accepted) for b in accepted[i+1:]):
+            reasons.append("shared_transaction_dependency")
         # One transaction can appear across wallets. Count the signature once.
         if len(signatures) < min_wallets:
             reasons.append("insufficient_distinct_signatures")

@@ -281,5 +281,7 @@ def reconstruct_persisted_wallet(store, *, wallet, token, quote_mint, as_of, _co
                 "operation_id":op.operation_id,"kind":op.kind,"quantity":str(op.quantity),
                 "net_quote_amount":str(op.quote_amount),**detail}
                 for op,detail in ordered]
+            from smart_money_radar.services.cm38j_price_marks import valuation_status
+            receipt["valuation"]=valuation_status(conn,fifo=receipt,cutoff=cutoff)
             receipt["sha256"]=_hash({k:v for k,v in receipt.items() if k!="sha256"})
             return receipt

@@ -4425,3 +4425,8 @@ CI CM57 44904225643: 1337 aprovados, 2 falhas, 2 ignorados. Ambos os testes enco
 ## CM59 — supervisor validado e indicadores CM38J
 
 CI CM58 44904494451: 1339 aprovados, 2 ignorados. Ciclo configurado, reabertura e rollback do journal offline aprovados nos cenários testados. CM59 amplia recibos FIFO/CM38I para nove indicadores com razões específicas UNKNOWN, e matemática controlada de marcação e drawdown sem atestação. CI pendente. Histórico integral, preços autenticados, correlação e consenso independente continuam pendentes; não homologar integralmente CM38K/I nem liberar CM39. Retornar repositório a privado após validações.
+
+
+## CM61 — marcações persistidas offline
+
+CM59 CI 44904659326: 1342 aprovados, 2 ignorados. CM61 acrescenta journal imutável de marcas locais, leitura por corte e TTL, vínculo ao FIFO causal e alerta de assinatura compartilhada no consenso. Marca local não é atestação independente; PnL/drawdown NOT_COMPUTABLE. Testes publicados, CI pendente. Financiamento, transferências, sincronização e custos históricos completos pendentes. CM39 bloqueado; retornar repositório a privado após validações.

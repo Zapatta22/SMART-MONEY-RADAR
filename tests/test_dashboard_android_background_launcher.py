@@ -1,6 +1,7 @@
 """CM74 safety checks for detached Android dashboard launcher."""
 
 import os
+import fcntl
 import shutil
 import sqlite3
 import subprocess
@@ -141,6 +142,31 @@ class BackgroundDashboardLauncherTests(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 3, result.stderr)
             self.assertNotEqual(pidfile.read_text().strip(), "999999999")
+
+
+    @unittest.skipUnless(shutil.which("flock"), "flock required")
+    def test_concurrent_startup_lock_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = Path(tmp) / "existing.sqlite"
+            database.touch()
+            state = Path(tmp) / "state"
+            state.mkdir()
+            lock = state / "startup.lock"
+            with lock.open("w") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                env = os.environ.copy()
+                env.update(SMR_DB_PATH=str(database), SMR_DASHBOARD_STATE_DIR=str(state))
+                result = subprocess.run(
+                    ["bash", str(SCRIPT)],
+                    cwd=ROOT,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, 3, result.stderr)
+                self.assertIn("outra inicialização", result.stderr)
+                self.assertFalse((state / "dashboard.pid").exists())
 
 
 if __name__ == "__main__":

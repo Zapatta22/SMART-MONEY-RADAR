@@ -15,6 +15,7 @@ import json
 
 from smart_money_radar.services.wallet_signals import WalletSignalService
 from smart_money_radar.services.wallet_consensus import WalletConsensusReport,WalletConsensusService
+from smart_money_radar.services.cm38j_wallet_groups import read_wallet_group_audit
 from smart_money_radar.services.synthetic_paper_ledger import _encode,_hash,_verify_record
 from smart_money_radar.storage.event_store import SQLiteEventStore
 
@@ -255,5 +256,16 @@ def qualified_consensus_at(store,*,as_of,policy,program,pool,base_mint,quote_min
             wallets=eligible,program=program,pool=pool,base_mint=base_mint,quote_mint=quote_mint,
             as_of=_time(as_of),window=window,max_publication_delay=max_publication_delay,
             min_confidence=min_confidence)
+    # Cross-pool transaction dependencies are wallet-history context only.
+    audit_wallets = policy.manual_wallets or tuple(p["wallet"] for p in report["profiles"])
+    group_audit = read_wallet_group_audit(
+        store, wallets=audit_wallets, cutoff=as_of, max_links=min(policy.max_receipts, 256),
+    )
+    result = asdict(consensus)
+    receipt = group_audit["receipt"]
+    if receipt is not None and any(len(group) > 1 for group in receipt["groups"]):
+        result["reasons"] += ("archived_wallet_group_dependency",)
+    elif group_audit["status"] == "CONFLICTED":
+        result["reasons"] += (group_audit["reason"],)
     return {"snapshot_id":report["snapshot_id"],"qualified_wallets":list(eligible),
-        "consensus":asdict(consensus),"operational_authorized":False}
+        "consensus":result,"wallet_group_audit":group_audit,"operational_authorized":False}

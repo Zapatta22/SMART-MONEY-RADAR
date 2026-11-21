@@ -4440,3 +4440,8 @@ CM61 CI 44905171190: 1344 aprovados, 2 ignorados. CM62 adiciona grupos transitiv
 ## CM64 — persistência de agrupamentos
 
 CM62 CI 44905752804: 1347 aprovados, 2 ignorados. CM64 publica snapshots SQLite imutáveis por escopo e corte, reconstruídos de vínculos RPC Smart Money, com hash, versão e evidências, sem presumir independência. CI pendente. Correlação por financiamento/transferências/sincronização, integração causal, Launch e homologação integral pendentes. CM39 bloqueado; retornar a privado após validações.
+
+
+## CM66 — incremento de qualificação econômica Launch offline
+
+Código 86a33c2c07f25fbf6e7ffa523596144e792bb1a9 e testes bcc365ebbe0faaca055d72d8cd2378f4b612bb2c publicados. Adaptador retorna qualificação informativa com reservas, volume sem conflito, estimativa de impacto separada, referências RAW locais, fonte, slot, corte, direção e riscos. UNKNOWN/NOT_COMPUTABLE e ambos modos BLOCKED preservados. Hash local não prova autenticidade independente nem vínculo persistido ao arquivo RPC; integração persistente e cobertura permanecem pendentes. Quatro testes publicados, CI ainda não confirmada. Percentuais de referência CM38 85%, Launch 50% mantidos até validação. CM39 bloqueado, sem rede live, ordens, merge ou force push. main e PR111/113 não alteradas.

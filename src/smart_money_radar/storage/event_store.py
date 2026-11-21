@@ -995,10 +995,12 @@ class SQLiteEventStore:
                           swap.signature, swap.wallet_address,
                           observed.payload_json, observed.slot,
                           observed.observed_at, observed.chain,
-                          archive.occurred_at
+                          archive.occurred_at, archive.program_id, archive.input_mint,
+                          archive.output_mint, archive.confidence
                    FROM swap_replay_archive AS archive
                    JOIN swap_observations AS swap
                      ON swap.operation_id=archive.operation_id
+                    AND swap.wallet_address=archive.wallet_address
                    LEFT JOIN observed_transactions AS observed
                      ON observed.wallet_address=swap.wallet_address
                     AND observed.signature=swap.signature
@@ -1010,7 +1012,8 @@ class SQLiteEventStore:
             "available_at": row[3], "signature": row[4], "wallet": row[5],
             "raw_bytes": row[6].encode("utf-8") if row[6] is not None else None,
             "slot": row[7], "observed_at": row[8],
-            "chain": row[9], "occurred_at": row[10],
+            "chain": row[9], "occurred_at": row[10], "program": row[11],
+            "input_mint": row[12], "output_mint": row[13], "confidence": row[14],
         } for row in rows]
 
     def list_cpmm_launch_archived_event_inputs(self, *, limit: int = 20) -> list[dict]:

@@ -23,6 +23,7 @@ _DASHBOARD_HTML = """<!doctype html>
 <section class="panel"><h2>Estado dos coletores</h2><p class="muted">Status live: UNKNOWN quando não há telemetria autenticada. A última data de arquivo não demonstra coletor ativo.</p><div class="grid" id="radarCollectors"></div></section>
 <section class="panel"><h2>Motivos recorrentes</h2><div id="reasons" class="muted">Aguardando conexão.</div></section>
 <section class="panel"><h2>Eventos dos radares · evidências</h2><p class="muted">Lançamentos e Smart Money são independentes. Arquivo histórico/fixture não significa captura live; cobertura e autorização permanecem desconhecidas ou bloqueadas.</p><div class="grid"><section><h3>Launch Radar</h3><div id="launchEvents" class="tablewrap muted">Nenhuma evidência arquivada disponível.</div></section><section><h3>Smart Money Radar</h3><div id="smartEvents" class="tablewrap muted">Nenhuma evidência arquivada disponível.</div></section></div></section>
+<section class="panel"><h2>Inteligência e risco · análise offline</h2><p class="muted">Pontuação observacional; confiança UNKNOWN sem prova independente. Nenhuma ordem autorizada.</p><div class="grid"><section><h3>Launch Radar</h3><div id="launchOpportunities" class="tablewrap muted"></div></section><section><h3>Smart Money Radar</h3><div id="smartOpportunities" class="tablewrap muted"></div></section></div></section>
 <section class="panel"><h2>Últimos eventos</h2><div class="tablewrap"><table><thead><tr><th>Data</th><th>Carteira</th><th>Ativo</th><th>Direção</th><th>Quantidade</th></tr></thead><tbody id="events"></tbody></table></div></section>
 <section class="panel"><div class="row"><h2 style="flex:1">Auditoria de swaps</h2><select id="statusFilter"><option value="">Todos os status</option><option>MATCHED</option><option>INCOMPLETE</option><option>AMBIGUOUS</option><option>UNRESOLVED</option></select><button id="loadAttempts" disabled>Consultar</button></div><div class="tablewrap"><table><thead><tr><th>Data</th><th>Status</th><th>Operação</th><th>Instrução</th><th>Motivo</th></tr></thead><tbody id="attempts"></tbody></table></div></section>
 <script>
@@ -52,6 +53,14 @@ function render(data){
   head.append(tr);table.append(head);const body=document.createElement("tbody");
   items.forEach(x=>{const r=document.createElement("tr");td(r,x.event_type+" · "+short(x.id)+(x.wallet_address?" · "+short(x.wallet_address):""));td(r,(x.origin||"UNKNOWN")+" · "+(x.source_id||"UNKNOWN")+" · "+(x.evidence_quality||"UNKNOWN")+" · "+(x.coverage||"UNKNOWN")+" · "+short(x.raw_sha256));td(r,x.available_at);td(r,(x.direction||x.verdict||"UNKNOWN")+" · "+((x.reasons||[]).slice(0,3).join(", ")||"sem justificativa"));body.append(r);});
   table.append(body);panel.append(table);
+ });
+ const opportunities=data.radar_opportunities||{};
+ [["launch","launchOpportunities"],["smart_money","smartOpportunities"]].forEach(([radar,id])=>{
+  const panel=el(id);panel.replaceChildren();const items=opportunities[radar]||[];
+  if(!items.length){panel.textContent="Nenhuma análise disponível.";return;}
+  const table=document.createElement("table"),head=document.createElement("thead"),tr=document.createElement("tr");
+  ["Evento / data","Classificação / score","Confiança / risco","Evidências / motivos"].forEach(h=>{const th=document.createElement("th");th.textContent=h;tr.append(th);});head.append(tr);table.append(head);const body=document.createElement("tbody");
+  items.forEach(x=>{const r=document.createElement("tr");td(r,short(x.event_id)+" · "+(x.event_available_at||"UNKNOWN"));td(r,(x.verdict||"UNKNOWN")+" · "+(x.score??"UNKNOWN"));td(r,(x.confidence||"UNKNOWN")+" · "+(x.risk_status||"UNKNOWN"));td(r,(x.evidence_ids||[]).join(", ")+" · "+(x.reasons||[]).join(", "));body.append(r);});table.append(body);panel.append(table);
  });
  const events=el("events");events.replaceChildren();(data.recent_events||[]).forEach(x=>{const tr=document.createElement("tr");td(tr,x.occurred_at);td(tr,short(x.wallet_address));td(tr,short(x.token_mint));td(tr,x.direction);td(tr,x.amount);events.append(tr);});if(!events.children.length)rowEmpty(events,5,"Nenhum evento persistido.");
 }

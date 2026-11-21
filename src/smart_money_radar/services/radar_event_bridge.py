@@ -47,6 +47,11 @@ class IntegratedRadarEvent:
     source_reference: str
     operational_authorized: bool = False
     wallet_address: str | None = None
+    token_mints: tuple[str, ...] = ()
+    program: str | None = None
+    input_mint: str | None = None
+    output_mint: str | None = None
+    archived_confidence: str | None = None
 
 
 def _date(value: str | None) -> datetime | None:
@@ -71,6 +76,9 @@ def _event(
     raw: bytes | None, expected_hash: str | None,
     source_reference: str, direction: str | None = None,
     wallet_address: str | None = None,
+    token_mints: tuple[str, ...] = (), program: str | None = None,
+    input_mint: str | None = None, output_mint: str | None = None,
+    archived_confidence: str | None = None,
     extra_reasons: tuple[str, ...] = (),
 ) -> IntegratedRadarEvent:
     snapshot = compose_radar_snapshot(RadarObservation(
@@ -113,7 +121,8 @@ def _event(
         verdict="UNKNOWN", direction=direction,
         reasons=tuple(sorted(reasons)),
         source_reference=source_reference,
-        wallet_address=wallet_address,
+        wallet_address=wallet_address, token_mints=token_mints, program=program,
+        input_mint=input_mint, output_mint=output_mint, archived_confidence=archived_confidence,
     )
 
 
@@ -171,6 +180,7 @@ def launch_events_from_archive(
             available_at=captured, observed_at=None,
             raw=raw, expected_hash=digest,
             source_reference=source_ref,
+            token_mints=(match.token_0_mint, match.token_1_mint) if match is not None else (),
             extra_reasons=tuple(reasons) + ("ordering_domain_unverified",),
         )
         events[event_key] = item
@@ -246,6 +256,8 @@ def smart_money_events_from_archive(
             expected_hash=digest, source_reference=f"swap_replay_archive:{op}",
             direction=side,
             wallet_address=row.get("wallet") if isinstance(row.get("wallet"), str) else None,
+            program=row.get("program"), input_mint=row.get("input_mint"),
+            output_mint=row.get("output_mint"), archived_confidence=row.get("confidence"),
             extra_reasons=tuple(reasons),
         )
         existing = events.get(item.id)

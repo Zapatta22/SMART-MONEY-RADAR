@@ -8,6 +8,7 @@ from smart_money_radar.services.reconciliation_diagnostics import (
 )
 from smart_money_radar.storage.event_store import SQLiteEventStore
 from smart_money_radar.services.radar_event_bridge import read_archived_radar_events
+from smart_money_radar.services.radar_intelligence import read_intelligence_reports
 
 
 class DashboardReadService:
@@ -17,8 +18,10 @@ class DashboardReadService:
         self,
         event_store: SQLiteEventStore,
         diagnostics: ReconciliationDiagnosticsService | None = None,
+        *, intelligence_scopes: dict | None = None,
     ) -> None:
         self._event_store = event_store
+        self._intelligence_scopes = dict(intelligence_scopes or {})
         self._diagnostics = diagnostics or ReconciliationDiagnosticsService(event_store)
 
     @staticmethod
@@ -66,6 +69,8 @@ class DashboardReadService:
             "reconciliation": self._json_value(report),
             "recent_events": events,
             "radar_events": self._json_value(radar_events),
+            "radar_opportunities": self._json_value(read_intelligence_reports(
+                self._event_store, radar_events, scopes=self._intelligence_scopes)),
             # Separate radar channels are observational until independently
             # attested evidence is supplied. Database events do not prove
             # launch detection or Smart Money signal completeness.

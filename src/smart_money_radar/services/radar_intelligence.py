@@ -118,13 +118,26 @@ def evaluate_archived_event(event: dict, *, store, as_of: datetime,
                 verdict="REJECTED"
             if isinstance(store, SQLiteEventStore):
                 from smart_money_radar.services.cm38j_launch_integration import launch_metric_receipts
+                capture_id = None
+                history = cpmm_history
+                if history is not None:
+                    ids = history.candidate_capture_ids(pool=event["pool"], cutoff=point, limit=1)
+                    if ids:
+                        capture_id = ids[0]
+                        original = history.get_original(capture_id)
+                        if original is not None:
+                            original_slot = original[1]["slot_observed"]
+                            if type(event.get("slot")) is not int or type(original_slot) is not int or original_slot <= event["slot"]:
+                                raise ValueError("CPMM original swap must follow launch slot")
+                    else:
+                        history = None
                 launch_economics = {mode: launch_metric_receipts(
                     token_mint=scope.token_mint, pool=event["pool"], quote_mint=scope.quote_mint,
                     at=point, strategy=mode, safety=market.safety, liquidity=market.liquidity,
                     swaps=market.swaps, min_liquidity_quote=scope.min_liquidity_quote,
                     max_concentration_fraction=scope.max_concentration_fraction,
                     volume_window=scope.window, rpc_store=store,
-                    cpmm_history=cpmm_history)["economic_qualification"]
+                    cpmm_history=history, capture_id=capture_id)["economic_qualification"]
                     for mode in ("immediate", "confirmed")}
                 if any(x["rpc_archive"]["status"] == "CONFLICTED" or
                        x["account_archive"]["status"] == "CONFLICTED" for x in launch_economics.values()):

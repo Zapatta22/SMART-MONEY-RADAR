@@ -210,13 +210,20 @@ def _resolve_launch_accounts(history, capture_id, original_raw, original_manifes
     """Expose decoded raw reserves only as local point-in-time observations."""
     result = {"status": "UNKNOWN", "independently_authenticated": False,
               "historical_pre_swap_proven": False, "operational_authorized": False}
-    if history is None or capture_id is None:
+    if history is None:
         return result
     try:
         from smart_money_radar.data_sources.raydium_cpmm_analyzer import decode_raydium_cpmm_swaps
-        capture = history.reconstruct_capture(
-            capture_id, original_transaction_raw=original_raw,
-            original_manifest=original_manifest, cutoff=cutoff)
+        if capture_id is None:
+            if original_raw is None or original_manifest is None:
+                return result
+            capture = history.reconstruct_latest_for_pool(
+                pool=pool, cutoff=cutoff, original_transaction_raw=original_raw,
+                original_manifest=original_manifest)
+        else:
+            capture = history.reconstruct_capture(
+                capture_id, original_transaction_raw=original_raw,
+                original_manifest=original_manifest, cutoff=cutoff)
         if capture is None:
             return result
         obs = capture.observation

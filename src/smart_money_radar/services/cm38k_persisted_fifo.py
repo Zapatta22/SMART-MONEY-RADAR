@@ -51,7 +51,7 @@ def additional_network_cost(tx, wallet, quote):
 
 def fifo_metric_receipts(receipt):
     from smart_money_radar.services.cm38k_fifo_reconstruction import verify_fifo_receipt
-    from smart_money_radar.services.cm38j_metric_provenance import describe_metric
+    from smart_money_radar.services.cm38j_metric_provenance import describe_metric, SMART_MONEY_INDICATORS
     verify_fifo_receipt(receipt)
     point = _time(receipt["as_of"])
     ids = tuple(x["evidence_id"] for x in receipt["lineage"])
@@ -59,10 +59,16 @@ def fifo_metric_receipts(receipt):
             source_id="CM38K_PERSISTED_FIFO",start=min(
                 (_time(x["available_at"]) for x in receipt["lineage"]),default=point),
             end=point,available_at=point,decision_at=point,quality="UNKNOWN",
-            unavailable_reason="coverage_or_independent_attestation_missing",
-            radar="smart_money",unit=receipt["quote_mint"] if name!="win_rate" else "fraction",
+            unavailable_reason={
+                "drawdown":"complete_equity_series_and_price_evidence_missing",
+                "unrealized_pnl":"verified_cost_basis_and_temporal_mark_missing",
+                "wallet_correlation":"wallet_relationship_evidence_missing",
+                "independent_consensus":"independent_wallet_control_and_source_evidence_missing",
+                "temporal_consistency":"complete_history_missing",
+            }.get(name,"coverage_or_independent_attestation_missing"),
+            radar="smart_money",unit=receipt["quote_mint"] if name in ("realized_pnl","acquisition_cost","fees","unrealized_pnl") else "fraction",
             method=receipt["method"],source_integrity_sha256=receipt["sha256"])
-            for name in ("realized_pnl","acquisition_cost","fees","unrealized_pnl","win_rate")]
+            for name in SMART_MONEY_INDICATORS]
 
 
 def _derive(conn, operation_id, cutoff, *, operation_only=False):

@@ -4420,3 +4420,8 @@ CM56 CI 44902676965: 1337 Python aprovados, 2 ignorados. CM57 publica testes de 
 ## CM58 — correção da configuração offline
 
 CI CM57 44904225643: 1337 aprovados, 2 falhas, 2 ignorados. Ambos os testes encontraram PAUSED. Fixture inicia radares via LocalOperationalControls, mantendo entradas pausadas e sem alterar controles de produção. Homologação CM38K/I pendente de CI e critérios integrais. CM39 bloqueado; retornar a privado após validações.
+
+
+## CM59 — supervisor validado e indicadores CM38J
+
+CI CM58 44904494451: 1339 aprovados, 2 ignorados. Ciclo configurado, reabertura e rollback do journal offline aprovados nos cenários testados. CM59 amplia recibos FIFO/CM38I para nove indicadores com razões específicas UNKNOWN, e matemática controlada de marcação e drawdown sem atestação. CI pendente. Histórico integral, preços autenticados, correlação e consenso independente continuam pendentes; não homologar integralmente CM38K/I nem liberar CM39. Retornar repositório a privado após validações.

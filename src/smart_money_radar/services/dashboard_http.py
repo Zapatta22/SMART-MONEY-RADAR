@@ -42,7 +42,7 @@ function render(data){
   const table=document.createElement("table"),head=document.createElement("thead"),tr=document.createElement("tr");
   ["Tipo / ID","Proveniência / evidência","Disponível","Sinal / bloqueio"].forEach(h=>{const th=document.createElement("th");th.textContent=h;tr.append(th);});
   head.append(tr);table.append(head);const body=document.createElement("tbody");
-  items.forEach(x=>{const r=document.createElement("tr");td(r,x.event_type+" · "+short(x.id));td(r,(x.origin||"UNKNOWN")+" · "+(x.evidence_quality||"UNKNOWN")+" · "+(x.coverage||"UNKNOWN")+" · "+short(x.raw_sha256));td(r,x.available_at);td(r,(x.direction||x.verdict||"UNKNOWN")+" · "+((x.reasons||[]).slice(0,3).join(", ")||"sem justificativa"));body.append(r);});
+  items.forEach(x=>{const r=document.createElement("tr");td(r,x.event_type+" · "+short(x.id)+(x.wallet_address?" · "+short(x.wallet_address):""));td(r,(x.origin||"UNKNOWN")+" · "+(x.evidence_quality||"UNKNOWN")+" · "+(x.coverage||"UNKNOWN")+" · "+short(x.raw_sha256));td(r,x.available_at);td(r,(x.direction||x.verdict||"UNKNOWN")+" · "+((x.reasons||[]).slice(0,3).join(", ")||"sem justificativa"));body.append(r);});
   table.append(body);panel.append(table);
  });
  const events=el("events");events.replaceChildren();(data.recent_events||[]).forEach(x=>{const tr=document.createElement("tr");td(tr,x.occurred_at);td(tr,short(x.wallet_address));td(tr,short(x.token_mint));td(tr,x.direction);td(tr,x.amount);events.append(tr);});if(!events.children.length)rowEmpty(events,5,"Nenhum evento persistido.");

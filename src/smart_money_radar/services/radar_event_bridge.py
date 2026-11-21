@@ -46,6 +46,7 @@ class IntegratedRadarEvent:
     reasons: tuple[str, ...]
     source_reference: str
     operational_authorized: bool = False
+    wallet_address: str | None = None
 
 
 def _date(value: str | None) -> datetime | None:
@@ -69,6 +70,7 @@ def _event(
     available_at: datetime | None, observed_at: datetime | None,
     raw: bytes | None, expected_hash: str | None,
     source_reference: str, direction: str | None = None,
+    wallet_address: str | None = None,
     extra_reasons: tuple[str, ...] = (),
 ) -> IntegratedRadarEvent:
     snapshot = compose_radar_snapshot(RadarObservation(
@@ -110,6 +112,7 @@ def _event(
         verdict="UNKNOWN", direction=direction,
         reasons=tuple(sorted(reasons)),
         source_reference=source_reference,
+        wallet_address=wallet_address,
     )
 
 
@@ -238,7 +241,9 @@ def smart_money_events_from_archive(
             origin=origin, signature=sig, slot=slot, pool=pool,
             available_at=published, observed_at=captured, raw=raw,
             expected_hash=digest, source_reference=f"swap_replay_archive:{op}",
-            direction=side, extra_reasons=tuple(reasons),
+            direction=side,
+            wallet_address=row.get("wallet") if isinstance(row.get("wallet"), str) else None,
+            extra_reasons=tuple(reasons),
         )
         existing = events.get(item.id)
         if existing is not None and existing != item:

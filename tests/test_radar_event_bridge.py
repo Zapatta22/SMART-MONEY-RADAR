@@ -2,6 +2,12 @@
 import hashlib
 import json
 import unittest
+from unittest.mock import patch
+from decimal import Decimal
+from smart_money_radar.domain.models import (
+    SwapClassification, SwapEvidence, SwapObservation, build_swap_operation_id,
+)
+from smart_money_radar.domain.swap_bundle_builder import SwapDomainBundle
 from datetime import datetime,timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -132,6 +138,56 @@ class RadarEventBridgeTests(unittest.TestCase):
         self.assertIn("slot_missing",item.reasons)
         self.assertIn("observation_time_unknown",item.reasons)
         self.assertEqual(item.verdict,"UNKNOWN")
+
+    def test_sqlite_persisted_smart_money_swap_producer_end_to_end(self):
+        with TemporaryDirectory() as d:
+            db=Path(d)/"smr.sqlite"
+            store=SQLiteEventStore(db)
+            try:
+                raw={"result":{"slot":7,"transaction":{"signatures":["sig-1"]},
+                               "meta":{"err":None}}}
+                store.save_observation(
+                    "wallet","sig-1",raw,[],parse_status="no_events",
+                    parser_version="1",advance_checkpoint=False,
+                )
+                with store._connection_scope() as conn:
+                    with conn:
+                        conn.execute(
+                            "UPDATE observed_transactions SET slot=?,chain=?,observed_at=? "
+                            "WHERE wallet_address=? AND signature=?",
+                            (7,"solana","2026-11-20T23:30:00+00:00","wallet","sig-1"),
+                        )
+                op=build_swap_operation_id("solana","sig-1",0)
+                event_at=datetime(2026,11,20,23,29,tzinfo=timezone.utc)
+                obs=SwapObservation(op,"solana","wallet","sig-1",
+                                   "quote","base",Decimal("10"),Decimal("2"),
+                                   event_at,"1")
+                cls=SwapClassification(op,"BUY",Decimal("0.9"),"fixture")
+                evidence=SwapEvidence(op,"program",None,0,evidence=("pool_state:pool",))
+                store.save_swap_bundle(obs,cls,evidence)
+                with patch("smart_money_radar.storage.event_store.datetime",wraps=datetime) as clock:
+                    clock.now.return_value=datetime(2026,11,20,23,31,tzinfo=timezone.utc)
+                    store.mark_processed("wallet","sig-1",
+                        replay_bundles=(SwapDomainBundle(obs,cls,evidence),))
+            finally:
+                store.close()
+            reopened=SQLiteEventStore(db,read_only=True)
+            try:
+                result=read_archived_radar_events(reopened)
+                self.assertEqual(result["launch"],[])
+                item,=result["smart_money"]
+                self.assertEqual(item["signature"],"sig-1")
+                self.assertEqual(item["slot"],7)
+                self.assertEqual(item["pool"],"pool")
+                self.assertEqual(item["wallet_address"],"wallet")
+                self.assertEqual(item["direction"],"BUY")
+                self.assertEqual(item["event_type"],"SWAP_CLASSIFIED")
+                self.assertEqual(item["evidence_quality"],"UNKNOWN")
+                self.assertIn("raw_hash_unanchored",item["reasons"])
+                self.assertEqual(item["coverage"],"UNKNOWN")
+                self.assertFalse(item["operational_authorized"])
+            finally:
+                reopened.close()
 
     def test_two_independent_radar_channels_and_legacy_schema(self):
         with TemporaryDirectory() as d:

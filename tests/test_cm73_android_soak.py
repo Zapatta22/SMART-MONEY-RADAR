@@ -131,10 +131,10 @@ class AndroidSoakTests(unittest.TestCase):
         # in the same archive, not merely return a successful process exit.
         with closing(sqlite3.connect(self.workspace() / "offline-soak.sqlite")) as db:
             rows = db.execute(
-                "SELECT radar, cycles FROM cm36_supervisor_tasks"
+                "SELECT radar, payload FROM cm36_supervisor_tasks"
             ).fetchall()
         self.assertEqual({radar for radar, _ in rows}, {"launch", "smart_money"})
-        self.assertTrue(all(cycles > 1 for _, cycles in rows))
+        self.assertTrue(all(json.loads(payload)["cycles"] > 1 for _, payload in rows))
 
     def test_controller_termination_writes_interrupted_report(self):
         process = self.start(5)

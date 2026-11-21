@@ -57,6 +57,8 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertIn('id="launchEvents"',html)
         self.assertIn('id="smartEvents"',html)
         self.assertIn("data.radar_events",html)
+        self.assertIn('id="radarCollectors"',html)
+        self.assertIn("last_archived_event_at",html)
         self.assertIn("textContent",html)
 
     def test_api_serializes_archived_smart_money_without_trades(self):
@@ -80,6 +82,8 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertEqual(item["coverage"],"UNKNOWN")
         self.assertEqual(item["evidence_quality"],"UNKNOWN")
         self.assertFalse(item["operational_authorized"])
+        self.assertEqual(data["radars"]["smart_money"]["status"],"UNKNOWN")
+        self.assertEqual(data["radars"]["smart_money"]["last_archived_event_at"],"2026-11-20T23:30:00+00:00")
 
     def test_dashboard_requires_bearer_token(self):
         with self.assertRaises(HTTPError) as caught:

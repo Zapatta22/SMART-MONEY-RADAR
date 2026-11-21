@@ -36,6 +36,13 @@ class DashboardReadService:
                     for key, item in value.items()}
         return value
 
+    @staticmethod
+    def _last_archived_event_at(items: list[dict]) -> str | None:
+        """Local archive timestamp, not a live collector heartbeat."""
+        stamps = [datetime.fromisoformat(row["available_at"])
+                  for row in items if row.get("available_at")]
+        return max(stamps).isoformat() if stamps else None
+
     def get_overview(self, *, wallet_address: str | None = None) -> dict:
         """Retorna resumo de persistência e reconciliação em formato serializável."""
         report = self._diagnostics.get_report(wallet_address=wallet_address)
@@ -65,6 +72,7 @@ class DashboardReadService:
             "radars": {
                 name: {
                     "name": name, "status": "UNKNOWN",
+                    "last_archived_event_at": self._last_archived_event_at(radar_events[name]),
                     "evidence_coverage": "UNKNOWN",
                     "operational_authorized": False,
                     "paper_modes": {

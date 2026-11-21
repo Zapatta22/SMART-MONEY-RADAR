@@ -103,6 +103,8 @@ class DashboardReadServiceTests(unittest.TestCase):
         self.assertEqual(response["radar_events"]["launch"],[])
         self.assertEqual(response["radar_events"]["smart_money"],[])
         self.assertEqual(response["mode"],"read_only")
+        self.assertIsNone(response["radars"]["launch"]["last_archived_event_at"])
+        self.assertIsNone(response["radars"]["smart_money"]["last_archived_event_at"])
         store.list_cpmm_launch_archived_event_inputs.assert_called_once_with(limit=20)
         store.list_smr_archived_event_inputs.assert_called_once_with(limit=20)
 

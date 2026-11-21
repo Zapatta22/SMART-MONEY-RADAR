@@ -40,7 +40,7 @@ class AuthenticatedHealthProbeTests(unittest.TestCase):
             state = Path(tmp) / "state"
             state.mkdir(mode=0o700)
             token = state / "health.token"
-            token.write_text("a" * 64 + "\\n")
+            token.write_text("a" * 64 + "\n")
             token.chmod(0o600)
             try:
                 server = ThreadingHTTPServer(("127.0.0.1", 8765), Handler)
